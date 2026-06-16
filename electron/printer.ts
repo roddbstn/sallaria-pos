@@ -8,7 +8,7 @@
  * 58mm 롤지 기준 1행 = 32 컬럼 (ASCII 1byte = 1col, 한글 2byte = 2col)
  */
 
-import { SerialPort } from '@serialport/serialport'
+import { SerialPort } from 'serialport'
 import iconv from 'iconv-lite'
 import type { BrowserWindow } from 'electron'
 

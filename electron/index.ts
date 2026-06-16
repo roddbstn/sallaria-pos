@@ -3,7 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createClient } from '@supabase/supabase-js'
 import Store from 'electron-store'
-import { SerialPort } from '@serialport/serialport'
+import { SerialPort } from 'serialport'
 
 import {
   PrintQueue,

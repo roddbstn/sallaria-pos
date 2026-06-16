@@ -18,8 +18,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install windows-build-tools dependencies
-        run: npm install --global node-gyp
+      - name: Rebuild native modules for Electron
+        run: npx electron-rebuild -f -w serialport
 
       - name: Build renderer
         run: npm run build
