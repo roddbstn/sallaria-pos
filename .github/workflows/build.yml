@@ -18,11 +18,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build
+      - name: Install windows-build-tools dependencies
+        run: npm install --global node-gyp
+
+      - name: Build renderer
         run: npm run build
 
       - name: Package (Windows)
         run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
