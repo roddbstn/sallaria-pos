@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --green:       #017333;
+  --green-soft:  #E6F4EC;
+  --ink:         #1E1E1E;
+  --gray-text:   #727272;
+  --gray-border: #D7D7D7;
+  --gray-bg:     #FAFAFA;
+  --danger:      #C92A2A;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system, sans-serif;
+  background: var(--gray-bg);
+  color: var(--ink);
+  overflow: hidden;
+  user-select: none;
+}
+
+#root {
+  zoom: 1.07;
+  width: calc(100vw / 1.07);
+  height: calc(100vh / 1.07);
+}
+
+::-webkit-scrollbar       { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D7D7D7; border-radius: 3px; }
