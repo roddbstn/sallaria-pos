@@ -1,6 +1,34 @@
-import { useState, useMemo } from 'react'
-import { MOCK_ORDERS, type Order, type OrderStatus } from '../lib/mock-data'
-import { won, formatDate } from '../lib/ipc'
+import { useState, useMemo, useEffect } from 'react'
+import { type Order, type OrderStatus } from '../lib/mock-data'
+import { won, formatDate, orderToPayload } from '../lib/ipc'
+import { supabase } from '../lib/supabase'
+
+// ── DB row → Order 변환 ───────────────────────────────────────────────────────
+const DB_METHOD_MAP: Record<string, string> = { '내점': '매장 식사', '포장': '포장', '배달': '배달' }
+
+function mapRow(row: any): Order {
+  return {
+    code:          row.order_code,
+    orderNumber:   row.order_number ?? undefined,
+    accountName:   row.accounts?.account_name ?? '',
+    orderer:       row.orderer_name,
+    phone:         row.orderer_phone ?? undefined,
+    method:        (DB_METHOD_MAP[row.method] ?? row.method) as Order['method'],
+    status:        row.status as OrderStatus,
+    items:         (row.order_items ?? []).map((item: any) => ({
+      name:    item.menu_name,
+      qty:     item.quantity,
+      price:   item.unit_price,
+      options: (item.order_item_options ?? []).map((o: any) => o.option_name as string),
+    })),
+    total:         row.total_amount,
+    prepMins:      0,
+    createdAt:     row.ordered_at,
+    remarks:       row.note ?? '',
+    balanceBefore: row.balance_before,
+    balanceAfter:  row.balance_after,
+  }
+}
 
 // ── 상태 필터 옵션 ─────────────────────────────────────────────────────────────
 const STATUS_OPTIONS: { label: string; value: OrderStatus | 'all' }[] = [
@@ -41,14 +69,13 @@ function formatDisplay(ymd: string): string {
   return ymd.replace(/-/g, '.')
 }
 
-/** ISO createdAt 문자열에서 'YYYY-MM-DD' 추출 */
 function orderDate(iso: string): string {
   return iso.slice(0, 10)
 }
 
 // ── 캘린더 컴포넌트 ───────────────────────────────────────────────────────────
 interface CalendarProps {
-  startDate: string | null  // 'YYYY-MM-DD'
+  startDate: string | null
   endDate:   string | null
   onSelect:  (ymd: string) => void
 }
@@ -82,7 +109,6 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
     }
   }
 
-  // 달력 셀 계산
   const firstDay  = new Date(viewYear, viewMonth, 1)
   const lastDay   = new Date(viewYear, viewMonth + 1, 0)
   const startWday = firstDay.getDay()
@@ -101,7 +127,6 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
 
   return (
     <div className="select-none">
-      {/* 네비게이션 헤더 */}
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={prevNav}
@@ -110,25 +135,13 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
 
         {calView === 'days' ? (
           <div className="flex gap-1 text-[13px] font-bold text-ink">
-            <button
-              onClick={() => setCalView('years')}
-              className="hover:text-green transition-colors focus:outline-none"
-            >{viewYear}년</button>
-            <button
-              onClick={() => setCalView('months')}
-              className="hover:text-green transition-colors focus:outline-none"
-            >{viewMonth + 1}월</button>
+            <button onClick={() => setCalView('years')} className="hover:text-green transition-colors focus:outline-none">{viewYear}년</button>
+            <button onClick={() => setCalView('months')} className="hover:text-green transition-colors focus:outline-none">{viewMonth + 1}월</button>
           </div>
         ) : calView === 'months' ? (
-          <button
-            onClick={() => setCalView('days')}
-            className="text-[13px] font-bold text-ink hover:text-green transition-colors focus:outline-none"
-          >{viewYear}년</button>
+          <button onClick={() => setCalView('days')} className="text-[13px] font-bold text-ink hover:text-green transition-colors focus:outline-none">{viewYear}년</button>
         ) : (
-          <button
-            onClick={() => setCalView('days')}
-            className="text-[13px] font-bold text-ink hover:text-green transition-colors focus:outline-none"
-          >{yearBase} – {yearBase + 11}</button>
+          <button onClick={() => setCalView('days')} className="text-[13px] font-bold text-ink hover:text-green transition-colors focus:outline-none">{yearBase} – {yearBase + 11}</button>
         )}
 
         <button
@@ -137,55 +150,36 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
         >›</button>
       </div>
 
-      {/* 연도 선택 뷰 */}
       {calView === 'years' && (
         <div className="grid grid-cols-4 gap-1">
           {Array.from({ length: 12 }, (_, i) => yearBase + i).map(yr => (
-            <button
-              key={yr}
-              onClick={() => { setViewYear(yr); setCalView('months') }}
-              className={`py-2 rounded-lg text-[12px] font-semibold transition-colors focus:outline-none
-                ${viewYear === yr ? 'text-white' : 'text-ink hover:bg-gray-bg'}`}
-              style={viewYear === yr ? { backgroundColor: '#017333' } : undefined}
-            >{yr}</button>
+            <button key={yr} onClick={() => { setViewYear(yr); setCalView('months') }}
+              className={`py-2 rounded-lg text-[12px] font-semibold transition-colors focus:outline-none ${viewYear === yr ? 'text-white' : 'text-ink hover:bg-gray-bg'}`}
+              style={viewYear === yr ? { backgroundColor: '#017333' } : undefined}>{yr}</button>
           ))}
         </div>
       )}
 
-      {/* 월 선택 뷰 */}
       {calView === 'months' && (
         <div className="grid grid-cols-3 gap-1">
           {MONTH_NAMES.map((name, i) => (
-            <button
-              key={name}
-              onClick={() => { setViewMonth(i); setCalView('days') }}
-              className={`py-2.5 rounded-lg text-[12px] font-semibold transition-colors focus:outline-none
-                ${viewMonth === i ? 'text-white' : 'text-ink hover:bg-gray-bg'}`}
-              style={viewMonth === i ? { backgroundColor: '#017333' } : undefined}
-            >{name}</button>
+            <button key={name} onClick={() => { setViewMonth(i); setCalView('days') }}
+              className={`py-2.5 rounded-lg text-[12px] font-semibold transition-colors focus:outline-none ${viewMonth === i ? 'text-white' : 'text-ink hover:bg-gray-bg'}`}
+              style={viewMonth === i ? { backgroundColor: '#017333' } : undefined}>{name}</button>
           ))}
         </div>
       )}
 
-      {/* 날짜 뷰 */}
       {calView === 'days' && (
         <>
-          {/* 요일 헤더 */}
           <div className="grid grid-cols-7 mb-1">
             {WEEK_DAYS.map((d, i) => (
-              <div
-                key={d}
-                className={`text-center text-[11px] font-bold py-1
-                  ${i === 0 ? 'text-danger' : i === 6 ? 'text-blue-500' : 'text-gray-text'}`}
-              >{d}</div>
+              <div key={d} className={`text-center text-[11px] font-bold py-1 ${i === 0 ? 'text-danger' : i === 6 ? 'text-blue-500' : 'text-gray-text'}`}>{d}</div>
             ))}
           </div>
-
-          {/* 날짜 그리드 */}
           <div className="grid grid-cols-7">
             {cells.map((day, idx) => {
               if (day === null) return <div key={`e-${idx}`} className="h-9" />
-
               const ymd     = cellYMD(day)
               const isS     = ymd === startDate
               const isE     = ymd === endDate
@@ -194,43 +188,21 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
               const isToday = ymd === today
               const isSun   = idx % 7 === 0
               const isSat   = idx % 7 === 6
-
-              // 범위 연결 strip: 단일 날짜 선택이면 strip 없음
               const showStrip = !isSingleDay && (inRange || isS || isE)
               const stripLeft  = isS ? '50%' : '0'
               const stripRight = isE ? '50%' : '0'
-
               return (
                 <div key={ymd} className="relative h-9 flex items-center justify-center">
                   {showStrip && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '4px', bottom: '4px',
-                      left: stripLeft, right: stripRight,
-                      backgroundColor: '#E6F4EC',
-                      zIndex: 0,
-                    }} />
+                    <div style={{ position: 'absolute', top: '4px', bottom: '4px', left: stripLeft, right: stripRight, backgroundColor: '#E6F4EC', zIndex: 0 }} />
                   )}
-                  <button
-                    onClick={() => onSelect(ymd)}
+                  <button onClick={() => onSelect(ymd)}
                     className={`relative z-10 w-8 h-8 rounded-full text-[12px] font-medium transition-colors focus:outline-none
-                      ${isSel
-                        ? 'text-white'
-                        : inRange
-                          ? 'text-ink hover:bg-green-soft'
-                          : isSun
-                            ? 'text-danger hover:bg-gray-bg'
-                            : isSat
-                              ? 'text-blue-500 hover:bg-gray-bg'
-                              : 'text-ink hover:bg-gray-bg'}`}
-                    style={isSel ? { backgroundColor: '#017333' } : undefined}
-                  >
+                      ${isSel ? 'text-white' : inRange ? 'text-ink hover:bg-green-soft' : isSun ? 'text-danger hover:bg-gray-bg' : isSat ? 'text-blue-500 hover:bg-gray-bg' : 'text-ink hover:bg-gray-bg'}`}
+                    style={isSel ? { backgroundColor: '#017333' } : undefined}>
                     {day}
                     {isToday && (
-                      <span
-                        className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full"
-                        style={{ backgroundColor: isSel ? 'white' : '#017333' }}
-                      />
+                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full" style={{ backgroundColor: isSel ? 'white' : '#017333' }} />
                     )}
                   </button>
                 </div>
@@ -251,7 +223,6 @@ interface DateRangePanelProps {
 }
 
 function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelProps) {
-  // 두 번 클릭으로 범위 선택: 첫 번째 클릭 = start, 두 번째 = end
   const [picking, setPicking] = useState<'start' | 'end'>('start')
 
   function handleDaySelect(ymd: string) {
@@ -259,7 +230,6 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
       onRangeChange(ymd, null)
       setPicking('end')
     } else {
-      // end가 start보다 이전이면 swap
       if (startDate && ymd < startDate) {
         onRangeChange(ymd, startDate)
       } else {
@@ -276,85 +246,72 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
 
   const today = toYMD(new Date())
 
-  function getThisWeekRange(): [string, string] {
-    const now = new Date()
-    const dow  = now.getDay() // 0=일
-    const mon  = new Date(now); mon.setDate(now.getDate() - dow)
-    const sun  = new Date(mon); sun.setDate(mon.getDate() + 6)
-    return [toYMD(mon), toYMD(sun)]
-  }
-
   function getLast7Days(): [string, string] {
     const now  = new Date()
     const from = new Date(now); from.setDate(now.getDate() - 6)
     return [toYMD(from), today]
   }
-
   function getThisMonth(): [string, string] {
     const now  = new Date()
     const from = new Date(now.getFullYear(), now.getMonth(), 1)
-    const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    return [toYMD(from), toYMD(to)]
+    return [toYMD(from), today]
   }
-
   function getLastMonth(): [string, string] {
     const now  = new Date()
     const from = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const to   = new Date(now.getFullYear(), now.getMonth(), 0)
     return [toYMD(from), toYMD(to)]
   }
-
   function getYesterday(): string {
     const d = new Date(); d.setDate(d.getDate() - 1); return toYMD(d)
   }
+  function getLast3Months(): [string, string] {
+    const now  = new Date()
+    const from = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+    return [toYMD(from), today]
+  }
+  function getLast6Months(): [string, string] {
+    const now  = new Date()
+    const from = new Date(now.getFullYear(), now.getMonth() - 6, 1)
+    return [toYMD(from), today]
+  }
+  function getThisYear(): [string, string] {
+    const now  = new Date()
+    return [toYMD(new Date(now.getFullYear(), 0, 1)), today]
+  }
 
   const quickButtons = [
-    { label: '오늘',     onClick: () => setQuick(today, today) },
-    { label: '어제',     onClick: () => { const y = getYesterday(); setQuick(y, y) } },
-    { label: '이번 주',  onClick: () => { const [s,e] = getThisWeekRange(); setQuick(s,e) } },
-    { label: '지난 7일', onClick: () => { const [s,e] = getLast7Days(); setQuick(s,e) } },
-    { label: '이번 달',  onClick: () => { const [s,e] = getThisMonth(); setQuick(s,e) } },
-    { label: '지난 달',  onClick: () => { const [s,e] = getLastMonth(); setQuick(s,e) } },
+    { label: '오늘',       onClick: () => setQuick(today, today) },
+    { label: '어제',       onClick: () => { const y = getYesterday(); setQuick(y, y) } },
+    { label: '지난 7일',   onClick: () => { const [s,e] = getLast7Days(); setQuick(s,e) } },
+    { label: '이번 달',    onClick: () => { const [s,e] = getThisMonth(); setQuick(s,e) } },
+    { label: '지난 달',    onClick: () => { const [s,e] = getLastMonth(); setQuick(s,e) } },
+    { label: '지난 3개월', onClick: () => { const [s,e] = getLast3Months(); setQuick(s,e) } },
+    { label: '지난 6개월', onClick: () => { const [s,e] = getLast6Months(); setQuick(s,e) } },
+    { label: '올해',       onClick: () => { const [s,e] = getThisYear(); setQuick(s,e) } },
   ]
 
   return (
     <div className="w-[260px] flex-shrink-0 border-r border-gray-border flex flex-col overflow-y-auto">
       <div className="px-4 py-4 flex-1">
-        {/* 캘린더 */}
-        <Calendar
-          startDate={startDate}
-          endDate={endDate}
-          onSelect={handleDaySelect}
-        />
-
-        {/* 안내 텍스트 */}
-        <p className="text-[11px] text-gray-text mt-2 text-center">
-          {picking === 'start' ? '시작일을 클릭하세요' : '종료일을 클릭하세요'}
-        </p>
-
-        {/* 선택된 날짜 범위 */}
+        <Calendar startDate={startDate} endDate={endDate} onSelect={handleDaySelect} />
+        {!startDate && (
+          <p className="text-[11px] text-gray-text mt-2 text-center">
+            {picking === 'start' ? '시작일을 클릭하세요' : '종료일을 클릭하세요'}
+          </p>
+        )}
         {startDate && (
-          <div
-            className="mt-3 px-3 py-2 rounded-xl text-[12px] font-semibold text-center"
-            style={{ backgroundColor: '#E6F4EC', color: '#017333' }}
-          >
+          <div className="mt-3 px-3 py-2 rounded-xl text-[12px] font-semibold text-center" style={{ backgroundColor: '#E6F4EC', color: '#017333' }}>
             {startDate && endDate && startDate !== endDate
               ? `${formatDisplay(startDate)} ~ ${formatDisplay(endDate)}`
-              : startDate
-                ? formatDisplay(startDate)
-                : '날짜를 선택하세요'}
+              : startDate ? formatDisplay(startDate) : '날짜를 선택하세요'}
           </div>
         )}
-
-        {/* 빠른 선택 버튼 */}
         <div className="mt-4 space-y-1.5">
           <p className="text-[11px] font-bold text-gray-text mb-2">빠른 선택</p>
           {quickButtons.map(btn => (
-            <button
-              key={btn.label}
-              onClick={btn.onClick}
-              className="w-full text-left px-3 py-2 rounded-lg text-[12px] font-medium text-ink hover:bg-gray-bg border border-gray-border transition-colors"
-            >
+            <button key={btn.label} onClick={btn.onClick}
+              className="w-full text-left px-3 py-2 rounded-lg text-[12px] font-medium text-ink bg-gray-100 hover:bg-gray-200 transition-colors">
               {btn.label}
             </button>
           ))}
@@ -365,13 +322,7 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
 }
 
 // ── 통계 카드 ─────────────────────────────────────────────────────────────────
-interface StatCardProps {
-  label: string
-  value: string
-  sub?: string
-}
-
-function StatCard({ label, value, sub }: StatCardProps) {
+function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="flex-1 bg-gray-bg rounded-xl p-4 border border-gray-border">
       <div className="text-[11px] font-semibold text-gray-text mb-1">{label}</div>
@@ -382,11 +333,7 @@ function StatCard({ label, value, sub }: StatCardProps) {
 }
 
 // ── 메뉴별 매출 집계 ──────────────────────────────────────────────────────────
-interface MenuSales {
-  name:  string
-  qty:   number
-  total: number
-}
+interface MenuSales { name: string; qty: number; total: number }
 
 function calcMenuSales(orders: Order[]): MenuSales[] {
   const map = new Map<string, MenuSales>()
@@ -405,27 +352,14 @@ function calcMenuSales(orders: Order[]): MenuSales[] {
   return Array.from(map.values()).sort((a, b) => b.total - a.total)
 }
 
-// ── 날짜 범위로 주문 필터 ────────────────────────────────────────────────────
-function filterByDateRange(orders: Order[], start: string | null, end: string | null): Order[] {
-  if (!start) return orders
-  const s = start
-  const e = end ?? start
-  return orders.filter(o => {
-    const d = orderDate(o.createdAt)
-    return d >= s && d <= e
-  })
-}
-
-// ── 날짜 범위 내 날 수 계산 ────────────────────────────────────────────────
+// ── 날짜 범위 내 날 수 ────────────────────────────────────────────────────────
 function dayCount(start: string | null, end: string | null): number {
   if (!start) return 1
   const s = parseYMD(start)
   const e = end ? parseYMD(end) : s
-  const diff = Math.round((e.getTime() - s.getTime()) / 86400000) + 1
-  return Math.max(diff, 1)
+  return Math.max(Math.round((e.getTime() - s.getTime()) / 86400000) + 1, 1)
 }
 
-// ── 우측 상세 패널 Row 헬퍼 ─────────────────────────────────────────────────
 function Row({ label, value, mono, bold }: { label: string; value: string; mono?: boolean; bold?: boolean }) {
   return (
     <div className="flex justify-between text-[13px]">
@@ -439,88 +373,95 @@ function Row({ label, value, mono, bold }: { label: string; value: string; mono?
 export default function Orders() {
   const today = toYMD(new Date())
 
-  // 날짜 범위 상태
   const [startDate, setStartDate] = useState<string | null>(today)
   const [endDate,   setEndDate]   = useState<string | null>(today)
-
-  // 탭: '주문내역' | '메뉴별매출'
-  const [tab, setTab] = useState<'주문내역' | '메뉴별매출'>('주문내역')
-
-  // 상태 필터
+  const [tab,       setTab]       = useState<'주문내역' | '메뉴별매출'>('주문내역')
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
+  const [selected,     setSelected]     = useState<Order | null>(null)
+  const [selectedMenuName, setSelectedMenuName] = useState<string | null>(null)
+  const [orders,   setOrders]   = useState<Order[]>([])
+  const [loading,  setLoading]  = useState(false)
 
-  // 선택된 주문 (우측 상세)
-  const [selected, setSelected] = useState<Order | null>(null)
+  async function fetchOrders(start: string | null, end: string | null) {
+    if (!start) { setOrders([]); return }
+    setLoading(true)
+    const s = `${start}T00:00:00`
+    const e = `${end ?? start}T23:59:59`
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        order_code, orderer_name, orderer_phone,
+        ordered_at, total_amount, balance_before, balance_after,
+        method, status, note,
+        accounts ( account_name ),
+        order_items (
+          order_item_id, menu_name, quantity, unit_price,
+          order_item_options ( id, option_name, extra_price )
+        )
+      `)
+      .gte('ordered_at', s)
+      .lte('ordered_at', e)
+      .order('ordered_at', { ascending: false })
 
-  // 날짜 범위 변경 핸들러
+    if (!error && data) setOrders(data.map(mapRow))
+    setLoading(false)
+  }
+
+  // 날짜 범위 변경 시 재조회
+  useEffect(() => {
+    fetchOrders(startDate, endDate)
+  }, [startDate, endDate])
+
   function handleRangeChange(s: string | null, e: string | null) {
     setStartDate(s)
     setEndDate(e)
     setSelected(null)
+    setSelectedMenuName(null)
   }
 
-  // 날짜 범위로 1차 필터링
-  const dateFiltered = useMemo(
-    () => filterByDateRange(MOCK_ORDERS, startDate, endDate),
-    [startDate, endDate],
-  )
+  function handleTabChange(t: '주문내역' | '메뉴별매출') {
+    setTab(t)
+    setSelected(null)
+    setSelectedMenuName(null)
+  }
 
-  // 통계 계산 (취소 제외한 주문만 매출 합산)
+  // 통계 계산
   const stats = useMemo(() => {
-    const valid   = dateFiltered.filter(o => o.status !== '취소')
+    const valid       = orders.filter(o => o.status !== '취소')
     const totalSales  = valid.reduce((sum, o) => sum + o.total, 0)
     const days        = dayCount(startDate, endDate)
     const avgSales    = days > 0 ? Math.round(totalSales / days) : 0
-    const orderCount  = dateFiltered.filter(o => o.status !== '취소').length
-    const cancelCount = dateFiltered.filter(o => o.status === '취소').length
+    const orderCount  = valid.length
+    const cancelCount = orders.filter(o => o.status === '취소').length
     return { totalSales, avgSales, orderCount, cancelCount }
-  }, [dateFiltered, startDate, endDate])
+  }, [orders, startDate, endDate])
 
-  // 상태 필터 적용 (주문내역 탭용)
+  // 상태 필터 (주문내역 탭)
   const listFiltered = useMemo(
-    () => dateFiltered.filter(o => statusFilter === 'all' || o.status === statusFilter),
-    [dateFiltered, statusFilter],
+    () => orders.filter(o => statusFilter === 'all' || o.status === statusFilter),
+    [orders, statusFilter],
   )
 
-  // 메뉴별 매출 집계
-  const menuSales = useMemo(() => calcMenuSales(dateFiltered), [dateFiltered])
+  // 메뉴별 매출
+  const menuSales = useMemo(() => calcMenuSales(orders), [orders])
 
   return (
     <div className="h-full flex overflow-hidden bg-white">
 
-      {/* ── 좌측: 캘린더 패널 ── */}
-      <DateRangePanel
-        startDate={startDate}
-        endDate={endDate}
-        onRangeChange={handleRangeChange}
-      />
+      {/* 좌측: 캘린더 패널 */}
+      <DateRangePanel startDate={startDate} endDate={endDate} onRangeChange={handleRangeChange} />
 
-      {/* ── 중앙: 통계 + 탭 + 목록 ── */}
-      <div className="flex-1 flex flex-col overflow-hidden border-r border-gray-border min-w-0">
+      {/* 중앙: 통계 + 탭 + 목록 */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
-        {/* 상단 통계 카드 */}
+        {/* 통계 카드 */}
         <div className="px-5 py-4 border-b border-gray-border flex-shrink-0">
           <div className="text-[18px] font-extrabold mb-3 text-ink">주문 관리</div>
           <div className="flex gap-3">
-            <StatCard
-              label="합계 거래액"
-              value={won(stats.totalSales)}
-              sub="취소 제외"
-            />
-            <StatCard
-              label="일 평균 거래액"
-              value={won(stats.avgSales)}
-              sub={`${dayCount(startDate, endDate)}일 기준`}
-            />
-            <StatCard
-              label="주문 건수"
-              value={`${stats.orderCount}건`}
-              sub="취소 제외"
-            />
-            <StatCard
-              label="취소 건수"
-              value={`${stats.cancelCount}건`}
-            />
+            <StatCard label="합계 거래액"    value={won(stats.totalSales)} sub="취소 제외" />
+            <StatCard label="일 평균 거래액"  value={won(stats.avgSales)}   sub={`${dayCount(startDate, endDate)}일 기준`} />
+            <StatCard label="주문 건수"       value={`${stats.orderCount}건`} sub="취소 제외" />
+            <StatCard label="취소 건수"       value={`${stats.cancelCount}건`} />
           </div>
         </div>
 
@@ -528,14 +469,9 @@ export default function Orders() {
         <div className="px-5 pt-3 pb-0 flex-shrink-0 border-b border-gray-border">
           <div className="flex gap-1">
             {(['주문내역', '메뉴별매출'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
+              <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-4 py-2 text-[13px] font-semibold border-b-2 transition-colors -mb-px
-                  ${tab === t
-                    ? 'border-ink text-ink'
-                    : 'border-transparent text-gray-text hover:text-ink'}`}
-              >
+                  ${tab === t ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
                 {t === '주문내역' ? '주문 내역' : '메뉴별 거래액'}
               </button>
             ))}
@@ -548,23 +484,19 @@ export default function Orders() {
             {/* 상태 필터 */}
             <div className="px-5 py-2.5 flex gap-1 flex-shrink-0 border-b border-gray-border bg-gray-bg">
               {STATUS_OPTIONS.map(({ label, value }) => (
-                <button
-                  key={value}
-                  onClick={() => setStatusFilter(value)}
+                <button key={value} onClick={() => setStatusFilter(value)}
                   className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors
-                    ${statusFilter === value
-                      ? 'bg-ink text-white'
-                      : 'bg-white text-gray-text border border-gray-border hover:bg-gray-bg'}`}
-                >
+                    ${statusFilter === value ? 'bg-ink text-white' : 'bg-white text-gray-text bg-gray-100 hover:bg-gray-200'}`}>
                   {label}
                 </button>
               ))}
             </div>
 
             {/* 테이블 헤더 */}
-            <div className="grid grid-cols-[90px_1fr_80px_100px_80px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+            <div className="grid grid-cols-[80px_1fr_62px_80px_100px_58px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
               <span>주문번호</span>
               <span>거래처 · 주문자</span>
+              <span>주문일시</span>
               <span>이용방법</span>
               <span className="text-right">금액</span>
               <span className="text-center">상태</span>
@@ -572,33 +504,32 @@ export default function Orders() {
 
             {/* 목록 */}
             <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
-              {listFiltered.length === 0 ? (
+              {loading ? (
+                <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
+                  <div className="w-6 h-6 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
+                  불러오는 중...
+                </div>
+              ) : listFiltered.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
                   해당 기간에 주문이 없습니다
                 </div>
               ) : (
                 listFiltered.map(order => (
-                  <button
-                    key={order.code}
-                    onClick={() => setSelected(order)}
-                    className={`w-full grid grid-cols-[90px_1fr_80px_100px_80px] px-5 py-3 text-left hover:bg-gray-bg transition-colors text-[13px]
-                      ${selected?.code === order.code ? 'bg-green-soft' : ''}`}
-                  >
-                    <span className="font-mono text-[11px] text-gray-text self-center">{order.code}</span>
+                  <button key={order.code} onClick={() => setSelected(order)}
+                    className={`w-full grid grid-cols-[80px_1fr_62px_80px_100px_58px] px-5 py-3 text-left hover:bg-gray-bg transition-colors text-[13px]
+                      ${selected?.code === order.code ? 'bg-green-soft' : ''}`}>
+                    <span className="font-mono text-[11px] text-gray-text self-center">#{order.orderNumber ?? order.code.slice(0, 6)}</span>
                     <span className="font-semibold text-ink self-center">
                       {order.accountName}
                       <span className="text-gray-text font-normal ml-1">· {order.orderer}</span>
                     </span>
+                    <span className="text-[11px] text-gray-text self-center">{formatDate(order.createdAt)}</span>
                     <span className="self-center">
-                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${METHOD_BADGE[order.method]}`}>
-                        {order.method}
-                      </span>
+                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${METHOD_BADGE[order.method]}`}>{order.method}</span>
                     </span>
                     <span className="font-bold text-right self-center">{won(order.total)}</span>
                     <span className="text-center self-center">
-                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[order.status]}`}>
-                        {order.status}
-                      </span>
+                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[order.status]}`}>{order.status}</span>
                     </span>
                   </button>
                 ))
@@ -608,14 +539,11 @@ export default function Orders() {
         ) : (
           /* 메뉴별 매출 탭 */
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* 테이블 헤더 */}
             <div className="grid grid-cols-[1fr_100px_120px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
               <span>메뉴명</span>
               <span className="text-right">주문수량</span>
               <span className="text-right">거래액</span>
             </div>
-
-            {/* 목록 */}
             <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
               {menuSales.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
@@ -623,17 +551,16 @@ export default function Orders() {
                 </div>
               ) : (
                 menuSales.map((ms, idx) => (
-                  <div
-                    key={ms.name}
-                    className="grid grid-cols-[1fr_100px_120px] px-5 py-3 text-[13px] hover:bg-gray-bg transition-colors"
-                  >
+                  <button key={ms.name} onClick={() => setSelectedMenuName(ms.name)}
+                    className={`w-full grid grid-cols-[1fr_100px_120px] px-5 py-3 text-left text-[13px] transition-colors
+                      ${selectedMenuName === ms.name ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
                     <span className="font-semibold text-ink flex items-center gap-1.5">
                       {idx === 0 && <span>🏆</span>}
                       {ms.name}
                     </span>
                     <span className="text-right text-gray-text">{ms.qty}개</span>
                     <span className="text-right font-bold text-ink">{won(ms.total)}</span>
-                  </div>
+                  </button>
                 ))
               )}
             </div>
@@ -641,72 +568,118 @@ export default function Orders() {
         )}
       </div>
 
-      {/* ── 우측: 주문 상세 패널 ── */}
-      <div className="w-[320px] flex-shrink-0 overflow-y-auto">
-        {selected ? (
-          <div className="p-5">
-            {/* 헤더 */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-[15px] font-extrabold text-ink">주문 상세</div>
+      {/* 주문 상세 모달 */}
+      {selected && (
+        <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelected(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-[420px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-5">
+                <div className="text-[17px] font-extrabold text-ink">주문 상세</div>
+                <button onClick={() => setSelected(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
+              </div>
+              <div className="space-y-2.5 mb-5">
+                <Row label="주문번호"  value={selected.orderNumber ? `#${selected.orderNumber}` : selected.code} mono />
+                <Row label="거래처"    value={selected.accountName} />
+                <Row label="주문자"    value={selected.orderer} />
+                {selected.phone && <Row label="연락처" value={selected.phone} />}
+                <Row label="이용방법"  value={selected.method} />
+                <Row label="주문일시"  value={formatDate(selected.createdAt)} />
+                <Row label="합계"      value={won(selected.total)} bold />
+                {selected.remarks && <Row label="요청사항" value={selected.remarks} />}
+              </div>
+              <div className="bg-gray-bg rounded-xl p-4 mb-5 space-y-3">
+                {selected.items.map((item, i) => (
+                  <div key={i}>
+                    <div className="flex justify-between text-[13px] font-semibold text-ink">
+                      <span>{item.name} × {item.qty}</span>
+                      <span>{won(item.price * item.qty)}</span>
+                    </div>
+                    {item.options.length > 0 && (
+                      <div className="text-[11px] text-gray-text mt-0.5 ml-1">
+                        {item.options.map(o => `▶ ${o}`).join('  ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between mb-5">
+                <span className="text-[13px] text-gray-text font-semibold">현재 상태</span>
+                <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[selected.status]}`}>{selected.status}</span>
+              </div>
               <button
-                onClick={() => setSelected(null)}
-                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors text-[14px]"
-              >
-                ✕
+                onClick={async () => {
+                  const w = window as unknown as { api?: { reprintOrder?: Function } }
+                  await w.api?.reprintOrder?.({ order: orderToPayload(selected) })
+                }}
+                className="w-full py-2.5 rounded-xl border-2 border-gray-border text-[13px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
+                🖨 영수증 재출력
               </button>
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* 기본 정보 */}
-            <div className="space-y-2.5 mb-4">
-              <Row label="주문번호"  value={selected.code} mono />
-              <Row label="거래처"    value={selected.accountName} />
-              <Row label="주문자"    value={selected.orderer} />
-              {selected.phone && <Row label="연락처" value={selected.phone} />}
-              <Row label="이용방법"  value={selected.method} />
-              <Row label="접수 시각" value={formatDate(selected.createdAt)} />
-              <Row label="합계"      value={won(selected.total)} bold />
-              {selected.remarks && <Row label="요청사항" value={selected.remarks} />}
-            </div>
-
-            {/* 주문 항목 */}
-            <div className="bg-gray-bg rounded-xl p-4 mb-4 space-y-3">
-              {selected.items.map((item, i) => (
-                <div key={i}>
-                  <div className="flex justify-between text-[13px] font-semibold text-ink">
-                    <span>{item.name} × {item.qty}</span>
-                    <span>{won(item.price * item.qty)}</span>
+      {/* 메뉴별 상세 모달 */}
+      {tab === '메뉴별매출' && selectedMenuName && (() => {
+        const ms = menuSales.find(m => m.name === selectedMenuName)!
+        const relatedOrders = orders.filter(
+          o => o.status !== '취소' && o.items.some(i => i.name === selectedMenuName)
+        )
+        return (
+          <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelectedMenuName(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-[420px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="text-[15px] font-extrabold text-ink">{selectedMenuName}</div>
+                    <div className="text-[12px] text-gray-text mt-0.5">총 {ms.qty}개 · {won(ms.total)}</div>
                   </div>
-                  {item.options.length > 0 && (
-                    <div className="text-[11px] text-gray-text mt-0.5 ml-1">
-                      {item.options.map(o => `▶ ${o}`).join('  ')}
-                    </div>
-                  )}
+                  <button onClick={() => setSelectedMenuName(null)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
                 </div>
-              ))}
+                <div className="border-t border-gray-border mb-4" />
+                <div className="text-[11px] font-bold text-gray-text mb-3 uppercase tracking-wide">주문 내역 ({relatedOrders.length}건)</div>
+                <div className="space-y-3">
+                  {relatedOrders.map(order => {
+                    const thisItem  = order.items.find(i => i.name === selectedMenuName)!
+                    const otherItems = order.items.filter(i => i.name !== selectedMenuName)
+                    return (
+                      <div key={order.code} className="bg-gray-bg rounded-xl p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-[11px] text-gray-text">{formatDate(order.createdAt)}</div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${METHOD_BADGE[order.method]}`}>{order.method}</span>
+                        </div>
+                        <div className="text-[12px] font-semibold text-ink mb-2">
+                          {order.accountName}<span className="text-gray-text font-normal"> · {order.orderer}</span>
+                        </div>
+                        <div className="bg-white rounded-lg px-3 py-2 mb-1.5 border border-green/30">
+                          <div className="flex justify-between text-[12px] font-bold text-ink">
+                            <span>{selectedMenuName} × {thisItem.qty}</span>
+                            <span>{won(thisItem.price * thisItem.qty)}</span>
+                          </div>
+                          {thisItem.options.length > 0 && (
+                            <div className="text-[11px] text-gray-text mt-0.5">{thisItem.options.map(o => `▶ ${o}`).join('  ')}</div>
+                          )}
+                        </div>
+                        {otherItems.map((item, i) => (
+                          <div key={i} className="flex justify-between text-[11px] text-gray-text px-1 py-0.5">
+                            <span>{item.name} × {item.qty}</span>
+                            <span>{won(item.price * item.qty)}</span>
+                          </div>
+                        ))}
+                        <div className="flex justify-between text-[12px] font-bold text-ink mt-2 pt-2 border-t border-gray-border">
+                          <span>주문 합계</span><span>{won(order.total)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
-
-            {/* 상태 뱃지 */}
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[12px] text-gray-text font-semibold">현재 상태</span>
-              <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[selected.status]}`}>
-                {selected.status}
-              </span>
-            </div>
-
-            {/* 영수증 재출력 버튼 */}
-            <button
-              className="w-full py-2.5 rounded-xl border-2 border-gray-border text-[13px] font-bold text-gray-text hover:bg-gray-bg transition-colors"
-            >
-              🖨 영수증 재출력
-            </button>
           </div>
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center text-gray-text text-[13px] gap-2">
-            <span className="text-[28px]">📋</span>
-            <span>주문을 선택하세요</span>
-          </div>
-        )}
-      </div>
+        )
+      })()}
     </div>
   )
 }

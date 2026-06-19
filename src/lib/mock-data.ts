@@ -13,6 +13,7 @@ export interface OrderItem {
 
 export interface Order {
   code:          string
+  orderNumber?:  number   // 순번 표시용 (예: 1001, 1002)
   accountName:   string
   orderer:       string
   phone?:        string   // 주문자 연락처
@@ -87,6 +88,7 @@ export interface OptionGroup {
 
 export interface MenuDetail extends Menu {
   description:  string
+  imageUrl?:    string
   optionGroups: OptionGroup[]
 }
 

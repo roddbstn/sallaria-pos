@@ -59,7 +59,7 @@ export default function Settings() {
                   const w = window as unknown as { api?: { listPorts?: Function } }
                   w.api?.listPorts?.().then(setPorts)
                 }}
-                className="px-3 py-2 border border-gray-border rounded-lg text-[12px] text-gray-text hover:bg-gray-bg"
+                className="px-3 py-2 bg-gray-100 rounded-lg text-[12px] text-gray-text hover:bg-gray-200"
               >
                 🔄 자동 감지
               </button>
@@ -75,7 +75,7 @@ export default function Settings() {
                   className={`px-3 py-2 rounded-lg text-[12px] font-bold border transition-colors
                     ${printer.baudRate === r
                       ? 'bg-ink text-white border-ink'
-                      : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}
+                      : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
                 >
                   {r}
                 </button>
@@ -92,7 +92,7 @@ export default function Settings() {
                   className={`px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors
                     ${printer.cutMode === m
                       ? 'bg-ink text-white border-ink'
-                      : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}
+                      : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
                 >
                   {m === 'partial' ? '부분 컷' : '완전 컷'}
                 </button>
@@ -103,7 +103,7 @@ export default function Settings() {
           <button
             onClick={handleTestPrint}
             disabled={testing}
-            className="mt-2 px-5 py-2 bg-gray-bg border border-gray-border rounded-lg text-[13px] font-bold hover:bg-gray-100 transition-colors disabled:opacity-60"
+            className="mt-2 px-5 py-2 bg-gray-100 rounded-lg text-[13px] font-bold hover:bg-gray-100 transition-colors disabled:opacity-60"
           >
             {testing ? '출력 중…' : '🖨 테스트 출력'}
           </button>
@@ -124,7 +124,7 @@ export default function Settings() {
                     className={`px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors
                       ${receipt[key] === s
                         ? 'bg-ink text-white border-ink'
-                        : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}
+                        : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
                   >
                     {SIZE_LABELS[s]}
                   </button>

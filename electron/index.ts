@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { createClient } from '@supabase/supabase-js'
+import ws from 'ws'
 import Store from 'electron-store'
 import { SerialPort } from 'serialport'
 
@@ -35,9 +37,11 @@ const printQueue = new PrintQueue()
 
 // ── Supabase 클라이언트 (Realtime 전용) ──────────────────────────────────────
 
-const SUPABASE_URL  = process.env.VITE_SUPABASE_URL  ?? ''
-const SUPABASE_ANON = process.env.VITE_SUPABASE_ANON ?? ''
-const supabase = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null
+const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string ?? ''
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON as string ?? ''
+const supabase = SUPABASE_URL
+  ? createClient(SUPABASE_URL, SUPABASE_ANON, { realtime: { transport: ws } })
+  : null
 
 let mainWindow: BrowserWindow | null = null
 
@@ -45,10 +49,11 @@ let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width:          1280,
-    height:         800,
-    minWidth:       1024,
+    width:          1024,
+    height:         768,
+    minWidth:       800,
     minHeight:      600,
+    aspectRatio:    4 / 3,
     title:          '샐러리아 POS',
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -102,7 +107,7 @@ function subscribeRealtime(): void {
     .channel('pos-orders')
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: '주문' },
+      { event: 'INSERT', schema: 'public', table: 'orders' },
       (payload) => {
         console.log('[Realtime] 새 주문 수신:', payload.new)
         mainWindow?.webContents.send('order:new', payload.new)
@@ -123,29 +128,107 @@ function subscribeRealtime(): void {
 ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPayload; prepMins: number }) => {
   console.log(`[IPC] order:approve — ${order.order_code}, 준비시간: ${prepMins}분`)
 
+  // 1) DB 상태 → 조리중
+  if (supabase) {
+    await supabase.from('orders').update({ status: '조리중' }).eq('order_code', order.order_code)
+
+    // 2) 웹 success 페이지에 broadcast (best-effort)
+    try {
+      const ch = supabase.channel(`orders:order_code=${order.order_code}`)
+      ch.subscribe((s) => {
+        if (s === 'SUBSCRIBED') {
+          ch.send({ type: 'broadcast', event: 'ORDER_ACCEPTED', payload: { estimated_minutes: prepMins } })
+            .then(() => setTimeout(() => supabase!.removeChannel(ch), 1500))
+        }
+      })
+    } catch (e) {
+      console.warn('[IPC] broadcast 실패 (무시):', e)
+    }
+  }
+
+  // 3) 영수증 출력
   const receipt = store.get('receipt')
-  // 고객용 먼저, 이어서 주방용
   printQueue.enqueue(buildCustomerReceipt(order))
   printQueue.enqueue(buildKitchenReceipt(order, receipt))
 
   return { ok: true }
 })
 
-ipcMain.handle('order:reject', async (_e, { orderCode, reason }) => {
+ipcMain.handle('order:reject', async (_e, { orderCode, reason }: { orderCode: string; reason: string }) => {
   console.log(`[IPC] order:reject — ${orderCode}, 사유: ${reason}`)
-  // TODO: Supabase PATCH 상태 = '취소'
+
+  if (supabase) {
+    // 주문 정보 조회 (잔액 환원용)
+    const { data: ord } = await supabase
+      .from('orders')
+      .select('account_code, total_amount')
+      .eq('order_code', orderCode)
+      .single()
+
+    // 상태 → 취소
+    await supabase.from('orders').update({ status: '취소', note: reason }).eq('order_code', orderCode)
+
+    // 잔액 환원
+    if (ord) {
+      const { data: acc } = await supabase
+        .from('accounts')
+        .select('current_balance')
+        .eq('account_code', ord.account_code)
+        .single()
+      if (acc) {
+        await supabase.from('accounts')
+          .update({ current_balance: acc.current_balance + ord.total_amount })
+          .eq('account_code', ord.account_code)
+      }
+    }
+
+    // 웹 success 페이지에 broadcast (best-effort)
+    try {
+      const ch = supabase.channel(`orders:order_code=${orderCode}`)
+      ch.subscribe((s) => {
+        if (s === 'SUBSCRIBED') {
+          ch.send({ type: 'broadcast', event: 'ORDER_REJECTED', payload: { reason } })
+            .then(() => setTimeout(() => supabase!.removeChannel(ch), 1500))
+        }
+      })
+    } catch (e) {
+      console.warn('[IPC] broadcast 실패 (무시):', e)
+    }
+  }
+
   return { ok: true }
 })
 
-ipcMain.handle('order:complete', async (_e, { orderCode }) => {
+ipcMain.handle('order:complete', async (_e, { orderCode }: { orderCode: string }) => {
   console.log(`[IPC] order:complete — ${orderCode}`)
-  // TODO: Supabase PATCH 상태 = '완료'
+  if (supabase) {
+    await supabase.from('orders').update({ status: '완료' }).eq('order_code', orderCode)
+  }
   return { ok: true }
 })
 
-ipcMain.handle('order:cancel', async (_e, { orderCode }) => {
+ipcMain.handle('order:cancel', async (_e, { orderCode }: { orderCode: string }) => {
   console.log(`[IPC] order:cancel — ${orderCode}`)
-  // TODO: Supabase PATCH 상태 = '취소' + 잔액 환원
+  if (supabase) {
+    const { data: ord } = await supabase
+      .from('orders')
+      .select('account_code, total_amount')
+      .eq('order_code', orderCode)
+      .single()
+    await supabase.from('orders').update({ status: '취소' }).eq('order_code', orderCode)
+    if (ord) {
+      const { data: acc } = await supabase
+        .from('accounts')
+        .select('current_balance')
+        .eq('account_code', ord.account_code)
+        .single()
+      if (acc) {
+        await supabase.from('accounts')
+          .update({ current_balance: acc.current_balance + ord.total_amount })
+          .eq('account_code', ord.account_code)
+      }
+    }
+  }
   return { ok: true }
 })
 
@@ -184,6 +267,14 @@ ipcMain.handle('printer:list-ports', async () => {
   return ports.map(p => p.path)
 })
 
+/** 영수증 재출력 (주문 관리 탭에서 호출) */
+ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload }) => {
+  const receipt = store.get('receipt')
+  printQueue.enqueue(buildCustomerReceipt(order))
+  printQueue.enqueue(buildKitchenReceipt(order, receipt))
+  return { ok: true }
+})
+
 /** 테스트 영수증 출력 */
 ipcMain.handle('printer:test', async () => {
   if (!printQueue.connected) {
@@ -191,6 +282,37 @@ ipcMain.handle('printer:test', async () => {
   }
   printQueue.enqueue(buildTestReceipt())
   return { ok: true }
+})
+
+// ── 자동 업데이트 ────────────────────────────────────────────────────────────
+
+function setupAutoUpdater(): void {
+  if (is.dev) return   // 개발 중엔 업데이트 비활성화
+
+  autoUpdater.autoDownload    = true   // 백그라운드에서 자동 다운로드
+  autoUpdater.autoInstallOnAppQuit = true  // 앱 종료 시 자동 설치
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('[Updater] 업데이트 발견:', info.version)
+    mainWindow?.webContents.send('updater:status', { type: 'available', version: info.version })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('[Updater] 다운로드 완료:', info.version)
+    mainWindow?.webContents.send('updater:status', { type: 'ready', version: info.version })
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.warn('[Updater] 오류:', err.message)
+  })
+
+  // 앱 시작 후 3초 후에 업데이트 확인 (UI 로딩 완료 후)
+  setTimeout(() => autoUpdater.checkForUpdates(), 3000)
+}
+
+// 렌더러에서 "지금 재시작해서 설치" 버튼 누를 때
+ipcMain.handle('updater:install', () => {
+  autoUpdater.quitAndInstall()
 })
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────
@@ -202,6 +324,7 @@ app.whenReady().then(async () => {
   createWindow()
   subscribeRealtime()
   await initPrinter()
+  setupAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

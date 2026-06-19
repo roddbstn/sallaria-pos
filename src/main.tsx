@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import 'pretendard/dist/web/static/pretendard-subset.css'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

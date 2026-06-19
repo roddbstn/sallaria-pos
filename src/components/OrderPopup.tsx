@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { type Order } from '../lib/mock-data'
-import { won } from '../lib/ipc'
+import { won, orderToPayload } from '../lib/ipc'
 
 interface Props {
   queue:      Order[]
@@ -51,7 +51,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
     lastPrepMins = prepMins   // 다음 팝업 초기값으로 기억
     setLoading(true)
     const w = window as unknown as { api?: { approveOrder?: Function } }
-    await w.api?.approveOrder?.({ orderCode: order.code, prepMins })
+    await w.api?.approveOrder?.({ order: orderToPayload(order), prepMins })
     setLoading(false)
     onApprove?.()
     dismiss()
@@ -191,7 +191,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                         <div className="flex items-center justify-center gap-4 mb-5">
                           <button
                             onClick={() => setPrepMins(p => Math.max(1, p - 1))}
-                            className="w-12 h-12 rounded-xl border border-gray-border text-gray-text hover:bg-gray-bg text-[22px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
+                            className="w-12 h-12 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[22px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
                             −
                           </button>
                           <div className="w-28 text-center flex-shrink-0">
@@ -200,7 +200,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                           </div>
                           <button
                             onClick={() => setPrepMins(p => Math.min(60, p + 1))}
-                            className="w-12 h-12 rounded-xl border border-gray-border text-gray-text hover:bg-gray-bg text-[22px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
+                            className="w-12 h-12 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[22px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
                             +
                           </button>
                         </div>
@@ -244,14 +244,14 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                           {REJECT_REASONS.map(r => (
                             <button key={r} onClick={() => setReason(r)}
                               className={`py-3 rounded-xl border-2 text-[13px] font-semibold transition-colors
-                                ${reason === r ? 'border-danger bg-red-50 text-danger' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}>
+                                ${reason === r ? 'border-danger bg-red-50 text-danger' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                               {r}
                             </button>
                           ))}
                         </div>
                         <div className="flex gap-3">
                           <button onClick={() => setStage('summary')}
-                            className="flex-1 py-3 rounded-xl border-2 border-gray-border text-gray-text font-bold hover:bg-gray-bg transition-colors">
+                            className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg transition-colors">
                             뒤로
                           </button>
                           <button onClick={handleReject} disabled={!reason || loading}

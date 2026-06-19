@@ -1,4 +1,4 @@
-name: Build
+name: Build Windows
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,16 +22,29 @@ jobs:
       - name: Rebuild native modules for Electron
         run: npx electron-rebuild -f -w serialport
 
-      - name: Build renderer
+      - name: Build
         run: npm run build
 
-      - name: Package (Windows)
+      - name: Package (Windows NSIS installer)
         run: npx electron-builder --win --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload installer
-        uses: actions/upload-artifact@v4
+      - name: Get version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: sallaria-pos-windows
-          path: dist/*.exe
+          tag_name: v${{ steps.version.outputs.version }}
+          name: 샐러리아 POS v${{ steps.version.outputs.version }}
+          body: |
+            ## 설치 방법
+            1. 아래 `샐러리아-POS-Setup-*.exe` 파일 다운로드
+            2. 실행 후 설치
+          files: dist/*.exe
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

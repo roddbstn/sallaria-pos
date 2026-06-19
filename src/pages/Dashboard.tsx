@@ -1,6 +1,15 @@
-import { useState } from 'react'
-import { MOCK_ORDERS, type Order } from '../lib/mock-data'
+import { useState, useEffect } from 'react'
+import { type Order, type OrderStatus } from '../lib/mock-data'
 import { won } from '../lib/ipc'
+import { supabase } from '../lib/supabase'
+import { useStore } from '../lib/store-context'
+
+// DB의 '내점'을 Order 타입의 '매장 식사'로 매핑
+const DB_METHOD_TO_ORDER: Record<string, Order['method']> = {
+  '포장':  '포장',
+  '내점':  '매장 식사',
+  '배달':  '배달',
+}
 
 const METHOD_LABEL: Record<string, string> = {
   '포장':    '포장',
@@ -44,7 +53,7 @@ function OrderCard({
       {/* ── 다크 헤더 ── */}
       <div className="bg-ink px-4 pt-3 pb-3">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-white font-extrabold text-[15px]">#{idx + 1}</span>
+          <span className="text-white font-extrabold text-[15px]">#{order.orderNumber ?? String(idx + 1)}</span>
           <div className="flex items-center gap-2">
             <span className="text-white/60 text-[12px] font-medium">{timeStr} 접수</span>
             <ElapsedBadge createdAt={order.createdAt} />
@@ -106,27 +115,188 @@ function OrderCard({
   )
 }
 
+// ── DB row → Order 타입 변환 ──────────────────────────────────────────────────
+function mapRowToOrder(row: any): Order {
+  const items = (row.order_items ?? []).map((item: any) => ({
+    name:    item.menu_name,
+    qty:     item.quantity,
+    price:   item.unit_price,
+    options: (item.order_item_options ?? []).map((opt: any) => opt.option_name as string),
+  }))
+
+  return {
+    code:          row.order_code,
+    orderNumber:   row.order_number ?? undefined,
+    accountName:   row.accounts?.account_name ?? '',
+    orderer:       row.orderer_name,
+    phone:         row.orderer_phone ?? undefined,
+    method:        DB_METHOD_TO_ORDER[row.method] ?? '포장',
+    status:        row.status as OrderStatus,
+    items,
+    total:         row.total_amount,
+    prepMins:      0,   // DB에 준비시간 컬럼 없음 — 기본 0
+    createdAt:     row.ordered_at,
+    remarks:       row.note ?? '',
+    balanceBefore: row.balance_before ?? undefined,
+    balanceAfter:  row.balance_after  ?? undefined,
+  }
+}
+
+// ── 오늘 날짜 범위 (KST 기준) ────────────────────────────────────────────────
+function todayRange(): { start: string; end: string } {
+  const now = new Date()
+  const y   = now.getFullYear()
+  const m   = String(now.getMonth() + 1).padStart(2, '0')
+  const d   = String(now.getDate()).padStart(2, '0')
+  return {
+    start: `${y}-${m}-${d}T00:00:00`,
+    end:   `${y}-${m}-${d}T23:59:59`,
+  }
+}
+
 export default function Dashboard() {
-  const [orders, setOrders] = useState<Order[]>(
-    MOCK_ORDERS.filter(o => o.status === '주문완료' || o.status === '조리중')
-  )
+  const { storeId } = useStore()   // 현재는 필터링에 미사용. 향후 다점포 지원용.
+
+  const [activeOrders, setActiveOrders] = useState<Order[]>([])
+  const [todayOrders,  setTodayOrders]  = useState<Order[]>([])
+  const [loading,      setLoading]      = useState(true)
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
 
-  const todayAll   = MOCK_ORDERS
-  const todayTotal = todayAll.filter(o => o.status !== '취소').reduce((s, o) => s + o.total, 0)
+  // ── 오늘 전체 주문 조회 (통계 표시용) ────────────────────────────────────────
+  async function fetchTodayOrders() {
+    const { start, end } = todayRange()
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        order_code,
+        status,
+        total_amount,
+        ordered_at
+      `)
+      .gte('ordered_at', start)
+      .lte('ordered_at', end)
 
-  async function handleComplete(code: string) {
-    const w = window as unknown as { api?: { completeOrder?: Function } }
-    await w.api?.completeOrder?.({ orderCode: code })
-    setOrders(prev => prev.filter(o => o.code !== code))
+    if (error) {
+      console.error('오늘 주문 조회 실패:', error)
+      return
+    }
+    // 통계용 최소 필드만 담은 partial Order 배열
+    setTodayOrders((data ?? []).map(r => ({
+      code:        r.order_code,
+      accountName: '',
+      orderer:     '',
+      method:      '포장',
+      status:      r.status as OrderStatus,
+      items:       [],
+      total:       r.total_amount,
+      prepMins:    0,
+      createdAt:   r.ordered_at,
+      remarks:     '',
+    })))
   }
 
+  // ── 활성 주문 조회 (주문완료 · 조리중) ───────────────────────────────────────
+  async function fetchActiveOrders() {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        order_code,
+        account_code,
+        orderer_name,
+        orderer_phone,
+        ordered_at,
+        menu_subtotal,
+        delivery_fee,
+        total_amount,
+        balance_before,
+        balance_after,
+        method,
+        status,
+        note,
+        accounts ( account_name ),
+        order_items (
+          order_item_id,
+          menu_name,
+          quantity,
+          unit_price,
+          subtotal,
+          order_item_options (
+            id,
+            option_name,
+            extra_price
+          )
+        )
+      `)
+      .in('status', ['주문완료', '조리중'])
+      .order('ordered_at', { ascending: true })
+
+    if (error) {
+      console.error('활성 주문 조회 실패:', error)
+      return
+    }
+
+    setActiveOrders((data ?? []).map(mapRowToOrder))
+  }
+
+  // ── 마운트 시 초기 로딩 ───────────────────────────────────────────────────────
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
+      setLoading(false)
+    }
+    load()
+  }, [storeId])
+
+  // ── Realtime 구독: orders 테이블 변경 시 자동 갱신 ───────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('dashboard-orders')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => {
+          fetchActiveOrders()
+          fetchTodayOrders()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  // ── 완료 처리 ─────────────────────────────────────────────────────────────────
+  async function handleComplete(code: string) {
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: '완료' })
+      .eq('order_code', code)
+
+    if (error) {
+      console.error('완료 처리 실패:', error)
+      return
+    }
+    await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
+  }
+
+  // ── 취소 처리 (잔액 환원 포함 RPC) ───────────────────────────────────────────
   async function handleCancel(code: string) {
-    const w = window as unknown as { api?: { cancelOrder?: Function } }
-    await w.api?.cancelOrder?.({ orderCode: code })
-    setOrders(prev => prev.filter(o => o.code !== code))
+    const { error } = await supabase.rpc('cancel_order', { p_order_code: code })
+
+    if (error) {
+      console.error('취소 처리 실패:', error)
+      return
+    }
+    await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
     setConfirmCancel(null)
   }
+
+  // ── 통계 계산 ─────────────────────────────────────────────────────────────────
+  const todayTotal = todayOrders
+    .filter(o => o.status !== '취소')
+    .reduce((s, o) => s + o.total, 0)
 
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
@@ -134,15 +304,15 @@ export default function Dashboard() {
       {/* ── 상단 헤더 ── */}
       <div className="px-8 py-5 border-b border-gray-border bg-white flex items-center justify-between flex-shrink-0">
         <div>
-          <div className="text-[22px] font-extrabold text-ink">대시보드</div>
+          <div className="text-[22px] font-extrabold text-ink">홈</div>
           <div className="text-[13px] text-gray-text mt-0.5">
             {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
           </div>
         </div>
         <div className="flex gap-4">
           {[
-            { label: '오늘 주문', value: `${todayAll.length}건` },
-            { label: '준비 중',  value: `${orders.length}건`, accent: true },
+            { label: '오늘 주문', value: `${todayOrders.length}건` },
+            { label: '준비 중',  value: `${activeOrders.length}건`, accent: true },
             { label: '오늘 거래액', value: won(todayTotal) },
           ].map(({ label, value, accent }) => (
             <div key={label} className="bg-gray-bg rounded-xl px-5 py-3 text-center min-w-[110px]">
@@ -155,14 +325,19 @@ export default function Dashboard() {
 
       {/* ── 주문 카드 목록 ── */}
       <div className="flex-1 overflow-y-auto px-8 py-6 bg-gray-100">
-        {orders.length === 0 ? (
+        {loading ? (
+          <div className="h-full flex flex-col items-center justify-center text-gray-text">
+            <div className="w-10 h-10 border-4 border-green border-t-transparent rounded-full animate-spin mb-4" />
+            <div className="text-[15px] font-medium">주문을 불러오는 중...</div>
+          </div>
+        ) : activeOrders.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-text">
             <div className="text-[48px] mb-4">✅</div>
             <div className="text-[18px] font-bold">대기 중인 주문이 없습니다</div>
           </div>
         ) : (
           <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-            {orders.map((order, idx) => (
+            {activeOrders.map((order, idx) => (
               <OrderCard
                 key={order.code}
                 order={order}
@@ -186,7 +361,7 @@ export default function Dashboard() {
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmCancel(null)}
-                className="flex-1 py-3 rounded-xl border-2 border-gray-border text-gray-text font-bold hover:bg-gray-bg transition-colors"
+                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg transition-colors"
               >
                 돌아가기
               </button>
