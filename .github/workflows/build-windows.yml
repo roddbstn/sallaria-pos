@@ -41,9 +41,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 빌드 결과 확인 (디버그)
+        run: Get-ChildItem -Recurse dist\ -Filter *.exe | Select-Object FullName
+        shell: powershell
+
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: 샐러리아-POS-Windows
-          path: dist/*.exe
+          path: dist/**/*.exe
+          if-no-files-found: error
           retention-days: 30
