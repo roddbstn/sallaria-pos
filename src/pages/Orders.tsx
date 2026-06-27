@@ -292,7 +292,7 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
   ]
 
   return (
-    <div className="w-[260px] flex-shrink-0 border-r border-gray-border flex flex-col overflow-y-auto">
+    <div className="w-[260px] flex-shrink-0 border-l border-gray-border flex flex-col overflow-y-auto">
       <div className="px-4 py-4 flex-1">
         <Calendar startDate={startDate} endDate={endDate} onSelect={handleDaySelect} />
         {!startDate && (
@@ -381,6 +381,7 @@ export default function Orders() {
   const [selectedMenuName, setSelectedMenuName] = useState<string | null>(null)
   const [orders,   setOrders]   = useState<Order[]>([])
   const [loading,  setLoading]  = useState(false)
+  const [reprintMsg, setReprintMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   async function fetchOrders(start: string | null, end: string | null) {
     if (!start) { setOrders([]); return }
@@ -390,7 +391,7 @@ export default function Orders() {
     const { data, error } = await supabase
       .from('orders')
       .select(`
-        order_code, orderer_name, orderer_phone,
+        order_code, order_number, orderer_name, orderer_phone,
         ordered_at, total_amount, balance_before, balance_after,
         method, status, note,
         accounts ( account_name ),
@@ -447,9 +448,6 @@ export default function Orders() {
 
   return (
     <div className="h-full flex overflow-hidden bg-white">
-
-      {/* 좌측: 캘린더 패널 */}
-      <DateRangePanel startDate={startDate} endDate={endDate} onRangeChange={handleRangeChange} />
 
       {/* 중앙: 통계 + 탭 + 목록 */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -568,6 +566,9 @@ export default function Orders() {
         )}
       </div>
 
+      {/* 우측: 캘린더 패널 */}
+      <DateRangePanel startDate={startDate} endDate={endDate} onRangeChange={handleRangeChange} />
+
       {/* 주문 상세 모달 */}
       {selected && (
         <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelected(null)}>
@@ -583,7 +584,7 @@ export default function Orders() {
                 <Row label="거래처"    value={selected.accountName} />
                 <Row label="주문자"    value={selected.orderer} />
                 {selected.phone && <Row label="연락처" value={selected.phone} />}
-                <Row label="이용방법"  value={selected.method} />
+                <Row label="이용방법"  value={selected.method === '배달' ? '배달 (+3,500원)' : selected.method} />
                 <Row label="주문일시"  value={formatDate(selected.createdAt)} />
                 <Row label="합계"      value={won(selected.total)} bold />
                 {selected.remarks && <Row label="요청사항" value={selected.remarks} />}
@@ -609,12 +610,24 @@ export default function Orders() {
               </div>
               <button
                 onClick={async () => {
-                  const w = window as unknown as { api?: { reprintOrder?: Function } }
-                  await w.api?.reprintOrder?.({ order: orderToPayload(selected) })
+                  setReprintMsg(null)
+                  const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
+                  const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected) })
+                  if (!res) return
+                  setReprintMsg(res.ok
+                    ? { ok: true,  text: '영수증을 출력합니다' }
+                    : { ok: false, text: res.error ?? '출력 실패' }
+                  )
+                  setTimeout(() => setReprintMsg(null), 3000)
                 }}
                 className="w-full py-2.5 rounded-xl border-2 border-gray-border text-[13px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
                 🖨 영수증 재출력
               </button>
+              {reprintMsg && (
+                <div className={`mt-2 text-center text-[12px] font-semibold ${reprintMsg.ok ? 'text-green' : 'text-danger'}`}>
+                  {reprintMsg.ok ? '✅' : '⚠️'} {reprintMsg.text}
+                </div>
+              )}
             </div>
           </div>
         </div>

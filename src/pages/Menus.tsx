@@ -51,10 +51,10 @@ function mapDbMenu(row: any): MenuDetail {
 
 // ── 스토어 옵션 그룹 (옵션 탭용) ─────────────────────────────────────────────
 interface StoreOptionGroup {
-  id:     string
-  name:   string
-  usedBy: number
-  items:  { id: string; name: string; extra: number; soldOut: boolean; hidden: boolean }[]
+  id:       string
+  name:     string
+  usedBy:   string[]   // 적용된 메뉴명 목록
+  items:    { id: string; name: string; extra: number; soldOut: boolean; hidden: boolean }[]
 }
 
 export default function Menus() {
@@ -70,21 +70,29 @@ export default function Menus() {
   const [selected,     setSelected]     = useState<MenuDetail | null>(null)
   const [loading,      setLoading]      = useState(true)
 
+  const [deleteConfirm, setDeleteConfirm] = useState<'bulk' | 'single' | null>(null)
+
   const [editMode, setEditMode] = useState(false)
-  const [editForm, setEditForm] = useState({ name: '', price: '', description: '' })
+  const [editForm, setEditForm] = useState({ name: '', price: '', description: '', soldOut: false, active: true })
   const [editImageFile,    setEditImageFile]    = useState<File | null>(null)
   const [editImagePreview, setEditImagePreview] = useState('')
+  const [editImageError,   setEditImageError]   = useState('')
+  const [editSaving,       setEditSaving]       = useState(false)
+  const [addingGroup,      setAddingGroup]      = useState(false)
   const [connectingGroup,  setConnectingGroup]  = useState(false)
   const [connectGroupId,   setConnectGroupId]   = useState('')
 
   const [addingStoreGroup, setAddingStoreGroup] = useState(false)
   const [newStoreGroup,    setNewStoreGroup]    = useState({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
 
-  const [editingCatId,  setEditingCatId]  = useState<string | null>(null)
-  const [catNameDraft,  setCatNameDraft]  = useState('')
-  const [addingCat,     setAddingCat]     = useState(false)
-  const [newCatName,    setNewCatName]    = useState('')
-  const [deletingCatId, setDeletingCatId] = useState<string | null>(null)
+  const [addingCat,          setAddingCat]          = useState(false)
+  const [newCatName,         setNewCatName]         = useState('')
+  const [expandedCatId,      setExpandedCatId]      = useState<string | null>(null)
+  const [catEditModalId,     setCatEditModalId]     = useState<string | null>(null)
+  const [catEditNameDraft,   setCatEditNameDraft]   = useState('')
+  const [catEditChecked,     setCatEditChecked]     = useState<Set<string>>(new Set())
+  const [catEditSaving,      setCatEditSaving]      = useState(false)
+  const [catDeleteModalId,   setCatDeleteModalId]   = useState<string | null>(null)
 
   const [addMenuOpen,   setAddMenuOpen]   = useState(false)
   const [addModalTab,   setAddModalTab]   = useState<'bulk' | 'detail'>('bulk')
@@ -151,7 +159,7 @@ export default function Menus() {
       .select(`
         id, name, display_order,
         option_items ( id, name, extra_price, is_sold_out, is_hidden, display_order ),
-        menu_option_groups ( menu_id )
+        menu_option_groups ( menu_id, menus ( name ) )
       `)
       .eq('store_id', storeId)
       .order('name')
@@ -159,7 +167,7 @@ export default function Menus() {
     setStoreGroups((data ?? []).map((g: any) => ({
       id:     g.id,
       name:   g.name,
-      usedBy: (g.menu_option_groups ?? []).length,
+      usedBy: (g.menu_option_groups ?? []).map((m: any) => m.menus?.name).filter(Boolean),
       items:  (g.option_items ?? [])
         .sort((a: any, b: any) => a.display_order - b.display_order)
         .map((it: any) => ({
@@ -213,6 +221,8 @@ export default function Menus() {
 
   // ── 메뉴 선택 ──────────────────────────────────────────────────────────────
   function selectMenu(menu: MenuDetail) {
+    // 체크된 항목이 1개 이상이면 행 클릭도 체크박스 토글로 처리
+    if (checked.size > 0) { toggleCheck(menu.code); return }
     if (selected?.code === menu.code) { setSelected(null); return }
     setSelected(menu)
     setEditMode(false)
@@ -242,6 +252,33 @@ export default function Menus() {
   async function renameCategory(id: string, name: string) {
     await supabase.from('categories').update({ name: name.trim() }).eq('id', id)
     setCategories(prev => prev.map(c => c.id === id ? { ...c, name: name.trim() } : c))
+  }
+
+  async function saveCategoryEdit(catId: string, newName: string, menuCodes: Set<string>) {
+    setCatEditSaving(true)
+    // 이름 변경
+    const cat = categories.find(c => c.id === catId)
+    if (cat && cat.name !== newName.trim()) {
+      await renameCategory(catId, newName.trim())
+    }
+    // 이 카테고리에 속해야 할 메뉴: menuCodes
+    // 현재 이 카테고리에 있는 메뉴: menus.filter(m => m.categoryId === catId)
+    const currentInCat = new Set(menus.filter(m => m.categoryId === catId).map(m => m.code))
+    const toAdd    = [...menuCodes].filter(c => !currentInCat.has(c))
+    const toRemove = [...currentInCat].filter(c => !menuCodes.has(c))
+    await Promise.all([
+      ...toAdd.map(c    => supabase.from('menus').update({ category_id: catId }).eq('id', c)),
+      ...toRemove.map(c => supabase.from('menus').update({ category_id: null  }).eq('id', c)),
+    ])
+    const toAddSet    = new Set(toAdd)
+    const toRemoveSet = new Set(toRemove)
+    setMenus(prev => prev.map(m => {
+      if (toAddSet.has(m.code))    return { ...m, categoryId: catId }
+      if (toRemoveSet.has(m.code)) return { ...m, categoryId: undefined }
+      return m
+    }))
+    setCatEditSaving(false)
+    setCatEditModalId(null)
   }
 
   async function deleteCategory(id: string) {
@@ -448,6 +485,7 @@ export default function Menus() {
       emoji:        '🍽️',
       price:        data.base_price,
       description:  data.description ?? '',
+      imageUrl:     imageUrl ?? undefined,
       categoryId:   data.category_id,
       active:       true,
       soldOut:      false,
@@ -467,7 +505,7 @@ export default function Menus() {
   // ── 기본 정보 편집 ──────────────────────────────────────────────────────────
   function startEdit() {
     if (!selected) return
-    setEditForm({ name: selected.name, price: String(selected.price), description: selected.description })
+    setEditForm({ name: selected.name, price: String(selected.price), description: selected.description, soldOut: selected.soldOut, active: selected.active })
     setEditImageFile(null)
     setEditImagePreview(selected.imageUrl ?? '')
     setEditMode(true)
@@ -478,6 +516,9 @@ export default function Menus() {
     const priceNum = parseInt(editForm.price, 10)
     if (!editForm.name.trim() || isNaN(priceNum) || priceNum < 0) return
 
+    setEditSaving(true)
+    setEditImageError('')
+
     let imageUrl: string | undefined = selected.imageUrl
 
     if (editImageFile) {
@@ -485,19 +526,31 @@ export default function Menus() {
       const { data: up, error: upErr } = await supabase.storage
         .from('menu-images')
         .upload(`${crypto.randomUUID()}.${ext}`, editImageFile, { contentType: editImageFile.type })
-      if (!upErr && up) {
-        imageUrl = supabase.storage.from('menu-images').getPublicUrl(up.path).data.publicUrl
+      if (upErr || !up) {
+        setEditImageError(`사진 업로드 실패: ${upErr?.message ?? '알 수 없는 오류'}`)
+        setEditSaving(false)
+        return
       }
+      imageUrl = supabase.storage.from('menu-images').getPublicUrl(up.path).data.publicUrl
     }
 
-    await supabase.from('menus').update({
+    const { error: updateErr } = await supabase.from('menus').update({
       name:        editForm.name.trim(),
       base_price:  priceNum,
       description: editForm.description || null,
       image_url:   imageUrl ?? null,
+      is_sold_out: editForm.soldOut,
+      is_hidden:   !editForm.active,
     }).eq('id', selected.code)
 
-    applyLocalUpdate({ ...selected, name: editForm.name.trim(), price: priceNum, description: editForm.description, imageUrl })
+    setEditSaving(false)
+
+    if (updateErr) {
+      setEditImageError(`저장 실패: ${updateErr.message}`)
+      return
+    }
+
+    applyLocalUpdate({ ...selected, name: editForm.name.trim(), price: priceNum, description: editForm.description, imageUrl, soldOut: editForm.soldOut, active: editForm.active })
     setEditMode(false)
   }
 
@@ -553,7 +606,7 @@ export default function Menus() {
       .single()
     if (error || !data) { console.error(error); return }
     setStoreGroups(prev => [...prev, {
-      id: data.id, name: data.name, usedBy: 0, items: [],
+      id: data.id, name: data.name, usedBy: [], items: [],
     }])
     setAddingStoreGroup(false)
     setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
@@ -667,6 +720,17 @@ export default function Menus() {
     setChecked(new Set())
   }
 
+  async function deleteMenus(codes: string[]) {
+    await Promise.all(codes.map(code => supabase.from('menus').delete().eq('id', code)))
+    setMenus(prev => prev.filter(m => !codes.includes(m.code)))
+    if (selected && codes.includes(selected.code)) {
+      setSelected(null)
+      setEditMode(false)
+    }
+    setChecked(new Set())
+    setDeleteConfirm(null)
+  }
+
   // ── 옵션 탭: 스토어 단위 품절/숨김 토글 ──────────────────────────────────
   async function toggleStoreOptItem(groupId: string, itemId: string, field: 'soldOut' | 'hidden') {
     const group = storeGroups.find(g => g.id === groupId)
@@ -707,7 +771,7 @@ export default function Menus() {
       <div className="px-6 border-b border-gray-border flex-shrink-0 flex gap-0">
         {([
           { v: 'menu',     l: '메뉴'     },
-          { v: 'option',   l: '옵션'     },
+          { v: 'option',   l: '옵션그룹'  },
           { v: 'category', l: '카테고리' },
         ] as { v: MenuTab; l: string }[]).map(({ v, l }) => (
           <button key={v} onClick={() => setTab(v)}
@@ -804,30 +868,37 @@ export default function Menus() {
 
       {/* ── 메뉴 상세 모달 ── */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }}>
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/40" onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }}>
           <div className="bg-white rounded-2xl shadow-xl w-[680px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
 
             {/* 모달 헤더 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-border flex-shrink-0">
               {editMode ? (
                 <>
-                  <span className="text-[15px] font-extrabold">기본 정보 편집</span>
-                  <div className="flex gap-2">
-                    <button onClick={() => setEditMode(false)} className="px-3 py-1.5 text-[12px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
-                    <button onClick={saveEdit} className="px-3 py-1.5 text-[12px] font-bold text-white bg-green rounded-lg hover:bg-[#015c28]">저장</button>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[15px] font-extrabold">{selected.name}</span>
+                    {editImageError && (
+                      <span className="text-[11px] text-danger mt-0.5">{editImageError}</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => { setEditMode(false); setEditImageError('') }} className="px-3 py-1.5 text-[12px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
+                    <button onClick={saveEdit} disabled={editSaving} className="px-3 py-1.5 text-[12px] font-bold text-white bg-green rounded-lg hover:bg-[#015c28] disabled:opacity-50">
+                      {editSaving ? '저장 중...' : '저장'}
+                    </button>
                   </div>
                 </>
               ) : (
                 <>
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-[28px] flex-shrink-0">{selected.emoji}</span>
                     <div className="min-w-0">
                       <div className="text-[17px] font-extrabold text-ink">{selected.name}</div>
                       <span className="text-[12px] text-gray-text">{getCategoryName(selected.categoryId) || '카테고리 없음'}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={startEdit} className="px-3 py-1.5 text-[12px] font-medium text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">편집</button>
+                    <button onClick={startEdit} className="px-3 py-1.5 text-[12px] font-medium text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">수정</button>
+                    <button onClick={() => setDeleteConfirm('single')} className="px-3 py-1.5 text-[12px] font-medium text-danger bg-red-50 rounded-lg hover:bg-red-100">삭제</button>
                     <button onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-text hover:bg-gray-100 text-[18px]">✕</button>
                   </div>
                 </>
@@ -839,63 +910,71 @@ export default function Menus() {
 
               {/* 기본 정보 편집 폼 */}
               {editMode && (
-                <div className="space-y-4">
-                  {/* 사진 */}
-                  <div>
-                    <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">사진</span>
-                    <label className="block cursor-pointer">
-                      <input type="file" accept="image/*" className="hidden"
-                        onChange={e => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          setEditImageFile(file)
-                          setEditImagePreview(URL.createObjectURL(file))
-                        }}
-                      />
-                      {editImagePreview ? (
-                        <div className="relative w-full h-36 rounded-xl overflow-hidden border border-gray-border">
-                          <img src={editImagePreview} className="w-full h-full object-cover" alt="preview" />
-                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                            <span className="text-white text-[13px] font-bold">사진 변경</span>
+                <div className="space-y-3">
+                  {/* 상단: 사진(소형) + 이름/가격 */}
+                  <div className="flex gap-3">
+                    {/* 사진 — 작은 정방형 */}
+                    <div className="flex-shrink-0 flex flex-col gap-1">
+                      <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴 사진</span>
+                      <div className="flex flex-col items-center gap-1">
+                      <label className="block cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            setEditImageFile(file)
+                            setEditImagePreview(URL.createObjectURL(file))
+                          }}
+                        />
+                        {editImagePreview ? (
+                          <div className="relative w-[76px] h-[76px] rounded-xl overflow-hidden border border-gray-border">
+                            <img src={editImagePreview} className="w-full h-full object-cover" alt="preview" />
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                              <span className="text-white text-[10px] font-bold">변경</span>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="w-full h-20 border-2 border-dashed border-gray-border rounded-xl flex items-center justify-center gap-2 hover:border-green hover:bg-green-soft/20 transition-colors">
-                          <span className="text-[20px]">📷</span>
-                          <span className="text-[12px] text-gray-text">클릭하여 사진 추가</span>
-                        </div>
+                        ) : (
+                          <div className="w-[76px] h-[76px] border-2 border-dashed border-gray-border rounded-xl flex flex-col items-center justify-center gap-1 hover:border-green hover:bg-green-soft/20 transition-colors">
+                            <span className="text-[18px]">📷</span>
+                            <span className="text-[10px] text-gray-text leading-tight text-center">사진<br/>추가</span>
+                          </div>
+                        )}
+                      </label>
+                      {editImagePreview && (
+                        <button type="button" onClick={() => { setEditImageFile(null); setEditImagePreview('') }}
+                          className="text-[10px] text-danger hover:underline">제거</button>
                       )}
-                    </label>
-                    {editImagePreview && (
-                      <button type="button" onClick={() => { setEditImageFile(null); setEditImagePreview('') }}
-                        className="mt-1 text-[11px] text-danger hover:underline">사진 제거</button>
-                    )}
+                      </div>
+                    </div>
+                    {/* 이름 + 가격 */}
+                    <div className="flex-1 flex flex-col gap-2">
+                      <label className="block">
+                        <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴명</span>
+                        <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
+                          className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[13px]" />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">기본 가격 (원)</span>
+                        <input type="number" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value }))}
+                          className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[13px]" />
+                      </label>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block">
-                      <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴명</span>
-                      <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
-                        className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[13px]" />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">기본 가격 (원)</span>
-                      <input type="number" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value }))}
-                        className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[13px]" />
-                    </label>
-                  </div>
+                  {/* 설명 */}
                   <label className="block">
                     <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">설명</span>
                     <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
                       rows={2} className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[13px] resize-none" />
                   </label>
+                  {/* 판매/표시 상태 */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">판매 상태</span>
                       <div className="flex gap-1.5">
                         {[{ label: '판매중', val: false }, { label: '품절', val: true }].map(({ label, val }) => (
-                          <button key={label} type="button" onClick={() => applyLocalUpdate({ ...selected, soldOut: val })}
+                          <button key={label} type="button" onClick={() => setEditForm(p => ({ ...p, soldOut: val }))}
                             className={`flex-1 py-1.5 rounded-lg text-[12px] font-bold transition-colors
-                              ${selected.soldOut === val ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                              ${editForm.soldOut === val ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                             {label}
                           </button>
                         ))}
@@ -905,9 +984,9 @@ export default function Menus() {
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">표시 상태</span>
                       <div className="flex gap-1.5">
                         {[{ label: '노출', val: true }, { label: '숨김', val: false }].map(({ label, val }) => (
-                          <button key={label} type="button" onClick={() => applyLocalUpdate({ ...selected, active: val })}
+                          <button key={label} type="button" onClick={() => setEditForm(p => ({ ...p, active: val }))}
                             className={`flex-1 py-1.5 rounded-lg text-[12px] font-bold transition-colors
-                              ${selected.active === val ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                              ${editForm.active === val ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                             {label}
                           </button>
                         ))}
@@ -918,15 +997,16 @@ export default function Menus() {
               )}
 
               {/* 보기 모드 */}
-              {!editMode && selected.imageUrl && (
-                <div className="w-full h-44 rounded-xl overflow-hidden border border-gray-border">
-                  <img src={selected.imageUrl} alt={selected.name} className="w-full h-full object-cover" />
-                </div>
-              )}
-
               {!editMode && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-bg rounded-xl p-4 space-y-2.5">
+                <div className="flex gap-3">
+                  {/* 썸네일 */}
+                  {selected.imageUrl && (
+                    <div className="w-[88px] h-[88px] flex-shrink-0 rounded-xl overflow-hidden border border-gray-border">
+                      <img src={selected.imageUrl} alt={selected.name} className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  {/* 정보 */}
+                  <div className="flex-1 bg-gray-bg rounded-xl px-4 py-3 space-y-2">
                     <div className="flex justify-between text-[13px]">
                       <span className="text-gray-text">기본 가격</span>
                       <span className="font-bold">{won(selected.price)}</span>
@@ -935,40 +1015,35 @@ export default function Menus() {
                       <span className="text-gray-text">카테고리</span>
                       <span className="font-semibold text-ink">{getCategoryName(selected.categoryId) || <span className="text-gray-border italic text-[12px]">미지정</span>}</span>
                     </div>
-                    <div className="flex justify-between text-[13px]">
+                    <div className="flex justify-between items-center text-[13px]">
                       <span className="text-gray-text">판매 상태</span>
-                      <span className={`flex items-center gap-1.5 font-semibold ${!selected.soldOut ? 'text-green' : 'text-ink'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${!selected.soldOut ? 'bg-green' : 'bg-ink'}`} />
-                        {selected.soldOut ? '품절' : '판매중'}
-                      </span>
+                      {selected.soldOut
+                        ? <span className="text-[11px] font-semibold text-danger bg-red-50 px-2 py-0.5 rounded-full">품절</span>
+                        : <span className="text-[11px] font-semibold text-green bg-green-soft px-2 py-0.5 rounded-full">판매중</span>}
                     </div>
-                    <div className="flex justify-between text-[13px]">
+                    <div className="flex justify-between items-center text-[13px]">
                       <span className="text-gray-text">표시 상태</span>
-                      <span className={`flex items-center gap-1.5 font-semibold ${selected.active ? 'text-green' : 'text-ink'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selected.active ? 'bg-green' : 'bg-ink'}`} />
-                        {selected.active ? '노출' : '숨김'}
-                      </span>
+                      {selected.active
+                        ? <span className="text-[11px] font-semibold text-ink bg-gray-bg px-2 py-0.5 rounded-full">노출</span>
+                        : <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">숨김</span>}
                     </div>
+                    {selected.description && (
+                      <div className="pt-1 border-t border-gray-border text-[12px] text-gray-text">{selected.description}</div>
+                    )}
                   </div>
-                  {selected.description && (
-                    <div className="bg-gray-bg rounded-xl p-4">
-                      <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">설명</span>
-                      <p className="text-[13px] text-ink">{selected.description}</p>
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* 옵션 그룹 연결 */}
-              {!editMode && (
+              {/* 옵션 그룹 연결 — 편집 모드에서 체크박스로 연결/해제 */}
+              {editMode && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[13px] font-extrabold text-ink">옵션 그룹 연결</span>
-                    <span className="text-[11px] text-gray-text">옵션 탭에서 그룹을 먼저 만드세요</span>
+                    <span className="text-[11px] text-gray-text">옵션그룹 탭에서 그룹을 먼저 만드세요</span>
                   </div>
                   {storeGroups.length === 0 ? (
                     <div className="text-[13px] text-gray-text text-center py-8 border border-dashed border-gray-border rounded-xl">
-                      등록된 옵션 그룹 없음 — 상단 '옵션' 탭에서 추가
+                      등록된 옵션 그룹 없음 — 상단 '옵션그룹' 탭에서 추가
                     </div>
                   ) : (
                     <div className="border border-gray-border rounded-xl divide-y divide-gray-border overflow-hidden">
@@ -983,7 +1058,13 @@ export default function Menus() {
                             />
                             <div className="flex-1 min-w-0">
                               <span className="text-[13px] font-semibold text-ink">{g.name}</span>
-                              <span className="ml-2 text-[11px] text-gray-text">{g.items.length}개 항목</span>
+                              <div className="mt-0.5 flex flex-wrap gap-1">
+                                {g.items.map(it => (
+                                  <span key={it.id} className="text-[11px] text-gray-text bg-gray-100 px-1.5 py-0.5 rounded-full">
+                                    {it.name}{it.extra > 0 ? ` +${it.extra.toLocaleString()}` : ''}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                             {connected && <span className="text-[11px] font-bold text-green flex-shrink-0">연결됨</span>}
                           </label>
@@ -993,8 +1074,76 @@ export default function Menus() {
                   )}
                 </div>
               )}
+
+              {/* 옵션 그룹 세부내용 — 보기 모드에서 연결된 그룹의 항목 표시 */}
+              {!editMode && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[13px] font-extrabold text-ink">옵션 그룹</span>
+                    {selected.optionGroups.length > 0 && (
+                      <span className="text-[11px] text-gray-text">{selected.optionGroups.length}개 연결됨</span>
+                    )}
+                  </div>
+                  {selected.optionGroups.length === 0 ? (
+                    <div className="text-[13px] text-gray-text text-center py-8 border border-dashed border-gray-border rounded-xl">
+                      연결된 옵션 그룹이 없습니다
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {selected.optionGroups.map(g => (
+                        <div key={g.id} className="border border-gray-border rounded-xl overflow-hidden">
+                          {/* 그룹 헤더 */}
+                          <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-bg border-b border-gray-border">
+                            <span className="text-[13px] font-extrabold text-ink">{g.name}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${g.isRequired ? 'bg-ink text-white' : 'bg-gray-200 text-gray-text'}`}>
+                              {g.isRequired ? '필수' : '선택'}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">
+                              {g.isMulti ? `복수${g.maxSelect ? ` (최대 ${g.maxSelect})` : ''}` : '단일'}
+                            </span>
+                          </div>
+                          {/* 항목 목록 */}
+                          <div className="divide-y divide-gray-border">
+                            {g.items.map(item => (
+                              <div key={item.id} className={`flex items-center justify-between px-4 py-2 ${item.soldOut ? 'opacity-50' : ''}`}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[13px] text-ink">{item.name}</span>
+                                  {item.isPopular && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">인기</span>}
+                                  {item.soldOut   && <span className="text-[10px] font-bold text-gray-text bg-gray-100 px-1.5 py-0.5 rounded-full">품절</span>}
+                                  {item.hidden    && <span className="text-[10px] font-bold text-gray-text bg-gray-100 px-1.5 py-0.5 rounded-full">숨김</span>}
+                                </div>
+                                <span className="text-[12px] font-semibold text-gray-text flex-shrink-0">
+                                  {item.extra > 0 ? `+${won(item.extra)}` : '기본'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* 수정 중 안내 배너 */}
+          {editMode && (
+            <div
+              className="w-[680px] flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white/90"
+              style={{ background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <span className="opacity-60">✏️</span>
+              <span>
+                {(() => {
+                  const code = selected.name.charCodeAt(selected.name.length - 1)
+                  const particle = (code >= 0xAC00 && code <= 0xD7A3 && (code - 0xAC00) % 28 !== 0) ? '을' : '를'
+                  return <><strong className="text-white">{selected.name}</strong>{particle} 수정중이에요</>
+                })()}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1009,7 +1158,7 @@ export default function Menus() {
             </div>
           </div>
 
-          <div className="px-6 py-4 space-y-4">
+          <div className="px-6 py-4 space-y-4 max-w-[700px]">
             {/* 그룹 생성 폼 */}
             {addingStoreGroup && (
               <div className="border-2 border-green rounded-xl p-4 space-y-3">
@@ -1117,56 +1266,92 @@ export default function Menus() {
                 카테고리가 없습니다. 위에서 추가해주세요.
               </div>
             )}
-            {sortedCategories().map((cat, idx, arr) => (
-              <div key={cat.id} className="flex items-center gap-3 px-5 py-3 bg-white hover:bg-gray-bg/50">
+            {sortedCategories().map((cat, idx, arr) => {
+              const catMenus = menus.filter(m => m.categoryId === cat.id)
+              const isExpanded = expandedCatId === cat.id
+              return (
+                <div key={cat.id}>
+                  {/* ── 카테고리 행 ── */}
+                  <div
+                    className="flex items-center gap-3 px-5 py-3 bg-white hover:bg-gray-bg/50 cursor-pointer select-none"
+                    onClick={() => setExpandedCatId(isExpanded ? null : cat.id)}
+                  >
 
-                <div className="flex flex-col gap-0.5 flex-shrink-0">
-                  <button onClick={() => moveCategoryUp(cat.id)} disabled={idx === 0}
-                    className="w-6 h-5 flex items-center justify-center text-[11px] text-gray-text hover:text-ink disabled:opacity-20 disabled:cursor-not-allowed">▲</button>
-                  <button onClick={() => moveCategoryDown(cat.id)} disabled={idx === arr.length - 1}
-                    className="w-6 h-5 flex items-center justify-center text-[11px] text-gray-text hover:text-ink disabled:opacity-20 disabled:cursor-not-allowed">▼</button>
-                </div>
+                    <div className="flex flex-col gap-0.5 flex-shrink-0">
+                      <button onClick={e => { e.stopPropagation(); moveCategoryUp(cat.id) }} disabled={idx === 0}
+                        className="w-6 h-5 flex items-center justify-center text-[11px] text-gray-text hover:text-ink disabled:opacity-20 disabled:cursor-not-allowed">▲</button>
+                      <button onClick={e => { e.stopPropagation(); moveCategoryDown(cat.id) }} disabled={idx === arr.length - 1}
+                        className="w-6 h-5 flex items-center justify-center text-[11px] text-gray-text hover:text-ink disabled:opacity-20 disabled:cursor-not-allowed">▼</button>
+                    </div>
 
-                <span className="text-[12px] font-bold text-gray-text w-5 text-center flex-shrink-0">{idx + 1}</span>
+                    <span className="text-[12px] font-bold text-gray-text w-5 text-center flex-shrink-0">{idx + 1}</span>
 
-                {editingCatId === cat.id ? (
-                  <input autoFocus value={catNameDraft} onChange={e => setCatNameDraft(e.target.value)}
-                    onBlur={() => { if (catNameDraft.trim()) renameCategory(cat.id, catNameDraft); setEditingCatId(null) }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') { if (catNameDraft.trim()) renameCategory(cat.id, catNameDraft); setEditingCatId(null) }
-                      if (e.key === 'Escape') setEditingCatId(null)
-                    }}
-                    className="flex-1 border border-green rounded-lg px-3 py-1.5 text-[14px] font-semibold"
-                  />
-                ) : (
-                  <span className="flex-1 text-[14px] font-semibold text-ink">{cat.name}</span>
-                )}
+                    <span className="flex-1 text-[14px] font-semibold text-ink">{cat.name}</span>
 
-                <span className="text-[12px] text-gray-text flex-shrink-0">메뉴 {menuCountInCategory(cat.id)}개</span>
+                    <span className="text-[12px] text-gray-text flex-shrink-0">메뉴 {catMenus.length}개</span>
 
-                {editingCatId !== cat.id && (
-                  <button onClick={() => { setCatNameDraft(cat.name); setEditingCatId(cat.id) }}
-                    className="flex-shrink-0 text-[12px] font-semibold text-gray-text bg-gray-100 px-2.5 py-1 rounded-lg hover:bg-gray-200 transition-colors">
-                    수정
-                  </button>
-                )}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        setCatEditNameDraft(cat.name)
+                        setCatEditChecked(new Set(catMenus.map(m => m.code)))
+                        setCatEditModalId(cat.id)
+                      }}
+                      className="flex-shrink-0 text-[12px] font-semibold text-gray-text bg-gray-100 px-2.5 py-1 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      수정
+                    </button>
 
-                {deletingCatId === cat.id ? (
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-[11px] text-danger font-semibold">삭제?</span>
-                    <button onClick={() => { deleteCategory(cat.id); setDeletingCatId(null) }}
-                      className="text-[11px] font-bold text-white bg-danger px-2 py-0.5 rounded-lg hover:bg-danger/80">확인</button>
-                    <button onClick={() => setDeletingCatId(null)}
-                      className="text-[11px] font-bold text-gray-text bg-gray-100 px-2 py-0.5 rounded-lg hover:bg-gray-200">취소</button>
+                    <button
+                      onClick={e => { e.stopPropagation(); setCatDeleteModalId(cat.id) }}
+                      className="flex-shrink-0 text-[12px] font-semibold text-danger border border-danger/30 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                    >
+                      삭제
+                    </button>
+
+                    {/* 펼침 화살표 */}
+                    <span className={`flex-shrink-0 text-gray-text text-[11px] transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
                   </div>
-                ) : (
-                  <button onClick={() => setDeletingCatId(cat.id)}
-                    className="flex-shrink-0 text-[12px] font-semibold text-danger border border-danger/30 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors">
-                    삭제
-                  </button>
-                )}
-              </div>
-            ))}
+
+                  {/* ── 아코디언: 메뉴 목록 ── */}
+                  {isExpanded && (
+                    <div className="bg-gray-bg border-t border-gray-border px-6 py-4">
+                      {catMenus.length === 0 ? (
+                        <p className="text-[12px] text-gray-text py-1">이 카테고리에 메뉴가 없습니다.</p>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-3">
+                          {catMenus
+                            .slice()
+                            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                            .map(m => (
+                              <div key={m.code} className="bg-white rounded-xl overflow-hidden border border-gray-border shadow-sm">
+                                {/* 썸네일 */}
+                                <div className="w-full aspect-[4/3] bg-gray-100 flex items-center justify-center overflow-hidden">
+                                  {m.imageUrl
+                                    ? <img src={m.imageUrl} alt={m.name} className="w-full h-full object-cover" />
+                                    : <span className="text-[32px]">{m.emoji}</span>
+                                  }
+                                </div>
+                                {/* 정보 */}
+                                <div className="px-3 py-2.5">
+                                  <div className="flex items-start justify-between gap-1 mb-1">
+                                    <span className="text-[13px] font-semibold text-ink leading-snug">{m.name}</span>
+                                    <div className="flex flex-col gap-0.5 items-end flex-shrink-0">
+                                      {m.soldOut  && <span className="text-[10px] font-bold text-white bg-gray-400 rounded px-1.5 py-0.5 leading-none">품절</span>}
+                                      {!m.active  && <span className="text-[10px] font-bold text-gray-text bg-gray-200 rounded px-1.5 py-0.5 leading-none">숨김</span>}
+                                    </div>
+                                  </div>
+                                  <span className="text-[12px] font-bold text-gray-text">{won(m.price)}</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {(() => {
@@ -1189,6 +1374,157 @@ export default function Menus() {
           })()}
         </div>
       )}
+
+      {/* ── 카테고리 수정 모달 ── */}
+      {catEditModalId && (() => {
+        const cat = categories.find(c => c.id === catEditModalId)
+        if (!cat) return null
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setCatEditModalId(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-[520px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* 헤더 */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-border flex-shrink-0">
+                <div className="text-[16px] font-extrabold">카테고리 수정</div>
+                <button onClick={() => setCatEditModalId(null)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
+              </div>
+
+              {/* 이름 */}
+              <div className="px-6 pt-5 pb-4 flex-shrink-0">
+                <label className="text-[11px] font-bold text-gray-text block mb-1.5">카테고리 이름</label>
+                <input
+                  value={catEditNameDraft}
+                  onChange={e => setCatEditNameDraft(e.target.value)}
+                  className="w-full border border-gray-border rounded-xl px-4 py-2.5 text-[14px] font-semibold focus:outline-none focus:border-green"
+                />
+              </div>
+
+              {/* 메뉴 선택 */}
+              <div className="px-6 pb-2 flex-shrink-0">
+                <div className="text-[11px] font-bold text-gray-text mb-2">메뉴 선택 <span className="font-normal text-gray-text/70">(체크된 메뉴가 이 카테고리에 속합니다)</span></div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 pb-4">
+                {menus.length === 0 ? (
+                  <div className="text-[13px] text-gray-text py-4 text-center">등록된 메뉴가 없습니다</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {menus.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(m => {
+                      const checked = catEditChecked.has(m.code)
+                      return (
+                        <label key={m.code} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${checked ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setCatEditChecked(prev => {
+                                const next = new Set(prev)
+                                if (next.has(m.code)) next.delete(m.code)
+                                else next.add(m.code)
+                                return next
+                              })
+                            }}
+                            className="w-4 h-4 accent-green flex-shrink-0"
+                          />
+                          {/* 썸네일 */}
+                          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {m.imageUrl
+                              ? <img src={m.imageUrl} alt={m.name} className="w-full h-full object-cover" />
+                              : <span className="text-[20px]">{m.emoji}</span>
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold text-ink truncate">{m.name}</div>
+                            <div className="text-[11px] text-gray-text">{won(m.price)}</div>
+                          </div>
+                          {m.categoryId && m.categoryId !== catEditModalId && (
+                            <span className="text-[10px] text-gray-text bg-gray-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                              {categories.find(c => c.id === m.categoryId)?.name ?? ''}
+                            </span>
+                          )}
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 푸터 */}
+              <div className="flex gap-3 px-6 py-4 border-t border-gray-border flex-shrink-0">
+                <button onClick={() => setCatEditModalId(null)}
+                  className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
+                  취소
+                </button>
+                <button
+                  onClick={() => saveCategoryEdit(catEditModalId, catEditNameDraft, catEditChecked)}
+                  disabled={!catEditNameDraft.trim() || catEditSaving}
+                  className="flex-[2] py-3 rounded-xl bg-green text-white font-bold hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  {catEditSaving ? '저장 중…' : '저장'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── 카테고리 삭제 모달 ── */}
+      {catDeleteModalId && (() => {
+        const cat = categories.find(c => c.id === catDeleteModalId)
+        if (!cat) return null
+        const catMenus = menus.filter(m => m.categoryId === catDeleteModalId).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setCatDeleteModalId(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-[440px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* 헤더 */}
+              <div className="px-6 py-5 flex-shrink-0">
+                <div className="text-[17px] font-extrabold mb-1">
+                  <span className="text-danger">'{cat.name}'</span> 카테고리를 삭제하시겠어요?
+                </div>
+                <div className="text-[13px] text-gray-text">
+                  {catMenus.length > 0
+                    ? `아래 ${catMenus.length}개 메뉴의 카테고리가 해제됩니다.`
+                    : '이 카테고리에 연결된 메뉴가 없습니다.'}
+                </div>
+              </div>
+
+              {/* 메뉴 목록 */}
+              {catMenus.length > 0 && (
+                <div className="flex-1 overflow-y-auto px-6 pb-4">
+                  <div className="space-y-2">
+                    {catMenus.map(m => (
+                      <div key={m.code} className="flex items-center gap-3 bg-gray-bg rounded-xl px-3 py-2.5">
+                        <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {m.imageUrl
+                            ? <img src={m.imageUrl} alt={m.name} className="w-full h-full object-cover" />
+                            : <span className="text-[24px]">{m.emoji}</span>
+                          }
+                        </div>
+                        <div>
+                          <div className="text-[13px] font-semibold text-ink">{m.name}</div>
+                          <div className="text-[12px] text-gray-text">{won(m.price)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 푸터 */}
+              <div className="flex gap-3 px-6 py-4 border-t border-gray-border flex-shrink-0">
+                <button onClick={() => setCatDeleteModalId(null)}
+                  className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
+                  취소
+                </button>
+                <button
+                  onClick={() => { deleteCategory(catDeleteModalId); setCatDeleteModalId(null) }}
+                  className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors"
+                >
+                  삭제
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── 메뉴 추가 모달 ── */}
       {addMenuOpen && (
@@ -1300,14 +1636,14 @@ export default function Menus() {
                       }}
                     />
                     {imagePreview ? (
-                      <div className="relative w-full h-32 rounded-xl overflow-hidden border border-gray-border">
+                      <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-gray-border">
                         <img src={imagePreview} className="w-full h-full object-cover" alt="preview" />
                         <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                           <span className="text-white text-[13px] font-bold">사진 변경</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="w-full h-20 border-2 border-dashed border-gray-border rounded-xl flex items-center justify-center gap-2 hover:border-green hover:bg-green-soft/20 transition-colors">
+                      <div className="w-full aspect-square border-2 border-dashed border-gray-border rounded-xl flex items-center justify-center gap-2 hover:border-green hover:bg-green-soft/20 transition-colors">
                         <span className="text-[20px]">📷</span>
                         <span className="text-[12px] text-gray-text">클릭하여 사진 추가</span>
                       </div>
@@ -1392,25 +1728,58 @@ export default function Menus() {
       )}
 
       {/* 플로팅 일괄 액션바 */}
-      {tab === 'menu' && checked.size > 0 && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-ink text-white rounded-2xl shadow-xl px-6 py-3 flex items-center gap-4 z-30">
-          <span className="text-[13px] font-semibold text-white/70">{checked.size}개 선택</span>
-          <div className="w-px h-5 bg-white/20" />
-          {([
-            { label: '품절',      action: 'soldOut'   as const },
-            { label: '품절 해제', action: 'unsoldOut' as const },
-            { label: '숨김',      action: 'hide'      as const },
-            { label: '숨김 해제', action: 'unhide'    as const },
-          ]).map(({ label, action }, i) => (
-            <>
-              {i > 0 && <div key={`sep-${action}`} className="w-px h-5 bg-white/20" />}
-              <button key={action} onClick={() => bulkAction(action)}
-                className="text-[13px] font-bold hover:text-green transition-colors">
-                {label}
+      {tab === 'menu' && checked.size > 0 && (() => {
+        const checkedMenus = menus.filter(m => checked.has(m.code))
+        const allSoldOut  = checkedMenus.every(m => m.soldOut)
+        const allHidden   = checkedMenus.every(m => !m.active)
+        return (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-ink text-white rounded-2xl shadow-xl px-6 py-3 flex items-center gap-4 z-30">
+            <span className="text-[13px] font-semibold text-white/70">{checked.size}개 선택</span>
+            <div className="w-px h-5 bg-white/20" />
+            <button onClick={() => bulkAction(allSoldOut ? 'unsoldOut' : 'soldOut')}
+              className="text-[13px] font-bold hover:text-green transition-colors">
+              {allSoldOut ? '품절 해제' : '품절'}
+            </button>
+            <div className="w-px h-5 bg-white/20" />
+            <button onClick={() => bulkAction(allHidden ? 'unhide' : 'hide')}
+              className="text-[13px] font-bold hover:text-green transition-colors">
+              {allHidden ? '숨김 해제' : '숨김'}
+            </button>
+            <div className="w-px h-5 bg-white/20" />
+            <button onClick={() => setDeleteConfirm('bulk')}
+              className="text-[13px] font-bold text-red-400 hover:text-red-300 transition-colors">
+              삭제
+            </button>
+            <button onClick={() => setChecked(new Set())} className="text-white/50 hover:text-white text-[18px] ml-1">✕</button>
+          </div>
+        )
+      })()}
+
+      {/* 삭제 확인 다이얼로그 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-2xl shadow-2xl w-[320px] p-6">
+            <h3 className="text-[15px] font-bold text-ink mb-2">
+              {deleteConfirm === 'bulk'
+                ? `${checked.size}개 메뉴를 삭제할까요?`
+                : `'${selected?.name}'을(를) 삭제할까요?`}
+            </h3>
+            <p className="text-[13px] text-gray-text mb-6">삭제하면 되돌릴 수 없습니다.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)}
+                className="flex-1 py-2.5 border border-gray-border rounded-xl text-[13px] font-semibold text-gray-text hover:bg-gray-bg">
+                취소
               </button>
-            </>
-          ))}
-          <button onClick={() => setChecked(new Set())} className="text-white/50 hover:text-white text-[18px] ml-1">✕</button>
+              <button
+                onClick={() => {
+                  if (deleteConfirm === 'bulk') deleteMenus([...checked])
+                  else if (selected) deleteMenus([selected.code])
+                }}
+                className="flex-1 py-2.5 bg-danger text-white rounded-xl text-[13px] font-bold hover:bg-red-700">
+                삭제
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1422,7 +1791,7 @@ function OptionGroupCard({
   group, usedBy, onUpdateGroup, onDeleteGroup, onUpdateItem, onDeleteItem, onAddItem,
 }: {
   group:          OptionGroup
-  usedBy?:        number
+  usedBy?:        string[]
   onUpdateGroup:  (updates: Partial<OptionGroup>) => void
   onDeleteGroup:  () => void
   onUpdateItem:   (itemId: string, updates: Partial<OptionItem>) => void
@@ -1481,25 +1850,33 @@ function OptionGroupCard({
   return (
     <div className="border border-gray-border rounded-xl overflow-hidden">
       {/* 그룹 헤더 */}
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-bg border-b border-gray-border">
-        {editingName ? (
-          <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-            onBlur={commitGroupName}
-            onKeyDown={e => { if (e.key === 'Enter') commitGroupName(); if (e.key === 'Escape') { setNameDraft(group.name); setEditingName(false) } }}
-            className="flex-1 min-w-0 border border-green rounded-md px-2 py-0.5 text-[13px] font-bold bg-white"
-          />
-        ) : (
-          <button onClick={() => { setNameDraft(group.name); setEditingName(true) }}
-            className="font-bold text-[13px] text-ink hover:text-green transition-colors truncate text-left">{group.name}</button>
+      <div className="px-4 py-2.5 bg-gray-bg border-b border-gray-border">
+        <div className="flex items-center gap-2">
+          {editingName ? (
+            <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+              onBlur={commitGroupName}
+              onKeyDown={e => { if (e.key === 'Enter') commitGroupName(); if (e.key === 'Escape') { setNameDraft(group.name); setEditingName(false) } }}
+              className="flex-1 min-w-0 border border-green rounded-md px-2 py-0.5 text-[13px] font-bold bg-white"
+            />
+          ) : (
+            <button onClick={() => { setNameDraft(group.name); setEditingName(true) }}
+              className="font-bold text-[13px] text-ink hover:text-green transition-colors truncate text-left">{group.name}</button>
+          )}
+          <span className="flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{group.isRequired ? '필수' : '선택'}</span>
+          <span className="flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
+          <div className="flex-1" />
+          <button onClick={() => { setSettingsName(group.name); setDeleteConfirm(false); setSettingsOpen(true) }}
+            className="flex-shrink-0 text-[15px] text-gray-text hover:text-ink transition-colors leading-none">⚙</button>
+        </div>
+        {usedBy !== undefined && usedBy.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {usedBy.map(name => (
+              <span key={name} className="text-[12px] font-medium text-ink bg-white border border-gray-border px-2 py-0.5 rounded-md">
+                {name}
+              </span>
+            ))}
+          </div>
         )}
-        <span className="flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{group.isRequired ? '필수' : '선택'}</span>
-        <span className="flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
-        {usedBy !== undefined && (
-          <span className="flex-shrink-0 text-[10px] text-gray-text">메뉴 {usedBy}개에 사용 중</span>
-        )}
-        <div className="flex-1" />
-        <button onClick={() => { setSettingsName(group.name); setDeleteConfirm(false); setSettingsOpen(true) }}
-          className="flex-shrink-0 text-[15px] text-gray-text hover:text-ink transition-colors leading-none">⚙</button>
       </div>
 
       {/* 설정 모달 */}

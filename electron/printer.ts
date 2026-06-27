@@ -21,8 +21,10 @@ export interface PrinterSettings {
 }
 
 export interface ReceiptSettings {
-  menuSize:   'small' | 'normal' | 'large'
-  optionSize: 'small' | 'normal' | 'large'
+  menuSize:           'small' | 'normal' | 'large'
+  optionSize:         'small' | 'normal' | 'large'
+  customerMenuSize:   'small' | 'normal' | 'large'
+  customerOptionSize: 'small' | 'normal' | 'large'
 }
 
 export interface OrderItem {
@@ -35,6 +37,7 @@ export interface OrderItem {
 
 export interface OrderPayload {
   order_code:    string
+  order_number?: string   // 사람이 읽는 주문번호 (예: "1101")
   account_name:  string
   orderer_name:  string
   method:        string
@@ -75,9 +78,9 @@ const CMD = {
  *  크게 0x22 → 3×3
  */
 const FONT_SIZE: Record<'small' | 'normal' | 'large', number> = {
-  small:  0x00,
-  normal: 0x11,
-  large:  0x22,
+  small:  0x00,   // 1×1  기본
+  normal: 0x01,   // 1w×2h  세로만 2배 (너비 유지, 한 줄 32자)
+  large:  0x11,   // 2×2  가로세로 2배
 }
 
 const LINE_WIDTH = 32   // 58mm 롤지 기준 컬럼 수
@@ -169,8 +172,10 @@ export function buildKitchenReceipt(
   p(divider())
 
   // 주문 정보
-  p(line(`주문번호: ${order.order_code}`))
-  p(line(`이용방법: ${order.method}   주문자: ${order.orderer_name}`))
+  p(line(`주문번호: ${order.order_number ?? order.order_code}`))
+  p(line(`거래처:   ${order.account_name}`))
+  p(line(`주문자:   ${order.orderer_name}`))
+  p(line(`이용방법: ${order.method}`))
   p(line(`주문일시: ${formatDate(order.ordered_at)}`))
   p(divider())
 
@@ -227,9 +232,12 @@ export function buildKitchenReceipt(
  * 주문 전 잔액        223,400원
  * 주문 후 잔액        211,900원
  */
-export function buildCustomerReceipt(order: OrderPayload): Buffer {
+export function buildCustomerReceipt(order: OrderPayload, settings?: ReceiptSettings): Buffer {
   const bufs: Buffer[] = []
   const p = (...b: Buffer[]) => bufs.push(...b)
+
+  const menuSz = FONT_SIZE[settings?.customerMenuSize   ?? 'small']
+  const optSz  = FONT_SIZE[settings?.customerOptionSize ?? 'small']
 
   p(CMD.INIT, CMD.FEED(1))
 
@@ -241,7 +249,7 @@ export function buildCustomerReceipt(order: OrderPayload): Buffer {
   p(divider())
 
   // 주문 기본 정보
-  p(line(`주문번호: ${order.order_code}`))
+  p(line(`주문번호: ${order.order_number ?? order.order_code}`))
   p(line(`거래처:   ${order.account_name}`))
   p(line(`주문자:   ${order.orderer_name}`))
   p(line(`이용방법: ${order.method}`))
@@ -250,15 +258,17 @@ export function buildCustomerReceipt(order: OrderPayload): Buffer {
 
   // 메뉴 목록 (단가 + 옵션 추가가격)
   for (const item of order.items) {
-    p(CMD.BOLD_ON)
+    p(CMD.SIZE(menuSz), CMD.BOLD_ON)
     p(line(padLR(`${item.menu_name} \xd7${item.quantity}`, formatWon(item.subtotal))))
-    p(CMD.BOLD_OFF)
+    p(CMD.BOLD_OFF, CMD.SIZE(0x00))
+    p(CMD.SIZE(optSz))
     for (const opt of item.options) {
       const optLabel = opt.extra_price > 0
         ? `  \u25ba ${opt.option_name}   +${opt.extra_price.toLocaleString('ko-KR')}원`
         : `  \u25ba ${opt.option_name}`
       p(line(optLabel))
     }
+    p(CMD.SIZE(0x00))
   }
 
   p(divider())

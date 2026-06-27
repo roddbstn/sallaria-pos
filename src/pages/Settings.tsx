@@ -2,7 +2,12 @@ import { useState, useEffect } from 'react'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 
 interface PrinterSettings { path: string; baudRate: number; cutMode: 'full' | 'partial' }
-interface ReceiptSettings  { menuSize: 'small' | 'normal' | 'large'; optionSize: 'small' | 'normal' | 'large' }
+interface ReceiptSettings  {
+  menuSize:           'small' | 'normal' | 'large'
+  optionSize:         'small' | 'normal' | 'large'
+  customerMenuSize:   'small' | 'normal' | 'large'
+  customerOptionSize: 'small' | 'normal' | 'large'
+}
 
 type Api = {
   getSettings?:    () => Promise<{ printer: PrinterSettings; receipt: ReceiptSettings }>
@@ -22,7 +27,7 @@ const BAUD_RATES = [9600, 19200, 38400, 115200]
 export default function Settings() {
   const [ports,      setPorts]      = useState<string[]>([])
   const [printer,    setPrinter]    = useState<PrinterSettings>({ path: '', baudRate: 9600, cutMode: 'partial' })
-  const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'small' })
+  const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' })
   const [connected,  setConnected]  = useState(false)
   const [scanning,   setScanning]   = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -123,7 +128,6 @@ export default function Settings() {
             >
               <SoundIcon />알림음 미리 듣기
             </button>
-            <p className="text-[11px] text-gray-text mt-1.5">딩동 차임 후 "선결제 주문!" 음성이 재생됩니다.</p>
           </Field>
         </Section>
 
@@ -344,7 +348,9 @@ export default function Settings() {
                 <div style={{ textAlign: 'center' }}>샐러리아 침산점</div>
                 <div>{'--------------------------------'}</div>
                 <div>주문번호: 1101</div>
-                <div>이용방법: 포장   주문자: 홍길동</div>
+                <div>거래처:   공원녹지과</div>
+                <div>주문자:   홍길동</div>
+                <div>이용방법: 포장</div>
                 <div>{'--------------------------------'}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
                   <span>메뉴명</span><span>수량</span>
@@ -367,6 +373,91 @@ export default function Settings() {
                 })}
                 <div>{'--------------------------------'}</div>
                 <div style={{ height: 43 }} />
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* ── 고객용 영수증 글자 크기 ── */}
+        <Section title="고객용 영수증 글자 크기">
+          {([
+            { key: 'customerMenuSize',   label: '메뉴명' },
+            { key: 'customerOptionSize', label: '옵션' },
+          ] as { key: keyof ReceiptSettings; label: string }[]).map(({ key, label }) => (
+            <Field key={key} label={label}>
+              <div className="flex gap-2">
+                {sizeOpts.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setReceipt(r => ({ ...r, [key]: s }))}
+                    className={[
+                      'px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
+                      receipt[key] === s
+                        ? 'bg-ink text-white border-ink'
+                        : 'bg-gray-100 text-gray-text hover:bg-gray-200',
+                    ].join(' ')}
+                  >
+                    {SIZE_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          ))}
+
+          {/* 미리보기 */}
+          <div className="mt-2">
+            <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
+            <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
+              <div style={{
+                width: 192,
+                backgroundColor: '#fff',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
+                fontFamily: "'Courier New', Courier, monospace",
+                fontSize: 8,
+                lineHeight: 1.35,
+                color: '#111',
+                padding: '10px 16px',
+                overflowX: 'hidden',
+              }}>
+                <div style={{ textAlign: 'center', fontWeight: 'bold' }}>샐러리아 침산점</div>
+                <div>{'--------------------------------'}</div>
+                <div>주문번호: 1101</div>
+                <div>거래처:   공원녹지과</div>
+                <div>주문자:   홍길동</div>
+                <div>이용방법: 포장</div>
+                <div>{'--------------------------------'}</div>
+                {([
+                  { name: '단호박 샐러드', qty: 1, price: '10,500원', opt: '레몬 드레싱', optPrice: '' },
+                  { name: '치킨텐더 랩',   qty: 1, price: '12,000원', opt: '멕시칸 스파이시', optPrice: '+1,000원' },
+                ] as const).map((item, i) => {
+                  const menuPx = receipt.customerMenuSize   === 'large' ? 16 : receipt.customerMenuSize   === 'normal' ? 12 : 8
+                  const optPx  = receipt.customerOptionSize === 'large' ? 16 : receipt.customerOptionSize === 'normal' ? 12 : 8
+                  return (
+                    <div key={i}>
+                      <div style={{ fontWeight: 'bold', fontSize: menuPx, display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{item.name} ×{item.qty}</span><span>{item.price}</span>
+                      </div>
+                      <div style={{ fontSize: optPx, color: '#555' }}>
+                        {`  ▶ ${item.opt}${item.optPrice ? `   ${item.optPrice}` : ''}`}
+                      </div>
+                    </div>
+                  )
+                })}
+                <div>{'--------------------------------'}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>메뉴 소계</span><span>22,500원</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                  <span>합  계</span><span>22,500원</span>
+                </div>
+                <div>{'--------------------------------'}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>주문 전 잔액</span><span>223,400원</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                  <span>주문 후 잔액</span><span>200,900원</span>
+                </div>
+                <div style={{ height: 20 }} />
               </div>
             </div>
           </div>

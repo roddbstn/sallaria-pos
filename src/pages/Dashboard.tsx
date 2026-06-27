@@ -18,7 +18,16 @@ const METHOD_LABEL: Record<string, string> = {
 }
 
 function useElapsed(createdAt: string) {
-  return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
+  const [mins, setMins] = useState(() =>
+    Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
+  )
+  useEffect(() => {
+    const id = setInterval(() => {
+      setMins(Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000))
+    }, 60_000)
+    return () => clearInterval(id)
+  }, [createdAt])
+  return mins
 }
 
 function ElapsedBadge({ createdAt }: { createdAt: string }) {
@@ -46,17 +55,18 @@ function OrderCard({
   const timeStr = new Date(order.createdAt).toLocaleTimeString('ko-KR', {
     hour: '2-digit', minute: '2-digit', hour12: false,
   })
+  const isCancelled = order.status === '취소'
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col">
+    <div className={`rounded-2xl overflow-hidden shadow-sm flex flex-col ${isCancelled ? 'bg-red-50 opacity-75' : 'bg-white hover:shadow-md transition-shadow'}`}>
 
-      {/* ── 다크 헤더 ── */}
-      <div className="bg-ink px-4 pt-3 pb-3">
+      {/* ── 헤더 ── */}
+      <div className={`px-4 pt-3 pb-3 ${isCancelled ? 'bg-[#C92A2A]' : 'bg-ink'}`}>
         <div className="flex items-center justify-between mb-3">
           <span className="text-white font-extrabold text-[15px]">#{order.orderNumber ?? String(idx + 1)}</span>
           <div className="flex items-center gap-2">
             <span className="text-white/60 text-[12px] font-medium">{timeStr} 접수</span>
-            <ElapsedBadge createdAt={order.createdAt} />
+            {!isCancelled && <ElapsedBadge createdAt={order.createdAt} />}
           </div>
         </div>
         <div className="flex items-center justify-between mb-3">
@@ -64,14 +74,20 @@ function OrderCard({
           <span className="text-white font-semibold text-[16px]">{METHOD_LABEL[order.method]}</span>
         </div>
 
-        {/* ── 완료 버튼 ── */}
-        <button
-          onClick={onComplete}
-          style={{ backgroundColor: '#16a84c' }}
-          className="w-full py-2.5 text-white font-semibold text-[15px] rounded-xl hover:opacity-90 transition-opacity"
-        >
-          완료
-        </button>
+        {/* ── 완료 버튼 or 거부됨 배지 ── */}
+        {isCancelled ? (
+          <div className="w-full py-2.5 bg-white/20 text-white font-bold text-[15px] rounded-xl text-center">
+            거부됨
+          </div>
+        ) : (
+          <button
+            onClick={onComplete}
+            style={{ backgroundColor: '#16a84c' }}
+            className="w-full py-2.5 text-white font-semibold text-[15px] rounded-xl hover:opacity-90 transition-opacity"
+          >
+            완료
+          </button>
+        )}
       </div>
 
       {/* ── 메뉴 목록 ── */}
@@ -79,7 +95,7 @@ function OrderCard({
         {order.items.map((item, i) => (
           <div key={i} className={`py-2.5 ${i > 0 ? 'border-t border-stone-100' : ''}`}>
             <div className="flex items-start justify-between gap-2">
-              <span className="text-[13px] font-semibold text-ink leading-snug">{item.name}</span>
+              <span className={`text-[13px] font-semibold leading-snug ${isCancelled ? 'text-gray-text line-through' : 'text-ink'}`}>{item.name}</span>
               <span className="text-[12px] font-bold text-gray-text flex-shrink-0 mt-px">×{item.qty}</span>
             </div>
             {item.options.map((o, oi) => (
@@ -96,13 +112,18 @@ function OrderCard({
         )}
       </div>
 
-      {/* ── 준비시간 + 합계 + 취소 ── */}
-      <div className="border-t border-stone-100 px-4 py-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <span className="text-green font-extrabold text-[16px]">{order.prepMins}</span>
-          <span className="text-[11px] text-gray-text">분 후 완료 예정</span>
-        </div>
-        <div className="flex items-center gap-3">
+      {/* ── 합계 ── */}
+      <div className="px-4 pt-2 pb-0.5 flex justify-end">
+        <span className={`text-[14px] font-bold ${isCancelled ? 'text-gray-text line-through' : 'text-ink'}`}>{won(order.total)}</span>
+      </div>
+
+      {/* ── 준비시간 + 취소 (활성 주문만) ── */}
+      {!isCancelled && (
+        <div className="border-t border-stone-100 px-4 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-1">
+            <span className="text-green font-extrabold text-[16px]">{order.prepMins}</span>
+            <span className="text-[11px] text-gray-text">분 후 완료 예정</span>
+          </div>
           <button
             onClick={onCancel}
             className="text-[12px] font-medium text-gray-text hover:underline"
@@ -110,7 +131,7 @@ function OrderCard({
             취소
           </button>
         </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -162,32 +183,47 @@ export default function Dashboard() {
   const [loading,      setLoading]      = useState(true)
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
 
-  // ── 오늘 전체 주문 조회 (통계 표시용) ────────────────────────────────────────
+  // ── 오늘 전체 주문 조회 (통계 + 완료 목록) ──────────────────────────────────
   async function fetchTodayOrders() {
     const { start, end } = todayRange()
     const { data, error } = await supabase
       .from('orders')
       .select(`
         order_code,
+        order_number,
+        orderer_name,
+        method,
         status,
         total_amount,
-        ordered_at
+        ordered_at,
+        accounts ( account_name ),
+        order_items (
+          menu_name,
+          quantity,
+          order_item_options ( option_name )
+        )
       `)
       .gte('ordered_at', start)
       .lte('ordered_at', end)
+      .order('ordered_at', { ascending: false })
 
     if (error) {
       console.error('오늘 주문 조회 실패:', error)
       return
     }
-    // 통계용 최소 필드만 담은 partial Order 배열
     setTodayOrders((data ?? []).map(r => ({
       code:        r.order_code,
-      accountName: '',
-      orderer:     '',
-      method:      '포장',
+      orderNumber: r.order_number ?? undefined,
+      accountName: r.accounts?.account_name ?? '',
+      orderer:     r.orderer_name ?? '',
+      method:      DB_METHOD_TO_ORDER[r.method] ?? '포장',
       status:      r.status as OrderStatus,
-      items:       [],
+      items:       (r.order_items ?? []).map((item: any) => ({
+        name:    item.menu_name,
+        qty:     item.quantity,
+        price:   0,
+        options: (item.order_item_options ?? []).map((o: any) => o.option_name as string),
+      })),
       total:       r.total_amount,
       prepMins:    0,
       createdAt:   r.ordered_at,
@@ -195,12 +231,14 @@ export default function Dashboard() {
     })))
   }
 
-  // ── 활성 주문 조회 (주문완료 · 조리중) ───────────────────────────────────────
+  // ── 활성 주문 조회 (주문완료 · 조리중 + 오늘 취소된 주문) ────────────────────
   async function fetchActiveOrders() {
+    const { start, end } = todayRange()
     const { data, error } = await supabase
       .from('orders')
       .select(`
         order_code,
+        order_number,
         account_code,
         orderer_name,
         orderer_phone,
@@ -227,7 +265,7 @@ export default function Dashboard() {
           )
         )
       `)
-      .in('status', ['주문완료', '조리중'])
+      .or(`and(status.in.(주문완료,조리중),ordered_at.gte.${start},ordered_at.lte.${end}),and(status.eq.취소,ordered_at.gte.${start},ordered_at.lte.${end})`)
       .order('ordered_at', { ascending: true })
 
     if (error) {
@@ -235,7 +273,11 @@ export default function Dashboard() {
       return
     }
 
-    setActiveOrders((data ?? []).map(mapRowToOrder))
+    // 활성 주문 먼저, 취소 주문은 뒤에
+    const rows = (data ?? []).map(mapRowToOrder)
+    const active    = rows.filter(o => o.status !== '취소')
+    const cancelled = rows.filter(o => o.status === '취소')
+    setActiveOrders([...active, ...cancelled])
   }
 
   // ── 마운트 시 초기 로딩 ───────────────────────────────────────────────────────
@@ -312,7 +354,7 @@ export default function Dashboard() {
         <div className="flex gap-4">
           {[
             { label: '오늘 주문', value: `${todayOrders.length}건` },
-            { label: '준비 중',  value: `${activeOrders.length}건`, accent: true },
+            { label: '준비 중',  value: `${activeOrders.filter(o => o.status !== '취소').length}건`, accent: true },
             { label: '오늘 거래액', value: won(todayTotal) },
           ].map(({ label, value, accent }) => (
             <div key={label} className="bg-gray-bg rounded-xl px-5 py-3 text-center min-w-[110px]">
@@ -323,31 +365,102 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── 주문 카드 목록 ── */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 bg-gray-100">
-        {loading ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-text">
-            <div className="w-10 h-10 border-4 border-green border-t-transparent rounded-full animate-spin mb-4" />
-            <div className="text-[15px] font-medium">주문을 불러오는 중...</div>
+      {/* ── 본문: 주문 카드 + 우측 사이드바 ── */}
+      <div className="flex-1 flex overflow-hidden">
+
+        {/* ── 활성 주문 카드 영역 ── */}
+        <div className="flex-1 overflow-y-auto px-8 py-6 bg-gray-100">
+          {loading ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-text">
+              <div className="w-10 h-10 border-4 border-green border-t-transparent rounded-full animate-spin mb-4" />
+              <div className="text-[15px] font-medium">주문을 불러오는 중...</div>
+            </div>
+          ) : activeOrders.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-text">
+              <div className="text-[48px] mb-3">✅</div>
+              <div className="text-[18px] font-bold">대기 중인 주문이 없습니다</div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+              {activeOrders.map((order, idx) => (
+                <OrderCard
+                  key={order.code}
+                  order={order}
+                  idx={idx}
+                  onComplete={() => handleComplete(order.code)}
+                  onCancel={() => setConfirmCancel(order.code)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── 우측 사이드바: 오늘 처리된 주문 ── */}
+        <div className="w-[220px] flex-shrink-0 border-l border-gray-border bg-white flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-border flex-shrink-0">
+            <div className="text-[12px] font-extrabold text-gray-text">오늘 주문</div>
           </div>
-        ) : activeOrders.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-text">
-            <div className="text-[48px] mb-4">✅</div>
-            <div className="text-[18px] font-bold">대기 중인 주문이 없습니다</div>
+          <div className="flex-1 overflow-y-auto">
+            {todayOrders.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-gray-text text-[12px]">없음</div>
+            ) : (
+              <div className="divide-y divide-gray-border">
+                {todayOrders
+                  .map(o => {
+                    const timeStr = new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                    return (
+                      <div key={o.code} className="px-4 py-2.5">
+                        {/* 주문번호 + 상태 */}
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[12px] font-bold text-ink">
+                            #{o.orderNumber ?? o.code.slice(0, 6)}
+                          </span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                            o.status === '완료' ? 'bg-green-soft text-green' : 'bg-red-50 text-danger'
+                          }`}>
+                            {o.status}
+                          </span>
+                        </div>
+                        {/* 거래처 */}
+                        <div className="text-[11px] text-gray-text truncate">
+                          {o.accountName}
+                          {o.accountName !== o.orderer && o.orderer ? ` · ${o.orderer}` : ''}
+                        </div>
+                        {/* 메뉴 (최대 2개) */}
+                        <div className="mt-1 space-y-0.5">
+                          {o.items.slice(0, 2).map((item, i) => (
+                            <div key={i}>
+                              <div className="text-[11px] font-semibold text-ink truncate">
+                                {item.name} ×{item.qty}
+                              </div>
+                              {item.options.length > 0 && (
+                                <div className="text-[10px] text-gray-text truncate pl-1">
+                                  └ {item.options.join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {o.items.length > 2 && (
+                            <div className="text-[10px] text-gray-text">외 {o.items.length - 2}개</div>
+                          )}
+                        </div>
+                        {/* 접수시간 + 방법 + 금액 */}
+                        <div className="flex items-center justify-between mt-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-text">{timeStr} 접수</span>
+                            <span className="text-[10px] bg-gray-100 text-gray-text px-1.5 py-0.5 rounded font-medium">
+                              {METHOD_LABEL[o.method]}
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-semibold text-ink">{won(o.total)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-            {activeOrders.map((order, idx) => (
-              <OrderCard
-                key={order.code}
-                order={order}
-                idx={idx}
-                onComplete={() => handleComplete(order.code)}
-                onCancel={() => setConfirmCancel(order.code)}
-              />
-            ))}
-          </div>
-        )}
+        </div>
       </div>
 
       {/* ── 취소 확인 다이얼로그 ── */}

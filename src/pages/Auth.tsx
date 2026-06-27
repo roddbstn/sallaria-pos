@@ -32,8 +32,8 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
   const passwordError = (() => {
     if (!password) return '비밀번호를 입력해 주세요.'
     if (password.length < 6) return '비밀번호는 6자 이상이어야 합니다.'
-    if (!/[a-z]/.test(password)) return '영어 소문자를 포함해야 합니다.'
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) return '특수문자를 포함해야 합니다.'
+    if (tab === 'signup' && !/[a-z]/.test(password)) return '영어 소문자를 포함해야 합니다.'
+    if (tab === 'signup' && !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) return '특수문자를 포함해야 합니다.'
     return ''
   })()
 
@@ -158,7 +158,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
               value={password}
               onChange={e => { setPassword(e.target.value); setServerError('') }}
               onBlur={() => touch('password')}
-              placeholder="6자 이상, 영문 소문자·특수문자 포함"
+              placeholder={tab === 'signup' ? '6자 이상, 영문 소문자·특수문자 포함' : '비밀번호 입력'}
               className={`w-full border rounded-lg px-3 py-2.5 text-[14px] focus:outline-none transition-colors
                 ${touched.password && passwordError
                   ? 'border-danger focus:border-danger'

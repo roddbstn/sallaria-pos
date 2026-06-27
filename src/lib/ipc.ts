@@ -22,6 +22,7 @@ export function orderToPayload(o: Order) {
   const deliveryFee = o.method === '배달' ? 3500 : 0
   return {
     order_code:     o.code,
+    order_number:   o.orderNumber,
     account_name:   o.accountName,
     orderer_name:   o.orderer,
     method:         o.method,

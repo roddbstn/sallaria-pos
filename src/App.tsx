@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { StoreContext, type StoreSession } from './lib/store-context'
+import { playOrderSound } from './lib/sound'
 
 import Auth        from './pages/Auth'
 import Onboarding  from './pages/Onboarding'
@@ -21,7 +22,7 @@ type Tab   = 'dashboard' | 'orders' | 'customers' | 'menus' | 'settings'
 function IconHome()     { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg> }
 function IconOrders()   { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg> }
 function IconCustomers(){ return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a6 6 0 0 1 6-6h2"/><circle cx="17" cy="16" r="3"/><path d="M20.5 19.5 22 21"/></svg> }
-function IconMenus()    { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v4a3 3 0 0 0 3 3 3 3 0 0 0 3-3V2"/><path d="M6 9v13"/><path d="M21 2l-7.5 7.5"/><path d="M15 2l6 6"/><path d="M13.5 9.5L21 17l-3 3-7.5-7.5"/></svg> }
+function IconMenus()    { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="13" rx="8" ry="4"/><path d="M4 13c0 2.21 3.58 4 8 4s8-1.79 8-4"/><path d="M12 3v2"/><path d="M9 4.5C6.5 5.5 5 7.5 5 10"/><path d="M15 4.5C17.5 5.5 19 7.5 19 10"/></svg> }
 function IconSettings() { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> }
 
 const NAV: { id: Tab; Icon: () => JSX.Element; label: string }[] = [
@@ -39,10 +40,18 @@ export default function App() {
   const [tab,        setTab]        = useState<Tab>('dashboard')
   const [queue,      setQueue]      = useState<Order[]>([])
   const [wsStatus,   setWsStatus]   = useState<'connected' | 'disconnected'>('disconnected')
-  const [printerOk,  setPrinterOk]  = useState(true)
+  const [printerOk,  setPrinterOk]  = useState(false)
   const [toast,      setToast]      = useState('')
   const [toastTimer, setToastTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
-  const [updateReady, setUpdateReady] = useState<string | null>(null)  // 다운로드 완료된 버전
+  const [updateReady, setUpdateReady] = useState<string | null>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [darkMode,    setDarkMode]    = useState(() => localStorage.getItem('theme') === 'dark')
+
+  // 다크모드 클래스 동기화
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode)
+    localStorage.setItem('theme', darkMode ? 'dark' : 'light')
+  }, [darkMode])
 
   // ── 인증 + 스토어 로딩 ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -107,6 +116,13 @@ export default function App() {
     })
   }, [])
 
+  // ── 프린터 상태 구독 ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const w = window as unknown as { api?: { onPrinterStatus?: Function; offPrinterStatus?: Function } }
+    w.api?.onPrinterStatus?.((s: { connected: boolean }) => setPrinterOk(s.connected))
+    return () => { w.api?.offPrinterStatus?.() }
+  }, [])
+
   // ── IPC 구독 (Electron main process → renderer) ─────────────────────────────
   useEffect(() => {
     const w = window as unknown as { api?: { onRealtimeStatus?: Function; onOrderNew?: Function; offOrderNew?: Function } }
@@ -147,15 +163,18 @@ export default function App() {
     return () => { w.api?.offOrderNew?.() }
   }, [])
 
-  // ── Supabase Realtime 구독 (IPC 없는 환경 포함) ───────────────────────────
+  // ── Supabase Realtime 구독 (IPC 없는 환경 포함, 자동 재연결) ────────────────
   useEffect(() => {
     if (phase !== 'main') return
+
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let channel: ReturnType<typeof supabase.channel> | null = null
 
     async function fetchAndQueue(orderCode: string) {
       const { data } = await supabase
         .from('orders')
         .select(`
-          order_code, order_number, orderer_name, orderer_phone,
+          order_code, orderer_name, orderer_phone,
           ordered_at, total_amount, balance_before, balance_after,
           method, status, note,
           accounts ( account_name ),
@@ -176,20 +195,40 @@ export default function App() {
       setWsStatus('connected')
     }
 
-    const channel = supabase
-      .channel('app-new-orders')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'orders' },
-        (payload: any) => {
-          fetchAndQueue(payload.new.order_code)
-        }
-      )
-      .subscribe((status: string) => {
-        setWsStatus(status === 'SUBSCRIBED' ? 'connected' : 'disconnected')
-      })
+    function subscribe() {
+      // 채널명에 타임스탬프를 붙여 재구독 시 새 채널 생성
+      // (같은 이름 재사용 시 "cannot add callbacks after subscribe()" 에러 발생)
+      channel = supabase
+        .channel(`app-new-orders-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'orders' },
+          (payload: any) => {
+            fetchAndQueue(payload.new.order_code)
+          }
+        )
+        .subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            setWsStatus('connected')
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            // 연결 끊기면 5초 후 재연결
+            setWsStatus('disconnected')
+            retryTimer = setTimeout(() => {
+              if (channel) supabase.removeChannel(channel)
+              subscribe()
+            }, 5000)
+          } else {
+            setWsStatus('disconnected')
+          }
+        })
+    }
 
-    return () => { supabase.removeChannel(channel) }
+    subscribe()
+
+    return () => {
+      if (retryTimer) clearTimeout(retryTimer)
+      if (channel) supabase.removeChannel(channel)
+    }
   }, [phase])
 
   // ── 새 주문 소리 알림 ────────────────────────────────────────────────────────
@@ -259,11 +298,11 @@ export default function App() {
       <div className="flex h-full w-full overflow-hidden">
 
         {/* ── 사이드바 ── */}
-        <aside className="w-[72px] flex-shrink-0 bg-white border-r border-gray-border flex flex-col items-center">
+        <aside className="w-[72px] flex-shrink-0 bg-white dark:bg-[#242424] border-r border-gray-border flex flex-col items-center">
 
           {/* 프로필 버튼 */}
           <button
-            onClick={handleSignOut}
+            onClick={() => setProfileOpen(true)}
             title={session.storeName || '샐러리아'}
             className="mt-4 mb-2 w-10 h-10 rounded-full bg-[#16a84c] text-white flex items-center justify-center text-[16px] font-bold hover:opacity-85 transition-opacity flex-shrink-0"
           >
@@ -334,34 +373,60 @@ export default function App() {
             {toast}
           </div>
         )}
+
+        {/* ── 프로필 모달 ── */}
+        {profileOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50" onClick={() => setProfileOpen(false)}>
+            <div className="bg-white dark:bg-[#242424] rounded-2xl shadow-xl w-[320px] overflow-hidden" onClick={e => e.stopPropagation()}>
+
+              {/* 헤더 */}
+              <div className="px-6 pt-6 pb-5 border-b border-gray-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-[#16a84c] text-white flex items-center justify-center text-[20px] font-bold flex-shrink-0">
+                    {(session.storeName || '샐')[0]}
+                  </div>
+                  <div>
+                    <div className="text-[16px] font-extrabold text-ink leading-tight">{session.storeName || '샐러리아'}</div>
+                    <div className="text-[12px] text-gray-text mt-0.5">{authObj?.user.email ?? ''}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 다크모드 토글 */}
+              <div className="px-6 py-4 border-b border-gray-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[14px] font-semibold text-ink">
+                      {darkMode ? '🌙 다크 모드' : '☀️ 라이트 모드'}
+                    </div>
+                    <div className="text-[11px] text-gray-text mt-0.5">화면 밝기 설정</div>
+                  </div>
+                  <button
+                    onClick={() => setDarkMode(d => !d)}
+                    className={`relative w-[48px] h-[26px] rounded-full transition-colors duration-200 ${darkMode ? 'bg-[#16a84c]' : 'bg-gray-border'}`}
+                  >
+                    <span className={`absolute top-[3px] w-[20px] h-[20px] rounded-full bg-white shadow transition-transform duration-200 ${darkMode ? 'translate-x-[25px]' : 'translate-x-[3px]'}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* 로그아웃 */}
+              <div className="px-6 py-4">
+                <button
+                  onClick={handleSignOut}
+                  className="w-full py-3 rounded-xl border border-danger/40 text-danger font-bold text-[14px] hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                >
+                  로그아웃
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </StoreContext.Provider>
   )
 }
 
-// ── 주문 알림 소리 (Web Audio API) ───────────────────────────────────────────
-function playOrderSound() {
-  try {
-    const ctx = new AudioContext()
-    const now = ctx.currentTime
-    // 세 번 올라가는 비프음
-    const notes = [880, 1100, 1320]
-    notes.forEach((freq, i) => {
-      const offset = i * 0.18
-      const osc  = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.type = 'sine'
-      osc.frequency.value = freq
-      gain.gain.setValueAtTime(0, now + offset)
-      gain.gain.linearRampToValueAtTime(0.45, now + offset + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.28)
-      osc.start(now + offset)
-      osc.stop(now + offset + 0.3)
-    })
-  } catch (_) {}
-}
 
 // ── DB 주문 → 기존 Order 타입 변환 ───────────────────────────────────────────
 function dbOrderToMock(row: any): Order {

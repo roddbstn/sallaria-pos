@@ -27,7 +27,7 @@ interface StoreSchema {
 const store = new Store<StoreSchema>({
   defaults: {
     printer: { path: 'COM3', baudRate: 9600, cutMode: 'partial' },
-    receipt: { menuSize: 'small', optionSize: 'small' },
+    receipt: { menuSize: 'small', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' },
   },
 })
 
@@ -57,7 +57,7 @@ function createWindow(): void {
     title:          '샐러리아 POS',
     backgroundColor: '#ffffff',
     webPreferences: {
-      preload:        join(__dirname, '../preload/index.js'),
+      preload:        join(__dirname, '../preload/preload.js'),
       sandbox:        false,
       contextIsolation: true,
     },
@@ -65,7 +65,10 @@ function createWindow(): void {
 
   printQueue.setWindow(mainWindow)
 
-  mainWindow.on('ready-to-show', () => mainWindow!.show())
+  mainWindow.on('ready-to-show', () => {
+    mainWindow!.show()
+    if (is.dev) mainWindow!.webContents.openDevTools()
+  })
   mainWindow.on('closed', () => {
     printQueue.setWindow(null)
     mainWindow = null
@@ -154,12 +157,12 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
 
     // 영수증 출력 (프린터 미연결 시 큐에 적재)
     const receipt = store.get('receipt')
-    printQueue.enqueue(buildCustomerReceipt(orderPayload))
+    printQueue.enqueue(buildCustomerReceipt(orderPayload, receipt))
     printQueue.enqueue(buildKitchenReceipt(orderPayload, receipt))
     console.log(`[AutoPrint] 영수증 출력 완료: ${orderCode}`)
 
     // 상태 → 조리중
-    await supabase.from('orders').update({ status: '조리중' }).eq('order_code', orderCode)
+    await supabase.rpc('update_order_status', { p_order_code: orderCode, p_status: '조리중' })
   } catch (err) {
     console.error('[AutoPrint] 오류:', err)
   }
@@ -199,7 +202,7 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
 
   // 1) DB 상태 → 조리중
   if (supabase) {
-    await supabase.from('orders').update({ status: '조리중' }).eq('order_code', order.order_code)
+    await supabase.rpc('update_order_status', { p_order_code: order.order_code, p_status: '조리중' })
 
     // 2) 웹 success 페이지에 broadcast (best-effort)
     try {
@@ -217,7 +220,7 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
 
   // 3) 영수증 출력
   const receipt = store.get('receipt')
-  printQueue.enqueue(buildCustomerReceipt(order))
+  printQueue.enqueue(buildCustomerReceipt(order, receipt))
   printQueue.enqueue(buildKitchenReceipt(order, receipt))
 
   return { ok: true }
@@ -227,29 +230,12 @@ ipcMain.handle('order:reject', async (_e, { orderCode, reason }: { orderCode: st
   console.log(`[IPC] order:reject — ${orderCode}, 사유: ${reason}`)
 
   if (supabase) {
-    // 주문 정보 조회 (잔액 환원용)
-    const { data: ord } = await supabase
-      .from('orders')
-      .select('account_code, total_amount')
-      .eq('order_code', orderCode)
-      .single()
-
-    // 상태 → 취소
-    await supabase.from('orders').update({ status: '취소', note: reason }).eq('order_code', orderCode)
-
-    // 잔액 환원
-    if (ord) {
-      const { data: acc } = await supabase
-        .from('accounts')
-        .select('current_balance')
-        .eq('account_code', ord.account_code)
-        .single()
-      if (acc) {
-        await supabase.from('accounts')
-          .update({ current_balance: acc.current_balance + ord.total_amount })
-          .eq('account_code', ord.account_code)
-      }
-    }
+    // 취소 + 잔액 환원 + 사유 저장 (RPC가 원자적으로 처리)
+    await supabase.rpc('cancel_order', {
+      p_order_code: orderCode,
+      p_allow_after_cooking: true,
+      p_note: reason,
+    })
 
     // 웹 success 페이지에 broadcast (best-effort)
     try {
@@ -271,7 +257,7 @@ ipcMain.handle('order:reject', async (_e, { orderCode, reason }: { orderCode: st
 ipcMain.handle('order:complete', async (_e, { orderCode }: { orderCode: string }) => {
   console.log(`[IPC] order:complete — ${orderCode}`)
   if (supabase) {
-    await supabase.from('orders').update({ status: '완료' }).eq('order_code', orderCode)
+    await supabase.rpc('update_order_status', { p_order_code: orderCode, p_status: '완료' })
   }
   return { ok: true }
 })
@@ -279,24 +265,7 @@ ipcMain.handle('order:complete', async (_e, { orderCode }: { orderCode: string }
 ipcMain.handle('order:cancel', async (_e, { orderCode }: { orderCode: string }) => {
   console.log(`[IPC] order:cancel — ${orderCode}`)
   if (supabase) {
-    const { data: ord } = await supabase
-      .from('orders')
-      .select('account_code, total_amount')
-      .eq('order_code', orderCode)
-      .single()
-    await supabase.from('orders').update({ status: '취소' }).eq('order_code', orderCode)
-    if (ord) {
-      const { data: acc } = await supabase
-        .from('accounts')
-        .select('current_balance')
-        .eq('account_code', ord.account_code)
-        .single()
-      if (acc) {
-        await supabase.from('accounts')
-          .update({ current_balance: acc.current_balance + ord.total_amount })
-          .eq('account_code', ord.account_code)
-      }
-    }
+    await supabase.rpc('cancel_order', { p_order_code: orderCode, p_allow_after_cooking: true })
   }
   return { ok: true }
 })
@@ -342,7 +311,7 @@ ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload })
     return { ok: false, error: '프린터가 연결되어 있지 않습니다.' }
   }
   const receipt = store.get('receipt')
-  printQueue.enqueue(buildCustomerReceipt(order))
+  printQueue.enqueue(buildCustomerReceipt(order, receipt))
   printQueue.enqueue(buildKitchenReceipt(order, receipt))
   return { ok: true }
 })

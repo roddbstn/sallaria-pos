@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { type Order } from '../lib/mock-data'
 import { won, orderToPayload } from '../lib/ipc'
+import { supabase } from '../lib/supabase'
 
 interface Props {
   queue:      Order[]
@@ -50,8 +51,30 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
   async function handleApprove() {
     lastPrepMins = prepMins   // 다음 팝업 초기값으로 기억
     setLoading(true)
+
+    // ① DB 상태 → '조리중' (QR 웹사이트 postgres_changes 트리거)
+    await supabase
+      .from('orders')
+      .update({ status: '조리중' })
+      .eq('order_code', order.code)
+
+    // ② broadcast로 예상 소요시간 전달 (fire-and-forget)
+    ;(async () => {
+      const ch = supabase.channel(`orders:order_code=${order.code}`)
+      await new Promise<void>(resolve => {
+        ch.subscribe(s => {
+          if (s !== 'SUBSCRIBED') return
+          ch.send({ type: 'broadcast', event: 'ORDER_ACCEPTED', payload: { estimated_minutes: prepMins } })
+            .finally(() => { supabase.removeChannel(ch); resolve() })
+        })
+        setTimeout(resolve, 3000)
+      })
+    })()
+
+    // ③ Electron IPC (영수증 출력)
     const w = window as unknown as { api?: { approveOrder?: Function } }
     await w.api?.approveOrder?.({ order: orderToPayload(order), prepMins })
+
     setLoading(false)
     onApprove?.()
     dismiss()
@@ -60,8 +83,27 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
   async function handleReject() {
     if (!reason) return
     setLoading(true)
+
+    // ① cancel_order RPC (status → '취소' + 잔액 환원 — QR 웹사이트 postgres_changes 트리거)
+    await supabase.rpc('cancel_order', { p_order_code: order.code })
+
+    // ② broadcast로 거부 사유 전달 (fire-and-forget)
+    ;(async () => {
+      const ch = supabase.channel(`orders:order_code=${order.code}`)
+      await new Promise<void>(resolve => {
+        ch.subscribe(s => {
+          if (s !== 'SUBSCRIBED') return
+          ch.send({ type: 'broadcast', event: 'ORDER_REJECTED', payload: { reason } })
+            .finally(() => { supabase.removeChannel(ch); resolve() })
+        })
+        setTimeout(resolve, 3000)
+      })
+    })()
+
+    // ③ Electron IPC
     const w = window as unknown as { api?: { rejectOrder?: Function } }
     await w.api?.rejectOrder?.({ orderCode: order.code, reason })
+
     setLoading(false)
     dismiss()
   }
@@ -98,7 +140,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
               <div className="bg-ink px-5 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-white font-medium text-[16px]">
-                    #{idx + 1}
+                    #{o.orderNumber ?? String(idx + 1)}
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="text-white/60 text-[13px] font-medium">
@@ -108,7 +150,9 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col">
-                    <span className="text-white/80 text-[13px]">{o.accountName} · {o.orderer}</span>
+                    <span className="text-white/80 text-[13px]">
+                      {o.accountName === o.orderer ? o.accountName : `${o.accountName} · ${o.orderer}`}
+                    </span>
                     {o.phone && <span className="text-white/60 text-[12px]">{o.phone}</span>}
                   </div>
                   <span className="text-white font-semibold text-[20px] leading-none">{o.method}</span>
@@ -153,7 +197,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                           <div className="bg-gray-bg rounded-xl px-4 py-3 mb-4 flex justify-between items-center">
                             <span className="text-[13px] font-medium text-gray-text">{o.accountName}</span>
                             <span className="text-[13px] font-medium text-gray-text">
-                              잔액: <span className={o.balanceAfter <= 0 ? 'text-danger' : ''}>{won(o.balanceAfter)}</span>
+                              현재 잔액: <span className={o.balanceAfter <= 0 ? 'text-danger' : ''}>{won(o.balanceAfter)}</span>
                             </span>
                           </div>
                         )}

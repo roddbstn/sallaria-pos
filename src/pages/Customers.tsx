@@ -64,13 +64,16 @@ export default function Customers() {
     name: '', type: '과' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '', warnThreshold: '30000',
   })
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [addPinError,  setAddPinError]  = useState('')
+  const [editPinError, setEditPinError] = useState('')
+  const [showInactive, setShowInactive] = useState(false)
 
   // ── 거래처 목록 조회 ──────────────────────────────────────────────────────────
-  async function fetchAccounts() {
+  async function fetchAccounts(inactive = false) {
     const { data, error } = await supabase
       .from('accounts')
       .select('*')
-      .eq('is_active', true)
+      .eq('is_active', !inactive)
       .order('account_name')
     if (!error && data) setAccounts(data as DbAccount[])
   }
@@ -140,15 +143,17 @@ export default function Customers() {
     setDeposits((data ?? []) as DbDeposit[])
   }
 
-  // ── 마운트 시 초기 로딩 ───────────────────────────────────────────────────────
+  // ── 마운트 / showInactive 변경 시 목록 재조회 ────────────────────────────────
   useEffect(() => {
     async function load() {
       setLoading(true)
-      await Promise.all([fetchAccounts(), fetchMonthlyUsages()])
+      setSelected(null)
+      setDeleteConfirm(false)
+      await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages()])
       setLoading(false)
     }
     load()
-  }, [])
+  }, [showInactive])
 
   // ── 선택 거래처 변경 시 이력 로딩 ─────────────────────────────────────────────
   useEffect(() => {
@@ -173,6 +178,19 @@ export default function Customers() {
   async function handleAddAccount() {
     if (!newForm.name.trim() || !newForm.manager.trim() || !newForm.pin.trim()) return
     if (newForm.pin.trim().length !== 4) return
+
+    // PIN 중복 확인
+    const { data: dup } = await supabase
+      .from('accounts')
+      .select('account_code')
+      .eq('pin_code', newForm.pin.trim())
+      .eq('is_active', true)
+      .maybeSingle()
+    if (dup) {
+      setAddPinError('이미 존재하는 PIN번호입니다.')
+      return
+    }
+    setAddPinError('')
 
     const { data: newAccount, error } = await supabase
       .from('accounts')
@@ -208,6 +226,7 @@ export default function Customers() {
 
     await fetchAccounts()
     setNewForm({ name: '', type: '과', org: '', manager: '', phone: '', pin: '', warnThreshold: '30000', initialDeposit: '', initialDepositMemo: '' })
+    setAddPinError('')
     setAddOpen(false)
   }
 
@@ -253,6 +272,23 @@ export default function Customers() {
   // ── 정보 수정 저장 ────────────────────────────────────────────────────────────
   async function handleEditAccount() {
     if (!selected || !editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4) return
+
+    // PIN이 변경됐을 때만 중복 확인 (자기 자신 제외)
+    if (editForm.pin.trim() !== selected.pin_code) {
+      const { data: dup } = await supabase
+        .from('accounts')
+        .select('account_code')
+        .eq('pin_code', editForm.pin.trim())
+        .eq('is_active', true)
+        .neq('account_code', selected.account_code)
+        .maybeSingle()
+      if (dup) {
+        setEditPinError('이미 존재하는 PIN번호입니다.')
+        return
+      }
+    }
+    setEditPinError('')
+
     const { error } = await supabase
       .from('accounts')
       .update({
@@ -277,10 +313,11 @@ export default function Customers() {
       pin_code:          editForm.pin.trim(),
       warning_threshold: parseInt(editForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
     } : prev)
+    setEditPinError('')
     setEditOpen(false)
   }
 
-  // ── 거래처 삭제 ───────────────────────────────────────────────────────────────
+  // ── 거래처 삭제 (소프트) ─────────────────────────────────────────────────────
   async function handleDeleteAccount() {
     if (!selected) return
     const { error } = await supabase
@@ -288,9 +325,21 @@ export default function Customers() {
       .update({ is_active: false })
       .eq('account_code', selected.account_code)
     if (error) { console.error('삭제 실패:', error); return }
-    await fetchAccounts()
+    await fetchAccounts(showInactive)
     setSelected(null)
     setDeleteConfirm(false)
+  }
+
+  // ── 거래처 복구 ───────────────────────────────────────────────────────────────
+  async function handleRestoreAccount() {
+    if (!selected) return
+    const { error } = await supabase
+      .from('accounts')
+      .update({ is_active: true })
+      .eq('account_code', selected.account_code)
+    if (error) { console.error('복구 실패:', error); return }
+    await fetchAccounts(showInactive)
+    setSelected(null)
   }
 
   return (
@@ -301,7 +350,19 @@ export default function Customers() {
 
         {/* 헤더 */}
         <div className="px-6 py-4 border-b border-gray-border flex-shrink-0 flex items-center justify-between">
-          <div className="text-[20px] font-extrabold">고객관리</div>
+          <div className="flex items-center gap-3">
+            <div className="text-[20px] font-extrabold">고객관리</div>
+            <button
+              onClick={() => setShowInactive(v => !v)}
+              className={`px-3 py-1 rounded-full text-[12px] font-bold border transition-colors ${
+                showInactive
+                  ? 'border-danger text-danger bg-red-50'
+                  : 'border-gray-border text-gray-text hover:bg-gray-bg'
+              }`}
+            >
+              {showInactive ? '비활성 거래처' : '비활성 보기'}
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <input
               value={search}
@@ -315,12 +376,14 @@ export default function Customers() {
             >
               🖨 키오스크 QR
             </button>
-            <button
-              onClick={() => setAddOpen(true)}
-              className="px-4 py-2 bg-[#16a84c] text-white rounded-lg text-[13px] font-bold hover:bg-[#128040] transition-colors"
-            >
-              + 거래처 추가
-            </button>
+            {!showInactive && (
+              <button
+                onClick={() => setAddOpen(true)}
+                className="px-4 py-2 bg-[#16a84c] text-white rounded-lg text-[13px] font-bold hover:bg-[#128040] transition-colors"
+              >
+                + 거래처 추가
+              </button>
+            )}
           </div>
         </div>
 
@@ -339,7 +402,7 @@ export default function Customers() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
-              {search ? '검색 결과가 없습니다' : '등록된 거래처가 없습니다'}
+              {search ? '검색 결과가 없습니다' : showInactive ? '비활성 거래처가 없습니다' : '등록된 거래처가 없습니다'}
             </div>
           ) : (
             filtered.map(acc => (
@@ -394,9 +457,11 @@ export default function Customers() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={openEdit} className="px-3 py-1.5 rounded-lg border border-gray-border text-[12px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
-                  정보 수정
-                </button>
+                {!showInactive && (
+                  <button onClick={openEdit} className="px-3 py-1.5 rounded-lg border border-gray-border text-[12px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
+                    정보 수정
+                  </button>
+                )}
                 <button onClick={() => { setSelected(null); setDeleteConfirm(false) }} className="text-gray-text hover:text-ink text-[18px] ml-1">✕</button>
               </div>
             </div>
@@ -463,12 +528,15 @@ export default function Customers() {
                       {total === 0
                         ? <div className="text-[13px] text-gray-text py-2">주문 이력 없음</div>
                         : slice.map(o => {
-                            const dateStr = new Date(o.createdAt).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
-                            const timeStr = new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                            const dt = new Date(o.createdAt)
+                            const DAY = ['일','월','화','수','목','금','토']
+                            const dateStr = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
+                            const timeStr = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                            const dow = DAY[dt.getDay()]
                             return (
                               <div key={o.code} className="bg-gray-bg rounded-lg px-3 py-2.5 text-[12px]">
                                 <div className="flex justify-between items-start mb-1">
-                                  <span className="text-gray-text">{dateStr} {timeStr} · {o.method}</span>
+                                  <span className="text-gray-text">{dateStr} ({dow}) {timeStr} · {o.method}</span>
                                   <span className="font-bold text-ink">{won(o.total)}</span>
                                 </div>
                                 <div className="flex justify-between items-end">
@@ -481,15 +549,23 @@ export default function Customers() {
                       }
                     </div>
                     {pages > 1 && (
-                      <div className="flex items-center justify-center gap-2 mt-3">
+                      <div className="flex items-center justify-center gap-1 mt-3">
+                        <button onClick={() => setOrderPage(0)} disabled={orderPage === 0}
+                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
+                          «
+                        </button>
                         <button onClick={() => setOrderPage(p => p - 1)} disabled={orderPage === 0}
                           className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
                           ‹ 이전
                         </button>
-                        <span className="text-[11px] text-gray-text">{orderPage + 1} / {pages}</span>
+                        <span className="text-[11px] text-gray-text px-1">{orderPage + 1} / {pages}</span>
                         <button onClick={() => setOrderPage(p => p + 1)} disabled={orderPage >= pages - 1}
                           className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
                           다음 ›
+                        </button>
+                        <button onClick={() => setOrderPage(pages - 1)} disabled={orderPage >= pages - 1}
+                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
+                          »
                         </button>
                       </div>
                     )}
@@ -512,7 +588,14 @@ export default function Customers() {
                               <div>
                                 <div className="font-semibold text-ink">{won(d.amount)}</div>
                                 <div className="text-gray-text">
-                                  {new Date(d.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
+                                  {(() => {
+                                    const dt = new Date(d.created_at)
+                                    const DAY = ['일','월','화','수','목','금','토']
+                                    const date = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
+                                    const time = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                    const dow  = DAY[dt.getDay()]
+                                    return `${date} (${dow}) ${time}`
+                                  })()}
                                   {d.note ? ` · ${d.note}` : ''}
                                 </div>
                               </div>
@@ -538,15 +621,22 @@ export default function Customers() {
                 )
               })()}
 
-              {/* 삭제 — 맨 하단 */}
+              {/* 삭제 / 복구 — 맨 하단 */}
               <div className="pt-5 mt-5 border-t border-gray-border">
-                {!deleteConfirm ? (
+                {showInactive ? (
+                  <button onClick={handleRestoreAccount} className="w-full py-2.5 rounded-xl text-[13px] font-bold text-[#16a84c] hover:bg-green-soft transition-colors border border-[#16a84c]/30 focus:outline-none">
+                    거래처 복구
+                  </button>
+                ) : !deleteConfirm ? (
                   <button onClick={() => setDeleteConfirm(true)} className="w-full py-2.5 rounded-xl text-[13px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
                     거래처 삭제
                   </button>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-[12px] text-center text-danger font-semibold">정말 삭제하시겠습니까?</p>
+                    <div className="mb-5">
+                      <p className="text-[12px] text-center text-ink font-semibold leading-tight">정말 삭제하시겠어요?</p>
+                      <p className="text-[11px] text-center text-gray-text leading-tight mt-0.5">추후 복구할 수 있어요.</p>
+                    </div>
                     <div className="flex gap-2">
                       <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2 rounded-xl text-[13px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
                       <button onClick={handleDeleteAccount} className="flex-1 py-2 rounded-xl text-[13px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">삭제 확인</button>
@@ -609,8 +699,9 @@ export default function Customers() {
 
               <div>
                 <label className="text-[11px] font-bold text-gray-text block mb-1">PIN <span className="text-danger">*</span> (4자리)</label>
-                <input value={newForm.pin} onChange={e => setNewForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) }))}
+                <input value={newForm.pin} onChange={e => { setNewForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })); setAddPinError('') }}
                   placeholder="0000" maxLength={4} inputMode="numeric" className={INPUT_CLS + ' font-mono'} />
+                {addPinError && <p className="text-[11px] text-danger font-semibold mt-1">{addPinError}</p>}
               </div>
 
               <div>
@@ -621,11 +712,10 @@ export default function Customers() {
             </div>
 
             {/* 초기 충전 */}
-            <div className="mt-6 pt-5 border-t border-gray-border">
-              <div className="text-[12px] font-bold text-gray-text mb-3">초기 충전 (선택)</div>
+            <div className="mt-6 pt-5">
               <div className="space-y-3">
                 <div>
-                  <label className="text-[11px] font-bold text-gray-text block mb-1">충전 금액</label>
+                  <label className="text-[11px] font-bold text-gray-text block mb-1">초기 충전금액 (선택)</label>
                   <div className="flex items-baseline gap-2">
                     <input
                       value={newForm.initialDeposit}
@@ -650,7 +740,7 @@ export default function Customers() {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setAddOpen(false)}
+              <button onClick={() => { setAddOpen(false); setAddPinError('') }}
                 className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
                 취소
               </button>
@@ -704,8 +794,9 @@ export default function Customers() {
               </div>
               <div>
                 <label className="text-[11px] font-bold text-gray-text block mb-1">PIN <span className="text-danger">*</span> (4자리)</label>
-                <input value={editForm.pin} onChange={e => setEditForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) }))}
+                <input value={editForm.pin} onChange={e => { setEditForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })); setEditPinError('') }}
                   maxLength={4} inputMode="numeric" className={INPUT_CLS + ' font-mono'} />
+                {editPinError && <p className="text-[11px] text-danger font-semibold mt-1">{editPinError}</p>}
               </div>
               <div>
                 <label className="text-[11px] font-bold text-gray-text block mb-1">잔액 경고 기준</label>
@@ -713,7 +804,7 @@ export default function Customers() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setEditOpen(false)} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">취소</button>
+              <button onClick={() => { setEditOpen(false); setEditPinError('') }} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">취소</button>
               <button onClick={handleEditAccount}
                 disabled={!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4}
                 className="flex-1 py-3 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
@@ -826,7 +917,7 @@ function AccountQrModal({ accountCode, accountName, onClose }: { accountCode: st
           <button onClick={onClose} className="text-gray-text hover:text-ink text-[18px]">✕</button>
         </div>
         <div className="text-[13px] text-gray-text mb-4">
-          <span className="font-semibold text-ink">{accountName}</span> 전용 링크입니다.<br />
+          <span className="font-semibold text-ink">{accountName}</span> 고객 전용 링크입니다.<br />
           스캔하면 PIN 없이 바로 주문자 입력으로 진입합니다.
         </div>
         {qrDataUrl ? (

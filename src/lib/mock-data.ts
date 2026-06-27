@@ -13,7 +13,7 @@ export interface OrderItem {
 
 export interface Order {
   code:          string
-  orderNumber?:  number   // 순번 표시용 (예: 1001, 1002)
+  orderNumber?:  string   // 주문번호 (예: "1101", "1201")
   accountName:   string
   orderer:       string
   phone?:        string   // 주문자 연락처

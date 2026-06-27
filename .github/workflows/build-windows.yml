@@ -36,8 +36,8 @@ jobs:
       - name: 빌드 (electron-vite)
         run: pnpm build
 
-      - name: Windows 패키징 (NSIS 설치파일)
-        run: pnpm dist --win
+      - name: Windows 패키징 — x64 + arm64
+        run: pnpm dist --win --x64 --arm64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
