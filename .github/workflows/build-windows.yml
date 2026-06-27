@@ -36,19 +36,33 @@ jobs:
       - name: 빌드 (electron-vite)
         run: pnpm build
 
-      - name: Windows 패키징 — x64 + arm64
-        run: pnpm dist --win --x64 --arm64
+      - name: Windows 패키징 — x64
+        run: pnpm dist --win --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 빌드 결과 확인 (디버그)
-        run: Get-ChildItem -Recurse dist\ -Filter *.exe | Select-Object FullName
         shell: powershell
+        run: |
+          Write-Host "=== dist 폴더 전체 파일 목록 ==="
+          if (Test-Path dist) {
+            Get-ChildItem -Recurse dist | Select-Object FullName, Length
+          } else {
+            Write-Host "dist 폴더가 존재하지 않습니다!"
+          }
+          Write-Host "=== release 폴더 확인 ==="
+          if (Test-Path release) {
+            Get-ChildItem -Recurse release | Select-Object FullName, Length
+          } else {
+            Write-Host "release 폴더 없음"
+          }
 
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: 샐러리아-POS-Windows
-          path: dist/**/*.exe
+          name: 샐러리아-POS-Windows-x64
+          path: |
+            dist/**/*.exe
+            dist/*.exe
           if-no-files-found: error
           retention-days: 30
