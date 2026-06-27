@@ -1,0 +1,49 @@
+name: Windows 빌드
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # GitHub Actions 탭에서 수동 실행 버튼
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: pnpm 설치
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: 패키지 설치
+        run: pnpm install
+
+      - name: .env 파일 생성 (Supabase 키)
+        shell: bash
+        run: |
+          echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" >> .env
+          echo "VITE_SUPABASE_ANON=${{ secrets.VITE_SUPABASE_ANON }}" >> .env
+
+      - name: 빌드 (electron-vite)
+        run: pnpm build
+
+      - name: Windows 패키징 (NSIS 설치파일)
+        run: pnpm dist --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 설치파일 업로드 (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 샐러리아-POS-Windows
+          path: dist/*.exe
+          retention-days: 30

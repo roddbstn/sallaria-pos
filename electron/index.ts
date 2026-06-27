@@ -27,7 +27,7 @@ interface StoreSchema {
 const store = new Store<StoreSchema>({
   defaults: {
     printer: { path: 'COM3', baudRate: 9600, cutMode: 'partial' },
-    receipt: { menuSize: 'normal', optionSize: 'small' },
+    receipt: { menuSize: 'small', optionSize: 'small' },
   },
 })
 
@@ -97,6 +97,74 @@ async function initPrinter(): Promise<void> {
 
 // ── Supabase Realtime 구독 ────────────────────────────────────────────────────
 
+/**
+ * 새 주문 수신 시 영수증 자동 출력 + 상태 → 조리중
+ */
+async function autoPrintOrder(orderCode: string): Promise<void> {
+  if (!supabase) return
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        order_code, order_number, orderer_name,
+        ordered_at, menu_subtotal, delivery_fee, total_amount,
+        balance_before, balance_after, method, note,
+        accounts ( account_name ),
+        order_items (
+          order_item_id, quantity, unit_price, subtotal,
+          menus ( name ),
+          order_item_options (
+            id, extra_price,
+            option_items ( name )
+          )
+        )
+      `)
+      .eq('order_code', orderCode)
+      .single()
+
+    if (error || !data) {
+      console.error('[AutoPrint] 주문 조회 실패:', error)
+      return
+    }
+
+    const orderPayload: OrderPayload = {
+      order_code:     data.order_code,
+      order_number:   (data as any).order_number ?? undefined,
+      account_name:   (data.accounts as any)?.account_name ?? '',
+      orderer_name:   data.orderer_name,
+      method:         data.method,
+      ordered_at:     data.ordered_at,
+      items: ((data.order_items as any[]) ?? []).map((item: any) => ({
+        menu_name:  item.menus?.name ?? '',
+        quantity:   item.quantity,
+        unit_price: item.unit_price,
+        subtotal:   item.subtotal,
+        options:    ((item.order_item_options as any[]) ?? []).map((o: any) => ({
+          option_name: o.option_items?.name ?? '',
+          extra_price: o.extra_price,
+        })),
+      })),
+      menu_subtotal:  data.menu_subtotal,
+      delivery_fee:   data.delivery_fee,
+      total_amount:   data.total_amount,
+      balance_before: data.balance_before,
+      balance_after:  data.balance_after,
+      note:           data.note ?? null,
+    }
+
+    // 영수증 출력 (프린터 미연결 시 큐에 적재)
+    const receipt = store.get('receipt')
+    printQueue.enqueue(buildCustomerReceipt(orderPayload))
+    printQueue.enqueue(buildKitchenReceipt(orderPayload, receipt))
+    console.log(`[AutoPrint] 영수증 출력 완료: ${orderCode}`)
+
+    // 상태 → 조리중
+    await supabase.from('orders').update({ status: '조리중' }).eq('order_code', orderCode)
+  } catch (err) {
+    console.error('[AutoPrint] 오류:', err)
+  }
+}
+
 function subscribeRealtime(): void {
   if (!supabase) {
     console.warn('[POS] Supabase URL 미설정 — Realtime 구독 건너뜀')
@@ -111,6 +179,7 @@ function subscribeRealtime(): void {
       (payload) => {
         console.log('[Realtime] 새 주문 수신:', payload.new)
         mainWindow?.webContents.send('order:new', payload.new)
+        autoPrintOrder(payload.new['order_code'] as string)
       }
     )
     .subscribe((status) => {
@@ -269,10 +338,24 @@ ipcMain.handle('printer:list-ports', async () => {
 
 /** 영수증 재출력 (주문 관리 탭에서 호출) */
 ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload }) => {
+  if (!printQueue.connected) {
+    return { ok: false, error: '프린터가 연결되어 있지 않습니다.' }
+  }
   const receipt = store.get('receipt')
   printQueue.enqueue(buildCustomerReceipt(order))
   printQueue.enqueue(buildKitchenReceipt(order, receipt))
   return { ok: true }
+})
+
+/** 프린터 명시적 연결 (Settings에서 "연결하기" 버튼) */
+ipcMain.handle('printer:connect', async () => {
+  const settings = store.get('printer')
+  try {
+    await printQueue.open(settings)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
 })
 
 /** 테스트 영수증 출력 */

@@ -25,7 +25,12 @@ const api = {
   getSettings:    ()           => ipcRenderer.invoke('settings:get'),
   updateSettings: (p: unknown) => ipcRenderer.invoke('settings:update', p),
   listPorts:      ()           => ipcRenderer.invoke('printer:list-ports'),
+  connectPrinter: ()           => ipcRenderer.invoke('printer:connect'),
   testPrint:      ()           => ipcRenderer.invoke('printer:test'),
+
+  onPrinterStatus:  (cb: (s: { connected: boolean; queueLength: number }) => void) =>
+    ipcRenderer.on('printer:status', (_e, v) => cb(v)),
+  offPrinterStatus: () => ipcRenderer.removeAllListeners('printer:status'),
 }
 
 if (process.contextIsolated) {
