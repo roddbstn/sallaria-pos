@@ -112,6 +112,13 @@ export default function App() {
     setPhase('main')
   }
 
+  // ── storeId → main process 전달 (Realtime 필터용) ────────────────────────────
+  useEffect(() => {
+    if (!session?.storeId) return
+    const w = window as unknown as { api?: { setStoreId?: (id: string) => void } }
+    w.api?.setStoreId?.(session.storeId)
+  }, [session?.storeId])
+
   // ── 자동 업데이트 알림 구독 ──────────────────────────────────────────────────
   useEffect(() => {
     const w = window as unknown as { api?: { onUpdaterStatus?: Function } }

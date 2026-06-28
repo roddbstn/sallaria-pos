@@ -21,6 +21,9 @@ const api = {
     ipcRenderer.on('updater:status', (_e, v) => cb(v)),
   updaterInstall: () => ipcRenderer.invoke('updater:install'),
 
+  // ── 매장 세션 ────────────────────────────────────────────────────────────────
+  setStoreId: (storeId: string) => ipcRenderer.invoke('store:setStoreId', storeId),
+
   // ── 설정 ────────────────────────────────────────────────────────────────────
   getSettings:    ()           => ipcRenderer.invoke('settings:get'),
   updateSettings: (p: unknown) => ipcRenderer.invoke('settings:update', p),

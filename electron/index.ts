@@ -47,6 +47,7 @@ const supabase = SUPABASE_URL
   : null
 
 let mainWindow: BrowserWindow | null = null
+let currentStoreId: string | null = null
 
 // ── 창 생성 ───────────────────────────────────────────────────────────────────
 
@@ -180,7 +181,20 @@ function subscribeRealtime(): void {
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'orders' },
-      (payload) => {
+      async (payload) => {
+        // ── 내 매장 주문 필터: account_code → accounts.store_id 확인 ──
+        if (currentStoreId) {
+          const accountCode = payload.new['account_code'] as string
+          const { data: acc } = await supabase!
+            .from('accounts')
+            .select('store_id')
+            .eq('account_code', accountCode)
+            .maybeSingle()
+          if (!acc || acc.store_id !== currentStoreId) {
+            console.log(`[Realtime] 타 매장 주문 무시 — account: ${accountCode}, store: ${acc?.store_id}`)
+            return
+          }
+        }
         console.log('[Realtime] 새 주문 수신:', payload.new)
         mainWindow?.webContents.send('order:new', payload.new)
         autoPrintOrder(payload.new['order_code'] as string)
@@ -193,6 +207,12 @@ function subscribeRealtime(): void {
 }
 
 // ── IPC 핸들러 ────────────────────────────────────────────────────────────────
+
+// 매장 세션 설정 — 렌더러 로그인 후 storeId 전달 → Realtime 필터에 사용
+ipcMain.handle('store:setStoreId', (_e, storeId: string) => {
+  console.log('[IPC] store:setStoreId:', storeId)
+  currentStoreId = storeId
+})
 
 /**
  * 주문 접수 확정 → 고객용 + 주방용 영수증 순서대로 출력
