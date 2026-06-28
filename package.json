@@ -52,7 +52,10 @@
   "build": {
     "appId": "kr.sallaria.pos",
     "productName": "샐러리아 POS",
-"win": {
+    "asarUnpack": [
+      "**/node_modules/@serialport/bindings-cpp/**"
+    ],
+    "win": {
       "target": "nsis"
     },
     "nsis": {

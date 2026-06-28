@@ -3,14 +3,13 @@ import { builtinModules } from 'module'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
-// Node.js 내장 모듈 + electron + native addon만 외부로 유지
-// 나머지 JS 패키지(@supabase, ws, electron-store 등)는 번들에 포함
+// Node.js 내장 모듈 + electron + native .node 바인딩만 외부로 유지
+// serialport JS 레이어 포함 모든 순수 JS 패키지는 번들에 포함
 const mainExternal = [
   'electron',
   ...builtinModules,
   ...builtinModules.map(m => `node:${m}`),
-  'serialport',
-  /^@serialport\//,
+  '@serialport/bindings-cpp',   // 실제 native .node 파일만 외부
 ]
 
 export default defineConfig({
