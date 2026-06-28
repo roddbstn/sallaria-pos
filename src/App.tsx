@@ -313,9 +313,18 @@ export default function App() {
     setShowPwConfirm(false)
     setProfileOpen(true)
 
+    // 내 매장 카테고리 ID 먼저 조회 → 메뉴 카운트 필터용
+    const { data: myCats } = await supabase
+      .from('categories').select('id').eq('store_id', session!.storeId)
+    const catIds = myCats?.map(c => c.id) ?? []
+
     const [{ count: cc }, { count: mc }] = await Promise.all([
-      supabase.from('accounts').select('*', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('menus').select('*', { count: 'exact', head: true }).eq('is_hidden', false),
+      supabase.from('accounts').select('*', { count: 'exact', head: true })
+        .eq('is_active', true).eq('store_id', session!.storeId),
+      catIds.length > 0
+        ? supabase.from('menus').select('*', { count: 'exact', head: true })
+            .eq('is_hidden', false).in('category_id', catIds)
+        : Promise.resolve({ count: 0 }),
     ])
     setCustomerCount(cc ?? 0)
     setMenuCount(mc ?? 0)
