@@ -65,7 +65,6 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "closeApplications": true,
       "allowElevation": true
     }
   }
