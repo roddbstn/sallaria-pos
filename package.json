@@ -51,7 +51,7 @@
   "author": "Sallaria",
   "build": {
     "appId": "kr.sallaria.pos",
-    "productName": "샐러리아 POS",
+    "productName": "선결제 고객 POS",
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"
     ],
