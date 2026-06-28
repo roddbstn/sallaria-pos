@@ -8,7 +8,9 @@
  * 58mm 롤지 기준 1행 = 32 컬럼 (ASCII 1byte = 1col, 한글 2byte = 2col)
  */
 
-import { SerialPort } from 'serialport'
+// serialport는 native addon — 로드 실패 시 앱은 계속 동작 (프린터만 비활성)
+let SerialPort: typeof import('serialport').SerialPort | null = null
+try { SerialPort = require('serialport').SerialPort } catch { SerialPort = null }
 import iconv from 'iconv-lite'
 import type { BrowserWindow } from 'electron'
 
@@ -344,6 +346,7 @@ export class PrintQueue {
       await this.close()
     }
 
+    if (!SerialPort) throw new Error('프린터 모듈을 로드할 수 없습니다.')
     this.port = new SerialPort({
       path:     settings.path,
       baudRate: settings.baudRate,

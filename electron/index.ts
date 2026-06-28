@@ -7,7 +7,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
 import Store from 'electron-store'
-import { SerialPort } from 'serialport'
+let SerialPort: typeof import('serialport').SerialPort | null = null
+try { SerialPort = require('serialport').SerialPort } catch { SerialPort = null }
 
 import {
   PrintQueue,
@@ -303,6 +304,7 @@ ipcMain.handle('settings:update', async (_e, patch: Partial<StoreSchema>) => {
 
 /** 사용 가능한 시리얼 포트 목록 */
 ipcMain.handle('printer:list-ports', async () => {
+  if (!SerialPort) return []
   const ports = await SerialPort.list()
   return ports.map(p => p.path)
 })
