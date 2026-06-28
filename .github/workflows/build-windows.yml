@@ -27,6 +27,9 @@ jobs:
       - name: 패키지 설치
         run: pnpm install
 
+      - name: Native 모듈 Electron용 재빌드
+        run: npx electron-builder install-app-deps
+
       - name: .env 파일 생성 (Supabase 키)
         shell: bash
         run: |
@@ -38,22 +41,6 @@ jobs:
 
       - name: Windows 패키징 — x64
         run: pnpm dist --win --x64 --publish never
-
-      - name: 빌드 결과 확인 (디버그)
-        shell: bash
-        run: |
-          echo "=== dist folder ==="
-          if [ -d dist ]; then
-            find dist -type f
-          else
-            echo "dist not found"
-          fi
-          echo "=== release folder ==="
-          if [ -d release ]; then
-            find release -type f
-          else
-            echo "release not found"
-          fi
 
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
