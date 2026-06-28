@@ -9,7 +9,9 @@ const mainExternal = [
   'electron',
   ...builtinModules,
   ...builtinModules.map(m => `node:${m}`),
-  '@serialport/bindings-cpp',   // 실제 native .node 파일만 외부
+  '@serialport/bindings-cpp',   // native .node
+  'bufferutil',                 // ws 선택적 native addon — 없으면 ws가 JS 폴백 사용
+  'utf-8-validate',             // ws 선택적 native addon
 ]
 
 export default defineConfig({
