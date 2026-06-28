@@ -40,20 +40,20 @@ jobs:
         run: pnpm dist --win --x64 --publish never
 
       - name: 빌드 결과 확인 (디버그)
-        shell: powershell
+        shell: bash
         run: |
-          Write-Host "=== dist 폴더 전체 파일 목록 ==="
-          if (Test-Path dist) {
-            Get-ChildItem -Recurse dist | Select-Object FullName, Length
-          } else {
-            Write-Host "dist 폴더가 존재하지 않습니다!"
-          }
-          Write-Host "=== release 폴더 확인 ==="
-          if (Test-Path release) {
-            Get-ChildItem -Recurse release | Select-Object FullName, Length
-          } else {
-            Write-Host "release 폴더 없음"
-          }
+          echo "=== dist folder ==="
+          if [ -d dist ]; then
+            find dist -type f
+          else
+            echo "dist not found"
+          fi
+          echo "=== release folder ==="
+          if [ -d release ]; then
+            find release -type f
+          else
+            echo "release not found"
+          fi
 
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
