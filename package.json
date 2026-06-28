@@ -1,6 +1,6 @@
 {
   "name": "sallaria-pos",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "샐러리아 침산점 POS 앱",
   "main": "out/main/index.js",
   "scripts": {
