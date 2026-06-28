@@ -159,13 +159,11 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
     }
 
     // 영수증 출력 (프린터 미연결 시 큐에 적재)
+    // 상태 변경은 점주가 팝업에서 접수 버튼 누를 때 approve_order RPC로 처리
     const receipt = store.get('receipt')
     printQueue.enqueue(buildCustomerReceipt(orderPayload, receipt))
     printQueue.enqueue(buildKitchenReceipt(orderPayload, receipt))
     console.log(`[AutoPrint] 영수증 출력 완료: ${orderCode}`)
-
-    // 상태 → 조리중
-    await supabase.rpc('update_order_status', { p_order_code: orderCode, p_status: '조리중' })
   } catch (err) {
     console.error('[AutoPrint] 오류:', err)
   }
