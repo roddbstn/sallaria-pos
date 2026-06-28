@@ -5,10 +5,11 @@ export type Method      = '포장' | '매장 식사' | '배달'
 export type AccountType = '과' | '기업' | '개인' | '기타'
 
 export interface OrderItem {
-  name:    string
-  qty:     number
-  price:   number
-  options: string[]
+  name:     string
+  qty:      number
+  price:    number
+  options:  string[]
+  imageUrl?: string
 }
 
 export interface Order {

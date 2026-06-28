@@ -52,11 +52,8 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
     lastPrepMins = prepMins   // 다음 팝업 초기값으로 기억
     setLoading(true)
 
-    // ① DB 상태 → '조리중' (QR 웹사이트 postgres_changes 트리거)
-    await supabase
-      .from('orders')
-      .update({ status: '조리중' })
-      .eq('order_code', order.code)
+    // ① approve_order RPC: 상태 → '조리중' + 잔액 차감 (원자적)
+    await supabase.rpc('approve_order', { p_order_code: order.code })
 
     // ② broadcast로 예상 소요시간 전달 (fire-and-forget)
     ;(async () => {
@@ -166,18 +163,29 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                     {/* 1단계: 주문 요약 */}
                     {stage === 'summary' && (
                       <>
-                        <div className="bg-gray-bg rounded-xl p-4 mb-4 space-y-2">
+                        <div className="bg-gray-bg rounded-xl p-4 mb-4 space-y-3">
                           {o.items.map((item, i) => (
-                            <div key={i}>
-                              <div className="flex justify-between text-[16px] font-semibold">
-                                <span>{item.name} · {item.qty}개</span>
-                                <span className="text-[12px] font-normal text-gray-text">{won(item.price * item.qty)}</span>
+                            <div key={i} className="flex gap-3 items-start">
+                              {/* 메뉴 이미지 */}
+                              <div className="w-[48px] h-[48px] rounded-lg overflow-hidden flex-shrink-0 bg-gray-200">
+                                {item.imageUrl ? (
+                                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[20px]">🍽️</div>
+                                )}
                               </div>
-                              {item.options.length > 0 && (
-                                <div className="text-[12px] text-gray-text ml-1 mt-0.5 space-y-0.5">
-                                  {item.options.map((opt, oi) => <div key={oi}>└ {opt}</div>)}
+                              {/* 메뉴 정보 */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between text-[15px] font-semibold">
+                                  <span className="truncate">{item.name} · {item.qty}개</span>
+                                  <span className="text-[12px] font-normal text-gray-text flex-shrink-0 ml-2">{won(item.price * item.qty)}</span>
                                 </div>
-                              )}
+                                {item.options.length > 0 && (
+                                  <div className="text-[12px] text-gray-text mt-0.5 space-y-0.5">
+                                    {item.options.map((opt, oi) => <div key={oi}>└ {opt}</div>)}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           ))}
                           <div className="border-t border-gray-border pt-2.5 mt-2.5 flex justify-between items-center">

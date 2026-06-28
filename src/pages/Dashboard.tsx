@@ -178,9 +178,9 @@ function todayRange(): { start: string; end: string } {
 export default function Dashboard() {
   const { storeId } = useStore()   // 현재는 필터링에 미사용. 향후 다점포 지원용.
 
-  const [activeOrders, setActiveOrders] = useState<Order[]>([])
-  const [todayOrders,  setTodayOrders]  = useState<Order[]>([])
-  const [loading,      setLoading]      = useState(true)
+  const [activeOrders,  setActiveOrders]  = useState<Order[]>([])
+  const [todayOrders,   setTodayOrders]   = useState<Order[]>([])
+  const [loading,       setLoading]       = useState(true)
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
 
   // ── 오늘 전체 주문 조회 (통계 + 완료 목록) ──────────────────────────────────

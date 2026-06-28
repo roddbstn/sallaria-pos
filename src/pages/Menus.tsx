@@ -51,10 +51,13 @@ function mapDbMenu(row: any): MenuDetail {
 
 // ── 스토어 옵션 그룹 (옵션 탭용) ─────────────────────────────────────────────
 interface StoreOptionGroup {
-  id:       string
-  name:     string
-  usedBy:   string[]   // 적용된 메뉴명 목록
-  items:    { id: string; name: string; extra: number; soldOut: boolean; hidden: boolean }[]
+  id:         string
+  name:       string
+  isRequired: boolean
+  isMulti:    boolean
+  maxSelect:  number | null
+  usedBy:     string[]   // 적용된 메뉴명 목록
+  items:      { id: string; name: string; extra: number; soldOut: boolean; hidden: boolean }[]
 }
 
 export default function Menus() {
@@ -92,6 +95,8 @@ export default function Menus() {
   const [catEditNameDraft,   setCatEditNameDraft]   = useState('')
   const [catEditChecked,     setCatEditChecked]     = useState<Set<string>>(new Set())
   const [catEditSaving,      setCatEditSaving]      = useState(false)
+  const [dragId,             setDragId]             = useState<string | null>(null)
+  const [dragOverId,         setDragOverId]         = useState<string | null>(null)
   const [catDeleteModalId,   setCatDeleteModalId]   = useState<string | null>(null)
 
   const [addMenuOpen,   setAddMenuOpen]   = useState(false)
@@ -157,7 +162,7 @@ export default function Menus() {
     const { data } = await supabase
       .from('option_groups')
       .select(`
-        id, name, display_order,
+        id, name, display_order, is_required, is_multi, max_select,
         option_items ( id, name, extra_price, is_sold_out, is_hidden, display_order ),
         menu_option_groups ( menu_id, menus ( name ) )
       `)
@@ -165,8 +170,11 @@ export default function Menus() {
       .order('name')
 
     setStoreGroups((data ?? []).map((g: any) => ({
-      id:     g.id,
-      name:   g.name,
+      id:         g.id,
+      name:       g.name,
+      isRequired: g.is_required ?? false,
+      isMulti:    g.is_multi    ?? false,
+      maxSelect:  g.max_select  ?? null,
       usedBy: (g.menu_option_groups ?? []).map((m: any) => m.menus?.name).filter(Boolean),
       items:  (g.option_items ?? [])
         .sort((a: any, b: any) => a.display_order - b.display_order)
@@ -326,6 +334,28 @@ export default function Menus() {
       if (c.id === below.id) return { ...c, displayOrder: thisOrder }
       return c
     }))
+  }
+
+  // ── 카테고리 드래그 앤 드롭 ─────────────────────────────────────────────────
+  async function handleCatDrop(targetId: string) {
+    if (!dragId || dragId === targetId) return
+    const sorted = sortedCategories()
+    const fromIdx = sorted.findIndex(c => c.id === dragId)
+    const toIdx   = sorted.findIndex(c => c.id === targetId)
+    if (fromIdx < 0 || toIdx < 0) return
+
+    const reordered = [...sorted]
+    const [moved] = reordered.splice(fromIdx, 1)
+    reordered.splice(toIdx, 0, moved)
+
+    const updates = reordered.map((c, i) => ({ id: c.id, order: i + 1 }))
+    setCategories(prev => prev.map(c => {
+      const u = updates.find(u => u.id === c.id)
+      return u ? { ...c, displayOrder: u.order } : c
+    }))
+    await Promise.all(updates.map(u =>
+      supabase.from('categories').update({ display_order: u.order }).eq('id', u.id)
+    ))
   }
 
   // ── 메뉴 추가 ───────────────────────────────────────────────────────────────
@@ -606,7 +636,11 @@ export default function Menus() {
       .single()
     if (error || !data) { console.error(error); return }
     setStoreGroups(prev => [...prev, {
-      id: data.id, name: data.name, usedBy: [], items: [],
+      id: data.id, name: data.name,
+      isRequired: data.is_required ?? false,
+      isMulti:    data.is_multi    ?? false,
+      maxSelect:  data.max_select  ?? null,
+      usedBy: [], items: [],
     }])
     setAddingStoreGroup(false)
     setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
@@ -843,8 +877,11 @@ export default function Menus() {
                     : <span className="text-[22px]">{menu.emoji}</span>
                   }
                   <span className="font-semibold text-ink">{menu.name}</span>
-                  <span className="text-gray-text text-[12px]">
-                    {getCategoryName(menu.categoryId) || <span className="text-gray-border italic">미지정</span>}
+                  <span>
+                    {getCategoryName(menu.categoryId)
+                      ? <span className="text-[11px] font-medium text-gray-text bg-gray-bg px-2.5 py-0.5 rounded-full">{getCategoryName(menu.categoryId)}</span>
+                      : <span className="text-[11px] font-medium text-gray-border bg-gray-bg px-2.5 py-0.5 rounded-full italic">미지정</span>
+                    }
                   </span>
                   <span className="font-bold">{won(menu.price)}</span>
                   <span>
@@ -970,11 +1007,11 @@ export default function Menus() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">판매 상태</span>
-                      <div className="flex gap-1.5">
+                      <div className="flex bg-gray-100 rounded-lg p-0.5">
                         {[{ label: '판매중', val: false }, { label: '품절', val: true }].map(({ label, val }) => (
                           <button key={label} type="button" onClick={() => setEditForm(p => ({ ...p, soldOut: val }))}
-                            className={`flex-1 py-1.5 rounded-lg text-[12px] font-bold transition-colors
-                              ${editForm.soldOut === val ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                            className={`flex-1 py-1.5 rounded-md text-[12px] font-bold transition-all
+                              ${editForm.soldOut === val ? 'bg-white shadow-sm text-ink' : 'text-gray-text'}`}>
                             {label}
                           </button>
                         ))}
@@ -982,11 +1019,11 @@ export default function Menus() {
                     </div>
                     <div>
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">표시 상태</span>
-                      <div className="flex gap-1.5">
+                      <div className="flex bg-gray-100 rounded-lg p-0.5">
                         {[{ label: '노출', val: true }, { label: '숨김', val: false }].map(({ label, val }) => (
                           <button key={label} type="button" onClick={() => setEditForm(p => ({ ...p, active: val }))}
-                            className={`flex-1 py-1.5 rounded-lg text-[12px] font-bold transition-colors
-                              ${editForm.active === val ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                            className={`flex-1 py-1.5 rounded-md text-[12px] font-bold transition-all
+                              ${editForm.active === val ? 'bg-white shadow-sm text-ink' : 'text-gray-text'}`}>
                             {label}
                           </button>
                         ))}
@@ -1270,25 +1307,47 @@ export default function Menus() {
               const catMenus = menus.filter(m => m.categoryId === cat.id)
               const isExpanded = expandedCatId === cat.id
               return (
-                <div key={cat.id}>
+                <div
+                  key={cat.id}
+                  draggable
+                  onDragStart={() => { setDragId(cat.id); setExpandedCatId(null) }}
+                  onDragOver={e => { e.preventDefault(); setDragOverId(cat.id) }}
+                  onDrop={e => { e.preventDefault(); handleCatDrop(cat.id); setDragOverId(null) }}
+                  onDragEnd={() => { setDragId(null); setDragOverId(null) }}
+                  className={dragOverId === cat.id && dragId !== cat.id ? 'border-t-2 border-[#16a84c]' : ''}
+                >
                   {/* ── 카테고리 행 ── */}
                   <div
-                    className="flex items-center gap-3 px-5 py-3 bg-white hover:bg-gray-bg/50 cursor-pointer select-none"
+                    className={`flex items-center gap-3 px-5 py-3 hover:bg-gray-bg/50 cursor-pointer select-none transition-colors ${dragId === cat.id ? 'opacity-40 bg-gray-bg' : 'bg-white'}`}
                     onClick={() => setExpandedCatId(isExpanded ? null : cat.id)}
                   >
-
-                    <div className="flex flex-col gap-0.5 flex-shrink-0">
-                      <button onClick={e => { e.stopPropagation(); moveCategoryUp(cat.id) }} disabled={idx === 0}
-                        className="w-6 h-5 flex items-center justify-center text-[11px] text-gray-text hover:text-ink disabled:opacity-20 disabled:cursor-not-allowed">▲</button>
-                      <button onClick={e => { e.stopPropagation(); moveCategoryDown(cat.id) }} disabled={idx === arr.length - 1}
-                        className="w-6 h-5 flex items-center justify-center text-[11px] text-gray-text hover:text-ink disabled:opacity-20 disabled:cursor-not-allowed">▼</button>
+                    {/* 드래그 핸들 */}
+                    <div
+                      className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-border hover:text-gray-text transition-colors"
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor">
+                        <circle cx="3.5" cy="2.5" r="1.5"/><circle cx="8.5" cy="2.5" r="1.5"/>
+                        <circle cx="3.5" cy="7" r="1.5"/><circle cx="8.5" cy="7" r="1.5"/>
+                        <circle cx="3.5" cy="11.5" r="1.5"/><circle cx="8.5" cy="11.5" r="1.5"/>
+                      </svg>
                     </div>
 
                     <span className="text-[12px] font-bold text-gray-text w-5 text-center flex-shrink-0">{idx + 1}</span>
 
-                    <span className="flex-1 text-[14px] font-semibold text-ink">{cat.name}</span>
+                    <span className="text-[14px] font-medium text-ink flex-shrink-0">{cat.name}</span>
 
-                    <span className="text-[12px] text-gray-text flex-shrink-0">메뉴 {catMenus.length}개</span>
+                    <div className="flex flex-wrap gap-1 flex-1 min-w-0 overflow-hidden">
+                      {catMenus.length === 0
+                        ? <span className="text-[12px] text-gray-text">—</span>
+                        : catMenus.map(m => (
+                            <span key={m.code} className="text-[11px] font-medium text-gray-text bg-gray-bg px-2 py-0.5 rounded-full flex-shrink-0">
+                              {m.name}
+                            </span>
+                          ))
+                      }
+                    </div>
 
                     <button
                       onClick={e => {
@@ -1894,11 +1953,11 @@ function OptionGroupCard({
             </div>
             <div className="mb-4">
               <label className="text-[11px] font-bold text-gray-text block mb-2">필수 여부</label>
-              <div className="flex gap-2">
+              <div className="flex bg-gray-100 rounded-xl p-0.5">
                 {[{ label: '필수', val: true }, { label: '선택', val: false }].map(({ label, val }) => (
                   <button key={label} onClick={() => onUpdateGroup({ isRequired: val })}
-                    className={`flex-1 py-2 rounded-xl border-2 text-[13px] font-bold transition-colors focus:outline-none
-                      ${group.isRequired === val ? 'border-[#16a84c] text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                    className={`flex-1 py-2 rounded-[10px] text-[13px] font-bold transition-all focus:outline-none
+                      ${group.isRequired === val ? 'bg-white shadow-sm text-ink' : 'text-gray-text'}`}>
                     {label}
                   </button>
                 ))}
@@ -1912,7 +1971,7 @@ function OptionGroupCard({
                   return (
                     <button key={opt.label} onClick={() => onUpdateGroup({ isMulti: opt.isMulti, maxSelect: opt.max })}
                       className={`py-2 rounded-xl border-2 text-[12px] font-bold transition-colors focus:outline-none
-                        ${active ? 'border-[#16a84c] text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${active ? 'border-transparent text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {opt.label}
                     </button>
                   )
