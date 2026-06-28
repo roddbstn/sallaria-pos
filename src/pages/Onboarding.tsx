@@ -176,13 +176,9 @@ export default function Onboarding({ clientId, onComplete }: Props) {
                     {ports.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 ) : (
-                  <input
-                    type="text"
-                    value={printerPath}
-                    onChange={e => setPrinterPath(e.target.value)}
-                    placeholder="예: COM3"
-                    className="w-full border border-gray-border rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-green transition-colors"
-                  />
+                  <div className="w-full border border-gray-border rounded-lg px-3 py-2.5 text-[14px] text-gray-text bg-gray-bg">
+                    {scanning ? '포트 감지 중…' : '포트를 찾을 수 없습니다. 프린터 연결 후 다시 감지해 주세요.'}
+                  </div>
                 )}
               </div>
 
