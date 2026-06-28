@@ -74,6 +74,7 @@ export default function Customers() {
       .from('accounts')
       .select('*')
       .eq('is_active', !inactive)
+      .eq('store_id', storeId)
       .order('account_name')
     if (!error && data) setAccounts(data as DbAccount[])
   }
@@ -185,6 +186,7 @@ export default function Customers() {
       .select('account_code')
       .eq('pin_code', newForm.pin.trim())
       .eq('is_active', true)
+      .eq('store_id', storeId)
       .maybeSingle()
     if (dup) {
       setAddPinError('이미 존재하는 PIN번호입니다.')
@@ -280,6 +282,7 @@ export default function Customers() {
         .select('account_code')
         .eq('pin_code', editForm.pin.trim())
         .eq('is_active', true)
+        .eq('store_id', storeId)
         .neq('account_code', selected.account_code)
         .maybeSingle()
       if (dup) {
