@@ -4,7 +4,6 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { autoUpdater } from 'electron-updater'
 import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
 import Store from 'electron-store'
@@ -339,36 +338,6 @@ ipcMain.handle('printer:test', async () => {
   return { ok: true }
 })
 
-// ── 자동 업데이트 ────────────────────────────────────────────────────────────
-
-function setupAutoUpdater(): void {
-  if (is.dev) return   // 개발 중엔 업데이트 비활성화
-
-  autoUpdater.autoDownload    = true   // 백그라운드에서 자동 다운로드
-  autoUpdater.autoInstallOnAppQuit = true  // 앱 종료 시 자동 설치
-
-  autoUpdater.on('update-available', (info) => {
-    console.log('[Updater] 업데이트 발견:', info.version)
-    mainWindow?.webContents.send('updater:status', { type: 'available', version: info.version })
-  })
-
-  autoUpdater.on('update-downloaded', (info) => {
-    console.log('[Updater] 다운로드 완료:', info.version)
-    mainWindow?.webContents.send('updater:status', { type: 'ready', version: info.version })
-  })
-
-  autoUpdater.on('error', (err) => {
-    console.warn('[Updater] 오류:', err.message)
-  })
-
-  // 앱 시작 후 3초 후에 업데이트 확인 (UI 로딩 완료 후)
-  setTimeout(() => autoUpdater.checkForUpdates(), 3000)
-}
-
-// 렌더러에서 "지금 재시작해서 설치" 버튼 누를 때
-ipcMain.handle('updater:install', () => {
-  autoUpdater.quitAndInstall()
-})
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────
 
@@ -379,7 +348,6 @@ app.whenReady().then(async () => {
   createWindow()
   subscribeRealtime()
   await initPrinter()
-  setupAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
