@@ -1,6 +1,6 @@
 {
   "name": "sallaria-pos",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "샐러리아 침산점 POS 앱",
   "main": "out/main/index.js",
   "scripts": {
@@ -65,7 +65,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "allowElevation": true
+      "allowElevation": true,
+      "guid": "sallaria-pos-0110"
     }
   }
 }
