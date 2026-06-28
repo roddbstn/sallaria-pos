@@ -141,7 +141,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="text-white/60 text-[13px] font-medium">
-                      {new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} 접수
+                      {new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} 주문
                     </span>
                   </div>
                 </div>
