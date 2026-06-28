@@ -64,7 +64,9 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "closeApplications": true,
+      "allowElevation": true
     }
   }
 }
