@@ -19,7 +19,7 @@ export function playOrderSound(volumeOverride?: number) {
     const volume = (volumeOverride ?? getSavedVolume()) / 100  // 0~1
     if (volume === 0) return
 
-    const audio = new Audio('/sounds/order-alert.mp3')
+    const audio = new Audio('./sounds/order-alert.mp3')
     audio.volume = volume
     audio.play()
   } catch (_) {}
