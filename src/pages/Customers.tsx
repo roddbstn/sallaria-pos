@@ -980,7 +980,7 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
         {qrDataUrl ? (
           <div className="flex flex-col items-center mb-4">
             <img src={qrDataUrl} alt="Kiosk QR" className="w-[200px] h-[200px] rounded-xl border border-gray-border mb-3" />
-            <div className="text-[12px] font-mono text-gray-text">{BASE_URL}</div>
+            <div className="text-[11px] font-mono text-gray-text break-all text-center px-2">{url}</div>
           </div>
         ) : (
           <div className="h-[200px] flex items-center justify-center text-gray-text text-[12px]">QR 생성 중…</div>
