@@ -819,13 +819,14 @@ export default function Customers() {
       )}
 
       {/* ── 키오스크 QR 모달 ── */}
-      {kioskQr && <KioskQrModal onClose={() => setKioskQr(false)} />}
+      {kioskQr && <KioskQrModal storeId={storeId} onClose={() => setKioskQr(false)} />}
 
       {/* ── 거래처 고유 QR 모달 ── */}
       {accountQr && (
         <AccountQrModal
           accountCode={accountQr}
           accountName={accounts.find(a => a.account_code === accountQr)?.account_name ?? ''}
+          storeId={storeId}
           onClose={() => setAccountQr(null)}
         />
       )}
@@ -893,8 +894,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function AccountQrModal({ accountCode, accountName, onClose }: { accountCode: string; accountName: string; onClose: () => void }) {
-  const url = `${BASE_URL}?account=${accountCode}`
+function AccountQrModal({ accountCode, accountName, storeId, onClose }: { accountCode: string; accountName: string; storeId: string; onClose: () => void }) {
+  const url = `${BASE_URL}?store=${storeId}&account=${accountCode}`
   const [copied, setCopied] = useState(false)
   const qrDataUrl = useQrDataUrl(url)
 
@@ -947,12 +948,13 @@ function AccountQrModal({ accountCode, accountName, onClose }: { accountCode: st
   )
 }
 
-function KioskQrModal({ onClose }: { onClose: () => void }) {
+function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => void }) {
+  const url = `${BASE_URL}?store=${storeId}`
   const [copied, setCopied] = useState(false)
-  const qrDataUrl = useQrDataUrl(BASE_URL)
+  const qrDataUrl = useQrDataUrl(url)
 
   function copy() {
-    navigator.clipboard.writeText(BASE_URL)
+    navigator.clipboard.writeText(url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
