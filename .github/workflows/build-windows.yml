@@ -37,9 +37,7 @@ jobs:
         run: pnpm build
 
       - name: Windows 패키징 — x64
-        run: pnpm dist --win --x64
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm dist --win --x64 --publish never
 
       - name: 빌드 결과 확인 (디버그)
         shell: powershell
