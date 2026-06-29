@@ -7,14 +7,11 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
 import Store from 'electron-store'
-let SerialPort: typeof import('serialport').SerialPort | null = null
-try { SerialPort = require('serialport').SerialPort } catch { SerialPort = null }
 
 import {
-  PrintQueue,
-  buildCustomerReceipt,
-  buildKitchenReceipt,
-  buildTestReceipt,
+  buildCustomerReceiptHtml,
+  buildKitchenReceiptHtml,
+  buildTestReceiptHtml,
   type PrinterSettings,
   type ReceiptSettings,
   type OrderPayload,
@@ -29,14 +26,10 @@ interface StoreSchema {
 
 const store = new Store<StoreSchema>({
   defaults: {
-    printer: { path: 'COM3', baudRate: 9600, cutMode: 'partial' },
+    printer: { printerName: '' },
     receipt: { menuSize: 'small', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' },
   },
 })
-
-// ── 전역 인스턴스 ─────────────────────────────────────────────────────────────
-
-const printQueue = new PrintQueue()
 
 // ── Supabase 클라이언트 (Realtime 전용) ──────────────────────────────────────
 
@@ -67,16 +60,11 @@ function createWindow(): void {
     },
   })
 
-  printQueue.setWindow(mainWindow)
-
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show()
     if (is.dev) mainWindow!.webContents.openDevTools()
   })
-  mainWindow.on('closed', () => {
-    printQueue.setWindow(null)
-    mainWindow = null
-  })
+  mainWindow.on('closed', () => { mainWindow = null })
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
@@ -89,24 +77,51 @@ function createWindow(): void {
   }
 }
 
-// ── 프린터 초기화 (저장된 설정으로 포트 열기) ────────────────────────────────
+// ── OS 프린터로 HTML 출력 ─────────────────────────────────────────────────────
 
-async function initPrinter(): Promise<void> {
-  const settings = store.get('printer')
-  if (!settings.path) return
+/**
+ * 숨겨진 BrowserWindow에 HTML을 로드한 뒤, OS 프린트 API로 인쇄.
+ * 프린터가 Windows에 드라이버로 등록돼 있으면 무조건 동작.
+ */
+async function printHtml(html: string): Promise<void> {
+  const printerName = getPrinterName()
+  if (!printerName) throw new Error('프린터가 설정되지 않았습니다. 설정 탭에서 프린터를 선택해 주세요.')
+
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: false, contextIsolation: false },
+  })
+
   try {
-    await printQueue.open(settings)
-    console.log(`[Printer] 초기화 완료: ${settings.path}`)
-  } catch (err) {
-    console.warn('[Printer] 초기화 실패 (프린터 연결 확인 필요):', (err as Error).message)
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    await new Promise<void>((resolve, reject) => {
+      win.webContents.print(
+        { silent: true, printBackground: false, deviceName: printerName },
+        (success, failureReason) => {
+          if (success) resolve()
+          else reject(new Error(failureReason || '출력 실패'))
+        }
+      )
+    })
+  } finally {
+    win.destroy()
   }
+}
+
+function getPrinterName(): string {
+  const saved = store.get('printer') as Record<string, unknown>
+  return (saved?.printerName as string) ?? ''
+}
+
+function notifyPrinterStatus(): void {
+  mainWindow?.webContents.send('printer:status', {
+    connected:   !!getPrinterName(),
+    queueLength: 0,
+  })
 }
 
 // ── Supabase Realtime 구독 ────────────────────────────────────────────────────
 
-/**
- * 새 주문 수신 시 영수증 자동 출력 + 상태 → 조리중
- */
 async function autoPrintOrder(orderCode: string): Promise<void> {
   if (!supabase) return
   try {
@@ -159,11 +174,9 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
       note:           data.note ?? null,
     }
 
-    // 영수증 출력 (프린터 미연결 시 큐에 적재)
-    // 상태 변경은 점주가 팝업에서 접수 버튼 누를 때 approve_order RPC로 처리
     const receipt = store.get('receipt')
-    printQueue.enqueue(buildCustomerReceipt(orderPayload, receipt))
-    printQueue.enqueue(buildKitchenReceipt(orderPayload, receipt))
+    await printHtml(buildCustomerReceiptHtml(orderPayload, receipt))
+    await printHtml(buildKitchenReceiptHtml(orderPayload, receipt))
     console.log(`[AutoPrint] 영수증 출력 완료: ${orderCode}`)
   } catch (err) {
     console.error('[AutoPrint] 오류:', err)
@@ -182,7 +195,6 @@ function subscribeRealtime(): void {
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'orders' },
       async (payload) => {
-        // ── 내 매장 주문 필터: account_code → accounts.store_id 확인 ──
         if (currentStoreId) {
           const accountCode = payload.new['account_code'] as string
           const { data: acc } = await supabase!
@@ -191,7 +203,7 @@ function subscribeRealtime(): void {
             .eq('account_code', accountCode)
             .maybeSingle()
           if (!acc || acc.store_id !== currentStoreId) {
-            console.log(`[Realtime] 타 매장 주문 무시 — account: ${accountCode}, store: ${acc?.store_id}`)
+            console.log(`[Realtime] 타 매장 주문 무시 — account: ${accountCode}`)
             return
           }
         }
@@ -208,24 +220,20 @@ function subscribeRealtime(): void {
 
 // ── IPC 핸들러 ────────────────────────────────────────────────────────────────
 
-// 매장 세션 설정 — 렌더러 로그인 후 storeId 전달 → Realtime 필터에 사용
 ipcMain.handle('store:setStoreId', (_e, storeId: string) => {
   console.log('[IPC] store:setStoreId:', storeId)
   currentStoreId = storeId
 })
 
 /**
- * 주문 접수 확정 → 고객용 + 주방용 영수증 순서대로 출력
- * 렌더러에서 order 전체 payload + prepMins 전달
+ * 주문 접수 확정 → 고객용 + 주방용 영수증 출력
+ * approve_order RPC는 렌더러(OrderPopup)에서 이미 호출 — 여기선 출력만
  */
 ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPayload; prepMins: number }) => {
   console.log(`[IPC] order:approve — ${order.order_code}, 준비시간: ${prepMins}분`)
 
-  // 1) DB 상태 → 조리중
+  // 웹 success 페이지에 broadcast (best-effort)
   if (supabase) {
-    await supabase.rpc('update_order_status', { p_order_code: order.order_code, p_status: '조리중' })
-
-    // 2) 웹 success 페이지에 broadcast (best-effort)
     try {
       const ch = supabase.channel(`orders:order_code=${order.order_code}`)
       ch.subscribe((s) => {
@@ -239,26 +247,19 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
     }
   }
 
-  // 3) 영수증 출력
-  const receipt = store.get('receipt')
-  printQueue.enqueue(buildCustomerReceipt(order, receipt))
-  printQueue.enqueue(buildKitchenReceipt(order, receipt))
+  // 영수증 출력은 Realtime autoPrintOrder()에서 자동 처리 — 여기선 출력 안 함
 
   return { ok: true }
 })
 
 ipcMain.handle('order:reject', async (_e, { orderCode, reason }: { orderCode: string; reason: string }) => {
   console.log(`[IPC] order:reject — ${orderCode}, 사유: ${reason}`)
-
   if (supabase) {
-    // 취소 + 잔액 환원 + 사유 저장 (RPC가 원자적으로 처리)
     await supabase.rpc('cancel_order', {
       p_order_code: orderCode,
       p_allow_after_cooking: true,
       p_note: reason,
     })
-
-    // 웹 success 페이지에 broadcast (best-effort)
     try {
       const ch = supabase.channel(`orders:order_code=${orderCode}`)
       ch.subscribe((s) => {
@@ -271,14 +272,13 @@ ipcMain.handle('order:reject', async (_e, { orderCode, reason }: { orderCode: st
       console.warn('[IPC] broadcast 실패 (무시):', e)
     }
   }
-
   return { ok: true }
 })
 
 ipcMain.handle('order:complete', async (_e, { orderCode }: { orderCode: string }) => {
   console.log(`[IPC] order:complete — ${orderCode}`)
   if (supabase) {
-    await supabase.rpc('update_order_status', { p_order_code: orderCode, p_status: '완료' })
+    await supabase.from('orders').update({ status: '완료' }).eq('order_code', orderCode)
   }
   return { ok: true }
 })
@@ -293,71 +293,61 @@ ipcMain.handle('order:cancel', async (_e, { orderCode }: { orderCode: string }) 
 
 /** 설정 읽기 */
 ipcMain.handle('settings:get', async () => {
+  const savedPrinter = store.get('printer') as Record<string, unknown>
   return {
-    printer: store.get('printer'),
+    printer: { printerName: (savedPrinter?.printerName as string) ?? '' },
     receipt: store.get('receipt'),
   }
 })
 
-/** 설정 저장 + 필요 시 포트 재초기화 */
+/** 설정 저장 */
 ipcMain.handle('settings:update', async (_e, patch: Partial<StoreSchema>) => {
-  const prevPath    = store.get('printer').path
-  const prevBaud    = store.get('printer').baudRate
-
   if (patch.printer) store.set('printer', patch.printer)
   if (patch.receipt) store.set('receipt', patch.receipt)
-
-  // 프린터 경로나 보드레이트가 바뀌면 포트 재초기화
-  const newPrinter = store.get('printer')
-  if (patch.printer && (prevPath !== newPrinter.path || prevBaud !== newPrinter.baudRate)) {
-    try {
-      await printQueue.open(newPrinter)
-    } catch (err) {
-      console.warn('[Printer] 재초기화 실패:', (err as Error).message)
-    }
-  }
-
+  notifyPrinterStatus()
   return { ok: true }
 })
 
-/** 사용 가능한 시리얼 포트 목록 */
-ipcMain.handle('printer:list-ports', async () => {
-  if (!SerialPort) return []
-  const ports = await SerialPort.list()
-  return ports.map(p => p.path)
+/** 시스템에 설치된 프린터 목록 */
+ipcMain.handle('printer:list-system', async () => {
+  if (!mainWindow) return []
+  const printers = await mainWindow.webContents.getPrintersAsync()
+  return printers.map(p => ({ name: p.name, isDefault: p.isDefault }))
 })
 
-/** 영수증 재출력 (주문 관리 탭에서 호출) */
+/** 영수증 재출력 */
 ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload }) => {
-  if (!printQueue.connected) {
-    return { ok: false, error: '프린터가 연결되어 있지 않습니다.' }
-  }
   const receipt = store.get('receipt')
-  printQueue.enqueue(buildCustomerReceipt(order, receipt))
-  printQueue.enqueue(buildKitchenReceipt(order, receipt))
-  return { ok: true }
-})
-
-/** 프린터 명시적 연결 (Settings에서 "연결하기" 버튼) */
-ipcMain.handle('printer:connect', async () => {
-  const settings = store.get('printer')
   try {
-    await printQueue.open(settings)
+    await printHtml(buildCustomerReceiptHtml(order, receipt))
+    await printHtml(buildKitchenReceiptHtml(order, receipt))
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
   }
 })
 
-/** 테스트 영수증 출력 */
-ipcMain.handle('printer:test', async () => {
-  if (!printQueue.connected) {
-    return { ok: false, error: '프린터가 연결되어 있지 않습니다.' }
-  }
-  printQueue.enqueue(buildTestReceipt())
+/** 프린터 연결 확인 (설정에서 "연결하기" 버튼) */
+ipcMain.handle('printer:connect', async () => {
+  const printerName = getPrinterName()
+  if (!printerName) return { ok: false, error: '프린터를 먼저 선택해 주세요.' }
+  if (!mainWindow) return { ok: false, error: '창이 준비되지 않았습니다.' }
+  const printers = await mainWindow.webContents.getPrintersAsync()
+  const found = printers.some(p => p.name === printerName)
+  if (!found) return { ok: false, error: `"${printerName}" 프린터를 찾을 수 없습니다. 목록을 새로고침해 주세요.` }
+  notifyPrinterStatus()
   return { ok: true }
 })
 
+/** 테스트 출력 */
+ipcMain.handle('printer:test', async () => {
+  try {
+    await printHtml(buildTestReceiptHtml())
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+})
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────
 
@@ -367,14 +357,15 @@ app.whenReady().then(async () => {
 
   createWindow()
   subscribeRealtime()
-  await initPrinter()
+
+  // 설정 탭 진입 시 프린터 상태 초기 전송
+  mainWindow?.webContents.once('did-finish-load', () => notifyPrinterStatus())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
-app.on('window-all-closed', async () => {
-  await printQueue.close()
+app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })

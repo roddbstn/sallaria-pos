@@ -207,7 +207,7 @@ export default function Customers() {
         warning_threshold: parseInt(newForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
         is_active:         true,
         store_id:          storeId,
-        current_balance:   isNaN(initialBalance) ? 0 : initialBalance,
+        current_balance:   0,  // add_deposit RPC가 잔액 반영하므로 여기선 0으로 고정
       })
       .select('account_code')
       .single()

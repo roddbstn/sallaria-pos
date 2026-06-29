@@ -1,44 +1,43 @@
 import { useState, useEffect } from 'react'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 
-interface PrinterSettings { path: string; baudRate: number; cutMode: 'full' | 'partial' }
+interface PrinterSettings { printerName: string }
 interface ReceiptSettings  {
   menuSize:           'small' | 'normal' | 'large'
   optionSize:         'small' | 'normal' | 'large'
   customerMenuSize:   'small' | 'normal' | 'large'
   customerOptionSize: 'small' | 'normal' | 'large'
 }
+interface SystemPrinter { name: string; isDefault: boolean }
 
 type Api = {
-  getSettings?:    () => Promise<{ printer: PrinterSettings; receipt: ReceiptSettings }>
-  listPorts?:      () => Promise<string[]>
-  connectPrinter?: () => Promise<{ ok: boolean; error?: string }>
-  testPrint?:      () => Promise<{ ok: boolean; error?: string }>
-  updateSettings?: (p: unknown) => Promise<{ ok: boolean }>
-  onPrinterStatus?:  (cb: (s: { connected: boolean; queueLength: number }) => void) => void
-  offPrinterStatus?: () => void
+  getSettings?:         () => Promise<{ printer: PrinterSettings; receipt: ReceiptSettings }>
+  listSystemPrinters?:  () => Promise<SystemPrinter[]>
+  connectPrinter?:      () => Promise<{ ok: boolean; error?: string }>
+  testPrint?:           () => Promise<{ ok: boolean; error?: string }>
+  updateSettings?:      (p: unknown) => Promise<{ ok: boolean }>
+  onPrinterStatus?:     (cb: (s: { connected: boolean; queueLength: number }) => void) => void
+  offPrinterStatus?:    () => void
 }
 
 const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
 
 const SIZE_LABELS: Record<string, string> = { small: '기본', normal: '보통', large: '크게' }
-const BAUD_RATES = [9600, 19200, 38400, 115200]
 
 export default function Settings() {
-  const [ports,      setPorts]      = useState<string[]>([])
-  const [printer,    setPrinter]    = useState<PrinterSettings>({ path: '', baudRate: 9600, cutMode: 'partial' })
+  const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([])
+  const [printer,    setPrinter]    = useState<PrinterSettings>({ printerName: '' })
   const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' })
   const [connected,  setConnected]  = useState(false)
-  const [scanning,   setScanning]   = useState(false)
+  const [loading,    setLoading]    = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [testing,    setTesting]    = useState(false)
   const [saved,      setSaved]      = useState(false)
   const [connectErr, setConnectErr] = useState('')
   const [testMsg,    setTestMsg]    = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [alertVolume,  setAlertVolume]  = useState(getSavedVolume)
+  const [receiptTab, setReceiptTab] = useState<'kitchen' | 'customer'>('kitchen')
 
-  // 초기 설정 로드 + 프린터 상태 구독
   useEffect(() => {
     const a = api()
     a.getSettings?.().then(s => {
@@ -49,47 +48,40 @@ export default function Settings() {
     return () => { a.offPrinterStatus?.() }
   }, [])
 
-  // 포트 자동 감지
-  async function handleScan() {
-    setScanning(true)
+  async function handleScanPrinters() {
+    setLoading(true)
     setConnectErr('')
-    const found = await api().listPorts?.() ?? []
-    setPorts(found)
-    if (found.length > 0 && !printer.path) {
-      setPrinter(p => ({ ...p, path: found[0] }))
+    const list = await api().listSystemPrinters?.() ?? []
+    setSystemPrinters(list)
+    // 기본 프린터 자동 선택 (아직 선택된 게 없을 때)
+    if (!printer.printerName) {
+      const def = list.find(p => p.isDefault)
+      if (def) setPrinter({ printerName: def.name })
     }
-    setScanning(false)
+    setLoading(false)
   }
 
-  // 연결
   async function handleConnect() {
-    if (!printer.path) { setConnectErr('포트를 먼저 선택해 주세요.'); return }
+    if (!printer.printerName) { setConnectErr('프린터를 먼저 선택해 주세요.'); return }
     setConnecting(true)
     setConnectErr('')
-    // 설정 저장 후 연결
-    await api().updateSettings?.({ printer, receipt })
+    await api().updateSettings?.({ printer })
     const res = await api().connectPrinter?.()
     if (res && !res.ok) {
-      setConnectErr(res.error ?? '연결에 실패했습니다. 포트와 케이블을 확인해 주세요.')
+      setConnectErr(res.error ?? '프린터를 확인할 수 없습니다.')
     }
     setConnecting(false)
   }
 
-  // 테스트 출력
   async function handleTestPrint() {
     setTesting(true)
     setTestMsg('')
     const res = await api().testPrint?.()
-    if (res?.ok) {
-      setTestMsg('종이가 나왔나요? 출력이 완료됐습니다!')
-    } else {
-      setTestMsg(res?.error ?? '출력에 실패했습니다.')
-    }
+    setTestMsg(res?.ok ? '테스트 용지가 출력됐나요? 정상입니다!' : (res?.error ?? '출력에 실패했습니다.'))
     setTesting(false)
     setTimeout(() => setTestMsg(''), 4000)
   }
 
-  // 설정 저장
   async function handleSave() {
     saveVolume(alertVolume)
     await api().updateSettings?.({ printer, receipt })
@@ -98,6 +90,18 @@ export default function Settings() {
   }
 
   const sizeOpts: ('small' | 'normal' | 'large')[] = ['small', 'normal', 'large']
+
+  const previewWrap: React.CSSProperties = {
+    width: 192,
+    backgroundColor: '#fff',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
+    fontFamily: "'Courier New', Courier, monospace",
+    fontSize: 8,
+    lineHeight: 1.35,
+    color: '#111',
+    padding: '10px 16px',
+    overflowX: 'hidden',
+  }
 
   return (
     <div className="h-full overflow-y-auto bg-white">
@@ -110,10 +114,7 @@ export default function Settings() {
             <div className="flex items-center gap-3">
               <span className="text-[13px] text-gray-text w-4">🔇</span>
               <input
-                type="range"
-                min={0}
-                max={100}
-                value={alertVolume}
+                type="range" min={0} max={100} value={alertVolume}
                 onChange={e => setAlertVolume(Number(e.target.value))}
                 className="flex-1 accent-green h-2 cursor-pointer"
               />
@@ -136,331 +137,247 @@ export default function Settings() {
 
           {/* 연결 상태 배지 */}
           <div className={[
-            'flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] font-bold mb-2',
+            'flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] font-bold',
             connected ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-red-50 text-[#C92A2A]',
           ].join(' ')}>
-            <span className={['w-2.5 h-2.5 rounded-full', connected ? 'bg-[#017333]' : 'bg-[#C92A2A]'].join(' ')} />
-            {connected ? '프린터가 연결되어 있습니다' : '프린터가 연결되어 있지 않습니다'}
+            <span className={['w-2.5 h-2.5 rounded-full flex-shrink-0', connected ? 'bg-[#017333]' : 'bg-[#C92A2A]'].join(' ')} />
+            {connected
+              ? `연결됨 — ${printer.printerName}`
+              : printer.printerName
+                ? `미확인 — ${printer.printerName} (연결하기 클릭)`
+                : '프린터가 선택되지 않았습니다'}
           </div>
 
-          {/* STEP 1 — 포트 감지 */}
-          <StepCard step="1" title="프린터 포트 찾기">
+          {/* STEP 1 — 시스템 프린터 목록 */}
+          <StepCard step="1" title="프린터 선택">
             <p className="text-[12px] text-gray-text mb-3">
-              프린터를 PC에 연결한 후 아래 버튼을 눌러 주세요.
+              프린터를 PC에 연결한 후 목록을 불러오세요.
             </p>
             <button
-              onClick={handleScan}
-              disabled={scanning}
-              className="flex items-center gap-2 px-4 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-60 transition-opacity"
+              onClick={handleScanPrinters}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-60 transition-opacity mb-3"
             >
-              {scanning ? (
-                <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />감지 중…</>
-              ) : (
-                <><SearchIcon />포트 자동 감지</>
-              )}
+              {loading
+                ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />불러오는 중…</>
+                : <><SearchIcon />프린터 목록 새로고침</>}
             </button>
-            {ports.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {ports.map(p => (
+
+            {systemPrinters.length > 0 && (
+              <div className="space-y-1.5">
+                {systemPrinters.map(p => (
                   <button
-                    key={p}
-                    onClick={() => { setPrinter(prev => ({ ...prev, path: p })); setConnectErr('') }}
+                    key={p.name}
+                    onClick={() => { setPrinter({ printerName: p.name }); setConnectErr('') }}
                     className={[
-                      'px-3 py-1.5 rounded-lg text-[12px] font-bold border transition-colors',
-                      printer.path === p
+                      'w-full text-left px-3 py-2.5 rounded-xl text-[13px] border transition-colors flex items-center gap-2',
+                      printer.printerName === p.name
                         ? 'bg-ink text-white border-ink'
-                        : 'bg-gray-100 text-gray-text hover:bg-gray-200',
+                        : 'bg-gray-50 text-ink hover:bg-gray-100 border-gray-border',
                     ].join(' ')}
                   >
-                    {p}
+                    <span className="flex-1">{p.name}</span>
+                    {p.isDefault && (
+                      <span className={[
+                        'text-[10px] font-bold px-1.5 py-0.5 rounded',
+                        printer.printerName === p.name ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-text',
+                      ].join(' ')}>기본</span>
+                    )}
+                    {printer.printerName === p.name && <span className="text-[12px]">✓</span>}
                   </button>
                 ))}
               </div>
             )}
-            {ports.length === 0 && !scanning && (
-              <p className="mt-2 text-[11px] text-gray-text">감지된 포트가 없습니다. 케이블 연결을 확인해 주세요.</p>
+
+            {/* 저장된 프린터가 있는데 목록 조회 전이면 표시 */}
+            {systemPrinters.length === 0 && printer.printerName && (
+              <div className="text-[12px] text-gray-text bg-gray-50 px-3 py-2 rounded-lg">
+                현재 선택: <strong>{printer.printerName}</strong>
+              </div>
             )}
           </StepCard>
 
-          {/* STEP 2 — 연결 */}
-          <StepCard step="2" title="프린터 연결하기">
+          {/* STEP 2 — 연결 확인 */}
+          <StepCard step="2" title="연결 확인">
             <p className="text-[12px] text-gray-text mb-3">
-              포트를 선택한 후 <strong>연결하기</strong>를 눌러 주세요.
+              프린터를 선택한 후 <strong>연결하기</strong>를 눌러 확인하세요.
             </p>
-            <div className="flex gap-2 items-center">
-              <select
-                value={printer.path}
-                onChange={e => { setPrinter(p => ({ ...p, path: e.target.value })); setConnectErr('') }}
-                className="border border-gray-border rounded-lg px-3 py-2 text-[13px] flex-1"
-              >
-                {printer.path === '' && <option value="">포트 선택…</option>}
-                {ports.map(p => <option key={p}>{p}</option>)}
-                {/* 포트 감지 전에도 수동 입력 가능하도록 */}
-                {printer.path && !ports.includes(printer.path) && (
-                  <option value={printer.path}>{printer.path}</option>
-                )}
-              </select>
-              <button
-                onClick={handleConnect}
-                disabled={connecting || !printer.path}
-                className="flex items-center gap-2 px-4 py-2 bg-[#016f30] text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-opacity whitespace-nowrap"
-              >
-                {connecting ? (
-                  <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />연결 중…</>
-                ) : '연결하기'}
-              </button>
-            </div>
+            <button
+              onClick={handleConnect}
+              disabled={connecting || !printer.printerName}
+              className="flex items-center gap-2 px-4 py-2 bg-[#016f30] text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {connecting
+                ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />확인 중…</>
+                : '연결하기'}
+            </button>
             {connectErr && (
-              <div className="mt-2 text-[12px] text-[#C92A2A] bg-red-50 px-3 py-2 rounded-lg">
-                {connectErr}
-              </div>
+              <div className="mt-2 text-[12px] text-[#C92A2A] bg-red-50 px-3 py-2 rounded-lg">{connectErr}</div>
             )}
           </StepCard>
 
           {/* STEP 3 — 테스트 출력 */}
           <StepCard step="3" title="테스트 출력">
             <p className="text-[12px] text-gray-text mb-3">
-              연결이 완료되면 테스트 용지를 출력해 확인해 주세요.
+              연결 후 테스트 용지를 출력해 확인해 주세요.
             </p>
             <button
               onClick={handleTestPrint}
-              disabled={testing || !connected}
+              disabled={testing || !printer.printerName}
               className={[
                 'flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-opacity',
-                connected
+                printer.printerName
                   ? 'bg-[#016f30] text-white hover:opacity-90'
                   : 'bg-gray-100 text-gray-text cursor-not-allowed',
               ].join(' ')}
             >
-              {testing ? (
-                <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />출력 중…</>
-              ) : (
-                <><PrintIcon />테스트 영수증 출력</>
-              )}
+              {testing
+                ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />출력 중…</>
+                : <><PrintIcon />테스트 영수증 출력</>}
             </button>
-            {!connected && (
-              <p className="mt-2 text-[11px] text-gray-text">연결 후 사용할 수 있습니다.</p>
+            {!printer.printerName && (
+              <p className="mt-2 text-[11px] text-gray-text">프린터 선택 후 사용할 수 있습니다.</p>
             )}
             {testMsg && (
               <div className={[
                 'mt-2 text-[12px] px-3 py-2 rounded-lg',
-                testMsg.includes('완료') ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-red-50 text-[#C92A2A]',
-              ].join(' ')}>
-                {testMsg}
-              </div>
+                testMsg.includes('정상') ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-red-50 text-[#C92A2A]',
+              ].join(' ')}>{testMsg}</div>
             )}
           </StepCard>
         </Section>
 
-        {/* ── 고급 설정 ── */}
-        <button
-          onClick={() => setShowAdvanced(v => !v)}
-          className="text-[12px] text-gray-text font-bold mb-4 flex items-center gap-1 hover:text-ink transition-colors"
-        >
-          {showAdvanced ? '▲' : '▼'} 고급 설정 (전송속도 · 컷 방식)
-        </button>
-
-        {showAdvanced && (
-          <Section title="고급 설정">
-            <Field label="전송속도 (보드레이트)">
-              <div className="flex gap-2">
-                {BAUD_RATES.map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setPrinter(p => ({ ...p, baudRate: r }))}
-                    className={[
-                      'px-3 py-2 rounded-lg text-[12px] font-bold border transition-colors',
-                      printer.baudRate === r
-                        ? 'bg-ink text-white border-ink'
-                        : 'bg-gray-100 text-gray-text hover:bg-gray-200',
-                    ].join(' ')}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[11px] text-gray-text mt-1.5">보통 9600으로 설정하면 됩니다.</p>
-            </Field>
-
-            <Field label="컷 방식">
-              <div className="flex gap-2">
-                {(['partial', 'full'] as const).map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setPrinter(p => ({ ...p, cutMode: m }))}
-                    className={[
-                      'px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
-                      printer.cutMode === m
-                        ? 'bg-ink text-white border-ink'
-                        : 'bg-gray-100 text-gray-text hover:bg-gray-200',
-                    ].join(' ')}
-                  >
-                    {m === 'partial' ? '부분 컷 (권장)' : '완전 컷'}
-                  </button>
-                ))}
-              </div>
-            </Field>
-          </Section>
-        )}
-
-        {/* ── 주방용 영수증 글자 크기 ── */}
-        <Section title="주방용 영수증 글자 크기">
-          {([
-            { key: 'menuSize',   label: '메뉴명' },
-            { key: 'optionSize', label: '옵션' },
-          ] as { key: keyof ReceiptSettings; label: string }[]).map(({ key, label }) => (
-            <Field key={key} label={label}>
-              <div className="flex gap-2">
-                {sizeOpts.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setReceipt(r => ({ ...r, [key]: s }))}
-                    className={[
-                      'px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
-                      receipt[key] === s
-                        ? 'bg-ink text-white border-ink'
-                        : 'bg-gray-100 text-gray-text hover:bg-gray-200',
-                    ].join(' ')}
-                  >
-                    {SIZE_LABELS[s]}
-                  </button>
-                ))}
-              </div>
-            </Field>
-          ))}
-
-          {/* 미리보기 */}
-          <div className="mt-2">
-            <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
-            <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
-              <div style={{
-                width: 192,
-                backgroundColor: '#fff',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
-                fontFamily: "'Courier New', Courier, monospace",
-                fontSize: 8,
-                lineHeight: 1.35,
-                color: '#111',
-                padding: '10px 16px',
-                overflowX: 'hidden',
-              }}>
-                <div style={{ textAlign: 'center', fontWeight: 'bold' }}>[주방용]</div>
-                <div style={{ textAlign: 'center' }}>샐러리아 침산점</div>
-                <div>{'--------------------------------'}</div>
-                <div>주문번호: 1101</div>
-                <div>거래처:   공원녹지과</div>
-                <div>주문자:   홍길동</div>
-                <div>이용방법: 포장</div>
-                <div>{'--------------------------------'}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                  <span>메뉴명</span><span>수량</span>
-                </div>
-                <div>{'--------------------------------'}</div>
-                {([
-                  { name: '단호박 샐러드', qty: 1, opt: '레몬 드레싱' },
-                  { name: '치킨텐더 랩',   qty: 1, opt: '멕시칸 스파이시' },
-                ] as const).map((item, i) => {
-                  const menuPx = receipt.menuSize   === 'large' ? 16 : receipt.menuSize   === 'normal' ? 12 : 8
-                  const optPx  = receipt.optionSize === 'large' ? 16 : receipt.optionSize === 'normal' ? 12 : 8
-                  return (
-                    <div key={i}>
-                      <div style={{ fontWeight: 'bold', fontSize: menuPx, display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{item.name}</span><span>{item.qty}</span>
-                      </div>
-                      <div style={{ fontSize: optPx, color: '#555' }}>{`  ▶ ${item.opt}`}</div>
-                    </div>
-                  )
-                })}
-                <div>{'--------------------------------'}</div>
-                <div style={{ height: 43 }} />
-              </div>
-            </div>
+        {/* ── 영수증 설정 (탭) ── */}
+        <Section title="영수증 설정">
+          <div className="flex bg-gray-100 rounded-xl p-1 mb-5">
+            {([
+              { id: 'kitchen',  label: '매장용 (주방)' },
+              { id: 'customer', label: '고객용' },
+            ] as const).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setReceiptTab(tab.id)}
+                className={[
+                  'flex-1 py-2 rounded-lg text-[13px] font-bold transition-colors',
+                  receiptTab === tab.id ? 'bg-white text-ink shadow-sm' : 'text-gray-text',
+                ].join(' ')}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        </Section>
 
-        {/* ── 고객용 영수증 글자 크기 ── */}
-        <Section title="고객용 영수증 글자 크기">
-          {([
-            { key: 'customerMenuSize',   label: '메뉴명' },
-            { key: 'customerOptionSize', label: '옵션' },
-          ] as { key: keyof ReceiptSettings; label: string }[]).map(({ key, label }) => (
-            <Field key={key} label={label}>
-              <div className="flex gap-2">
-                {sizeOpts.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setReceipt(r => ({ ...r, [key]: s }))}
-                    className={[
-                      'px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
-                      receipt[key] === s
-                        ? 'bg-ink text-white border-ink'
-                        : 'bg-gray-100 text-gray-text hover:bg-gray-200',
-                    ].join(' ')}
-                  >
-                    {SIZE_LABELS[s]}
-                  </button>
-                ))}
-              </div>
-            </Field>
-          ))}
-
-          {/* 미리보기 */}
-          <div className="mt-2">
-            <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
-            <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
-              <div style={{
-                width: 192,
-                backgroundColor: '#fff',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
-                fontFamily: "'Courier New', Courier, monospace",
-                fontSize: 8,
-                lineHeight: 1.35,
-                color: '#111',
-                padding: '10px 16px',
-                overflowX: 'hidden',
-              }}>
-                <div style={{ textAlign: 'center', fontWeight: 'bold' }}>샐러리아 침산점</div>
-                <div>{'--------------------------------'}</div>
-                <div>주문번호: 1101</div>
-                <div>거래처:   공원녹지과</div>
-                <div>주문자:   홍길동</div>
-                <div>이용방법: 포장</div>
-                <div>{'--------------------------------'}</div>
-                {([
-                  { name: '단호박 샐러드', qty: 1, price: '10,500원', opt: '레몬 드레싱', optPrice: '' },
-                  { name: '치킨텐더 랩',   qty: 1, price: '12,000원', opt: '멕시칸 스파이시', optPrice: '+1,000원' },
-                ] as const).map((item, i) => {
-                  const menuPx = receipt.customerMenuSize   === 'large' ? 16 : receipt.customerMenuSize   === 'normal' ? 12 : 8
-                  const optPx  = receipt.customerOptionSize === 'large' ? 16 : receipt.customerOptionSize === 'normal' ? 12 : 8
-                  return (
-                    <div key={i}>
-                      <div style={{ fontWeight: 'bold', fontSize: menuPx, display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{item.name} ×{item.qty}</span><span>{item.price}</span>
-                      </div>
-                      <div style={{ fontSize: optPx, color: '#555' }}>
-                        {`  ▶ ${item.opt}${item.optPrice ? `   ${item.optPrice}` : ''}`}
-                      </div>
+          {receiptTab === 'kitchen' ? (
+            <>
+              {([
+                { key: 'menuSize' as const,   label: '메뉴명' },
+                { key: 'optionSize' as const, label: '옵션' },
+              ]).map(({ key, label }) => (
+                <Field key={key} label={label}>
+                  <div className="flex gap-2">
+                    {sizeOpts.map(s => (
+                      <button key={s} onClick={() => setReceipt(r => ({ ...r, [key]: s }))}
+                        className={['px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
+                          receipt[key] === s ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'].join(' ')}>
+                        {SIZE_LABELS[s]}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              ))}
+              <div className="mt-3">
+                <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
+                <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
+                  <div style={previewWrap}>
+                    <div style={{ textAlign: 'center', fontWeight: 'bold' }}>[주방용]</div>
+                    <div style={{ textAlign: 'center' }}>샐러리아 침산점</div>
+                    <div>{'--------------------------------'}</div>
+                    <div>주문번호: 1101</div>
+                    <div>거래처: 공원녹지과</div>
+                    <div>주문자: 홍길동</div>
+                    <div>이용방법: 포장</div>
+                    <div>{'--------------------------------'}</div>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}>
+                      <span>메뉴명</span><span>수량</span>
                     </div>
-                  )
-                })}
-                <div>{'--------------------------------'}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>메뉴 소계</span><span>22,500원</span>
+                    <div>{'--------------------------------'}</div>
+                    {[
+                      { name: '단호박 샐러드', qty: 1, opt: '레몬 드레싱' },
+                      { name: '치킨텐더 랩',   qty: 1, opt: '멕시칸 스파이시' },
+                    ].map((item, i) => {
+                      const menuPx = receipt.menuSize   === 'large' ? 16 : receipt.menuSize   === 'normal' ? 12 : 8
+                      const optPx  = receipt.optionSize === 'large' ? 16 : receipt.optionSize === 'normal' ? 12 : 8
+                      return (
+                        <div key={i}>
+                          <div style={{ fontWeight:'bold', fontSize:menuPx, display:'flex', justifyContent:'space-between' }}>
+                            <span>{item.name}</span><span>{item.qty}</span>
+                          </div>
+                          <div style={{ fontSize:optPx, color:'#555' }}>{`  ▶ ${item.opt}`}</div>
+                        </div>
+                      )
+                    })}
+                    <div>{'--------------------------------'}</div>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                  <span>합  계</span><span>22,500원</span>
-                </div>
-                <div>{'--------------------------------'}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>주문 전 잔액</span><span>223,400원</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                  <span>주문 후 잔액</span><span>200,900원</span>
-                </div>
-                <div style={{ height: 20 }} />
               </div>
-            </div>
-          </div>
+            </>
+          ) : (
+            <>
+              {([
+                { key: 'customerMenuSize' as const,   label: '메뉴명' },
+                { key: 'customerOptionSize' as const, label: '옵션' },
+              ]).map(({ key, label }) => (
+                <Field key={key} label={label}>
+                  <div className="flex gap-2">
+                    {sizeOpts.map(s => (
+                      <button key={s} onClick={() => setReceipt(r => ({ ...r, [key]: s }))}
+                        className={['px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
+                          receipt[key] === s ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'].join(' ')}>
+                        {SIZE_LABELS[s]}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              ))}
+              <div className="mt-3">
+                <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
+                <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
+                  <div style={previewWrap}>
+                    <div style={{ textAlign:'center', fontWeight:'bold' }}>샐러리아 침산점</div>
+                    <div>{'--------------------------------'}</div>
+                    <div>주문번호: 1101</div>
+                    <div>거래처: 공원녹지과</div>
+                    <div>주문자: 홍길동</div>
+                    <div>이용방법: 포장</div>
+                    <div>{'--------------------------------'}</div>
+                    {[
+                      { name: '단호박 샐러드', qty: 1, price: '10,500원', opt: '레몬 드레싱',    optPrice: '' },
+                      { name: '치킨텐더 랩',   qty: 1, price: '12,000원', opt: '멕시칸 스파이시', optPrice: '+1,000원' },
+                    ].map((item, i) => {
+                      const menuPx = receipt.customerMenuSize   === 'large' ? 16 : receipt.customerMenuSize   === 'normal' ? 12 : 8
+                      const optPx  = receipt.customerOptionSize === 'large' ? 16 : receipt.customerOptionSize === 'normal' ? 12 : 8
+                      return (
+                        <div key={i}>
+                          <div style={{ fontWeight:'bold', fontSize:menuPx, display:'flex', justifyContent:'space-between' }}>
+                            <span>{item.name} ×{item.qty}</span><span>{item.price}</span>
+                          </div>
+                          <div style={{ fontSize:optPx, color:'#555' }}>
+                            {`  ▶ ${item.opt}${item.optPrice ? `   ${item.optPrice}` : ''}`}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div>{'--------------------------------'}</div>
+                    <div style={{ display:'flex', justifyContent:'space-between' }}><span>메뉴 소계</span><span>22,500원</span></div>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>합  계</span><span>22,500원</span></div>
+                    <div>{'--------------------------------'}</div>
+                    <div style={{ display:'flex', justifyContent:'space-between' }}><span>주문 전 잔액</span><span>223,400원</span></div>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>주문 후 잔액</span><span>200,900원</span></div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </Section>
 
         {/* 저장 버튼 */}
@@ -487,9 +404,7 @@ function StepCard({ step, title, children }: { step: string; title: string; chil
   return (
     <div className="border border-gray-border rounded-xl p-4">
       <div className="flex items-center gap-2.5 mb-3">
-        <span className="w-6 h-6 rounded-full bg-ink text-white text-[11px] font-extrabold flex items-center justify-center flex-shrink-0">
-          {step}
-        </span>
+        <span className="w-6 h-6 rounded-full bg-ink text-white text-[11px] font-extrabold flex items-center justify-center flex-shrink-0">{step}</span>
         <span className="text-[13px] font-bold text-ink">{title}</span>
       </div>
       {children}

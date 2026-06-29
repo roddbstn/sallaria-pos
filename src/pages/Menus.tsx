@@ -168,6 +168,7 @@ export default function Menus() {
         menu_option_groups ( menu_id, menus ( name ) )
       `)
       .eq('store_id', storeId)
+      .not('name', 'ilike', '가격(필수)%')   // 메뉴별 기본가 그룹은 관리 불필요 — 숨김
       .order('name')
 
     setStoreGroups((data ?? []).map((g: any) => ({
@@ -1423,7 +1424,9 @@ export default function Menus() {
                     </button>
 
                     {/* 펼침 화살표 */}
-                    <span className={`flex-shrink-0 text-gray-text text-[11px] transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                    <svg className={`flex-shrink-0 w-4 h-4 text-gray-text transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
                   </div>
 
                   {/* ── 아코디언: 메뉴 목록 ── */}
@@ -1991,36 +1994,6 @@ function OptionGroupCard({
 
   return (
     <div className="border border-gray-border rounded-xl overflow-hidden">
-      {/* 그룹 헤더 */}
-      <div className="px-4 py-2.5 bg-gray-bg border-b border-gray-border">
-        <div className="flex items-center gap-2">
-          {editingName ? (
-            <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-              onBlur={commitGroupName}
-              onKeyDown={e => { if (e.key === 'Enter') commitGroupName(); if (e.key === 'Escape') { setNameDraft(group.name); setEditingName(false) } }}
-              className="flex-1 min-w-0 border border-green rounded-md px-2 py-0.5 text-[13px] font-bold bg-white"
-            />
-          ) : (
-            <button onClick={() => { setNameDraft(group.name); setEditingName(true) }}
-              className="font-bold text-[13px] text-ink hover:text-green transition-colors truncate text-left">{group.name}</button>
-          )}
-          <span className="flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{group.isRequired ? '필수' : '선택'}</span>
-          <span className="flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
-          <div className="flex-1" />
-          <button onClick={() => { setSettingsName(group.name); setDeleteConfirm(false); setSettingsOpen(true) }}
-            className="flex-shrink-0 text-[15px] text-gray-text hover:text-ink transition-colors leading-none">⚙</button>
-        </div>
-        {usedBy !== undefined && usedBy.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {usedBy.map(name => (
-              <span key={name} className="text-[12px] font-medium text-ink bg-white border border-gray-border px-2 py-0.5 rounded-md">
-                {name}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* 설정 모달 */}
       {settingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -2085,85 +2058,128 @@ function OptionGroupCard({
         </div>
       )}
 
-      {/* 항목 목록 */}
-      <div className="divide-y divide-gray-border">
-        {group.items.map((item: OptionItem) =>
-          editingItemId === item.id ? (
-            <div key={item.id} className="flex items-center gap-3 px-4 py-2">
-              <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
-                className="flex-1 min-w-0 border-0 border-b border-[#16a84c] bg-transparent px-0 py-1 text-[13px] focus:outline-none"
-              />
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <div className="flex items-center gap-0.5 border-b border-[#16a84c]">
-                  <span className="text-[13px] text-gray-text">+</span>
-                  <input type="text" value={editItemPrice}
-                    onChange={e => setEditItemPrice(e.target.value.replace(/[^0-9]/g, ''))}
+      {/* 좌우 분할 레이아웃 */}
+      <div className="flex">
+        {/* ── 왼쪽: 그룹 정보 ── */}
+        <div className="w-52 flex-shrink-0 bg-gray-bg border-r border-gray-border px-4 py-3 flex flex-col gap-2">
+          {/* 그룹명 */}
+          {editingName ? (
+            <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+              onBlur={commitGroupName}
+              onKeyDown={e => { if (e.key === 'Enter') commitGroupName(); if (e.key === 'Escape') { setNameDraft(group.name); setEditingName(false) } }}
+              className="border border-green rounded-md px-2 py-0.5 text-[13px] font-bold bg-white"
+            />
+          ) : (
+            <button onClick={() => setEditingName(true)}
+              className="font-bold text-[13px] text-ink hover:text-green transition-colors text-left">
+              {group.name}
+            </button>
+          )}
+
+          {/* 배지 + ⚙ */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{group.isRequired ? '필수' : '선택'}</span>
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
+            <button
+              onClick={() => { setSettingsName(group.name); setDeleteConfirm(false); setSettingsOpen(true) }}
+              className="text-[14px] text-gray-text hover:text-ink transition-colors leading-none"
+            >
+              ⚙
+            </button>
+          </div>
+
+          {/* 연결 메뉴 태그 */}
+          {usedBy !== undefined && usedBy.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {usedBy.map(name => (
+                <span key={name} className="text-[11px] font-medium text-ink bg-white border border-gray-border px-2 py-0.5 rounded-md">
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── 오른쪽: 항목 목록 ── */}
+        <div className="flex-1 min-w-0 bg-white flex flex-col">
+          <div className="divide-y divide-gray-border">
+            {group.items.map((item: OptionItem) =>
+              editingItemId === item.id ? (
+                <div key={item.id} className="flex items-center gap-2 px-3 py-2">
+                  <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
-                    className="w-16 border-0 bg-transparent px-0 py-1 text-[13px] text-right focus:outline-none"
+                    className="flex-1 min-w-0 border-0 border-b border-[#16a84c] bg-transparent px-0 py-1 text-[12px] focus:outline-none"
                   />
-                  <span className="text-[12px] text-gray-text">원</span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <span className="text-[12px] text-gray-text">+</span>
+                    <input type="text" value={editItemPrice}
+                      onChange={e => setEditItemPrice(e.target.value.replace(/[^0-9]/g, ''))}
+                      onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
+                      className="w-14 border-0 border-b border-[#16a84c] bg-transparent px-0 py-1 text-[12px] text-right focus:outline-none"
+                    />
+                    <span className="text-[11px] text-gray-text">원</span>
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => setEditItemPrice(String(Math.max(0, (parseInt(editItemPrice) || 0) - 500)))}
+                      className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">-500</button>
+                    <button onClick={() => setEditItemPrice(String((parseInt(editItemPrice) || 0) + 500))}
+                      className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">+500</button>
+                  </div>
+                  <button onClick={commitEditItem}
+                    className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#16a84c] text-white text-[10px] font-bold hover:bg-[#128040]">완료</button>
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={() => setEditItemPrice(String(Math.max(0, (parseInt(editItemPrice) || 0) - 500)))}
-                    className="bg-gray-100 hover:bg-gray-200 rounded-md px-2 py-1 text-[11px] font-semibold text-gray-text">-500</button>
-                  <button onClick={() => setEditItemPrice(String((parseInt(editItemPrice) || 0) + 500))}
-                    className="bg-gray-100 hover:bg-gray-200 rounded-md px-2 py-1 text-[11px] font-semibold text-gray-text">+500</button>
+              ) : (
+                <div key={item.id}
+                  className={`flex items-center gap-2 px-3 py-2 text-[12px] group/row transition-colors
+                    ${item.soldOut ? 'bg-red-50' : ''} ${item.hidden ? 'opacity-50' : ''}`}>
+                  <button onClick={() => startEditItem(item)}
+                    className="flex items-center gap-1 min-w-0 flex-1 text-left hover:text-green transition-colors">
+                    <span className="font-medium text-ink truncate">{item.name}</span>
+                    {item.isPopular && <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
+                    {item.extra > 0 && <span className="text-gray-text flex-shrink-0">+{won(item.extra)}</span>}
+                  </button>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => onUpdateItem(item.id, { soldOut: !item.soldOut })}
+                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors
+                        ${item.soldOut ? 'bg-danger text-white border-danger' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>품절</button>
+                    <button onClick={() => onUpdateItem(item.id, { hidden: !item.hidden })}
+                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors
+                        ${item.hidden ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>숨김</button>
+                    <button onClick={() => onDeleteItem(item.id)}
+                      className="text-[13px] text-gray-text hover:text-danger transition-colors opacity-0 group-hover/row:opacity-100">×</button>
+                  </div>
                 </div>
+              )
+            )}
+          </div>
+
+          {/* 항목 추가 */}
+          {showAddItem ? (
+            <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-border bg-green-soft/40">
+              <input autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
+                placeholder="옵션명" className="flex-1 min-w-0 border border-green rounded-md px-2 py-1 text-[12px]"
+              />
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="text-[11px] text-gray-text">+₩</span>
+                <input type="number" min="0" step="500" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
+                  className="w-16 border border-green rounded-md px-2 py-1 text-[12px]"
+                />
               </div>
-              <button onClick={commitEditItem}
-                className="flex-shrink-0 px-3 py-1 rounded-lg bg-[#16a84c] text-white text-[11px] font-bold hover:bg-[#128040]">완료</button>
+              <button onClick={confirmAddItem} disabled={!newItemName.trim()}
+                className="flex-shrink-0 text-[11px] font-bold text-white bg-green px-2.5 py-1 rounded-lg hover:bg-[#015c28] disabled:opacity-40">추가</button>
+              <button onClick={() => { setShowAddItem(false); setNewItemName(''); setNewItemPrice('0') }}
+                className="flex-shrink-0 text-gray-text hover:text-ink text-[13px]">✗</button>
             </div>
           ) : (
-            <div key={item.id}
-              className={`flex items-center gap-2 px-4 py-2.5 text-[12px] group/row transition-colors
-                ${item.soldOut ? 'bg-red-50' : ''} ${item.hidden ? 'opacity-50' : ''}`}>
-              <button onClick={() => startEditItem(item)}
-                className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-green transition-colors">
-                <span className="font-medium text-ink truncate">{item.name}</span>
-                {item.isPopular && <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
-                {item.extra > 0 && <span className="text-gray-text flex-shrink-0">+{won(item.extra)}</span>}
-              </button>
-              <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => onUpdateItem(item.id, { soldOut: !item.soldOut })}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition-colors
-                    ${item.soldOut ? 'bg-danger text-white border-danger' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>품절</button>
-                <button onClick={() => onUpdateItem(item.id, { hidden: !item.hidden })}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition-colors
-                    ${item.hidden ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>숨김</button>
-                <button onClick={() => onDeleteItem(item.id)}
-                  className="text-[14px] text-gray-text hover:text-danger transition-colors px-0.5 opacity-0 group-hover/row:opacity-100">×</button>
-              </div>
-            </div>
-          )
-        )}
-      </div>
-
-      {/* 항목 추가 */}
-      {showAddItem ? (
-        <div className="flex items-center gap-2 px-4 py-2.5 border-t border-gray-border bg-green-soft/40">
-          <input autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
-            placeholder="옵션명" className="flex-1 min-w-0 border border-green rounded-md px-2 py-1 text-[12px]"
-          />
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <span className="text-[11px] text-gray-text">+₩</span>
-            <input type="number" min="0" step="500" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
-              className="w-20 border border-green rounded-md px-2 py-1 text-[12px]"
-            />
-          </div>
-          <button onClick={confirmAddItem} disabled={!newItemName.trim()}
-            className="flex-shrink-0 text-[11px] font-bold text-white bg-green px-2.5 py-1 rounded-lg hover:bg-[#015c28] disabled:opacity-40">추가</button>
-          <button onClick={() => { setShowAddItem(false); setNewItemName(''); setNewItemPrice('0') }}
-            className="flex-shrink-0 text-gray-text hover:text-ink text-[14px]">✗</button>
+            <button onClick={() => setShowAddItem(true)}
+              className="py-2 text-[12px] font-bold text-gray-text hover:text-green hover:bg-green-soft/30 transition-colors border-t border-gray-border">
+              + 항목 추가
+            </button>
+          )}
         </div>
-      ) : (
-        <button onClick={() => setShowAddItem(true)}
-          className="w-full py-2 text-[12px] font-bold text-gray-text hover:text-green hover:bg-green-soft/30 transition-colors border-t border-gray-border">
-          + 항목 추가
-        </button>
-      )}
+      </div>
     </div>
   )
 }
