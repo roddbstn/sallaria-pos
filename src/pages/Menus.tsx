@@ -69,6 +69,7 @@ export default function Menus() {
   const [storeGroups,  setStoreGroups]  = useState<StoreOptionGroup[]>([])
   const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [catFilter,    setCatFilter]    = useState<string>('all')
   const [checked,      setChecked]      = useState<Set<string>>(new Set())
   const [selected,     setSelected]     = useState<MenuDetail | null>(null)
   const [loading,      setLoading]      = useState(true)
@@ -224,7 +225,8 @@ export default function Menus() {
       : statusFilter === 'active'  ? m.active && !m.soldOut
       : statusFilter === 'soldOut' ? m.soldOut
       : !m.active
-    return matchSearch && matchStatus
+    const matchCat = catFilter === 'all' || m.categoryId === catFilter
+    return matchSearch && matchStatus && matchCat
   })
 
   // ── 메뉴 선택 ──────────────────────────────────────────────────────────────
@@ -828,8 +830,8 @@ export default function Menus() {
       {!loading && tab === 'menu' && (
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* 검색 + 필터 */}
-          <div className="px-6 py-3 border-b border-gray-border flex items-center gap-3 flex-shrink-0">
+          {/* 검색 + 상태 필터 */}
+          <div className="px-6 pt-3 pb-2 flex items-center gap-3 flex-shrink-0">
             <input
               value={search} onChange={e => setSearch(e.target.value)}
               placeholder="메뉴명, 카테고리 검색"
@@ -846,6 +848,28 @@ export default function Menus() {
                   className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors
                     ${statusFilter === v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                   {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* 카테고리 필터 태그 */}
+          <div className="px-6 pb-2 border-b border-gray-border flex-shrink-0">
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+              <button
+                onClick={() => setCatFilter('all')}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors flex-shrink-0
+                  ${catFilter === 'all' ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+              >
+                전체
+              </button>
+              {categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setCatFilter(cat.id)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors flex-shrink-0
+                    ${catFilter === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                >
+                  {cat.name}
                 </button>
               ))}
             </div>
