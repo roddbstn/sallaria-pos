@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { autoUpdater } from 'electron-updater'
 
 // Chromium 자동재생 차단 해제 — 주문 알림음이 사용자 클릭 없이도 재생되도록
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -351,6 +352,29 @@ ipcMain.handle('printer:test', async () => {
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────
 
+// ── 자동 업데이트 ─────────────────────────────────────────────────────────────
+
+autoUpdater.autoDownload    = true
+autoUpdater.autoInstallOnAppQuit = true
+
+autoUpdater.on('update-available', (info) => {
+  console.log('[Updater] 업데이트 발견:', info.version)
+  mainWindow?.webContents.send('updater:status', { type: 'available', version: info.version })
+})
+autoUpdater.on('update-downloaded', (info) => {
+  console.log('[Updater] 다운로드 완료:', info.version)
+  mainWindow?.webContents.send('updater:status', { type: 'downloaded', version: info.version })
+})
+autoUpdater.on('error', (err) => {
+  console.warn('[Updater] 오류 (무시):', err.message)
+})
+
+ipcMain.handle('updater:install', () => {
+  autoUpdater.quitAndInstall()
+})
+
+// ── 앱 생명주기 ───────────────────────────────────────────────────────────────
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('kr.sallaria.pos')
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
@@ -360,6 +384,11 @@ app.whenReady().then(async () => {
 
   // 설정 탭 진입 시 프린터 상태 초기 전송
   mainWindow?.webContents.once('did-finish-load', () => notifyPrinterStatus())
+
+  // 앱 시작 10초 후 업데이트 확인 (개발 환경 제외)
+  if (!is.dev) {
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10_000)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

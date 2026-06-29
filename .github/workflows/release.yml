@@ -1,0 +1,56 @@
+name: Release Windows
+
+on:
+  # 버전 태그 푸시 시 자동 릴리즈 (git tag v0.1.3 && git push --tags)
+  push:
+    tags:
+      - 'v*'
+  # 수동 실행 (Actions 탭 → Run workflow)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # GitHub Release 생성 및 파일 업로드에 필요
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Rebuild native modules for Electron
+        run: pnpm exec electron-rebuild
+
+      - name: Build (electron-vite)
+        run: pnpm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON: ${{ secrets.VITE_SUPABASE_ANON }}
+
+      - name: Package & Publish to GitHub Release
+        run: pnpm exec electron-builder --win nsis --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON: ${{ secrets.VITE_SUPABASE_ANON }}
+
+      - name: Upload installer as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sallaria-pos-windows
+          path: |
+            dist/*.exe
+            dist/latest.yml
+          retention-days: 30
