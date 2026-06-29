@@ -740,7 +740,7 @@ export default function Customers() {
                     if (!newForm.initialDeposit || isNaN(v) || v === 0) return null
                     return (
                       <p className={`text-[13px] font-bold mt-1 ${v < 0 ? 'text-danger' : 'text-green'}`}>
-                        {v < 0 ? `미수금 ${won(Math.abs(v))}` : `잔액 ${won(v)}`}
+                        {v < 0 ? `미수금 -${won(Math.abs(v))}` : `잔액 ${won(v)}`}
                       </p>
                     )
                   })()}
