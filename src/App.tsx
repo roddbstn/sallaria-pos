@@ -66,8 +66,10 @@ export default function App() {
       loadStoreSession(s.user.id, s.user.email ?? '')
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      if (!s) { setPhase('auth'); setSession(null); setAuthObj(null); return }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'TOKEN_REFRESH_FAILED' || !s) {
+        setPhase('auth'); setSession(null); setAuthObj(null); return
+      }
       setAuthObj(s)
       loadStoreSession(s.user.id, s.user.email ?? '')
     })
