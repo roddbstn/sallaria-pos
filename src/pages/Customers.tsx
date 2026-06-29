@@ -62,6 +62,7 @@ export default function Customers() {
   const [editOpen,     setEditOpen]     = useState(false)
   const [editForm,     setEditForm]     = useState({
     name: '', type: '과' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '', warnThreshold: '30000',
+    balance: '',
   })
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [addPinError,  setAddPinError]  = useState('')
@@ -268,6 +269,7 @@ export default function Customers() {
       phone:         selected.contact_phone ?? '',
       pin:           selected.pin_code,
       warnThreshold: String(selected.warning_threshold),
+      balance:       String(selected.current_balance),
     })
     setEditOpen(true)
   }
@@ -293,6 +295,10 @@ export default function Customers() {
     }
     setEditPinError('')
 
+    const newBalance   = parseInt(editForm.balance.replace(/,/g, ''), 10)
+    const balanceValid = !isNaN(newBalance)
+    const balanceDelta = balanceValid ? newBalance - selected.current_balance : 0
+
     const { error } = await supabase
       .from('accounts')
       .update({
@@ -303,9 +309,20 @@ export default function Customers() {
         contact_phone:     editForm.phone.trim() || null,
         pin_code:          editForm.pin.trim(),
         warning_threshold: parseInt(editForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
+        ...(balanceValid ? { current_balance: newBalance } : {}),
       })
       .eq('account_code', selected.account_code)
     if (error) { console.error('수정 실패:', error); return }
+
+    // 잔액이 바뀐 경우 deposits에 조정 이력 기록
+    if (balanceValid && balanceDelta !== 0) {
+      await supabase.from('deposits').insert({
+        account_code: selected.account_code,
+        amount:       balanceDelta,
+        note:         '잔액 수동 조정',
+      })
+    }
+
     await fetchAccounts()
     setSelected(prev => prev ? {
       ...prev,
@@ -316,6 +333,7 @@ export default function Customers() {
       contact_phone:     editForm.phone.trim() || null,
       pin_code:          editForm.pin.trim(),
       warning_threshold: parseInt(editForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
+      ...(balanceValid ? { current_balance: newBalance } : {}),
     } : prev)
     setEditPinError('')
     setEditOpen(false)
@@ -819,6 +837,32 @@ export default function Customers() {
               <div>
                 <label className="text-[11px] font-bold text-gray-text block mb-1">잔액 경고 기준</label>
                 <input value={editForm.warnThreshold} onChange={e => setEditForm(f => ({ ...f, warnThreshold: e.target.value }))} className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-text block mb-1">선결제 잔액</label>
+                <div className="flex items-baseline gap-2">
+                  <input
+                    value={editForm.balance}
+                    onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9-]/g, '')
+                      const cleaned = raw.startsWith('-') ? '-' + raw.slice(1).replace(/-/g, '') : raw.replace(/-/g, '')
+                      setEditForm(f => ({ ...f, balance: cleaned }))
+                    }}
+                    inputMode="numeric"
+                    className={INPUT_CLS + ' font-bold'}
+                  />
+                  <span className="text-[13px] font-semibold text-gray-text flex-shrink-0">원</span>
+                </div>
+                {(() => {
+                  const v = parseInt(editForm.balance.replace(/,/g, ''), 10)
+                  const delta = isNaN(v) ? 0 : v - selected.current_balance
+                  if (isNaN(v) || delta === 0) return null
+                  return (
+                    <p className={`text-[11px] font-semibold mt-1 ${delta > 0 ? 'text-green' : 'text-danger'}`}>
+                      {delta > 0 ? `▲ +${won(delta)} 증가` : `▼ ${won(delta)} 감소`}
+                    </p>
+                  )
+                })()}
               </div>
             </div>
             <div className="flex gap-3 mt-6">
