@@ -194,6 +194,7 @@ export default function Customers() {
     }
     setAddPinError('')
 
+    const initialBalance = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
     const { data: newAccount, error } = await supabase
       .from('accounts')
       .insert({
@@ -206,6 +207,7 @@ export default function Customers() {
         warning_threshold: parseInt(newForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
         is_active:         true,
         store_id:          storeId,
+        current_balance:   isNaN(initialBalance) ? 0 : initialBalance,
       })
       .select('account_code')
       .single()
@@ -215,15 +217,14 @@ export default function Customers() {
       return
     }
 
-    // 초기 충전이 있으면 바로 등록
-    const depositAmt = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
-    if (newAccount && depositAmt > 0) {
+    // 초기 잔액이 양수인 경우 충전 이력에도 기록
+    if (newAccount && !isNaN(initialBalance) && initialBalance > 0) {
       const { error: depErr } = await supabase.rpc('add_deposit', {
         p_account_code: newAccount.account_code,
-        p_amount:       depositAmt,
-        p_note:         newForm.initialDepositMemo.trim() || null,
+        p_amount:       initialBalance,
+        p_note:         newForm.initialDepositMemo.trim() || '초기 잔액 등록',
       })
-      if (depErr) console.error('초기 충전 실패:', depErr)
+      if (depErr) console.error('초기 충전 이력 기록 실패:', depErr)
     }
 
     await fetchAccounts()
@@ -714,21 +715,35 @@ export default function Customers() {
               </div>
             </div>
 
-            {/* 초기 충전 */}
+            {/* 초기 잔액 */}
             <div className="mt-6 pt-5">
               <div className="space-y-3">
                 <div>
-                  <label className="text-[11px] font-bold text-gray-text block mb-1">초기 충전금액 (선택)</label>
+                  <label className="text-[11px] font-bold text-gray-text block mb-1">초기 잔액 (선택)</label>
                   <div className="flex items-baseline gap-2">
                     <input
                       value={newForm.initialDeposit}
-                      onChange={e => setNewForm(f => ({ ...f, initialDeposit: e.target.value.replace(/[^0-9]/g, '') }))}
-                      placeholder="예: 300000"
+                      onChange={e => {
+                        const raw = e.target.value.replace(/[^0-9-]/g, '')
+                        // 맨 앞 '-' 하나만 허용
+                        const cleaned = raw.startsWith('-') ? '-' + raw.slice(1).replace(/-/g, '') : raw.replace(/-/g, '')
+                        setNewForm(f => ({ ...f, initialDeposit: cleaned }))
+                      }}
+                      placeholder="예: 300000 또는 -15000"
                       inputMode="numeric"
                       className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-1.5 text-[16px] font-bold focus:outline-none focus:border-[#16a84c] transition-colors"
                     />
                     <span className="text-[13px] font-semibold text-gray-text flex-shrink-0">원</span>
                   </div>
+                  {(() => {
+                    const v = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
+                    if (!newForm.initialDeposit || isNaN(v) || v === 0) return null
+                    return (
+                      <p className={`text-[13px] font-bold mt-1 ${v < 0 ? 'text-danger' : 'text-green'}`}>
+                        {v < 0 ? `미수금 ${won(Math.abs(v))}` : `잔액 ${won(v)}`}
+                      </p>
+                    )
+                  })()}
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-gray-text block mb-1">비고</label>
