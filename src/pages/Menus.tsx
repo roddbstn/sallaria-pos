@@ -106,8 +106,8 @@ export default function Menus() {
   const [addingNewCat,  setAddingNewCat]  = useState(false)
   const [newCatInModal, setNewCatInModal] = useState('')
   // 일괄 추가
-  const [addRows, setAddRows] = useState<{ id: string; name: string; price: string }[]>([
-    { id: crypto.randomUUID(), name: '', price: '' },
+  const [addRows, setAddRows] = useState<{ id: string; name: string; price: string; imageFile?: File; imagePreview?: string }[]>([
+    { id: crypto.randomUUID(), name: '', price: '', imageFile: undefined, imagePreview: '' },
   ])
   // 상세 추가
   const [detailForm, setDetailForm] = useState({ name: '', price: '', description: '' })
@@ -366,7 +366,7 @@ export default function Menus() {
     setAddCategoryId(sortedCategories()[0]?.id ?? '')
     setAddingNewCat(false)
     setNewCatInModal('')
-    setAddRows([{ id: crypto.randomUUID(), name: '', price: '' }])
+    setAddRows([{ id: crypto.randomUUID(), name: '', price: '', imageFile: undefined, imagePreview: '' }])
     setDetailForm({ name: '', price: '', description: '' })
     setImageFile(null)
     setImagePreview('')
@@ -377,7 +377,7 @@ export default function Menus() {
   }
 
   function addRowLine() {
-    setAddRows(prev => [...prev, { id: crypto.randomUUID(), name: '', price: '' }])
+    setAddRows(prev => [...prev, { id: crypto.randomUUID(), name: '', price: '', imageFile: undefined, imagePreview: '' }])
   }
 
   function removeRowLine(id: string) {
@@ -386,6 +386,11 @@ export default function Menus() {
 
   function updateRow(id: string, field: 'name' | 'price', value: string) {
     setAddRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r))
+  }
+
+  function updateRowImage(id: string, file: File) {
+    const preview = URL.createObjectURL(file)
+    setAddRows(prev => prev.map(r => r.id === id ? { ...r, imageFile: file, imagePreview: preview } : r))
   }
 
   async function confirmAddMenu() {
@@ -449,6 +454,22 @@ export default function Menus() {
       order:        d.display_order,
       optionGroups: [],
     }))
+
+    // 이미지 업로드 (각 행에 이미지가 있으면)
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i]
+      if (!row.imageFile) continue
+      const ext = row.imageFile.name.split('.').pop() ?? 'jpg'
+      const { data: up, error: upErr } = await supabase.storage
+        .from('menu-images')
+        .upload(`${crypto.randomUUID()}.${ext}`, row.imageFile, { contentType: row.imageFile.type })
+      if (!upErr && up) {
+        const imageUrl = supabase.storage.from('menu-images').getPublicUrl(up.path).data.publicUrl
+        await supabase.from('menus').update({ image_url: imageUrl }).eq('id', data[i].id)
+        newMenus[i] = { ...newMenus[i], imageUrl }
+      }
+    }
+
     setMenus(prev => [...prev, ...newMenus])
     setSelected(newMenus[0])
     setAddMenuOpen(false)
@@ -978,6 +999,14 @@ export default function Menus() {
                     <div className="flex-shrink-0 flex flex-col gap-1">
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴 사진</span>
                       <div className="flex flex-col items-center gap-1">
+                      <div
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => {
+                          e.preventDefault()
+                          const file = e.dataTransfer.files[0]
+                          if (file?.type.startsWith('image/')) { setEditImageFile(file); setEditImagePreview(URL.createObjectURL(file)) }
+                        }}
+                      >
                       <label className="block cursor-pointer">
                         <input type="file" accept="image/*" className="hidden"
                           onChange={e => {
@@ -1005,6 +1034,7 @@ export default function Menus() {
                         <button type="button" onClick={() => { setEditImageFile(null); setEditImagePreview('') }}
                           className="text-[10px] text-danger hover:underline">제거</button>
                       )}
+                      </div>
                       </div>
                     </div>
                     {/* 이름 + 가격 */}
@@ -1667,14 +1697,34 @@ export default function Menus() {
             {/* ── 일괄 추가 탭 ── */}
             {addModalTab === 'bulk' && (
               <div className="px-6 py-4 space-y-3 overflow-y-auto flex-1">
-                <div className="grid grid-cols-[1fr_120px_28px] gap-2">
+                <div className="grid grid-cols-[40px_1fr_120px_28px] gap-2">
+                  <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">사진</span>
                   <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴명</span>
                   <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">가격 (원)</span>
                   <span />
                 </div>
                 <div className="space-y-2">
                   {addRows.map((row, idx) => (
-                    <div key={row.id} className="grid grid-cols-[1fr_120px_28px] gap-2 items-center">
+                    <div key={row.id} className="grid grid-cols-[40px_1fr_120px_28px] gap-2 items-center">
+                      {/* 이미지 드롭존 */}
+                      <div
+                        className="w-10 h-10 rounded-lg border-2 border-dashed border-gray-border cursor-pointer flex items-center justify-center overflow-hidden relative hover:border-green transition-colors flex-shrink-0"
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => {
+                          e.preventDefault()
+                          const file = e.dataTransfer.files[0]
+                          if (file?.type.startsWith('image/')) updateRowImage(row.id, file)
+                        }}
+                        onClick={() => (document.getElementById(`bulk-img-${row.id}`) as HTMLInputElement)?.click()}
+                      >
+                        <input id={`bulk-img-${row.id}`} type="file" accept="image/*" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) updateRowImage(row.id, f) }}
+                        />
+                        {row.imagePreview
+                          ? <img src={row.imagePreview} className="w-full h-full object-cover" alt="" />
+                          : <span className="text-[14px] select-none">📷</span>
+                        }
+                      </div>
                       <input autoFocus={idx === 0}
                         value={row.name} onChange={e => updateRow(row.id, 'name', e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
@@ -1709,6 +1759,14 @@ export default function Menus() {
                 {/* 사진 */}
                 <div>
                   <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">사진</label>
+                  <div
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => {
+                      e.preventDefault()
+                      const file = e.dataTransfer.files[0]
+                      if (file?.type.startsWith('image/')) { setImageFile(file); setImagePreview(URL.createObjectURL(file)) }
+                    }}
+                  >
                   <label className="block cursor-pointer">
                     <input type="file" accept="image/*" className="hidden"
                       onChange={e => {
@@ -1719,16 +1777,16 @@ export default function Menus() {
                       }}
                     />
                     {imagePreview ? (
-                      <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-gray-border">
+                      <div className="relative w-[96px] h-[96px] rounded-xl overflow-hidden border border-gray-border">
                         <img src={imagePreview} className="w-full h-full object-cover" alt="preview" />
                         <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                          <span className="text-white text-[13px] font-bold">사진 변경</span>
+                          <span className="text-white text-[11px] font-bold">변경</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="w-full aspect-square border-2 border-dashed border-gray-border rounded-xl flex items-center justify-center gap-2 hover:border-green hover:bg-green-soft/20 transition-colors">
-                        <span className="text-[20px]">📷</span>
-                        <span className="text-[12px] text-gray-text">클릭하여 사진 추가</span>
+                      <div className="w-[96px] h-[96px] border-2 border-dashed border-gray-border rounded-xl flex flex-col items-center justify-center gap-1 hover:border-green hover:bg-green-soft/20 transition-colors">
+                        <span className="text-[22px]">📷</span>
+                        <span className="text-[10px] text-gray-text leading-tight text-center">클릭하거나 사진을 여기에 드롭</span>
                       </div>
                     )}
                   </label>
@@ -1736,6 +1794,7 @@ export default function Menus() {
                     <button type="button" onClick={() => { setImageFile(null); setImagePreview('') }}
                       className="mt-1 text-[11px] text-danger hover:underline">사진 제거</button>
                   )}
+                  </div>
                 </div>
                 {/* 메뉴명 */}
                 <div>
