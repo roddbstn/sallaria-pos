@@ -25,6 +25,37 @@ function IconCustomers(){ return <svg width="22" height="22" viewBox="0 0 24 24"
 function IconMenus()    { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="13" rx="8" ry="4"/><path d="M4 13c0 2.21 3.58 4 8 4s8-1.79 8-4"/><path d="M12 3v2"/><path d="M9 4.5C6.5 5.5 5 7.5 5 10"/><path d="M15 4.5C17.5 5.5 19 7.5 19 10"/></svg> }
 function IconSettings() { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> }
 
+// ── 시 드래그 티커 ────────────────────────────────────────────────────────────
+function HourTicker({ value, onChange }: { value: number; onChange: (h: number) => void }) {
+  const drag = useRef<{ startX: number; startH: number } | null>(null)
+  const prev = (value - 1 + 24) % 24
+  const next = (value + 1) % 24
+
+  const down  = (x: number) => { drag.current = { startX: x, startH: value } }
+  const move  = (x: number) => {
+    if (!drag.current) return
+    const diff = Math.round((drag.current.startX - x) / 16)
+    onChange(((drag.current.startH + diff) % 24 + 24) % 24)
+  }
+  const up = () => { drag.current = null }
+
+  return (
+    <div
+      className="flex items-center select-none cursor-ew-resize bg-gray-50 rounded-lg overflow-hidden"
+      onMouseDown={e => down(e.clientX)}
+      onMouseMove={e => { if (e.buttons === 1) move(e.clientX) }}
+      onMouseUp={up} onMouseLeave={up}
+      onTouchStart={e => down(e.touches[0].clientX)}
+      onTouchMove={e => { e.preventDefault(); move(e.touches[0].clientX) }}
+      onTouchEnd={up}
+    >
+      <span className="w-7 text-center text-[11px] text-gray-300 py-1">{String(prev).padStart(2,'0')}</span>
+      <span className="w-8 text-center text-[14px] font-bold text-ink bg-white border-x border-gray-200 py-1">{String(value).padStart(2,'0')}</span>
+      <span className="w-7 text-center text-[11px] text-gray-300 py-1">{String(next).padStart(2,'0')}</span>
+    </div>
+  )
+}
+
 const NAV: { id: Tab; Icon: () => JSX.Element; label: string }[] = [
   { id: 'dashboard', Icon: IconHome,      label: '홈' },
   { id: 'orders',    Icon: IconOrders,    label: '주문' },
@@ -604,15 +635,7 @@ export default function App() {
                             return (
                               <div key={field} className="flex items-center gap-1.5">
                                 <span className="text-[10px] text-gray-text w-6 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
-                                <button
-                                  onClick={() => setTime(field, (h - 1 + 24) % 24, m)}
-                                  className="w-6 h-6 rounded flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-text text-[12px]"
-                                >◀</button>
-                                <span className="w-7 text-center text-[13px] font-bold text-ink">{String(h).padStart(2,'0')}</span>
-                                <button
-                                  onClick={() => setTime(field, (h + 1) % 24, m)}
-                                  className="w-6 h-6 rounded flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-text text-[12px]"
-                                >▶</button>
+                                <HourTicker value={h} onChange={newH => setTime(field, newH, m)} />
                                 <span className="text-gray-text text-[12px] mx-0.5">:</span>
                                 {['00','15','30','45'].map(min => (
                                   <button
