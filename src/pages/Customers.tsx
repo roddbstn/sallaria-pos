@@ -203,6 +203,8 @@ export default function Customers() {
     setAddPinError('')
 
     const initialBalance = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
+    const hasInitial = !isNaN(initialBalance) && initialBalance !== 0
+
     const { data: newAccount, error } = await supabase
       .from('accounts')
       .insert({
@@ -215,7 +217,8 @@ export default function Customers() {
         warning_threshold: parseInt(newForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
         is_active:         true,
         store_id:          storeId,
-        current_balance:   0,  // add_deposit RPC가 잔액 반영하므로 여기선 0으로 고정
+        // 양수/음수 모두 초기값으로 직접 설정 (add_deposit은 양수 전용이라 직접 INSERT)
+        current_balance:   hasInitial ? initialBalance : 0,
       })
       .select('account_code')
       .single()
@@ -225,14 +228,14 @@ export default function Customers() {
       return
     }
 
-    // 초기 잔액이 양수인 경우 충전 이력에도 기록
-    if (newAccount && !isNaN(initialBalance) && initialBalance > 0) {
-      const { error: depErr } = await supabase.rpc('add_deposit', {
-        p_account_code: newAccount.account_code,
-        p_amount:       initialBalance,
-        p_note:         newForm.initialDepositMemo.trim() || '초기 잔액 등록',
+    // 초기 잔액이 있으면 deposits에 이력 기록 (양수·음수 모두)
+    if (newAccount && hasInitial) {
+      const { error: depErr } = await supabase.from('deposits').insert({
+        account_code: newAccount.account_code,
+        amount:       initialBalance,
+        note:         newForm.initialDepositMemo.trim() || '초기 잔액 등록',
       })
-      if (depErr) console.error('초기 충전 이력 기록 실패:', depErr)
+      if (depErr) console.error('초기 잔액 이력 기록 실패:', depErr)
     }
 
     await fetchAccounts()
@@ -458,8 +461,10 @@ export default function Customers() {
                     <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
-                <span className={`font-bold ${acc.current_balance < acc.warning_threshold ? 'text-danger' : 'text-ink'}`}>
-                  {won(acc.current_balance)}
+                <span className={`font-bold ${acc.current_balance < 0 ? 'text-danger' : acc.current_balance < acc.warning_threshold ? 'text-danger' : 'text-ink'}`}>
+                  {acc.current_balance < 0
+                    ? `미수 ${won(Math.abs(acc.current_balance))}`
+                    : won(acc.current_balance)}
                 </span>
                 <span className="text-gray-text">
                   {(monthlyUsage[acc.account_code] ?? 0) > 0
@@ -487,8 +492,10 @@ export default function Customers() {
               </div>
               <div className="flex items-center gap-2">
                 {/* 잔액 + 충전 버튼 — 헤더 우측 */}
-                <span className={`text-[14px] font-extrabold ${selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
-                  {won(selected.current_balance)}
+                <span className={`text-[13px] font-extrabold ${selected.current_balance < 0 ? 'text-danger' : selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
+                  {selected.current_balance < 0
+                    ? `미수금 ${won(Math.abs(selected.current_balance))}`
+                    : won(selected.current_balance)}
                 </span>
                 {!showInactive && (
                   <button onClick={() => setChargeOpen(true)} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[12px] font-bold hover:bg-[#128040] transition-colors">
