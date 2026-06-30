@@ -692,12 +692,12 @@ export default function App() {
                   const closeT = parseT(day.close)
 
                   return (
-                    <div key={key} className="flex items-start gap-3 py-3">
-                      <span className="w-5 text-[13px] font-bold text-ink pt-1.5">{label}</span>
+                    <div key={key} className="flex items-center gap-3 py-3">
+                      <span className="w-5 text-[13px] font-bold text-ink">{label}</span>
                       {/* 토글 */}
                       <button
                         onClick={() => setHoursDraft(prev => ({ ...prev, [key]: { ...day, enabled: !day.enabled } }))}
-                        className={`relative mt-1 w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
+                        className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
                       >
                         <span className={`absolute top-[4px] left-[4px] w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${day.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
                       </button>
@@ -722,7 +722,7 @@ export default function App() {
                           })}
                         </div>
                       ) : (
-                        <span className="text-[12px] text-gray-text flex-1 pt-1.5">운영 안 함</span>
+                        <span className="text-[12px] text-gray-text flex-1">운영 안 함</span>
                       )}
                     </div>
                   )
