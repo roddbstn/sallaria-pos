@@ -435,6 +435,34 @@ export default function App() {
     localStorage.setItem('pos_is_open', JSON.stringify(next))
   }
 
+  // 운영시간 기준 자동 ON/OFF (1분마다 체크)
+  useEffect(() => {
+    function syncIsOpen() {
+      const now = new Date()
+      const dayKey = ['sun','mon','tue','wed','thu','fri','sat'][now.getDay()]
+      const day = operatingHours[dayKey]
+
+      let shouldBeOpen = false
+      if (day?.enabled) {
+        const cur  = now.getHours() * 60 + now.getMinutes()
+        const [oh, om] = day.open.split(':').map(Number)
+        const [ch, cm] = day.close.split(':').map(Number)
+        shouldBeOpen = cur >= oh * 60 + om && cur < ch * 60 + cm
+      }
+
+      setIsOpen(prev => {
+        if (prev !== shouldBeOpen) {
+          localStorage.setItem('pos_is_open', JSON.stringify(shouldBeOpen))
+        }
+        return shouldBeOpen
+      })
+    }
+
+    syncIsOpen()
+    const id = setInterval(syncIsOpen, 60_000)
+    return () => clearInterval(id)
+  }, [operatingHours])
+
   function saveOperatingHours() {
     setOperatingHours(hoursDraft)
     localStorage.setItem('pos_operating_hours', JSON.stringify(hoursDraft))
