@@ -497,7 +497,7 @@ export default function Customers() {
                 )}
                 {!showInactive && (
                   <button onClick={openEdit} className="px-3 py-1.5 rounded-lg border border-gray-border text-[12px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
-                    정보 수정
+                    수정
                   </button>
                 )}
                 <button onClick={() => { setSelected(null); setDeleteConfirm(false) }} className="text-gray-text hover:text-ink text-[18px] ml-1">✕</button>
