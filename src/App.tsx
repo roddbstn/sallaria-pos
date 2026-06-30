@@ -432,9 +432,15 @@ export default function App() {
   const [offHoursConfirm, setOffHoursConfirm] = useState(false)
 
   // 마감 예약
-  const [closureOpen,  setClosureOpen]  = useState(false)
-  const [closureType,  setClosureType]  = useState<'holiday' | 'early'>('holiday')
-  const [closureTime,  setClosureTime]  = useState('18:00')
+  const [closureOpen,   setClosureOpen]   = useState(false)
+  const [closureType,   setClosureType]   = useState<'holiday' | 'early'>('holiday')
+  const [closureTime,   setClosureTime]   = useState('18:00')
+  const [closureActive, setClosureActive] = useState(() => {
+    try {
+      const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
+      return ov?.date === new Date().toISOString().slice(0, 10)
+    } catch { return false }
+  })
 
   function confirmClosure() {
     const today = new Date().toISOString().slice(0, 10)
@@ -443,7 +449,13 @@ export default function App() {
       type: closureType,
       time: closureType === 'early' ? closureTime : undefined,
     }))
+    setClosureActive(true)
     setClosureOpen(false)
+  }
+
+  function cancelClosure() {
+    localStorage.removeItem('pos_today_override')
+    setClosureActive(false)
   }
 
   function isCurrentlyInOperatingHours() {
@@ -761,10 +773,17 @@ export default function App() {
                   <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
                   <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
                 </div>
-                <button
-                  onClick={() => { setClosureType('holiday'); setClosureTime('18:00'); setClosureOpen(true) }}
-                  className="text-[12px] font-semibold text-[#16a84c] border border-[#16a84c] rounded-lg px-3 py-1.5 hover:bg-green-soft transition-colors flex-shrink-0"
-                >마감 예약</button>
+                {closureActive ? (
+                  <button
+                    onClick={cancelClosure}
+                    className="text-[12px] font-semibold text-danger border border-danger rounded-lg px-3 py-1.5 hover:bg-red-50 transition-colors flex-shrink-0"
+                  >예약 취소</button>
+                ) : (
+                  <button
+                    onClick={() => { setClosureType('holiday'); setClosureTime('18:00'); setClosureOpen(true) }}
+                    className="text-[12px] font-semibold text-[#16a84c] border border-[#16a84c] rounded-lg px-3 py-1.5 hover:bg-green-soft transition-colors flex-shrink-0"
+                  >마감 예약</button>
+                )}
               </div>
               <div className="px-6 py-4 divide-y divide-gray-100">
                 {[
