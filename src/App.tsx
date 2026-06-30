@@ -28,26 +28,44 @@ function IconSettings() { return <svg width="22" height="22" viewBox="0 0 24 24"
 // ── 시 드래그 티커 ────────────────────────────────────────────────────────────
 function HourTicker({ value, onChange }: { value: number; onChange: (h: number) => void }) {
   const drag = useRef<{ startX: number; startH: number } | null>(null)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
   const prev = (value - 1 + 24) % 24
   const next = (value + 1) % 24
 
-  const down  = (x: number) => { drag.current = { startX: x, startH: value } }
-  const move  = (x: number) => {
-    if (!drag.current) return
-    const diff = Math.round((drag.current.startX - x) / 16)
-    onChange(((drag.current.startH + diff) % 24 + 24) % 24)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    drag.current = { startX: e.clientX, startH: value }
+    const onMove = (ev: MouseEvent) => {
+      if (!drag.current) return
+      const diff = Math.round((drag.current.startX - ev.clientX) / 16)
+      onChangeRef.current(((drag.current.startH + diff) % 24 + 24) % 24)
+    }
+    const onUp = () => {
+      drag.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
   }
-  const up = () => { drag.current = null }
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    drag.current = { startX: e.touches[0].clientX, startH: value }
+  }
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault()
+    if (!drag.current) return
+    const diff = Math.round((drag.current.startX - e.touches[0].clientX) / 16)
+    onChangeRef.current(((drag.current.startH + diff) % 24 + 24) % 24)
+  }
 
   return (
     <div
       className="flex items-center select-none cursor-ew-resize bg-gray-50 rounded-lg overflow-hidden"
-      onMouseDown={e => down(e.clientX)}
-      onMouseMove={e => { if (e.buttons === 1) move(e.clientX) }}
-      onMouseUp={up} onMouseLeave={up}
-      onTouchStart={e => down(e.touches[0].clientX)}
-      onTouchMove={e => { e.preventDefault(); move(e.touches[0].clientX) }}
-      onTouchEnd={up}
+      onMouseDown={handleMouseDown}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={() => { drag.current = null }}
     >
       <span className="w-7 text-center text-[11px] text-gray-300 py-1">{String(prev).padStart(2,'0')}</span>
       <span className="w-8 text-center text-[14px] font-bold text-ink bg-white border-x border-gray-200 py-1">{String(value).padStart(2,'0')}</span>
