@@ -569,7 +569,7 @@ export default function App() {
                 <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
                 <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
               </div>
-              <div className="px-6 py-4 space-y-2">
+              <div className="px-6 py-4 space-y-3">
                 {[
                   { key: 'mon', label: '월' },
                   { key: 'tue', label: '화' },
@@ -580,33 +580,53 @@ export default function App() {
                   { key: 'sun', label: '일' },
                 ].map(({ key, label }) => {
                   const day = hoursDraft[key] ?? { enabled: true, open: '09:00', close: '21:00' }
+                  const parseT = (t: string) => { const [h, m] = t.split(':'); return { h: parseInt(h), m } }
+                  const setTime = (field: 'open' | 'close', h: number, m: string) => {
+                    setHoursDraft(prev => ({ ...prev, [key]: { ...day, [field]: `${String(h).padStart(2,'0')}:${m}` } }))
+                  }
+                  const openT  = parseT(day.open)
+                  const closeT = parseT(day.close)
+
                   return (
-                    <div key={key} className="flex items-center gap-3">
-                      <span className="w-6 text-[13px] font-bold text-ink">{label}</span>
+                    <div key={key} className="flex items-start gap-3">
+                      <span className="w-5 text-[13px] font-bold text-ink pt-1.5">{label}</span>
+                      {/* 토글 */}
                       <button
                         onClick={() => setHoursDraft(prev => ({ ...prev, [key]: { ...day, enabled: !day.enabled } }))}
-                        className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
+                        className={`relative mt-1 w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
                       >
-                        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${day.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        <span className={`absolute top-[4px] left-[4px] w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${day.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
                       </button>
                       {day.enabled ? (
-                        <div className="flex items-center gap-2 flex-1">
-                          <input
-                            type="time"
-                            value={day.open}
-                            onChange={e => setHoursDraft(prev => ({ ...prev, [key]: { ...day, open: e.target.value } }))}
-                            className="flex-1 border border-gray-border rounded-lg px-2 py-1 text-[13px] text-ink outline-none focus:border-[#16a84c]"
-                          />
-                          <span className="text-gray-text text-[12px]">~</span>
-                          <input
-                            type="time"
-                            value={day.close}
-                            onChange={e => setHoursDraft(prev => ({ ...prev, [key]: { ...day, close: e.target.value } }))}
-                            className="flex-1 border border-gray-border rounded-lg px-2 py-1 text-[13px] text-ink outline-none focus:border-[#16a84c]"
-                          />
+                        <div className="flex flex-col gap-1.5 flex-1">
+                          {(['open', 'close'] as const).map(field => {
+                            const { h, m } = field === 'open' ? openT : closeT
+                            return (
+                              <div key={field} className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-gray-text w-6 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
+                                <button
+                                  onClick={() => setTime(field, (h - 1 + 24) % 24, m)}
+                                  className="w-6 h-6 rounded flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-text text-[12px]"
+                                >◀</button>
+                                <span className="w-7 text-center text-[13px] font-bold text-ink">{String(h).padStart(2,'0')}</span>
+                                <button
+                                  onClick={() => setTime(field, (h + 1) % 24, m)}
+                                  className="w-6 h-6 rounded flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-text text-[12px]"
+                                >▶</button>
+                                <span className="text-gray-text text-[12px] mx-0.5">:</span>
+                                {['00','15','30','45'].map(min => (
+                                  <button
+                                    key={min}
+                                    onClick={() => setTime(field, h, min)}
+                                    className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-[#16a84c] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                                  >{min}</button>
+                                ))}
+                              </div>
+                            )
+                          })}
                         </div>
                       ) : (
-                        <span className="text-[12px] text-gray-text flex-1">운영 안 함</span>
+                        <span className="text-[12px] text-gray-text flex-1 pt-1.5">운영 안 함</span>
                       )}
                     </div>
                   )
