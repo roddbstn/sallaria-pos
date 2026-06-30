@@ -526,7 +526,7 @@ export default function Customers() {
                       }}
                       className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-gray-border text-ink hover:bg-gray-bg disabled:opacity-40 transition-colors"
                     >
-                      저장
+                      이미지 저장
                     </button>
                     <button
                       onClick={() => {
@@ -543,7 +543,7 @@ export default function Customers() {
 
                 {/* 오른쪽: 잔액 + 충전 */}
                 <div className="flex-1 flex flex-col">
-                  <div className={`flex-1 rounded-xl p-4 text-center ${selected.current_balance < selected.warning_threshold ? 'bg-red-50 border border-danger/30' : 'bg-green-soft'}`}>
+                  <div className={`flex-1 rounded-xl px-4 pt-4 pb-2 text-center ${selected.current_balance < selected.warning_threshold ? 'bg-red-50 border border-danger/30' : 'bg-green-soft'}`}>
                     <div className="text-[11px] font-semibold text-gray-text mb-1">현재 선결제 잔액</div>
                     <div className={`text-[28px] font-extrabold ${selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
                       {won(selected.current_balance)}
