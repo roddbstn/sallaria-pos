@@ -3,14 +3,15 @@ import { builtinModules } from 'module'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
-// Node.js 내장 모듈 + electron + native addon + serialport 전체를 외부로 유지
-// serialport를 번들에 인라인하면 electron-builder가 의존성으로 인식 못해 @serialport/bindings-cpp를 패키징 안 함
+// Node.js 내장 모듈 + electron + native .node 바인딩만 외부로 유지.
+// serialport JS 레이어는 Vite가 번들에 인라인 — pnpm의 비평탄 node_modules 때문에
+// electron-builder가 sub-package를 추적 못하는 문제를 피하기 위함.
+// @serialport/bindings-cpp(.node)만 외부 → package.json files에 명시적으로 추가.
 const mainExternal = [
   'electron',
   ...builtinModules,
   ...builtinModules.map(m => `node:${m}`),
-  'serialport',                 // JS 레이어 — 번들 안 함 (electron-builder가 node_modules로 패키징)
-  '@serialport/bindings-cpp',   // native .node
+  '@serialport/bindings-cpp',   // native .node — package.json files에 명시적 포함
   'bufferutil',                 // ws 선택적 native addon
   'utf-8-validate',             // ws 선택적 native addon
 ]

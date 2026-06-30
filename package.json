@@ -53,6 +53,10 @@
   "build": {
     "appId": "kr.sallaria.pos",
     "productName": "선결제 고객 POS",
+    "files": [
+      "out/**/*",
+      "node_modules/@serialport/bindings-cpp/**/*"
+    ],
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"
     ],
