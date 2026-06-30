@@ -482,24 +482,32 @@ export default function App() {
           </nav>
 
           {/* 운영 상태 토글 + 시간 설정 */}
-          <div className="flex flex-col items-center gap-1.5 pb-2">
+          <div className="flex flex-col items-center gap-2 pb-2">
+            {/* 슬라이드 토글 */}
             <button
               onClick={toggleIsOpen}
               title={isOpen ? '운영중 — 클릭해서 종료' : '운영종료 — 클릭해서 시작'}
-              className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-[10px] font-extrabold transition-colors flex-shrink-0 ${
-                isOpen
-                  ? 'border-green text-green bg-green-soft'
-                  : 'border-danger text-danger bg-red-50'
+              className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 flex-shrink-0 ${
+                isOpen ? 'bg-[#16a84c]' : 'bg-gray-300'
               }`}
             >
-              {isOpen ? 'ON' : 'OFF'}
+              <span className={`absolute top-[3px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                isOpen ? 'translate-x-[19px]' : 'translate-x-[3px]'
+              }`} />
             </button>
+            <span className={`text-[9px] font-bold leading-none ${isOpen ? 'text-[#16a84c]' : 'text-gray-text'}`}>
+              {isOpen ? '운영중' : '종료'}
+            </span>
+            {/* 시계 아이콘 버튼 */}
             <button
               onClick={() => { setHoursDraft({ ...operatingHours }); setHoursOpen(true) }}
               title="운영시간 설정"
-              className="text-[9px] text-gray-text hover:text-ink font-semibold leading-none"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-text hover:bg-gray-bg hover:text-ink transition-colors"
             >
-              시간설정
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
             </button>
           </div>
 
