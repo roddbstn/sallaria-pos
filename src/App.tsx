@@ -429,10 +429,33 @@ export default function App() {
     return days
   }
 
+  const [offHoursConfirm, setOffHoursConfirm] = useState(false)
+
+  function isCurrentlyInOperatingHours() {
+    const now = new Date()
+    const dayKey = ['sun','mon','tue','wed','thu','fri','sat'][now.getDay()]
+    const day = operatingHours[dayKey]
+    if (!day?.enabled) return false
+    const cur = now.getHours() * 60 + now.getMinutes()
+    const [oh, om] = day.open.split(':').map(Number)
+    const [ch, cm] = day.close.split(':').map(Number)
+    return cur >= oh * 60 + om && cur < ch * 60 + cm
+  }
+
   function toggleIsOpen() {
+    if (!isOpen && !isCurrentlyInOperatingHours()) {
+      setOffHoursConfirm(true)
+      return
+    }
     const next = !isOpen
     setIsOpen(next)
     localStorage.setItem('pos_is_open', JSON.stringify(next))
+  }
+
+  function confirmForceOpen() {
+    setIsOpen(true)
+    localStorage.setItem('pos_is_open', 'true')
+    setOffHoursConfirm(false)
   }
 
   // 운영시간 기준 자동 ON/OFF (1분마다 체크)
@@ -610,6 +633,28 @@ export default function App() {
               지금 재시작
             </button>
             <button onClick={() => setUpdateReady(null)} className="text-white/50 hover:text-white text-[18px] leading-none">×</button>
+          </div>
+        )}
+
+        {/* ── 운영시간 외 강제 ON 확인 다이얼로그 ── */}
+        {offHoursConfirm && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-2xl shadow-xl w-[320px] px-6 py-6 flex flex-col gap-4">
+              <div>
+                <div className="text-[15px] font-extrabold text-ink mb-1">운영시간이 아닙니다</div>
+                <div className="text-[13px] text-gray-text leading-relaxed">현재는 설정한 운영시간이 아니에요.<br/>그래도 운영 상태로 바꿀까요?</div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setOffHoursConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
+                >취소</button>
+                <button
+                  onClick={confirmForceOpen}
+                  className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold text-[13px] hover:opacity-90 transition-opacity"
+                >운영 시작</button>
+              </div>
+            </div>
           </div>
         )}
 
