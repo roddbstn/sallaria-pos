@@ -557,13 +557,31 @@ export default function Customers() {
                             const dow = DAY[dt.getDay()]
                             return (
                               <div key={o.code} className="bg-gray-bg rounded-lg px-3 py-2.5 text-[12px]">
-                                <div className="flex justify-between items-start mb-1">
+                                {/* 날짜·방법 + 합계·상태 */}
+                                <div className="flex justify-between items-start mb-2">
                                   <span className="text-gray-text">{dateStr} ({dow}) {timeStr} · {o.method}</span>
-                                  <span className="font-bold text-ink">{won(o.total)}</span>
+                                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                                    <StatusTag status={o.status} />
+                                    <span className="font-bold text-ink">{won(o.total)}</span>
+                                  </div>
                                 </div>
-                                <div className="flex justify-between items-end">
-                                  <span className="font-semibold text-ink leading-snug">{o.items.map(i => i.name).join(', ')}</span>
-                                  <StatusTag status={o.status} />
+                                {/* 메뉴별 한 줄씩 */}
+                                <div className="space-y-1.5 border-t border-gray-border pt-2">
+                                  {o.items.map((item, idx) => (
+                                    <div key={idx} className="flex justify-between items-start gap-2">
+                                      <div className="min-w-0">
+                                        <span className="font-semibold text-ink">
+                                          {item.qty > 1 ? `${item.name} ×${item.qty}` : item.name}
+                                        </span>
+                                        {item.options.length > 0 && (
+                                          <div className="text-[11px] text-gray-text mt-0.5 leading-snug">
+                                            {item.options.join(' · ')}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <span className="text-ink flex-shrink-0 font-medium">{won(item.price * item.qty)}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             )
