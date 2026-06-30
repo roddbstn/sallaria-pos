@@ -487,19 +487,24 @@ export default function App() {
     return cur >= oh * 60 + om && cur < ch * 60 + cm
   }
 
+  async function pushIsOpen(next: boolean) {
+    setIsOpen(next)
+    localStorage.setItem('pos_is_open', JSON.stringify(next))
+    if (session?.storeId) {
+      await supabase.from('stores').update({ is_open: next }).eq('id', session.storeId)
+    }
+  }
+
   function toggleIsOpen() {
     if (!isOpen && !isCurrentlyInOperatingHours()) {
       setOffHoursConfirm(true)
       return
     }
-    const next = !isOpen
-    setIsOpen(next)
-    localStorage.setItem('pos_is_open', JSON.stringify(next))
+    pushIsOpen(!isOpen)
   }
 
   function confirmForceOpen() {
-    setIsOpen(true)
-    localStorage.setItem('pos_is_open', 'true')
+    pushIsOpen(true)
     setOffHoursConfirm(false)
   }
 
@@ -537,6 +542,9 @@ export default function App() {
       setIsOpen(prev => {
         if (prev !== shouldBeOpen) {
           localStorage.setItem('pos_is_open', JSON.stringify(shouldBeOpen))
+          if (session?.storeId) {
+            supabase.from('stores').update({ is_open: shouldBeOpen }).eq('id', session.storeId)
+          }
         }
         return shouldBeOpen
       })
