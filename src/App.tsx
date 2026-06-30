@@ -502,12 +502,13 @@ export default function App() {
             <button
               onClick={() => { setHoursDraft({ ...operatingHours }); setHoursOpen(true) }}
               title="운영시간 설정"
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-text hover:bg-gray-bg hover:text-ink transition-colors"
+              className="flex items-center gap-1 px-2 h-8 rounded-lg text-gray-text hover:bg-gray-bg hover:text-ink transition-colors"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"/>
                 <polyline points="12 6 12 12 16 14"/>
               </svg>
+              <span className="text-[10px] font-semibold">설정</span>
             </button>
           </div>
 
