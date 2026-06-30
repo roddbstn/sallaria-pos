@@ -75,6 +75,9 @@ export default function Customers() {
   const [addPinError,  setAddPinError]  = useState('')
   const [editPinError, setEditPinError] = useState('')
   const [showInactive, setShowInactive] = useState(false)
+  const [editingDepositId, setEditingDepositId] = useState<string | null>(null)
+  const [editDepositAmt,   setEditDepositAmt]   = useState('')
+  const [editDepositNote,  setEditDepositNote]  = useState('')
 
   // ── 거래처 목록 조회 ──────────────────────────────────────────────────────────
   async function fetchAccounts(inactive = false) {
@@ -360,6 +363,31 @@ export default function Customers() {
     await fetchAccounts(showInactive)
     setSelected(null)
     setDeleteConfirm(false)
+  }
+
+  // ── 충전 이력 수정 ────────────────────────────────────────────────────────────
+  async function handleSaveDeposit(deposit: DbDeposit) {
+    const newAmt = parseInt(editDepositAmt.replace(/[^0-9-]/g, ''), 10)
+    if (isNaN(newAmt) || !selected) return
+    const delta = newAmt - deposit.amount
+
+    const { error } = await supabase
+      .from('deposits')
+      .update({ amount: newAmt, note: editDepositNote.trim() || null })
+      .eq('deposit_id', deposit.deposit_id)
+    if (error) { console.error('충전 수정 실패:', error); return }
+
+    if (delta !== 0) {
+      const newBalance = selected.current_balance + delta
+      await supabase
+        .from('accounts')
+        .update({ current_balance: newBalance })
+        .eq('account_code', selected.account_code)
+      setSelected(prev => prev ? { ...prev, current_balance: newBalance } : prev)
+    }
+
+    await Promise.all([fetchAccounts(), fetchDeposits(selected.account_code)])
+    setEditingDepositId(null)
   }
 
   // ── 거래처 복구 ───────────────────────────────────────────────────────────────
@@ -659,25 +687,76 @@ export default function Customers() {
                     <div className="space-y-2">
                       {total === 0
                         ? <div className="text-[13px] text-gray-text py-2">충전 이력 없음</div>
-                        : slice.map(d => (
-                            <div key={d.deposit_id} className="bg-gray-bg rounded-lg px-3 py-2.5 flex justify-between items-center text-[12px]">
-                              <div>
-                                <div className="font-semibold text-ink">{won(d.amount)}</div>
-                                <div className="text-gray-text">
+                        : slice.map(d => {
+                            const dt = new Date(d.created_at)
+                            const DAY = ['일','월','화','수','목','금','토']
+                            const date = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
+                            const time = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                            const dow  = DAY[dt.getDay()]
+                            const isEditing = editingDepositId === d.deposit_id
+
+                            if (isEditing) {
+                              return (
+                                <div key={d.deposit_id} className="bg-green-soft/40 border border-green/30 rounded-lg px-3 py-2.5 text-[12px] space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      autoFocus
+                                      value={editDepositAmt}
+                                      onChange={e => setEditDepositAmt(e.target.value.replace(/[^0-9-]/g, ''))}
+                                      onKeyDown={e => { if (e.key === 'Enter') handleSaveDeposit(d); if (e.key === 'Escape') setEditingDepositId(null) }}
+                                      inputMode="numeric"
+                                      className="flex-1 border-0 border-b-2 border-green bg-transparent px-0 py-1 text-[14px] font-bold focus:outline-none"
+                                    />
+                                    <span className="text-gray-text flex-shrink-0">원</span>
+                                  </div>
                                   {(() => {
-                                    const dt = new Date(d.created_at)
-                                    const DAY = ['일','월','화','수','목','금','토']
-                                    const date = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
-                                    const time = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-                                    const dow  = DAY[dt.getDay()]
-                                    return `${date} (${dow}) ${time}`
+                                    const newAmt = parseInt(editDepositAmt, 10)
+                                    const delta = isNaN(newAmt) ? 0 : newAmt - d.amount
+                                    if (delta === 0 || isNaN(newAmt)) return null
+                                    return (
+                                      <p className={`text-[11px] font-semibold ${delta > 0 ? 'text-green' : 'text-danger'}`}>
+                                        {delta > 0 ? `▲ +${won(delta)} 잔액 증가` : `▼ ${won(Math.abs(delta))} 잔액 감소`}
+                                      </p>
+                                    )
                                   })()}
-                                  {d.note ? ` · ${d.note}` : ''}
+                                  <input
+                                    value={editDepositNote}
+                                    onChange={e => setEditDepositNote(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveDeposit(d); if (e.key === 'Escape') setEditingDepositId(null) }}
+                                    placeholder="비고 (선택)"
+                                    className="w-full border-0 border-b border-gray-border bg-transparent px-0 py-1 text-[12px] focus:outline-none"
+                                  />
+                                  <div className="flex gap-2 pt-1">
+                                    <button onClick={() => setEditingDepositId(null)}
+                                      className="flex-1 py-1.5 rounded-lg bg-gray-100 text-gray-text text-[11px] font-bold hover:bg-gray-200">취소</button>
+                                    <button onClick={() => handleSaveDeposit(d)}
+                                      className="flex-1 py-1.5 rounded-lg bg-green text-white text-[11px] font-bold hover:bg-[#015c28]">저장</button>
+                                  </div>
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <div key={d.deposit_id} className="bg-gray-bg rounded-lg px-3 py-2.5 flex justify-between items-center text-[12px] group/dep">
+                                <div>
+                                  <div className="font-semibold text-ink">{won(d.amount)}</div>
+                                  <div className="text-gray-text">
+                                    {date} ({dow}) {time}
+                                    {d.note ? ` · ${d.note}` : ''}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => { setEditingDepositId(d.deposit_id); setEditDepositAmt(String(d.amount)); setEditDepositNote(d.note ?? '') }}
+                                    className="text-[11px] font-bold text-gray-text border border-gray-border rounded-md px-2 py-0.5 hover:bg-white hover:text-ink transition-colors opacity-0 group-hover/dep:opacity-100"
+                                  >
+                                    수정
+                                  </button>
+                                  <span className="text-[10px] font-bold text-green bg-green-soft px-2 py-0.5 rounded-full flex-shrink-0">충전</span>
                                 </div>
                               </div>
-                              <span className="text-[10px] font-bold text-green bg-green-soft px-2 py-0.5 rounded-full">충전</span>
-                            </div>
-                          ))
+                            )
+                          })
                       }
                     </div>
                     {pages > 1 && (
