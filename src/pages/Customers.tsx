@@ -462,7 +462,7 @@ export default function Customers() {
                   </svg>
                 </span>
                 <span className={`font-bold ${acc.current_balance < 0 ? 'text-danger' : acc.current_balance < acc.warning_threshold ? 'text-danger' : 'text-ink'}`}>
-                  {won(acc.current_balance)}
+                  {acc.current_balance < 0 ? `- ${won(Math.abs(acc.current_balance))}` : won(acc.current_balance)}
                 </span>
                 <span className="text-gray-text">
                   {(monthlyUsage[acc.account_code] ?? 0) > 0
@@ -491,7 +491,7 @@ export default function Customers() {
               <div className="flex items-center gap-2">
                 {/* 잔액 + 충전 버튼 — 헤더 우측 */}
                 <span className={`text-[13px] font-extrabold ${selected.current_balance < 0 ? 'text-danger' : selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
-                  {won(selected.current_balance)}
+                  {selected.current_balance < 0 ? `- ${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
                 </span>
                 {!showInactive && (
                   <button onClick={() => setChargeOpen(true)} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[12px] font-bold hover:bg-[#128040] transition-colors">
