@@ -207,7 +207,6 @@ function subscribeRealtime(): void {
         }
         console.log('[Realtime] 새 주문 수신:', payload.new)
         mainWindow?.webContents.send('order:new', payload.new)
-        autoPrintOrder(payload.new['order_code'] as string)
       }
     )
     .subscribe((status) => {
@@ -245,7 +244,15 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
     }
   }
 
-  // 영수증 출력은 Realtime autoPrintOrder()에서 자동 처리 — 여기선 출력 안 함
+  // 수락 시 영수증 출력
+  const receipt = store.get('receipt')
+  try {
+    await printEscPos(buildCustomerReceiptEscPos(order, receipt))
+    await printEscPos(buildKitchenReceiptEscPos(order, receipt))
+    console.log(`[IPC] 영수증 출력 완료: ${order.order_code}`)
+  } catch (err) {
+    console.error('[IPC] 영수증 출력 실패 (무시):', err)
+  }
 
   return { ok: true }
 })

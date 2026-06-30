@@ -2,30 +2,50 @@
  * escpos.ts — ESC/POS 시리얼 영수증 빌더
  *
  * 58mm 열전사 프린터 (COM 포트 직접 연결) 용.
- * iconv-lite로 CP949 인코딩, 1줄 = 32 인쇄 폭(한글 2B / ASCII 1B).
+ * iconv-lite로 CP949 인코딩.
+ * LINE_W=48: 구분선이 오른쪽 끝까지 채워짐.
+ * 크기: small=2배높이, normal=2배폭+2배높이, large=3배폭+3배높이
  */
 
 import iconv from 'iconv-lite'
 import type { ReceiptSettings, OrderPayload } from './printer'
 
-// ── ESC/POS 커맨드 상수 ───────────────────────────────────────────────────────
+// ── ESC/POS 커맨드 ─────────────────────────────────────────────────────────
 
 const ESC = 0x1B
 const GS  = 0x1D
 const LF  = 0x0A
 
 const CMD = {
-  INIT:        Buffer.from([ESC, 0x40]),
-  ALIGN_LEFT:  Buffer.from([ESC, 0x61, 0x00]),
-  ALIGN_CENTER:Buffer.from([ESC, 0x61, 0x01]),
-  BOLD_ON:     Buffer.from([ESC, 0x45, 0x01]),
-  BOLD_OFF:    Buffer.from([ESC, 0x45, 0x00]),
-  FEED_CUT:    Buffer.from([GS,  0x56, 0x42, 0x04]),   // 4줄 피드 후 부분 컷
+  INIT:         Buffer.from([ESC, 0x40]),
+  ALIGN_LEFT:   Buffer.from([ESC, 0x61, 0x00]),
+  ALIGN_CENTER: Buffer.from([ESC, 0x61, 0x01]),
+  BOLD_ON:      Buffer.from([ESC, 0x45, 0x01]),
+  BOLD_OFF:     Buffer.from([ESC, 0x45, 0x00]),
+  SIZE_NORMAL:  Buffer.from([GS,  0x21, 0x00]),  // 1x1 (기본)
+  SIZE_SMALL:   Buffer.from([GS,  0x21, 0x01]),  // 1x2 (2배 높이) ← '기본' 옵션
+  SIZE_MEDIUM:  Buffer.from([GS,  0x21, 0x11]),  // 2x2 (2배 폭+높이) ← '보통' 옵션
+  SIZE_LARGE:   Buffer.from([GS,  0x21, 0x22]),  // 3x3 (3배 폭+높이) ← '크게' 옵션
+  FEED_CUT:     Buffer.from([GS,  0x56, 0x42, 0x04]),
 }
 
-// ── 인코딩 / 레이아웃 유틸 ───────────────────────────────────────────────────
+// 크기별 라인 폭 (한 줄에 들어가는 ASCII 문자 수)
+// SIZE_SMALL(1x width): 48  SIZE_MEDIUM(2x width): 24  SIZE_LARGE(3x width): 16
+const BASE_W = 48  // 기본 구분선 / 정보 라인 폭
 
-const LINE_W = 32  // 58mm 기본 폭 (인쇄 단위 문자 수)
+function sizeCmd(s: 'small' | 'normal' | 'large'): Buffer {
+  if (s === 'large')  return CMD.SIZE_LARGE
+  if (s === 'normal') return CMD.SIZE_MEDIUM
+  return CMD.SIZE_SMALL
+}
+
+function lineW(s: 'small' | 'normal' | 'large'): number {
+  if (s === 'large')  return 16
+  if (s === 'normal') return 24
+  return 48
+}
+
+// ── 인코딩 / 레이아웃 유틸 ─────────────────────────────────────────────────
 
 /** 인쇄 폭 계산: 한글/한자 = 2, ASCII = 1 */
 function pw(str: string): number {
@@ -51,20 +71,20 @@ function enc(str: string): Buffer {
 
 function nl(): Buffer { return Buffer.from([LF]) }
 
-/** 한 줄: 왼쪽 텍스트 + 오른쪽 텍스트 (오른쪽 정렬) */
-function rowBuf(left: string, right: string, width = LINE_W): Buffer {
+/** 양쪽 정렬 행: 왼쪽 레이블, 오른쪽 값 */
+function rowBuf(left: string, right: string, width = BASE_W): Buffer {
   const rw = pw(right)
   const leftStr = clamp(left, width - rw - 1)
   const spaces = Math.max(1, width - pw(leftStr) - rw)
   return enc(leftStr + ' '.repeat(spaces) + right)
 }
 
-/** 구분선 */
-function hrBuf(char = '-', width = LINE_W): Buffer {
-  return enc(char.repeat(width))
+/** 구분선: 전체 폭 채움 */
+function hrBuf(width = BASE_W): Buffer {
+  return enc('-'.repeat(width))
 }
 
-// ── 영수증 빌더 ───────────────────────────────────────────────────────────────
+// ── 포맷 유틸 ──────────────────────────────────────────────────────────────
 
 function formatWon(n: number): string {
   return n.toLocaleString('ko-KR') + '원'
@@ -78,95 +98,115 @@ function formatDate(iso: string): string {
   )
 }
 
+// ── 영수증 빌더 ────────────────────────────────────────────────────────────
+
 /** ① 주방용 (가격 없음) */
-export function buildKitchenReceiptEscPos(order: OrderPayload, _settings: ReceiptSettings): Buffer {
+export function buildKitchenReceiptEscPos(order: OrderPayload, settings: ReceiptSettings): Buffer {
+  const mSize = settings.menuSize
+  const oSize = settings.optionSize
+  const mW    = lineW(mSize)
+
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
 
   p(CMD.INIT)
 
   // 헤더
-  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, enc('[주방용]'), nl(), CMD.BOLD_OFF)
-  p(enc('샐러리아 침산점'), nl())
+  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL, enc('[주방용]'), nl())
+  p(enc('샐러리아 침산점'), nl(), CMD.SIZE_NORMAL, CMD.BOLD_OFF)
   p(CMD.ALIGN_LEFT)
   p(hrBuf(), nl())
 
-  // 주문 정보
-  p(enc(`주문번호: ${order.order_number ?? order.order_code}`), nl())
-  p(enc(`거래처: ${order.account_name}`), nl())
-  p(enc(`주문자: ${order.orderer_name}`), nl())
-  p(enc(`이용방법: ${order.method}`), nl())
-  p(enc(`주문일시: ${formatDate(order.ordered_at)}`), nl())
+  // 주문 정보 (양쪽 정렬, 기본 크기)
+  p(CMD.SIZE_SMALL)
+  p(rowBuf('주문번호', order.order_number ?? order.order_code), nl())
+  p(rowBuf('거래처',   order.account_name), nl())
+  p(rowBuf('주문자',   order.orderer_name), nl())
+  p(rowBuf('이용방법', order.method), nl())
+  p(rowBuf('주문일시', formatDate(order.ordered_at)), nl())
+  p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 
   // 메뉴 헤더
-  p(CMD.BOLD_ON, rowBuf('메뉴명', '수량'), nl(), CMD.BOLD_OFF)
+  p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf('메뉴명', '수량', mW), nl(), CMD.BOLD_OFF, CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 
   // 메뉴 목록
   for (const item of order.items) {
-    p(CMD.BOLD_ON, rowBuf(item.menu_name, String(item.quantity)), nl(), CMD.BOLD_OFF)
+    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(item.menu_name, String(item.quantity), mW), nl(), CMD.BOLD_OFF, CMD.SIZE_NORMAL)
     for (const opt of item.options) {
-      p(enc(`  ▶ ${opt.option_name}`), nl())
+      p(sizeCmd(oSize), enc(`  ${opt.option_name}`), nl(), CMD.SIZE_NORMAL)
     }
   }
 
   p(hrBuf(), nl())
-  p(enc(order.note ? `비고: ${order.note}` : '비고: (없음)'), nl())
-
-  // 피드 + 컷
+  p(CMD.SIZE_SMALL)
+  p(rowBuf('비고', order.note || '없음'), nl())
+  p(CMD.SIZE_NORMAL)
   p(CMD.FEED_CUT)
 
   return Buffer.concat(chunks)
 }
 
 /** ② 고객용 (잔액·합계 포함) */
-export function buildCustomerReceiptEscPos(order: OrderPayload, _settings: ReceiptSettings): Buffer {
+export function buildCustomerReceiptEscPos(order: OrderPayload, settings: ReceiptSettings): Buffer {
+  const mSize = settings.customerMenuSize
+  const oSize = settings.customerOptionSize
+  const mW    = lineW(mSize)
+
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
 
   p(CMD.INIT)
 
   // 헤더
-  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, enc('샐러리아 침산점'), nl(), CMD.BOLD_OFF)
+  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL, enc('샐러리아 침산점'), nl(), CMD.SIZE_NORMAL, CMD.BOLD_OFF)
   p(CMD.ALIGN_LEFT)
   p(hrBuf(), nl())
 
-  // 주문 정보
-  p(enc(`주문번호: ${order.order_number ?? order.order_code}`), nl())
-  p(enc(`거래처: ${order.account_name}`), nl())
-  p(enc(`주문자: ${order.orderer_name}`), nl())
-  p(enc(`이용방법: ${order.method}`), nl())
-  p(enc(`주문일시: ${formatDate(order.ordered_at)}`), nl())
+  // 주문 정보 (양쪽 정렬)
+  p(CMD.SIZE_SMALL)
+  p(rowBuf('주문번호', order.order_number ?? order.order_code), nl())
+  p(rowBuf('거래처',   order.account_name), nl())
+  p(rowBuf('주문자',   order.orderer_name), nl())
+  p(rowBuf('이용방법', order.method), nl())
+  p(rowBuf('주문일시', formatDate(order.ordered_at)), nl())
+  p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 
-  // 메뉴 목록 (가격 포함)
+  // 메뉴 목록 (양쪽 정렬, 크기 적용)
   for (const item of order.items) {
-    p(CMD.BOLD_ON, rowBuf(`${item.menu_name} ×${item.quantity}`, formatWon(item.subtotal)), nl(), CMD.BOLD_OFF)
+    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(`${item.menu_name} x${item.quantity}`, formatWon(item.subtotal), mW), nl(), CMD.BOLD_OFF, CMD.SIZE_NORMAL)
     for (const opt of item.options) {
-      const optLabel = opt.extra_price > 0 ? `${opt.option_name} +${opt.extra_price.toLocaleString('ko-KR')}원` : opt.option_name
-      p(enc(`  ▶ ${optLabel}`), nl())
+      const optLabel = opt.extra_price > 0
+        ? `${opt.option_name} +${opt.extra_price.toLocaleString('ko-KR')}원`
+        : opt.option_name
+      p(sizeCmd(oSize), enc(`  ${optLabel}`), nl(), CMD.SIZE_NORMAL)
     }
   }
 
   p(hrBuf(), nl())
 
-  // 금액 요약
+  // 금액 요약 (양쪽 정렬, 기본 크기)
+  p(CMD.SIZE_SMALL)
   p(rowBuf('메뉴 소계', formatWon(order.menu_subtotal)), nl())
   if (order.delivery_fee > 0) {
     p(rowBuf('배달료', formatWon(order.delivery_fee)), nl())
   }
-  p(CMD.BOLD_ON, rowBuf('합  계', formatWon(order.total_amount)), nl(), CMD.BOLD_OFF)
+  p(CMD.SIZE_NORMAL)
+  p(hrBuf(), nl())
+  p(CMD.SIZE_SMALL, CMD.BOLD_ON, rowBuf('합  계', formatWon(order.total_amount)), nl(), CMD.BOLD_OFF, CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 
-  // 잔액
+  // 잔액 (양쪽 정렬)
+  p(CMD.SIZE_SMALL)
   p(rowBuf('주문 전 잔액', formatWon(order.balance_before)), nl())
   p(CMD.BOLD_ON, rowBuf('주문 후 잔액', formatWon(order.balance_after)), nl(), CMD.BOLD_OFF)
   if (order.balance_after < 0) {
     p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
   }
+  p(CMD.SIZE_NORMAL)
 
-  // 피드 + 컷
   p(CMD.FEED_CUT)
 
   return Buffer.concat(chunks)
@@ -179,13 +219,15 @@ export function buildTestReceiptEscPos(): Buffer {
   const now = new Date().toLocaleString('ko-KR')
 
   p(CMD.INIT)
-  p(CMD.ALIGN_CENTER)
-  p(CMD.BOLD_ON, enc('=== 테스트 출력 ==='), nl(), CMD.BOLD_OFF)
+  p(CMD.ALIGN_CENTER, CMD.SIZE_SMALL, CMD.BOLD_ON)
+  p(enc('=== 테스트 출력 ==='), nl())
   p(enc('샐러리아 침산점 POS'), nl())
-  p(CMD.ALIGN_LEFT)
+  p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, CMD.ALIGN_LEFT)
   p(hrBuf(), nl())
-  p(enc('프린터 연결 상태: 정상'), nl())
+  p(CMD.SIZE_SMALL)
+  p(rowBuf('프린터 상태', '정상'), nl())
   p(enc(now), nl())
+  p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
   p(CMD.FEED_CUT)
 

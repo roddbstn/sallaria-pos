@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { type MenuDetail, type Category, type OptionGroup, type OptionItem } from '../lib/mock-data'
 import { won } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
@@ -117,6 +117,14 @@ export default function Menus() {
   const [addError,   setAddError]   = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
+  // ── 옵션 탭 스크롤 스파이 ──────────────────────────────────────────────────
+  const [activeOptionGroup,    setActiveOptionGroup]    = useState<string>('')
+  const optionScrollRef        = useRef<HTMLDivElement>(null)
+  const optionGroupRefs        = useRef<Record<string, HTMLDivElement | null>>({})
+  const optionTabButtonRefs    = useRef<Record<string, HTMLButtonElement | null>>({})
+  const optionTabsBarRef       = useRef<HTMLDivElement>(null)
+  const isOptionScrollingRef   = useRef(false)
+
   // ── 카테고리 조회 ──────────────────────────────────────────────────────────
   async function fetchCategories(): Promise<Category[]> {
     if (!storeId) return []
@@ -203,6 +211,60 @@ export default function Menus() {
     }
     if (storeId) load()
   }, [storeId])
+
+  // ── 옵션 그룹 스크롤 스파이 ───────────────────────────────────────────────
+  useEffect(() => {
+    if (storeGroups.length > 0 && !activeOptionGroup) {
+      setActiveOptionGroup(storeGroups[0].id)
+    }
+  }, [storeGroups])
+
+  useEffect(() => {
+    const container = optionScrollRef.current
+    if (!container || storeGroups.length === 0) return
+    const HEADER_OFFSET = 104 // px: header + nav bar height
+    function spy() {
+      if (isOptionScrollingRef.current) return
+      let current = storeGroups[0].id
+      for (const g of storeGroups) {
+        const el = optionGroupRefs.current[g.id]
+        if (!el) continue
+        const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top
+        if (top <= HEADER_OFFSET) current = g.id
+      }
+      setActiveOptionGroup(current)
+    }
+    container.addEventListener('scroll', spy, { passive: true })
+    return () => container.removeEventListener('scroll', spy)
+  }, [storeGroups])
+
+  useEffect(() => {
+    const btn = optionTabButtonRefs.current[activeOptionGroup]
+    const bar = optionTabsBarRef.current
+    if (!btn || !bar) return
+    const btnLeft  = btn.offsetLeft
+    const btnRight = btnLeft + btn.offsetWidth
+    const barLeft  = bar.scrollLeft
+    const barRight = barLeft + bar.offsetWidth
+    if (btnLeft < barLeft + 12) {
+      bar.scrollTo({ left: btnLeft - 12, behavior: 'smooth' })
+    } else if (btnRight > barRight - 12) {
+      bar.scrollTo({ left: btnRight - bar.offsetWidth + 12, behavior: 'smooth' })
+    }
+  }, [activeOptionGroup])
+
+  function scrollToOptionGroup(groupId: string) {
+    const container = optionScrollRef.current
+    const el = optionGroupRefs.current[groupId]
+    if (!container || !el) return
+    isOptionScrollingRef.current = true
+    setActiveOptionGroup(groupId)
+    const HEADER_OFFSET = 104
+    const containerTop = container.getBoundingClientRect().top
+    const elTop = el.getBoundingClientRect().top
+    container.scrollBy({ top: elTop - containerTop - HEADER_OFFSET, behavior: 'smooth' })
+    setTimeout(() => { isOptionScrollingRef.current = false }, 600)
+  }
 
   // ── 카테고리 헬퍼 ──────────────────────────────────────────────────────────
   function getCategoryName(id: string | null): string {
@@ -897,7 +959,7 @@ export default function Menus() {
             </div>
           </div>
           {/* 테이블 헤더 */}
-          <div className="grid grid-cols-[36px_48px_1fr_120px_100px_100px_100px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+          <div className="grid grid-cols-[36px_48px_2fr_1fr_90px_90px_90px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
             <span></span><span></span><span>메뉴명</span>
             <span>카테고리</span><span>가격</span><span>판매상태</span><span>표시</span>
           </div>
@@ -910,7 +972,7 @@ export default function Menus() {
             ) : (
               filteredMenus.map(menu => (
                 <div key={menu.code} onClick={() => selectMenu(menu)}
-                  className={`grid grid-cols-[36px_48px_1fr_120px_100px_100px_100px] px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
+                  className={`grid grid-cols-[36px_48px_2fr_1fr_90px_90px_90px] px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
                     ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
                 >
                   <input type="checkbox" checked={checked.has(menu.code)}
@@ -1241,13 +1303,37 @@ export default function Menus() {
 
       {/* ── 옵션 탭 ── */}
       {!loading && tab === 'option' && (
-        <div className="flex-1 overflow-y-auto">
+        <div ref={optionScrollRef} className="flex-1 overflow-y-auto">
           {/* 옵션 탭 헤더 */}
-          <div className="px-6 py-4 border-b border-gray-border flex items-center justify-between flex-shrink-0">
-            <div>
-              <div className="text-[15px] font-extrabold">옵션 그룹 관리</div>
-              <div className="text-[12px] text-gray-text mt-0.5">그룹을 만들고 메뉴 탭에서 메뉴에 연결하세요.</div>
+          <div className="sticky top-0 z-10 bg-white border-b border-gray-border">
+            <div className="px-6 py-3 flex items-center justify-between flex-shrink-0">
+              <div>
+                <div className="text-[15px] font-extrabold">옵션 그룹 관리</div>
+                <div className="text-[12px] text-gray-text mt-0.5">그룹을 만들고 메뉴 탭에서 메뉴에 연결하세요.</div>
+              </div>
             </div>
+            {/* 옵션 그룹 네비게이션 바 */}
+            {storeGroups.length > 0 && (
+              <div
+                ref={optionTabsBarRef}
+                className="flex gap-1.5 px-6 pb-2 overflow-x-auto"
+                style={{ scrollbarWidth: 'none' }}
+              >
+                {storeGroups.map(g => (
+                  <button
+                    key={g.id}
+                    ref={el => { optionTabButtonRefs.current[g.id] = el }}
+                    onClick={() => scrollToOptionGroup(g.id)}
+                    className={`flex-shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold transition-colors whitespace-nowrap
+                      ${activeOptionGroup === g.id
+                        ? 'bg-ink text-white'
+                        : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                  >
+                    {g.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="px-6 py-4 space-y-4 max-w-[700px]">
@@ -1297,16 +1383,17 @@ export default function Menus() {
             )}
 
             {storeGroups.map(group => (
-              <OptionGroupCard
-                key={group.id}
-                group={group}
-                usedBy={group.usedBy}
-                onUpdateGroup={updates => updateStoreGroup(group.id, updates)}
-                onDeleteGroup={() => deleteStoreGroup(group.id)}
-                onUpdateItem={(itemId, updates) => updateStoreItem(group.id, itemId, updates)}
-                onDeleteItem={itemId => deleteStoreItem(group.id, itemId)}
-                onAddItem={(name, extra) => addStoreItem(group.id, name, extra)}
-              />
+              <div key={group.id} ref={el => { optionGroupRefs.current[group.id] = el }}>
+                <OptionGroupCard
+                  group={group}
+                  usedBy={group.usedBy}
+                  onUpdateGroup={updates => updateStoreGroup(group.id, updates)}
+                  onDeleteGroup={() => deleteStoreGroup(group.id)}
+                  onUpdateItem={(itemId, updates) => updateStoreItem(group.id, itemId, updates)}
+                  onDeleteItem={itemId => deleteStoreItem(group.id, itemId)}
+                  onAddItem={(name, extra) => addStoreItem(group.id, name, extra)}
+                />
+              </div>
             ))}
           </div>
         </div>
@@ -2062,30 +2149,32 @@ function OptionGroupCard({
       <div className="flex">
         {/* ── 왼쪽: 그룹 정보 ── */}
         <div className="w-52 flex-shrink-0 bg-gray-bg border-r border-gray-border px-4 py-3 flex flex-col gap-2">
-          {/* 그룹명 */}
-          {editingName ? (
-            <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-              onBlur={commitGroupName}
-              onKeyDown={e => { if (e.key === 'Enter') commitGroupName(); if (e.key === 'Escape') { setNameDraft(group.name); setEditingName(false) } }}
-              className="border border-green rounded-md px-2 py-0.5 text-[13px] font-bold bg-white"
-            />
-          ) : (
-            <button onClick={() => setEditingName(true)}
-              className="font-bold text-[13px] text-ink hover:text-green transition-colors text-left">
-              {group.name}
-            </button>
-          )}
-
-          {/* 배지 + ⚙ */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{group.isRequired ? '필수' : '선택'}</span>
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
+          {/* 그룹명 + ⚙ */}
+          <div className="flex items-center justify-between gap-2">
+            {editingName ? (
+              <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+                onBlur={commitGroupName}
+                onKeyDown={e => { if (e.key === 'Enter') commitGroupName(); if (e.key === 'Escape') { setNameDraft(group.name); setEditingName(false) } }}
+                className="flex-1 border border-green rounded-md px-2 py-0.5 text-[13px] font-bold bg-white"
+              />
+            ) : (
+              <button onClick={() => setEditingName(true)}
+                className="font-bold text-[13px] text-ink hover:text-green transition-colors text-left flex-1 min-w-0 truncate">
+                {group.name}
+              </button>
+            )}
             <button
               onClick={() => { setSettingsName(group.name); setDeleteConfirm(false); setSettingsOpen(true) }}
-              className="text-[14px] text-gray-text hover:text-ink transition-colors leading-none"
+              className="flex-shrink-0 text-[20px] text-gray-text hover:text-ink transition-colors leading-none"
             >
               ⚙
             </button>
+          </div>
+
+          {/* 배지 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{group.isRequired ? '필수' : '선택'}</span>
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
           </div>
 
           {/* 연결 메뉴 태그 */}

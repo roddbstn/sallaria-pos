@@ -58,6 +58,20 @@ export default function App() {
   const [showPw,        setShowPw]        = useState(false)
   const [showPwConfirm, setShowPwConfirm] = useState(false)
 
+  // 운영 상태 + 운영시간
+  const [isOpen,        setIsOpen]        = useState(() => {
+    const s = localStorage.getItem('pos_is_open')
+    return s !== null ? JSON.parse(s) : true
+  })
+  const [hoursOpen,     setHoursOpen]     = useState(false)
+  const [operatingHours, setOperatingHours] = useState<Record<string, { enabled: boolean; open: string; close: string }>>(() => {
+    try {
+      const s = localStorage.getItem('pos_operating_hours')
+      return s ? JSON.parse(s) : defaultOperatingHours()
+    } catch { return defaultOperatingHours() }
+  })
+  const [hoursDraft, setHoursDraft] = useState<Record<string, { enabled: boolean; open: string; close: string }>>({})
+
   // ── 인증 + 스토어 로딩 ──────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -374,6 +388,28 @@ export default function App() {
     setProfileSaving(false)
   }
 
+  function defaultOperatingHours() {
+    const days: Record<string, { enabled: boolean; open: string; close: string }> = {}
+    const week = ['mon','tue','wed','thu','fri','sat','sun']
+    week.forEach(d => {
+      days[d] = { enabled: d !== 'sun', open: '09:00', close: '21:00' }
+    })
+    days['sun'] = { enabled: false, open: '10:00', close: '18:00' }
+    return days
+  }
+
+  function toggleIsOpen() {
+    const next = !isOpen
+    setIsOpen(next)
+    localStorage.setItem('pos_is_open', JSON.stringify(next))
+  }
+
+  function saveOperatingHours() {
+    setOperatingHours(hoursDraft)
+    localStorage.setItem('pos_operating_hours', JSON.stringify(hoursDraft))
+    setHoursOpen(false)
+  }
+
   // ── 로딩 ─────────────────────────────────────────────────────────────────────
   if (phase === 'loading') {
     return (
@@ -445,6 +481,28 @@ export default function App() {
             ))}
           </nav>
 
+          {/* 운영 상태 토글 + 시간 설정 */}
+          <div className="flex flex-col items-center gap-1.5 pb-2">
+            <button
+              onClick={toggleIsOpen}
+              title={isOpen ? '운영중 — 클릭해서 종료' : '운영종료 — 클릭해서 시작'}
+              className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-[10px] font-extrabold transition-colors flex-shrink-0 ${
+                isOpen
+                  ? 'border-green text-green bg-green-soft'
+                  : 'border-danger text-danger bg-red-50'
+              }`}
+            >
+              {isOpen ? 'ON' : 'OFF'}
+            </button>
+            <button
+              onClick={() => { setHoursDraft({ ...operatingHours }); setHoursOpen(true) }}
+              title="운영시간 설정"
+              className="text-[9px] text-gray-text hover:text-ink font-semibold leading-none"
+            >
+              시간설정
+            </button>
+          </div>
+
           {/* 연결 상태 */}
           <div className="pb-4 flex flex-col items-center gap-1.5">
             <div title={wsStatus === 'connected' ? '실시간 연결됨' : '연결 끊김'}>
@@ -491,6 +549,71 @@ export default function App() {
         {toast && (
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-ink text-white text-[14px] font-semibold px-5 py-3 rounded-xl shadow-lg animate-[fadeIn_0.2s_ease]">
             {toast}
+          </div>
+        )}
+
+        {/* ── 운영시간 설정 모달 ── */}
+        {hoursOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50" onClick={() => setHoursOpen(false)}>
+            <div className="bg-white rounded-2xl shadow-xl w-[420px] overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="px-6 pt-5 pb-4 border-b border-gray-border">
+                <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
+                <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
+              </div>
+              <div className="px-6 py-4 space-y-2">
+                {[
+                  { key: 'mon', label: '월' },
+                  { key: 'tue', label: '화' },
+                  { key: 'wed', label: '수' },
+                  { key: 'thu', label: '목' },
+                  { key: 'fri', label: '금' },
+                  { key: 'sat', label: '토' },
+                  { key: 'sun', label: '일' },
+                ].map(({ key, label }) => {
+                  const day = hoursDraft[key] ?? { enabled: true, open: '09:00', close: '21:00' }
+                  return (
+                    <div key={key} className="flex items-center gap-3">
+                      <span className="w-6 text-[13px] font-bold text-ink">{label}</span>
+                      <button
+                        onClick={() => setHoursDraft(prev => ({ ...prev, [key]: { ...day, enabled: !day.enabled } }))}
+                        className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
+                      >
+                        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${day.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </button>
+                      {day.enabled ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input
+                            type="time"
+                            value={day.open}
+                            onChange={e => setHoursDraft(prev => ({ ...prev, [key]: { ...day, open: e.target.value } }))}
+                            className="flex-1 border border-gray-border rounded-lg px-2 py-1 text-[13px] text-ink outline-none focus:border-[#16a84c]"
+                          />
+                          <span className="text-gray-text text-[12px]">~</span>
+                          <input
+                            type="time"
+                            value={day.close}
+                            onChange={e => setHoursDraft(prev => ({ ...prev, [key]: { ...day, close: e.target.value } }))}
+                            className="flex-1 border border-gray-border rounded-lg px-2 py-1 text-[13px] text-ink outline-none focus:border-[#16a84c]"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-[12px] text-gray-text flex-1">운영 안 함</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="px-6 py-4 border-t border-gray-border flex gap-2">
+                <button
+                  onClick={() => setHoursOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
+                >취소</button>
+                <button
+                  onClick={saveOperatingHours}
+                  className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold text-[13px] hover:opacity-90 transition-opacity"
+                >저장</button>
+              </div>
+            </div>
           </div>
         )}
 
