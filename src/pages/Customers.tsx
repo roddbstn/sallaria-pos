@@ -10,8 +10,10 @@ const BASE_URL = 'https://sallaria.web.app'
 function useQrDataUrl(url: string) {
   const [dataUrl, setDataUrl] = useState('')
   useEffect(() => {
+    if (!url) { setDataUrl(''); return }
     QRCode.toDataURL(url, { width: 200, margin: 1, color: { dark: '#1E1E1E', light: '#FFFFFF' } })
       .then(setDataUrl)
+      .catch(() => setDataUrl(''))
   }, [url])
   return dataUrl
 }
@@ -54,6 +56,11 @@ export default function Customers() {
   const [chargePage,   setChargePage]   = useState(0)
 
   const PAGE_SIZE = 5
+  // 인라인 QR (selected 변경 시 자동 생성)
+  const selectedQrUrl     = selected ? `${BASE_URL}?store=${storeId}&account=${selected.account_code}` : ''
+  const selectedQrDataUrl = useQrDataUrl(selectedQrUrl)
+  const [qrCopied,     setQrCopied]     = useState(false)
+
   const [addOpen,      setAddOpen]      = useState(false)
   const [newForm,      setNewForm]      = useState({
     name: '', type: '과' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '', warnThreshold: '30000',
@@ -491,15 +498,69 @@ export default function Customers() {
             {/* 스크롤 영역 */}
             <div className="overflow-y-auto px-6 pb-6 flex-1">
 
-              {/* 잔액 카드 */}
-              <div className={`rounded-xl p-4 mb-5 text-center ${selected.current_balance < selected.warning_threshold ? 'bg-red-50 border border-danger/30' : 'bg-green-soft'}`}>
-                <div className="text-[11px] font-semibold text-gray-text mb-1">현재 선결제 잔액</div>
-                <div className={`text-[32px] font-extrabold ${selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
-                  {won(selected.current_balance)}
+              {/* QR (좌) + 잔액 카드 (우) */}
+              <div className="flex gap-4 mb-5 items-stretch">
+
+                {/* 왼쪽: 인라인 QR */}
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  {selectedQrDataUrl ? (
+                    <img src={selectedQrDataUrl} alt="QR" className="w-[120px] h-[120px] rounded-xl border border-gray-border" />
+                  ) : (
+                    <div className="w-[120px] h-[120px] rounded-xl border border-gray-border flex items-center justify-center text-[11px] text-gray-text">
+                      QR 생성 중…
+                    </div>
+                  )}
+                  <p className="text-[11px] text-center leading-tight">
+                    <span className="font-semibold text-ink">{selected.account_name}</span>
+                    <span className="text-gray-text"> 전용 QR</span>
+                  </p>
+                  <div className="flex gap-1 w-full">
+                    <button
+                      disabled={!selectedQrDataUrl}
+                      onClick={() => {
+                        if (!selectedQrDataUrl) return
+                        const a = document.createElement('a')
+                        a.href = selectedQrDataUrl
+                        a.download = `QR_${selected.account_name}.png`
+                        a.click()
+                      }}
+                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-gray-border text-ink hover:bg-gray-bg disabled:opacity-40 transition-colors"
+                    >
+                      저장
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedQrUrl)
+                        setQrCopied(true)
+                        setTimeout(() => setQrCopied(false), 2000)
+                      }}
+                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-colors ${qrCopied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}
+                    >
+                      {qrCopied ? '✓ 복사' : '링크 복사'}
+                    </button>
+                  </div>
                 </div>
-                {selected.current_balance < selected.warning_threshold && (
-                  <div className="text-[11px] text-danger font-semibold mt-1">⚠ 잔액 부족</div>
-                )}
+
+                {/* 오른쪽: 잔액 + 충전 */}
+                <div className="flex-1 flex flex-col">
+                  <div className={`flex-1 rounded-xl p-4 text-center ${selected.current_balance < selected.warning_threshold ? 'bg-red-50 border border-danger/30' : 'bg-green-soft'}`}>
+                    <div className="text-[11px] font-semibold text-gray-text mb-1">현재 선결제 잔액</div>
+                    <div className={`text-[28px] font-extrabold ${selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
+                      {won(selected.current_balance)}
+                    </div>
+                    {selected.current_balance < selected.warning_threshold && (
+                      <div className="text-[11px] text-danger font-semibold mt-1">⚠ 잔액 부족</div>
+                    )}
+                  </div>
+                  {!showInactive && (
+                    <button
+                      onClick={() => setChargeOpen(true)}
+                      className="mt-2 w-full py-2.5 bg-[#16a84c] text-white rounded-xl font-bold text-[13px] hover:bg-[#128040] transition-colors"
+                    >
+                      💳 충전 등록
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* 상세 정보 2열 그리드 */}
@@ -510,22 +571,6 @@ export default function Customers() {
                 <InfoRow label="PIN"          value={selected.pin_code} />
                 <InfoRow label="잔액 경고 기준" value={won(selected.warning_threshold)} />
                 <InfoRow label="이번달 사용액"  value={won(monthlyUsage[selected.account_code] ?? 0)} />
-              </div>
-
-              {/* QR + 충전 버튼 */}
-              <div className="flex gap-2 mb-3">
-                <button
-                  onClick={() => setAccountQr(selected.account_code)}
-                  className="flex-1 py-3 bg-gray-100 text-ink rounded-xl font-bold text-[14px] hover:bg-gray-200 transition-colors"
-                >
-                  🔲 QR 보기
-                </button>
-                <button
-                  onClick={() => setChargeOpen(true)}
-                  className="flex-[2] py-3 bg-[#16a84c] text-white rounded-xl font-bold text-[14px] hover:bg-[#128040] transition-colors"
-                >
-                  💳 충전 등록
-                </button>
               </div>
 
               {/* 이력 탭 */}
