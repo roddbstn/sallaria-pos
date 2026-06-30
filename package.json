@@ -39,6 +39,7 @@
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "@serialport/bindings-cpp": "^12.0.1",
     "serialport": "^12.0.0",
     "ws": "^8.21.0"
   },
@@ -53,10 +54,6 @@
   "build": {
     "appId": "kr.sallaria.pos",
     "productName": "선결제 고객 POS",
-    "files": [
-      "out/**/*",
-      "node_modules/@serialport/bindings-cpp/**/*"
-    ],
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"
     ],
