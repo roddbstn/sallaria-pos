@@ -28,7 +28,7 @@ jobs:
         run: pnpm install
 
       - name: Native 모듈 Electron용 재빌드
-        run: npx electron-builder install-app-deps
+        run: npx @electron/rebuild -f -w @serialport/bindings-cpp
 
       - name: .env 파일 생성 (Supabase 키)
         shell: bash
