@@ -431,6 +431,21 @@ export default function App() {
 
   const [offHoursConfirm, setOffHoursConfirm] = useState(false)
 
+  // 마감 예약
+  const [closureOpen,  setClosureOpen]  = useState(false)
+  const [closureType,  setClosureType]  = useState<'holiday' | 'early'>('holiday')
+  const [closureTime,  setClosureTime]  = useState('18:00')
+
+  function confirmClosure() {
+    const today = new Date().toISOString().slice(0, 10)
+    localStorage.setItem('pos_today_override', JSON.stringify({
+      date: today,
+      type: closureType,
+      time: closureType === 'early' ? closureTime : undefined,
+    }))
+    setClosureOpen(false)
+  }
+
   function isCurrentlyInOperatingHours() {
     const now = new Date()
     const dayKey = ['sun','mon','tue','wed','thu','fri','sat'][now.getDay()]
@@ -472,6 +487,22 @@ export default function App() {
         const [ch, cm] = day.close.split(':').map(Number)
         shouldBeOpen = cur >= oh * 60 + om && cur < ch * 60 + cm
       }
+
+      // 오늘 마감 예약 오버라이드 체크
+      try {
+        const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
+        const todayStr = now.toISOString().slice(0, 10)
+        if (ov?.date === todayStr) {
+          if (ov.type === 'holiday') {
+            shouldBeOpen = false
+          } else if (ov.type === 'early' && ov.time) {
+            const cur2 = now.getHours() * 60 + now.getMinutes()
+            const [eh, em] = (ov.time as string).split(':').map(Number)
+            if (cur2 >= eh * 60 + em) shouldBeOpen = false
+          }
+        }
+      } catch {}
+
 
       setIsOpen(prev => {
         if (prev !== shouldBeOpen) {
@@ -636,6 +667,62 @@ export default function App() {
           </div>
         )}
 
+        {/* ── 마감 예약 모달 ── */}
+        {closureOpen && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-2xl shadow-xl w-[340px] px-6 py-6 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+              <div className="text-[15px] font-extrabold text-ink">마감 예약</div>
+
+              {/* 타입 선택 */}
+              <div className="flex flex-col gap-2">
+                {([
+                  { value: 'holiday', label: '오늘 하루 휴점', desc: '오늘 하루 동안 운영을 종료합니다' },
+                  { value: 'early',   label: '조기 마감',     desc: '지정한 시간부터 자동으로 종료됩니다' },
+                ] as const).map(({ value, label, desc }) => (
+                  <button
+                    key={value}
+                    onClick={() => setClosureType(value)}
+                    className={`text-left px-4 py-3 rounded-xl border-2 transition-colors ${closureType === value ? 'border-[#16a84c] bg-green-soft' : 'border-gray-200 hover:border-gray-300'}`}
+                  >
+                    <div className="text-[13px] font-bold text-ink">{label}</div>
+                    <div className="text-[11px] text-gray-text mt-0.5">{desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* 시간 선택 (조기마감) */}
+              {closureType === 'early' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[13px] text-gray-text flex-shrink-0">마감 시간</span>
+                  <HourTicker
+                    value={parseInt(closureTime.split(':')[0])}
+                    onChange={h => setClosureTime(`${String(h).padStart(2,'0')}:${closureTime.split(':')[1]}`)}
+                  />
+                  <span className="text-gray-text text-[13px]">:</span>
+                  {(['00','15','30','45'] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setClosureTime(`${closureTime.split(':')[0]}:${m}`)}
+                      className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${closureTime.split(':')[1] === m ? 'bg-[#16a84c] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                    >{m}</button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setClosureOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
+                >취소</button>
+                <button
+                  onClick={confirmClosure}
+                  className="flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px] hover:opacity-85 transition-opacity"
+                >예약 확정</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── 운영시간 외 강제 ON 확인 다이얼로그 ── */}
         {offHoursConfirm && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
@@ -669,9 +756,15 @@ export default function App() {
         {hoursOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50" onClick={() => setHoursOpen(false)}>
             <div className="bg-white rounded-2xl shadow-xl w-[420px] overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="px-6 pt-5 pb-4 border-b border-gray-border">
-                <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
-                <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
+              <div className="px-6 pt-5 pb-4 border-b border-gray-border flex items-start justify-between">
+                <div>
+                  <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
+                  <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
+                </div>
+                <button
+                  onClick={() => { setClosureType('holiday'); setClosureTime('18:00'); setClosureOpen(true) }}
+                  className="text-[12px] font-semibold text-[#16a84c] border border-[#16a84c] rounded-lg px-3 py-1.5 hover:bg-green-soft transition-colors flex-shrink-0"
+                >마감 예약</button>
               </div>
               <div className="px-6 py-4 divide-y divide-gray-100">
                 {[
