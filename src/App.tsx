@@ -673,7 +673,7 @@ export default function App() {
                 <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
                 <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
               </div>
-              <div className="px-6 py-4 space-y-3">
+              <div className="px-6 py-4 divide-y divide-gray-100">
                 {[
                   { key: 'mon', label: '월' },
                   { key: 'tue', label: '화' },
@@ -692,7 +692,7 @@ export default function App() {
                   const closeT = parseT(day.close)
 
                   return (
-                    <div key={key} className="flex items-start gap-3">
+                    <div key={key} className="flex items-start gap-3 py-3">
                       <span className="w-5 text-[13px] font-bold text-ink pt-1.5">{label}</span>
                       {/* 토글 */}
                       <button
