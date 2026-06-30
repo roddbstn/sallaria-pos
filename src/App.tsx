@@ -491,8 +491,8 @@ export default function App() {
                 isOpen ? 'bg-[#16a84c]' : 'bg-gray-300'
               }`}
             >
-              <span className={`absolute top-[3px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                isOpen ? 'translate-x-[19px]' : 'translate-x-[3px]'
+              <span className={`absolute top-[3px] left-[3px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                isOpen ? 'translate-x-[18px]' : 'translate-x-0'
               }`} />
             </button>
             <span className={`text-[9px] font-bold leading-none ${isOpen ? 'text-[#16a84c]' : 'text-gray-text'}`}>
