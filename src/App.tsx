@@ -826,7 +826,7 @@ export default function App() {
                                   <button
                                     key={min}
                                     onClick={() => setTime(field, h, min)}
-                                    className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-[#16a84c] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                                    className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-green-soft text-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
                                   >{min}</button>
                                 ))}
                               </div>
