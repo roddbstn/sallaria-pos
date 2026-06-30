@@ -277,10 +277,11 @@ export default function App() {
     }
 
     function subscribe() {
-      // 채널명에 타임스탬프를 붙여 재구독 시 새 채널 생성
-      // (같은 이름 재사용 시 "cannot add callbacks after subscribe()" 에러 발생)
+      // 기존 타이머 취소 (중복 subscribe 방지)
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+
       channel = supabase
-        .channel(`app-new-orders-${Date.now()}`)
+        .channel(`app-new-orders-${Date.now()}-${Math.random().toString(36).slice(2)}`)
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'orders' },
@@ -292,12 +293,15 @@ export default function App() {
           if (status === 'SUBSCRIBED') {
             setWsStatus('connected')
           } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            // 연결 끊기면 5초 후 재연결
             setWsStatus('disconnected')
-            retryTimer = setTimeout(() => {
-              if (channel) supabase.removeChannel(channel)
-              subscribe()
-            }, 5000)
+            // 이미 재연결 타이머가 있으면 추가 등록하지 않음
+            if (!retryTimer) {
+              retryTimer = setTimeout(() => {
+                retryTimer = null
+                if (channel) { supabase.removeChannel(channel); channel = null }
+                subscribe()
+              }, 5000)
+            }
           } else {
             setWsStatus('disconnected')
           }
