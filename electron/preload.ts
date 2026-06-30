@@ -27,7 +27,7 @@ const api = {
   // ── 설정 ────────────────────────────────────────────────────────────────────
   getSettings:    ()           => ipcRenderer.invoke('settings:get'),
   updateSettings: (p: unknown) => ipcRenderer.invoke('settings:update', p),
-  listSystemPrinters: ()       => ipcRenderer.invoke('printer:list-system') as Promise<{ name: string; isDefault: boolean }[]>,
+  listPorts:      ()           => ipcRenderer.invoke('printer:list-ports') as Promise<{ path: string; manufacturer: string; friendlyName: string }[]>,
   connectPrinter: ()           => ipcRenderer.invoke('printer:connect'),
   testPrint:      ()           => ipcRenderer.invoke('printer:test'),
 

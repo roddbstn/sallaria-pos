@@ -8,15 +8,19 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
 import Store from 'electron-store'
+import { SerialPort } from 'serialport'
 
 import {
-  buildCustomerReceiptHtml,
-  buildKitchenReceiptHtml,
-  buildTestReceiptHtml,
   type PrinterSettings,
   type ReceiptSettings,
   type OrderPayload,
 } from './printer'
+
+import {
+  buildKitchenReceiptEscPos,
+  buildCustomerReceiptEscPos,
+  buildTestReceiptEscPos,
+} from './escpos'
 
 // ── electron-store 스키마 ─────────────────────────────────────────────────────
 
@@ -27,7 +31,7 @@ interface StoreSchema {
 
 const store = new Store<StoreSchema>({
   defaults: {
-    printer: { printerName: '' },
+    printer: { portName: '' },
     receipt: { menuSize: 'small', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' },
   },
 })
@@ -78,47 +82,40 @@ function createWindow(): void {
   }
 }
 
-// ── OS 프린터로 HTML 출력 ─────────────────────────────────────────────────────
+// ── ESC/POS 시리얼 출력 ───────────────────────────────────────────────────────
 
-/**
- * 숨겨진 BrowserWindow에 HTML을 로드한 뒤, OS 프린트 API로 인쇄.
- * 프린터가 Windows에 드라이버로 등록돼 있으면 무조건 동작.
- */
-async function printHtml(html: string): Promise<void> {
-  const printerName = getPrinterName()
-  if (!printerName) throw new Error('프린터가 설정되지 않았습니다. 설정 탭에서 프린터를 선택해 주세요.')
-
-  const win = new BrowserWindow({
-    show: false,
-    webPreferences: { sandbox: false, contextIsolation: false },
-  })
-
-  try {
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-    await new Promise<void>((resolve, reject) => {
-      win.webContents.print(
-        { silent: true, printBackground: false, deviceName: printerName },
-        (success, failureReason) => {
-          if (success) resolve()
-          else reject(new Error(failureReason || '출력 실패'))
-        }
-      )
-    })
-  } finally {
-    win.destroy()
-  }
-}
-
-function getPrinterName(): string {
+function getPortName(): string {
   const saved = store.get('printer') as Record<string, unknown>
-  return (saved?.printerName as string) ?? ''
+  return (saved?.portName as string) ?? ''
 }
 
 function notifyPrinterStatus(): void {
   mainWindow?.webContents.send('printer:status', {
-    connected:   !!getPrinterName(),
+    connected:   !!getPortName(),
     queueLength: 0,
   })
+}
+
+async function printEscPos(data: Buffer): Promise<void> {
+  const portName = getPortName()
+  if (!portName) throw new Error('COM 포트가 설정되지 않았습니다. 설정 탭에서 포트를 선택해 주세요.')
+
+  const port = new SerialPort({ path: portName, baudRate: 9600, autoOpen: false })
+
+  await new Promise<void>((resolve, reject) => {
+    port.open(err => err ? reject(err) : resolve())
+  })
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      port.write(data, err => {
+        if (err) { reject(err); return }
+        port.drain(err2 => err2 ? reject(err2) : resolve())
+      })
+    })
+  } finally {
+    await new Promise<void>(resolve => port.close(() => resolve()))
+  }
 }
 
 // ── Supabase Realtime 구독 ────────────────────────────────────────────────────
@@ -176,8 +173,8 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
     }
 
     const receipt = store.get('receipt')
-    await printHtml(buildCustomerReceiptHtml(orderPayload, receipt))
-    await printHtml(buildKitchenReceiptHtml(orderPayload, receipt))
+    await printEscPos(buildCustomerReceiptEscPos(orderPayload, receipt))
+    await printEscPos(buildKitchenReceiptEscPos(orderPayload, receipt))
     console.log(`[AutoPrint] 영수증 출력 완료: ${orderCode}`)
   } catch (err) {
     console.error('[AutoPrint] 오류:', err)
@@ -296,7 +293,7 @@ ipcMain.handle('order:cancel', async (_e, { orderCode }: { orderCode: string }) 
 ipcMain.handle('settings:get', async () => {
   const savedPrinter = store.get('printer') as Record<string, unknown>
   return {
-    printer: { printerName: (savedPrinter?.printerName as string) ?? '' },
+    printer: { portName: (savedPrinter?.portName as string) ?? '' },
     receipt: store.get('receipt'),
   }
 })
@@ -309,48 +306,55 @@ ipcMain.handle('settings:update', async (_e, patch: Partial<StoreSchema>) => {
   return { ok: true }
 })
 
-/** 시스템에 설치된 프린터 목록 */
-ipcMain.handle('printer:list-system', async () => {
-  if (!mainWindow) return []
-  const printers = await mainWindow.webContents.getPrintersAsync()
-  return printers.map(p => ({ name: p.name, isDefault: p.isDefault }))
+/** 시스템에 연결된 COM 포트 목록 */
+ipcMain.handle('printer:list-ports', async () => {
+  const ports = await SerialPort.list()
+  return ports.map(p => ({
+    path:         p.path,
+    manufacturer: p.manufacturer ?? '',
+    friendlyName: p.friendlyName ?? p.path,
+  }))
 })
 
 /** 영수증 재출력 */
 ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload }) => {
   const receipt = store.get('receipt')
   try {
-    await printHtml(buildCustomerReceiptHtml(order, receipt))
-    await printHtml(buildKitchenReceiptHtml(order, receipt))
+    await printEscPos(buildCustomerReceiptEscPos(order, receipt))
+    await printEscPos(buildKitchenReceiptEscPos(order, receipt))
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
   }
 })
 
-/** 프린터 연결 확인 (설정에서 "연결하기" 버튼) */
+/** 프린터 연결 확인 (설정에서 "연결하기" 버튼) — COM 포트 열기 테스트 */
 ipcMain.handle('printer:connect', async () => {
-  const printerName = getPrinterName()
-  if (!printerName) return { ok: false, error: '프린터를 먼저 선택해 주세요.' }
-  if (!mainWindow) return { ok: false, error: '창이 준비되지 않았습니다.' }
-  const printers = await mainWindow.webContents.getPrintersAsync()
-  const found = printers.some(p => p.name === printerName)
-  if (!found) return { ok: false, error: `"${printerName}" 프린터를 찾을 수 없습니다. 목록을 새로고침해 주세요.` }
-  notifyPrinterStatus()
-  return { ok: true }
+  const portName = getPortName()
+  if (!portName) return { ok: false, error: 'COM 포트를 먼저 선택해 주세요.' }
+
+  try {
+    const port = new SerialPort({ path: portName, baudRate: 9600, autoOpen: false })
+    await new Promise<void>((resolve, reject) => {
+      port.open(err => err ? reject(err) : resolve())
+    })
+    await new Promise<void>(resolve => port.close(() => resolve()))
+    notifyPrinterStatus()
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
 })
 
 /** 테스트 출력 */
 ipcMain.handle('printer:test', async () => {
   try {
-    await printHtml(buildTestReceiptHtml())
+    await printEscPos(buildTestReceiptEscPos())
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
   }
 })
-
-// ── 앱 생명주기 ───────────────────────────────────────────────────────────────
 
 // ── 자동 업데이트 ─────────────────────────────────────────────────────────────
 

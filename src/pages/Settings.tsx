@@ -1,23 +1,23 @@
 import { useState, useEffect } from 'react'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 
-interface PrinterSettings { printerName: string }
+interface PrinterSettings { portName: string }
 interface ReceiptSettings  {
   menuSize:           'small' | 'normal' | 'large'
   optionSize:         'small' | 'normal' | 'large'
   customerMenuSize:   'small' | 'normal' | 'large'
   customerOptionSize: 'small' | 'normal' | 'large'
 }
-interface SystemPrinter { name: string; isDefault: boolean }
+interface ComPort { path: string; manufacturer: string; friendlyName: string }
 
 type Api = {
-  getSettings?:         () => Promise<{ printer: PrinterSettings; receipt: ReceiptSettings }>
-  listSystemPrinters?:  () => Promise<SystemPrinter[]>
-  connectPrinter?:      () => Promise<{ ok: boolean; error?: string }>
-  testPrint?:           () => Promise<{ ok: boolean; error?: string }>
-  updateSettings?:      (p: unknown) => Promise<{ ok: boolean }>
-  onPrinterStatus?:     (cb: (s: { connected: boolean; queueLength: number }) => void) => void
-  offPrinterStatus?:    () => void
+  getSettings?:     () => Promise<{ printer: PrinterSettings; receipt: ReceiptSettings }>
+  listPorts?:       () => Promise<ComPort[]>
+  connectPrinter?:  () => Promise<{ ok: boolean; error?: string }>
+  testPrint?:       () => Promise<{ ok: boolean; error?: string }>
+  updateSettings?:  (p: unknown) => Promise<{ ok: boolean }>
+  onPrinterStatus?: (cb: (s: { connected: boolean; queueLength: number }) => void) => void
+  offPrinterStatus?:() => void
 }
 
 const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
@@ -25,8 +25,8 @@ const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
 const SIZE_LABELS: Record<string, string> = { small: '기본', normal: '보통', large: '크게' }
 
 export default function Settings() {
-  const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([])
-  const [printer,    setPrinter]    = useState<PrinterSettings>({ printerName: '' })
+  const [comPorts,   setComPorts]   = useState<ComPort[]>([])
+  const [printer,    setPrinter]    = useState<PrinterSettings>({ portName: '' })
   const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' })
   const [connected,  setConnected]  = useState(false)
   const [loading,    setLoading]    = useState(false)
@@ -48,27 +48,26 @@ export default function Settings() {
     return () => { a.offPrinterStatus?.() }
   }, [])
 
-  async function handleScanPrinters() {
+  async function handleScanPorts() {
     setLoading(true)
     setConnectErr('')
-    const list = await api().listSystemPrinters?.() ?? []
-    setSystemPrinters(list)
-    // 기본 프린터 자동 선택 (아직 선택된 게 없을 때)
-    if (!printer.printerName) {
-      const def = list.find(p => p.isDefault)
-      if (def) setPrinter({ printerName: def.name })
+    const list = await api().listPorts?.() ?? []
+    setComPorts(list)
+    // 포트가 하나뿐이면 자동 선택
+    if (!printer.portName && list.length === 1) {
+      setPrinter({ portName: list[0].path })
     }
     setLoading(false)
   }
 
   async function handleConnect() {
-    if (!printer.printerName) { setConnectErr('프린터를 먼저 선택해 주세요.'); return }
+    if (!printer.portName) { setConnectErr('COM 포트를 먼저 선택해 주세요.'); return }
     setConnecting(true)
     setConnectErr('')
     await api().updateSettings?.({ printer })
     const res = await api().connectPrinter?.()
     if (res && !res.ok) {
-      setConnectErr(res.error ?? '프린터를 확인할 수 없습니다.')
+      setConnectErr(res.error ?? '포트를 열 수 없습니다.')
     }
     setConnecting(false)
   }
@@ -132,8 +131,8 @@ export default function Settings() {
           </Field>
         </Section>
 
-        {/* ── 프린터 연결 ── */}
-        <Section title="프린터 연결">
+        {/* ── 프린터 연결 (ESC/POS 시리얼) ── */}
+        <Section title="프린터 연결 (COM 포트)">
 
           {/* 연결 상태 배지 */}
           <div className={[
@@ -142,57 +141,61 @@ export default function Settings() {
           ].join(' ')}>
             <span className={['w-2.5 h-2.5 rounded-full flex-shrink-0', connected ? 'bg-[#017333]' : 'bg-[#C92A2A]'].join(' ')} />
             {connected
-              ? `연결됨 — ${printer.printerName}`
-              : printer.printerName
-                ? `미확인 — ${printer.printerName} (연결하기 클릭)`
-                : '프린터가 선택되지 않았습니다'}
+              ? `연결됨 — ${printer.portName}`
+              : printer.portName
+                ? `미확인 — ${printer.portName} (연결하기 클릭)`
+                : 'COM 포트가 선택되지 않았습니다'}
           </div>
 
-          {/* STEP 1 — 시스템 프린터 목록 */}
-          <StepCard step="1" title="프린터 선택">
+          {/* STEP 1 — COM 포트 목록 */}
+          <StepCard step="1" title="COM 포트 선택">
             <p className="text-[12px] text-gray-text mb-3">
-              프린터를 PC에 연결한 후 목록을 불러오세요.
+              프린터 USB/시리얼 케이블을 연결한 후 목록을 불러오세요.
             </p>
             <button
-              onClick={handleScanPrinters}
+              onClick={handleScanPorts}
               disabled={loading}
               className="flex items-center gap-2 px-4 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-60 transition-opacity mb-3"
             >
               {loading
                 ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />불러오는 중…</>
-                : <><SearchIcon />프린터 목록 새로고침</>}
+                : <><SearchIcon />포트 목록 새로고침</>}
             </button>
 
-            {systemPrinters.length > 0 && (
+            {comPorts.length > 0 && (
               <div className="space-y-1.5">
-                {systemPrinters.map(p => (
+                {comPorts.map(p => (
                   <button
-                    key={p.name}
-                    onClick={() => { setPrinter({ printerName: p.name }); setConnectErr('') }}
+                    key={p.path}
+                    onClick={() => { setPrinter({ portName: p.path }); setConnectErr('') }}
                     className={[
-                      'w-full text-left px-3 py-2.5 rounded-xl text-[13px] border transition-colors flex items-center gap-2',
-                      printer.printerName === p.name
+                      'w-full text-left px-3 py-2.5 rounded-xl text-[13px] border transition-colors',
+                      printer.portName === p.path
                         ? 'bg-ink text-white border-ink'
                         : 'bg-gray-50 text-ink hover:bg-gray-100 border-gray-border',
                     ].join(' ')}
                   >
-                    <span className="flex-1">{p.name}</span>
-                    {p.isDefault && (
-                      <span className={[
-                        'text-[10px] font-bold px-1.5 py-0.5 rounded',
-                        printer.printerName === p.name ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-text',
-                      ].join(' ')}>기본</span>
+                    <div className="font-bold">{p.path}</div>
+                    {p.friendlyName && p.friendlyName !== p.path && (
+                      <div className={['text-[11px] mt-0.5', printer.portName === p.path ? 'text-white/70' : 'text-gray-text'].join(' ')}>
+                        {p.friendlyName}
+                      </div>
                     )}
-                    {printer.printerName === p.name && <span className="text-[12px]">✓</span>}
                   </button>
                 ))}
               </div>
             )}
 
-            {/* 저장된 프린터가 있는데 목록 조회 전이면 표시 */}
-            {systemPrinters.length === 0 && printer.printerName && (
-              <div className="text-[12px] text-gray-text bg-gray-50 px-3 py-2 rounded-lg">
-                현재 선택: <strong>{printer.printerName}</strong>
+            {comPorts.length === 0 && !loading && (
+              <p className="text-[12px] text-gray-text bg-gray-50 px-3 py-2 rounded-lg">
+                목록 새로고침을 눌러 포트를 확인하세요.
+              </p>
+            )}
+
+            {/* 저장된 포트가 있는데 목록 조회 전이면 표시 */}
+            {comPorts.length === 0 && printer.portName && (
+              <div className="text-[12px] text-gray-text bg-gray-50 px-3 py-2 rounded-lg mt-2">
+                현재 선택: <strong>{printer.portName}</strong>
               </div>
             )}
           </StepCard>
@@ -200,11 +203,11 @@ export default function Settings() {
           {/* STEP 2 — 연결 확인 */}
           <StepCard step="2" title="연결 확인">
             <p className="text-[12px] text-gray-text mb-3">
-              프린터를 선택한 후 <strong>연결하기</strong>를 눌러 확인하세요.
+              포트를 선택한 후 <strong>연결하기</strong>를 눌러 통신이 되는지 확인합니다.
             </p>
             <button
               onClick={handleConnect}
-              disabled={connecting || !printer.printerName}
+              disabled={connecting || !printer.portName}
               className="flex items-center gap-2 px-4 py-2 bg-[#016f30] text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
               {connecting
@@ -223,10 +226,10 @@ export default function Settings() {
             </p>
             <button
               onClick={handleTestPrint}
-              disabled={testing || !printer.printerName}
+              disabled={testing || !printer.portName}
               className={[
                 'flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-opacity',
-                printer.printerName
+                printer.portName
                   ? 'bg-[#016f30] text-white hover:opacity-90'
                   : 'bg-gray-100 text-gray-text cursor-not-allowed',
               ].join(' ')}
@@ -235,8 +238,8 @@ export default function Settings() {
                 ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />출력 중…</>
                 : <><PrintIcon />테스트 영수증 출력</>}
             </button>
-            {!printer.printerName && (
-              <p className="mt-2 text-[11px] text-gray-text">프린터 선택 후 사용할 수 있습니다.</p>
+            {!printer.portName && (
+              <p className="mt-2 text-[11px] text-gray-text">포트 선택 후 사용할 수 있습니다.</p>
             )}
             {testMsg && (
               <div className={[

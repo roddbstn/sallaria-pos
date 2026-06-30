@@ -8,7 +8,7 @@
 // ── 타입 ──────────────────────────────────────────────────────────────────────
 
 export interface PrinterSettings {
-  printerName: string   // Windows 프린터 이름 (장치 관리자 표시명)
+  portName: string   // COM 포트 이름 (예: "COM1")
 }
 
 export interface ReceiptSettings {
