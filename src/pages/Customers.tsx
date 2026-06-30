@@ -486,6 +486,15 @@ export default function Customers() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                {/* 잔액 + 충전 버튼 — 헤더 우측 */}
+                <span className={`text-[14px] font-extrabold ${selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
+                  {won(selected.current_balance)}
+                </span>
+                {!showInactive && (
+                  <button onClick={() => setChargeOpen(true)} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[12px] font-bold hover:bg-[#128040] transition-colors">
+                    💳 충전
+                  </button>
+                )}
                 {!showInactive && (
                   <button onClick={openEdit} className="px-3 py-1.5 rounded-lg border border-gray-border text-[12px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
                     정보 수정
@@ -498,8 +507,8 @@ export default function Customers() {
             {/* 스크롤 영역 */}
             <div className="overflow-y-auto px-6 pb-6 flex-1">
 
-              {/* QR (좌) + 잔액 카드 (우) */}
-              <div className="flex gap-4 mb-5 items-stretch">
+              {/* QR (좌) + 6가지 정보 (우) */}
+              <div className="flex gap-5 mb-5 items-start">
 
                 {/* 왼쪽: 인라인 QR */}
                 <div className="flex flex-col items-center gap-2 flex-shrink-0">
@@ -541,36 +550,15 @@ export default function Customers() {
                   </div>
                 </div>
 
-                {/* 오른쪽: 잔액 + 충전 */}
-                <div className="flex-1 flex flex-col">
-                  <div className={`flex-1 rounded-xl px-4 pt-4 pb-2 text-center ${selected.current_balance < selected.warning_threshold ? 'bg-red-50 border border-danger/30' : 'bg-green-soft'}`}>
-                    <div className="text-[11px] font-semibold text-gray-text mb-1">현재 선결제 잔액</div>
-                    <div className={`text-[28px] font-extrabold ${selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
-                      {won(selected.current_balance)}
-                    </div>
-                    {selected.current_balance < selected.warning_threshold && (
-                      <div className="text-[11px] text-danger font-semibold mt-1">⚠ 잔액 부족</div>
-                    )}
-                  </div>
-                  {!showInactive && (
-                    <button
-                      onClick={() => setChargeOpen(true)}
-                      className="mt-2 w-full py-2.5 bg-[#16a84c] text-white rounded-xl font-bold text-[13px] hover:bg-[#128040] transition-colors"
-                    >
-                      💳 충전 등록
-                    </button>
-                  )}
+                {/* 오른쪽: 6가지 정보 */}
+                <div className="flex-1 space-y-2 text-[13px] pt-1">
+                  <InfoRow label="담당자"        value={selected.contact_person ?? '—'} />
+                  <InfoRow label="연락처"        value={selected.contact_phone ?? '—'} />
+                  <InfoRow label="기관명"        value={selected.organization_name ?? '—'} />
+                  <InfoRow label="PIN"           value={selected.pin_code} />
+                  <InfoRow label="잔액 경고 기준" value={won(selected.warning_threshold)} />
+                  <InfoRow label="이번달 사용액"  value={won(monthlyUsage[selected.account_code] ?? 0)} />
                 </div>
-              </div>
-
-              {/* 상세 정보 2열 그리드 */}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-5 text-[13px]">
-                <InfoRow label="담당자"       value={selected.contact_person ?? '—'} />
-                <InfoRow label="연락처"       value={selected.contact_phone ?? '—'} />
-                <InfoRow label="기관명"       value={selected.organization_name ?? '—'} />
-                <InfoRow label="PIN"          value={selected.pin_code} />
-                <InfoRow label="잔액 경고 기준" value={won(selected.warning_threshold)} />
-                <InfoRow label="이번달 사용액"  value={won(monthlyUsage[selected.account_code] ?? 0)} />
               </div>
 
               {/* 이력 탭 */}
