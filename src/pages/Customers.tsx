@@ -176,6 +176,9 @@ export default function Customers() {
     setChargePage(0)
   }, [selected?.account_code])
 
+  const seqMap: Record<string, number> = {}
+  accounts.forEach((a, i) => { seqMap[a.account_code] = i + 1 })
+
   const filtered = accounts.filter(a =>
     a.account_name.includes(search) ||
     (a.organization_name ?? '').includes(search) ||
@@ -465,13 +468,13 @@ export default function Customers() {
               {search ? '검색 결과가 없습니다' : showInactive ? '비활성 거래처가 없습니다' : '등록된 거래처가 없습니다'}
             </div>
           ) : (
-            filtered.map((acc, idx) => (
+            filtered.map((acc) => (
               <button
                 key={acc.account_code}
                 onClick={() => setSelected(acc)}
                 className="w-full grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-6 py-3 text-left hover:bg-gray-bg transition-colors text-[13px]"
               >
-                <span className="text-gray-text text-[12px]">{idx + 1}</span>
+                <span className="text-gray-text text-[12px]">{seqMap[acc.account_code]}</span>
                 <span className="font-semibold text-ink">{acc.account_name}</span>
                 <span>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[acc.account_type]}`}>
