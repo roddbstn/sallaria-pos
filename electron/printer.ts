@@ -42,6 +42,7 @@ export interface OrderPayload {
   balance_after:     number
   note?:             string | null   // 고객요청사항만 (파싱 후)
   delivery_address?: string | null   // 배달주소
+  delivery_detail?:  string | null   // 배달상세주소
   delivery_note?:    string | null   // 배달요청사항
 }
 
@@ -87,11 +88,12 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
   const itemCells = order.items.map(item => `
     <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
     <span style="font-size:${menuPt};font-weight:bold;text-align:right">${item.quantity}</span>
-    ${item.options.map(o => `<div class="opt" style="font-size:${optPt};grid-column:1/-1">&gt; ${o.option_name}</div>`).join('')}
+    ${item.options.map(o => `<div class="opt" style="font-size:${optPt};grid-column:1/-1">&gt; ${o.option_name}${o.extra_price > 0 ? ` +${o.extra_price.toLocaleString('ko-KR')}원` : ''}</div>`).join('')}
   `).join('')
 
   const deliveryBlock = order.delivery_address ? `
     <div>배달주소 : ${order.delivery_address}</div>
+    ${order.delivery_detail ? `<div>배달상세 : ${order.delivery_detail}</div>` : ''}
     <div>가게요청 : ${order.note || '없음'}</div>
     <div>배달요청 : ${order.delivery_note || '없음'}</div>
     <hr class="hr">
@@ -143,6 +145,7 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
 
   const deliveryBlock = order.delivery_address ? `
     <div>배달주소 : ${order.delivery_address}</div>
+    ${order.delivery_detail ? `<div>배달상세 : ${order.delivery_detail}</div>` : ''}
     <div>가게요청 : ${order.note || '없음'}</div>
     <div>배달요청 : ${order.delivery_note || '없음'}</div>
     <hr class="hr">

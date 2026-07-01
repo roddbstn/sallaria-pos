@@ -316,17 +316,19 @@ export default function Settings() {
                     </div>
                     <div style={{ borderTop:'1px dotted #000', margin:'2px 0' }} />
                     {[
-                      { name: '단호박 샐러드', qty: 1, opt: '레몬 드레싱' },
-                      { name: '치킨텐더 랩',   qty: 1, opt: '멕시칸 소스' },
+                      { name: '단호박 샐러드', qty: 1, opt: '레몬 드레싱',      optPrice: 0 },
+                      { name: '치킨텐더 랩',   qty: 1, opt: '멕시칸 소스',      optPrice: 0 },
+                      { name: '클래식 포케',   qty: 1, opt: '아보카도 추가',    optPrice: 1500 },
                     ].map((item, i) => {
                       const menuPx = receipt.menuSize   === 'large' ? 16 : receipt.menuSize   === 'normal' ? 12 : 8
                       const optPx  = receipt.optionSize === 'large' ? 16 : receipt.optionSize === 'normal' ? 12 : 8
+                      const optLabel = item.optPrice > 0 ? `  > ${item.opt} +${item.optPrice.toLocaleString('ko-KR')}원` : `  > ${item.opt}`
                       return (
                         <div key={i}>
                           <div style={{ fontWeight:'bold', fontSize:menuPx, display:'flex', justifyContent:'space-between' }}>
                             <span>{item.name}</span><span>{item.qty}</span>
                           </div>
-                          <div style={{ fontSize:optPx, color:'#555' }}>{`  > ${item.opt}`}</div>
+                          <div style={{ fontSize:optPx, color:'#555' }}>{optLabel}</div>
                         </div>
                       )
                     })}

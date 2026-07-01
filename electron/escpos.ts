@@ -178,6 +178,11 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
     for (const line of wrapName('배달주소 : ' + order.delivery_address, BASE_W)) {
       p(enc(line), nl())
     }
+    if (order.delivery_detail) {
+      for (const line of wrapName('배달상세 : ' + order.delivery_detail, BASE_W)) {
+        p(enc(line), nl())
+      }
+    }
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
     p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())
     p(CMD.SIZE_NORMAL)
@@ -207,7 +212,10 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
       p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
     }
     for (const opt of item.options) {
-      p(sizeCmd(oSize), enc('  > ' + opt.option_name), CMD.SIZE_NORMAL, nl())
+      const optLabel = opt.extra_price > 0
+        ? `  > ${opt.option_name} +${opt.extra_price.toLocaleString('ko-KR')}원`
+        : `  > ${opt.option_name}`
+      p(sizeCmd(oSize), enc(optLabel), CMD.SIZE_NORMAL, nl())
     }
   }
 
@@ -256,6 +264,11 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
     p(CMD.SIZE_SMALL)
     for (const line of wrapName('배달주소 : ' + order.delivery_address, BASE_W)) {
       p(enc(line), nl())
+    }
+    if (order.delivery_detail) {
+      for (const line of wrapName('배달상세 : ' + order.delivery_detail, BASE_W)) {
+        p(enc(line), nl())
+      }
     }
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
     p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())

@@ -4,6 +4,42 @@ import { won, orderToPayload } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { track } from '../lib/firebase'
 
+// note 문자열에서 배달/요청 정보 파싱
+function parsedNote(raw: string) {
+  const parts = raw.split(' / ')
+  let deliveryAddress: string | null = null
+  let deliveryDetail: string | null = null
+  let deliveryNote: string | null = null
+  const customerParts: string[] = []
+  for (const part of parts) {
+    if (part.startsWith('[배달주소] ')) deliveryAddress = part.slice('[배달주소] '.length)
+    else if (part.startsWith('[배달상세] ')) deliveryDetail = part.slice('[배달상세] '.length)
+    else if (part.startsWith('[배달요청] ')) deliveryNote = part.slice('[배달요청] '.length)
+    else if (part.trim()) customerParts.push(part.trim())
+  }
+  return { deliveryAddress, deliveryDetail, deliveryNote, customerNote: customerParts.join(', ') || null }
+}
+
+// 복사 버튼 컴포넌트
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors flex-shrink-0"
+      style={copied ? { backgroundColor: '#E6F4EC', color: '#017333' } : { backgroundColor: '#F0F0F0', color: '#727272' }}
+    >
+      {copied ? '✓ 복사됨' : '복사'}
+    </button>
+  )
+}
+
 interface Props {
   queue:      Order[]
   onClose:    () => void   // 현재(첫 번째) 주문 제거
@@ -166,7 +202,18 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                     <span className="text-white/80 text-[13px]">
                       {o.accountName === o.orderer ? o.accountName : `${o.accountName} · ${o.orderer}`}
                     </span>
-                    {o.phone && <span className="text-white/60 text-[12px]">{o.phone}</span>}
+                    {o.phone && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-white/60 text-[12px]">{o.phone}</span>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(o.phone!)}
+                        className="text-white/40 hover:text-white/80 transition-colors text-[10px] px-1 py-0.5 rounded"
+                        title="전화번호 복사"
+                      >
+                        📋
+                      </button>
+                    </div>
+                  )}
                   </div>
                   <span className="text-white font-semibold text-[20px] leading-none">{o.method}</span>
                 </div>
@@ -209,14 +256,51 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                             <span className="text-ink text-[20px] font-bold">{won(o.total)}</span>
                           </div>
                         </div>
-                        {o.remarks && (
-                          <div className="mb-3">
-                            <div className="text-[12px] font-bold text-gray-text mb-1">요청사항 💬</div>
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-[13px] text-ink font-semibold">
-                              {o.remarks}
+                        {o.remarks && (() => {
+                          const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parsedNote(o.remarks)
+                          return (
+                            <div className="mb-3 space-y-2">
+                              {customerNote && (
+                                <div>
+                                  <div className="text-[12px] font-bold text-gray-text mb-1">가게 요청사항 💬</div>
+                                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-[13px] text-ink font-semibold">
+                                    {customerNote}
+                                  </div>
+                                </div>
+                              )}
+                              {deliveryAddress && (
+                                <div>
+                                  <div className="text-[12px] font-bold text-gray-text mb-1">배달 주소 🛵</div>
+                                  <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 space-y-1.5">
+                                    <div className="flex items-center justify-between text-[13px] text-ink font-semibold">
+                                      <span className="flex-1 min-w-0 truncate">{deliveryAddress}</span>
+                                      <CopyButton text={deliveryAddress} />
+                                    </div>
+                                    {deliveryDetail && (
+                                      <div className="flex items-center justify-between text-[12px] text-gray-text">
+                                        <span className="flex-1 min-w-0 truncate">{deliveryDetail}</span>
+                                        <CopyButton text={deliveryDetail} />
+                                      </div>
+                                    )}
+                                    {deliveryNote && (
+                                      <div className="text-[12px] text-gray-text border-t border-orange-200 pt-1.5 mt-1">
+                                        배달 요청: {deliveryNote}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {!deliveryAddress && !customerNote && (
+                                <div>
+                                  <div className="text-[12px] font-bold text-gray-text mb-1">요청사항 💬</div>
+                                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-[13px] text-ink font-semibold">
+                                    {o.remarks}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        )}
+                          )
+                        })()}
                         {o.balanceAfter !== undefined && (
                           <div className="bg-gray-bg rounded-xl px-4 py-3 mb-4 flex justify-between items-center">
                             <span className="text-[13px] font-medium text-gray-text">{o.accountName}</span>

@@ -4,24 +4,28 @@ import type { Order } from './mock-data'
 
 function parseNote(raw: string | null | undefined): {
   deliveryAddress: string | null
+  deliveryDetail: string | null
   deliveryNote: string | null
   customerNote: string | null
 } {
-  if (!raw) return { deliveryAddress: null, deliveryNote: null, customerNote: null }
+  if (!raw) return { deliveryAddress: null, deliveryDetail: null, deliveryNote: null, customerNote: null }
   const parts = raw.split(' / ')
   let deliveryAddress: string | null = null
+  let deliveryDetail: string | null = null
   let deliveryNote: string | null = null
   const customerParts: string[] = []
   for (const part of parts) {
     if (part.startsWith('[배달주소] ')) {
       deliveryAddress = part.slice('[배달주소] '.length)
+    } else if (part.startsWith('[배달상세] ')) {
+      deliveryDetail = part.slice('[배달상세] '.length)
     } else if (part.startsWith('[배달요청] ')) {
       deliveryNote = part.slice('[배달요청] '.length)
     } else if (part.trim()) {
       customerParts.push(part.trim())
     }
   }
-  return { deliveryAddress, deliveryNote, customerNote: customerParts.join(', ') || null }
+  return { deliveryAddress, deliveryDetail, deliveryNote, customerNote: customerParts.join(', ') || null }
 }
 
 type API = typeof import('../../../electron/preload').PosAPI extends infer T ? T : never
@@ -42,12 +46,13 @@ export const formatDate = (iso: string) => {
  */
 export function orderToPayload(o: Order) {
   const deliveryFee = o.method === '배달' ? 3500 : 0
-  const { deliveryAddress, deliveryNote, customerNote } = parseNote(o.remarks)
+  const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parseNote(o.remarks)
   return {
     order_code:       o.code,
     order_number:     o.orderNumber,
     account_name:     o.accountName,
     orderer_name:     o.orderer,
+    orderer_phone:    o.phone ?? null,
     method:           o.method,
     ordered_at:       o.createdAt,
     items: o.items.map(item => ({
@@ -64,6 +69,7 @@ export function orderToPayload(o: Order) {
     balance_after:    o.balanceAfter  ?? 0,
     note:             customerNote,
     delivery_address: deliveryAddress,
+    delivery_detail:  deliveryDetail,
     delivery_note:    deliveryNote,
   }
 }

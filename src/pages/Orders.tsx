@@ -3,6 +3,36 @@ import { type Order, type OrderStatus } from '../lib/mock-data'
 import { won, formatDate, orderToPayload } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 
+// note 문자열에서 배달/요청 정보 파싱
+function parsedNote(raw: string) {
+  const parts = raw.split(' / ')
+  let deliveryAddress: string | null = null
+  let deliveryDetail: string | null = null
+  let deliveryNote: string | null = null
+  const customerParts: string[] = []
+  for (const part of parts) {
+    if (part.startsWith('[배달주소] ')) deliveryAddress = part.slice('[배달주소] '.length)
+    else if (part.startsWith('[배달상세] ')) deliveryDetail = part.slice('[배달상세] '.length)
+    else if (part.startsWith('[배달요청] ')) deliveryNote = part.slice('[배달요청] '.length)
+    else if (part.trim()) customerParts.push(part.trim())
+  }
+  return { deliveryAddress, deliveryDetail, deliveryNote, customerNote: customerParts.join(', ') || null }
+}
+
+// 인라인 복사 버튼
+function CopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
+      className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold flex-shrink-0 transition-colors"
+      style={copied ? { backgroundColor: '#E6F4EC', color: '#017333' } : { backgroundColor: '#F0F0F0', color: '#727272' }}
+    >
+      {copied ? '✓ 복사됨' : '복사'}
+    </button>
+  )
+}
+
 // ── DB row → Order 변환 ───────────────────────────────────────────────────────
 const DB_METHOD_MAP: Record<string, string> = { '내점': '매장 식사', '포장': '포장', '배달': '배달' }
 
@@ -635,11 +665,48 @@ export default function Orders() {
                 <Row label="주문번호"  value={selected.orderNumber ? `#${selected.orderNumber}` : selected.code} mono />
                 <Row label="거래처"    value={selected.accountName} />
                 <Row label="주문자"    value={selected.orderer} />
-                {selected.phone && <Row label="연락처" value={selected.phone} />}
+                {selected.phone && (
+                  <div className="flex justify-between text-[13px]">
+                    <span className="text-gray-text">연락처</span>
+                    <span className="flex items-center text-ink">
+                      {selected.phone}
+                      <CopyBtn text={selected.phone} />
+                    </span>
+                  </div>
+                )}
                 <Row label="이용방법"  value={selected.method === '배달' ? '배달 (+3,500원)' : selected.method} />
                 <Row label="주문일시"  value={formatDate(selected.createdAt)} />
                 <Row label="합계"      value={won(selected.total)} bold />
-                {selected.remarks && <Row label="요청사항" value={selected.remarks} />}
+                {selected.remarks && (() => {
+                  const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parsedNote(selected.remarks)
+                  return (
+                    <>
+                      {customerNote && <Row label="가게 요청사항" value={customerNote} />}
+                      {deliveryAddress && (
+                        <>
+                          <div className="flex justify-between text-[13px]">
+                            <span className="text-gray-text">배달 주소</span>
+                            <span className="flex items-center text-ink text-right max-w-[60%]">
+                              <span className="truncate">{deliveryAddress}</span>
+                              <CopyBtn text={deliveryAddress} />
+                            </span>
+                          </div>
+                          {deliveryDetail && (
+                            <div className="flex justify-between text-[13px]">
+                              <span className="text-gray-text">배달 상세</span>
+                              <span className="flex items-center text-ink">
+                                <span className="truncate">{deliveryDetail}</span>
+                                <CopyBtn text={deliveryDetail} />
+                              </span>
+                            </div>
+                          )}
+                          {deliveryNote && <Row label="배달 요청사항" value={deliveryNote} />}
+                        </>
+                      )}
+                      {!deliveryAddress && !customerNote && <Row label="요청사항" value={selected.remarks} />}
+                    </>
+                  )
+                })()}
               </div>
               <div className="bg-gray-bg rounded-xl p-4 mb-5 space-y-3">
                 {selected.items.map((item, i) => (
