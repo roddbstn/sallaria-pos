@@ -85,31 +85,42 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
   const optPt  = OPTION_PT[settings.optionSize]
 
   const itemRows = order.items.map(item => `
-    <div class="row b" style="font-size:${menuPt}">
-      <span>${item.menu_name}</span>
-      <span class="r">${item.quantity}</span>
+    <div style="font-size:${menuPt};font-weight:bold">
+      ${item.menu_name} &nbsp;&nbsp;&nbsp; ${item.quantity}
     </div>
-    ${item.options.map(o => `<div class="opt" style="font-size:${optPt}">▶ ${o.option_name}</div>`).join('')}
+    ${item.options.map(o => `<div class="opt" style="font-size:${optPt}">&gt; ${o.option_name}</div>`).join('')}
   `).join('')
 
+  const deliveryBlock = order.delivery_address ? `
+    <div>배달주소 : ${order.delivery_address}</div>
+    <div>가게요청 : ${order.note || '없음'}</div>
+    <div>배달요청 : ${order.delivery_note || '없음'}</div>
+    <hr class="hr">
+  ` : `
+    <div>가게요청 : ${order.note || '없음'}</div>
+    <hr class="hr">
+  `
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>${BASE_STYLE}</style></head><body>
-  <div class="c b">샐러리아 침산점 - 선결제 영수증</div>
-  <div class="c">[주방용]</div>
+<style>${BASE_STYLE}
+.sub-hr { border:none; border-top:1px dotted #000; margin:2px 0; }
+.menu-row { display:grid; grid-template-columns:1fr auto; gap:4px; }
+</style></head><body>
+  <div class="c b">[주방용]</div>
+  <div class="c">샐러리아 침산점 - 선결제 영수증</div>
   <hr class="hr">
-  <div>주문번호: ${order.order_number ?? order.order_code}</div>
-  <div>거래처: ${order.account_name}</div>
-  <div>주문자: ${order.orderer_name}</div>
-  <div>이용방법: ${order.method}</div>
-  ${order.delivery_address ? `<div>배달주소: ${order.delivery_address}</div>` : ''}
-  <div>주문일시: ${formatDate(order.ordered_at)}</div>
+  <div>주문번호 : <b>${order.order_number ?? order.order_code}</b></div>
+  <div>주문일시 : ${formatDate(order.ordered_at)}</div>
   <hr class="hr">
-  <div class="row b"><span>메뉴명</span><span class="r">수량</span></div>
+  <div>이용방법 : <b>${order.method}</b></div>
+  <div>주문자   : ${order.orderer_name}</div>
+  ${order.orderer_phone ? `<div>전화번호 : ${order.orderer_phone}</div>` : ''}
   <hr class="hr">
+  ${deliveryBlock}
+  <div class="menu-row b"><span>메뉴명</span><span>수량</span></div>
+  <hr class="sub-hr">
   ${itemRows}
   <hr class="hr">
-  <hr class="hr">
-  <div>${order.note ? `고객요청: ${order.note}` : '고객요청: (없음)'}</div>
 </body></html>`
 }
 
@@ -119,45 +130,58 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
   const optPt  = OPTION_PT[settings.customerOptionSize]
 
   const itemRows = order.items.map(item => `
-    <div class="row b" style="font-size:${menuPt}">
-      <span>${item.menu_name} ×${item.quantity}</span>
-      <span class="r">${formatWon(item.subtotal)}</span>
+    <div style="font-size:${menuPt};font-weight:bold;display:grid;grid-template-columns:1fr auto auto;gap:4px">
+      <span>${item.menu_name}</span>
+      <span style="text-align:right">${item.quantity}</span>
+      <span style="text-align:right">${formatWon(item.subtotal)}</span>
     </div>
     ${item.options.map(o => `
       <div class="opt" style="font-size:${optPt}">
-        ▶ ${o.option_name}${o.extra_price > 0 ? ` +${o.extra_price.toLocaleString('ko-KR')}원` : ''}
+        &gt; ${o.option_name}${o.extra_price > 0 ? ` +${o.extra_price.toLocaleString('ko-KR')}원` : ''}
       </div>`).join('')}
   `).join('')
 
+  const deliveryBlock = order.delivery_address ? `
+    <div>배달주소 : ${order.delivery_address}</div>
+    <div>가게요청 : ${order.note || '없음'}</div>
+    <div>배달요청 : ${order.delivery_note || '없음'}</div>
+    <hr class="hr">
+  ` : `
+    <div>가게요청 : ${order.note || '없음'}</div>
+    <hr class="hr">
+  `
+
   const balanceWarning = order.balance_after < 0
-    ? `<div style="margin-top:3px;font-size:7pt;">※ 잔액 부족 — 다음 충전 시 정산</div>`
-    : ''
+    ? `<div style="font-size:7pt">※ 잔액 부족 — 다음 충전 시 정산</div>` : ''
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>${BASE_STYLE}</style></head><body>
+<style>${BASE_STYLE}
+.sub-hr { border:none; border-top:1px dotted #000; margin:2px 0; }
+</style></head><body>
   <div class="c b">샐러리아 침산점 - 선결제 영수증</div>
   <hr class="hr">
-  <div>주문번호: ${order.order_number ?? order.order_code}</div>
-  <div>거래처: ${order.account_name}</div>
-  <div>주문자: ${order.orderer_name}${order.orderer_phone ? ` (${order.orderer_phone})` : ''}</div>
-  <div>이용방법: ${order.method}</div>
-  ${order.delivery_address ? `<div>배달주소: ${order.delivery_address}</div>` : ''}
-  <div>주문일시: ${formatDate(order.ordered_at)}</div>
+  <div>주문번호 : <b>${order.order_number ?? order.order_code}</b></div>
+  <div>주문일시 : ${formatDate(order.ordered_at)}</div>
   <hr class="hr">
+  <div>이용방법 : <b>${order.method}</b></div>
+  <div>주문자   : ${order.orderer_name}</div>
+  ${order.orderer_phone ? `<div>전화번호 : ${order.orderer_phone}</div>` : ''}
+  <hr class="hr">
+  ${deliveryBlock}
+  <div style="display:grid;grid-template-columns:1fr auto auto;gap:4px;font-weight:bold">
+    <span>메뉴명</span><span style="text-align:right">수량</span><span style="text-align:right">가격</span>
+  </div>
+  <hr class="sub-hr">
   ${itemRows}
   <hr class="hr">
   <div class="row"><span>메뉴 소계</span><span class="r">${formatWon(order.menu_subtotal)}</span></div>
   ${order.delivery_fee > 0 ? `<div class="row"><span>배달료</span><span class="r">${formatWon(order.delivery_fee)}</span></div>` : ''}
+  <hr class="hr">
   <div class="row b"><span>합  계</span><span class="r">${formatWon(order.total_amount)}</span></div>
   <hr class="hr">
-  <div class="row"><span>주문 전 잔액</span><span class="r">${formatWon(order.balance_before)}</span></div>
-  <div class="row b"><span>주문 후 잔액</span><span class="r">${formatWon(order.balance_after)}</span></div>
+  <div class="row"><span>주문전 잔액</span><span class="r">${formatWon(order.balance_before)}</span></div>
+  <div class="row b"><span>주문후 잔액</span><span class="r">${formatWon(order.balance_after)}</span></div>
   ${balanceWarning}
-  ${(order.delivery_note || order.note) ? `
-  <hr class="hr">
-  ${order.delivery_note ? `<div>배달요청: ${order.delivery_note}</div>` : ''}
-  ${order.note ? `<div>고객요청: ${order.note}</div>` : ''}
-` : ''}
 </body></html>`
 }
 
