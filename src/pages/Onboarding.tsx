@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { track } from '../lib/firebase'
 
 interface Props {
   clientId:   string
@@ -90,6 +91,7 @@ export default function Onboarding({ clientId, onComplete }: Props) {
         .select('id, name')
         .single()
       if (e) throw e
+      track('pos_store_registered', { store_id: data.id, store_name: data.name })
       onComplete(data.id, data.name)
     } catch (e: any) {
       setError(e.message ?? '오류가 발생했습니다.')

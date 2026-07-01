@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { type Order } from '../lib/mock-data'
 import { won, orderToPayload } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
+import { track } from '../lib/firebase'
 
 interface Props {
   queue:      Order[]
@@ -72,6 +73,14 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
     const w = window as unknown as { api?: { approveOrder?: Function } }
     await w.api?.approveOrder?.({ order: orderToPayload(order), prepMins })
 
+    track('pos_order_approved', {
+      order_code:        order.code,
+      total_amount:      order.total,
+      method:            order.method,
+      item_count:        order.items.length,
+      prep_mins:         prepMins,
+    })
+
     setLoading(false)
     onApprove?.()
     dismiss()
@@ -100,6 +109,13 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
     // ③ Electron IPC
     const w = window as unknown as { api?: { rejectOrder?: Function } }
     await w.api?.rejectOrder?.({ orderCode: order.code, reason })
+
+    track('pos_order_rejected', {
+      order_code:   order.code,
+      total_amount: order.total,
+      method:       order.method,
+      reason,
+    })
 
     setLoading(false)
     dismiss()

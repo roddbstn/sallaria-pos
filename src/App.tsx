@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
+import { track } from './lib/firebase'
 import { StoreContext, type StoreSession } from './lib/store-context'
 import { playOrderSound } from './lib/sound'
 
@@ -174,6 +175,7 @@ export default function App() {
 
     const store = stores[0]
     setSession({ userId, clientId: client.id, storeId: store.id, storeName: store.name })
+    track('pos_store_login', { store_id: store.id, store_name: store.name })
     setPhase('main')
   }
 

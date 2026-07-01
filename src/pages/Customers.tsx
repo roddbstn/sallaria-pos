@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
+import { track } from '../lib/firebase'
 import type { Order, OrderStatus } from '../lib/mock-data'
 
 const BASE_URL = 'https://sallaria.web.app'
@@ -266,8 +267,13 @@ export default function Customers() {
       return
     }
 
+    track('pos_deposit_added', {
+      account_code:    selected.account_code,
+      account_name:    selected.account_name,
+      amount:          amt,
+    })
+
     await Promise.all([fetchAccounts(), fetchDeposits(selected.account_code)])
-    // 선택된 계좌의 잔액을 로컬에서도 즉시 반영
     setSelected(prev => prev ? { ...prev, current_balance: prev.current_balance + amt } : prev)
     setChargeOpen(false)
     setChargeAmt('')
