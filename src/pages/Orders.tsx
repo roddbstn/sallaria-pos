@@ -352,6 +352,24 @@ function calcMenuSales(orders: Order[]): MenuSales[] {
   return Array.from(map.values()).sort((a, b) => b.total - a.total)
 }
 
+// ── 거래처별 매출 집계 ────────────────────────────────────────────────────────
+interface AccountSales { name: string; count: number; total: number }
+
+function calcAccountSales(orders: Order[]): AccountSales[] {
+  const map = new Map<string, AccountSales>()
+  for (const order of orders) {
+    if (order.status === '취소') continue
+    const existing = map.get(order.accountName)
+    if (existing) {
+      existing.count += 1
+      existing.total += order.total
+    } else {
+      map.set(order.accountName, { name: order.accountName, count: 1, total: order.total })
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.total - a.total)
+}
+
 // ── 날짜 범위 내 날 수 ────────────────────────────────────────────────────────
 function dayCount(start: string | null, end: string | null): number {
   if (!start) return 1
@@ -375,10 +393,11 @@ export default function Orders() {
 
   const [startDate, setStartDate] = useState<string | null>(today)
   const [endDate,   setEndDate]   = useState<string | null>(today)
-  const [tab,       setTab]       = useState<'주문내역' | '메뉴별매출'>('주문내역')
+  const [tab,       setTab]       = useState<'주문내역' | '메뉴별매출' | '거래처별매출'>('주문내역')
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
   const [selected,     setSelected]     = useState<Order | null>(null)
-  const [selectedMenuName, setSelectedMenuName] = useState<string | null>(null)
+  const [selectedMenuName,    setSelectedMenuName]    = useState<string | null>(null)
+  const [selectedAccountName, setSelectedAccountName] = useState<string | null>(null)
   const [orders,   setOrders]   = useState<Order[]>([])
   const [loading,  setLoading]  = useState(false)
   const [reprintMsg, setReprintMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -420,10 +439,11 @@ export default function Orders() {
     setSelectedMenuName(null)
   }
 
-  function handleTabChange(t: '주문내역' | '메뉴별매출') {
+  function handleTabChange(t: '주문내역' | '메뉴별매출' | '거래처별매출') {
     setTab(t)
     setSelected(null)
     setSelectedMenuName(null)
+    setSelectedAccountName(null)
   }
 
   // 통계 계산
@@ -446,6 +466,9 @@ export default function Orders() {
   // 메뉴별 매출
   const menuSales = useMemo(() => calcMenuSales(orders), [orders])
 
+  // 거래처별 매출
+  const accountSales = useMemo(() => calcAccountSales(orders), [orders])
+
   return (
     <div className="h-full flex overflow-hidden bg-white">
 
@@ -466,11 +489,11 @@ export default function Orders() {
         {/* 탭 */}
         <div className="px-5 pt-3 pb-0 flex-shrink-0 border-b border-gray-border">
           <div className="flex gap-1">
-            {(['주문내역', '메뉴별매출'] as const).map(t => (
+            {(['주문내역', '메뉴별매출', '거래처별매출'] as const).map(t => (
               <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-4 py-2 text-[13px] font-semibold border-b-2 transition-colors -mb-px
                   ${tab === t ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
-                {t === '주문내역' ? '주문 내역' : '메뉴별 거래액'}
+                {t === '주문내역' ? '주문 내역' : t === '메뉴별매출' ? '메뉴별 거래액' : '거래처별 거래액'}
               </button>
             ))}
           </div>
@@ -534,7 +557,7 @@ export default function Orders() {
               )}
             </div>
           </div>
-        ) : (
+        ) : tab === '메뉴별매출' ? (
           /* 메뉴별 매출 탭 */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="grid grid-cols-[1fr_100px_120px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
@@ -558,6 +581,35 @@ export default function Orders() {
                     </span>
                     <span className="text-right text-gray-text">{ms.qty}개</span>
                     <span className="text-right font-bold text-ink">{won(ms.total)}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          /* 거래처별 거래액 탭 */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="grid grid-cols-[1fr_90px_120px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+              <span>거래처명</span>
+              <span className="text-right">주문건수</span>
+              <span className="text-right">거래액</span>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
+              {accountSales.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
+                  해당 기간에 거래액 데이터가 없습니다
+                </div>
+              ) : (
+                accountSales.map((as, idx) => (
+                  <button key={as.name} onClick={() => setSelectedAccountName(as.name)}
+                    className={`w-full grid grid-cols-[1fr_90px_120px] px-5 py-3 text-left text-[13px] transition-colors
+                      ${selectedAccountName === as.name ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
+                    <span className="font-semibold text-ink flex items-center gap-1.5">
+                      {idx === 0 && <span>🏆</span>}
+                      {as.name}
+                    </span>
+                    <span className="text-right text-gray-text">{as.count}건</span>
+                    <span className="text-right font-bold text-ink">{won(as.total)}</span>
                   </button>
                 ))
               )}
@@ -632,6 +684,54 @@ export default function Orders() {
           </div>
         </div>
       )}
+
+      {/* 거래처별 상세 모달 */}
+      {tab === '거래처별매출' && selectedAccountName && (() => {
+        const as = accountSales.find(a => a.name === selectedAccountName)!
+        const relatedOrders = orders.filter(
+          o => o.status !== '취소' && o.accountName === selectedAccountName
+        )
+        return (
+          <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelectedAccountName(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-[420px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="text-[15px] font-extrabold text-ink">{selectedAccountName}</div>
+                    <div className="text-[12px] text-gray-text mt-0.5">총 {as.count}건 · {won(as.total)}</div>
+                  </div>
+                  <button onClick={() => setSelectedAccountName(null)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
+                </div>
+                <div className="border-t border-gray-border mb-4" />
+                <div className="text-[11px] font-bold text-gray-text mb-3 uppercase tracking-wide">주문 내역 ({relatedOrders.length}건)</div>
+                <div className="space-y-3">
+                  {relatedOrders.map(order => (
+                    <div key={order.code} className="bg-gray-bg rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] text-gray-text">{formatDate(order.createdAt)}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${METHOD_BADGE[order.method]}`}>{order.method}</span>
+                          <span className="text-[12px] font-bold text-ink">{won(order.total)}</span>
+                        </div>
+                      </div>
+                      <div className="text-[12px] text-gray-text mb-1.5">{order.orderer}</div>
+                      <div className="space-y-1">
+                        {order.items.map((item, i) => (
+                          <div key={i} className="flex justify-between text-[11px]">
+                            <span className="text-ink">{item.name} × {item.qty}</span>
+                            <span className="text-gray-text">{won(item.price * item.qty)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 메뉴별 상세 모달 */}
       {tab === '메뉴별매출' && selectedMenuName && (() => {
