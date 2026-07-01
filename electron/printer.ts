@@ -84,11 +84,10 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
   const menuPt = MENU_PT[settings.menuSize]
   const optPt  = OPTION_PT[settings.optionSize]
 
-  const itemRows = order.items.map(item => `
-    <div style="font-size:${menuPt};font-weight:bold">
-      ${item.menu_name} &nbsp;&nbsp;&nbsp; ${item.quantity}
-    </div>
-    ${item.options.map(o => `<div class="opt" style="font-size:${optPt}">&gt; ${o.option_name}</div>`).join('')}
+  const itemCells = order.items.map(item => `
+    <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
+    <span style="font-size:${menuPt};font-weight:bold;text-align:right">${item.quantity}</span>
+    ${item.options.map(o => `<div class="opt" style="font-size:${optPt};grid-column:1/-1">&gt; ${o.option_name}</div>`).join('')}
   `).join('')
 
   const deliveryBlock = order.delivery_address ? `
@@ -117,9 +116,12 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
   ${order.orderer_phone ? `<div>전화번호 : ${order.orderer_phone}</div>` : ''}
   <hr class="hr">
   ${deliveryBlock}
-  <div class="menu-row b"><span>메뉴명</span><span>수량</span></div>
-  <hr class="sub-hr">
-  ${itemRows}
+  <div style="display:grid;grid-template-columns:1fr auto;gap:4px">
+    <span style="font-weight:bold">메뉴명</span>
+    <span style="font-weight:bold;text-align:right">수량</span>
+    <div style="grid-column:1/-1"><hr class="sub-hr"></div>
+    ${itemCells}
+  </div>
   <hr class="hr">
 </body></html>`
 }
@@ -129,14 +131,12 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
   const menuPt = MENU_PT[settings.customerMenuSize]
   const optPt  = OPTION_PT[settings.customerOptionSize]
 
-  const itemRows = order.items.map(item => `
-    <div style="font-size:${menuPt};font-weight:bold;display:grid;grid-template-columns:1fr auto auto;gap:4px">
-      <span>${item.menu_name}</span>
-      <span style="text-align:right">${item.quantity}</span>
-      <span style="text-align:right">${formatWon(item.subtotal)}</span>
-    </div>
+  const itemCells = order.items.map(item => `
+    <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
+    <span style="font-size:${menuPt};font-weight:bold;text-align:right">${item.quantity}</span>
+    <span style="font-size:${menuPt};font-weight:bold;text-align:right">${formatWon(item.subtotal)}</span>
     ${item.options.map(o => `
-      <div class="opt" style="font-size:${optPt}">
+      <div class="opt" style="font-size:${optPt};grid-column:1/-1">
         &gt; ${o.option_name}${o.extra_price > 0 ? ` +${o.extra_price.toLocaleString('ko-KR')}원` : ''}
       </div>`).join('')}
   `).join('')
@@ -168,11 +168,13 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
   ${order.orderer_phone ? `<div>전화번호 : ${order.orderer_phone}</div>` : ''}
   <hr class="hr">
   ${deliveryBlock}
-  <div style="display:grid;grid-template-columns:1fr auto auto;gap:4px;font-weight:bold">
-    <span>메뉴명</span><span style="text-align:right">수량</span><span style="text-align:right">가격</span>
+  <div style="display:grid;grid-template-columns:1fr auto auto;gap:4px">
+    <span style="font-weight:bold">메뉴명</span>
+    <span style="font-weight:bold;text-align:right">수량</span>
+    <span style="font-weight:bold;text-align:right">가격</span>
+    <div style="grid-column:1/-1"><hr class="sub-hr"></div>
+    ${itemCells}
   </div>
-  <hr class="sub-hr">
-  ${itemRows}
   <hr class="hr">
   <div class="row"><span>메뉴 소계</span><span class="r">${formatWon(order.menu_subtotal)}</span></div>
   ${order.delivery_fee > 0 ? `<div class="row"><span>배달료</span><span class="r">${formatWon(order.delivery_fee)}</span></div>` : ''}
