@@ -83,6 +83,20 @@ function hrBuf(width = BASE_W): Buffer {
   return enc('-'.repeat(width))
 }
 
+/** 메뉴명을 인쇄 폭 기준으로 줄바꿈 — 잘라내지 않고 여러 줄로 */
+function wrapName(name: string, maxW: number): string[] {
+  if (pw(name) <= maxW) return [name]
+  const lines: string[] = []
+  let cur = '', curW = 0
+  for (const ch of name) {
+    const cw = ch.charCodeAt(0) > 0x7F ? 2 : 1
+    if (curW + cw > maxW) { lines.push(cur); cur = ch; curW = cw }
+    else { cur += ch; curW += cw }
+  }
+  if (cur) lines.push(cur)
+  return lines
+}
+
 // ── 포맷 유틸 ──────────────────────────────────────────────────────────────
 
 function formatWon(n: number): string {
@@ -132,7 +146,14 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
 
   // 메뉴 목록
   for (const item of order.items) {
-    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(item.menu_name, String(item.quantity), mW), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+    const qty = String(item.quantity)
+    const nameLines = wrapName(item.menu_name, mW - pw(qty) - 1)
+    for (let i = 0; i < nameLines.length; i++) {
+      const isLast = i === nameLines.length - 1
+      p(sizeCmd(mSize), CMD.BOLD_ON)
+      p(isLast ? rowBuf(nameLines[i], qty, mW) : enc(nameLines[i]))
+      p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+    }
     for (const opt of item.options) {
       p(sizeCmd(oSize), enc(`  ${opt.option_name}`), CMD.SIZE_NORMAL, nl())
     }
@@ -175,7 +196,15 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
 
   // 메뉴 목록 (양쪽 정렬, 크기 적용)
   for (const item of order.items) {
-    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(`${item.menu_name} x${item.quantity}`, formatWon(item.subtotal), mW), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+    const priceStr = formatWon(item.subtotal)
+    const label = `${item.menu_name} x${item.quantity}`
+    const nameLines = wrapName(label, mW - pw(priceStr) - 1)
+    for (let i = 0; i < nameLines.length; i++) {
+      const isLast = i === nameLines.length - 1
+      p(sizeCmd(mSize), CMD.BOLD_ON)
+      p(isLast ? rowBuf(nameLines[i], priceStr, mW) : enc(nameLines[i]))
+      p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+    }
     for (const opt of item.options) {
       const optLabel = opt.extra_price > 0
         ? `${opt.option_name} +${opt.extra_price.toLocaleString('ko-KR')}원`
