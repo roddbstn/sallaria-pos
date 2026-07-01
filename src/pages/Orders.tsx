@@ -479,8 +479,8 @@ export default function Orders() {
         <div className="px-5 py-4 border-b border-gray-border flex-shrink-0">
           <div className="text-[18px] font-extrabold mb-3 text-ink">주문 관리</div>
           <div className="flex gap-3">
-            <StatCard label="합계 거래액"    value={won(stats.totalSales)} sub="취소 제외" />
-            <StatCard label="일 평균 거래액"  value={won(stats.avgSales)}   sub={`${dayCount(startDate, endDate)}일 기준`} />
+            <StatCard label="합계 주문액"    value={won(stats.totalSales)} sub="취소 제외" />
+            <StatCard label="일 평균 주문액"  value={won(stats.avgSales)}   sub={`${dayCount(startDate, endDate)}일 기준`} />
             <StatCard label="주문 건수"       value={`${stats.orderCount}건`} sub="취소 제외" />
             <StatCard label="취소 건수"       value={`${stats.cancelCount}건`} />
           </div>
@@ -493,7 +493,7 @@ export default function Orders() {
               <button key={t} onClick={() => handleTabChange(t)}
                 className={`px-4 py-2 text-[13px] font-semibold border-b-2 transition-colors -mb-px
                   ${tab === t ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
-                {t === '주문내역' ? '주문 내역' : t === '메뉴별매출' ? '메뉴별 거래액' : '거래처별 거래액'}
+                {t === '주문내역' ? '주문 내역' : t === '메뉴별매출' ? '메뉴별 주문액' : '거래처별 주문액'}
               </button>
             ))}
           </div>
@@ -563,12 +563,12 @@ export default function Orders() {
             <div className="grid grid-cols-[1fr_100px_120px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
               <span>메뉴명</span>
               <span className="text-right">주문수량</span>
-              <span className="text-right">거래액</span>
+              <span className="text-right">주문액</span>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
               {menuSales.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
-                  해당 기간에 거래액 데이터가 없습니다
+                  해당 기간에 주문액 데이터가 없습니다
                 </div>
               ) : (
                 menuSales.map((ms, idx) => (
@@ -587,17 +587,17 @@ export default function Orders() {
             </div>
           </div>
         ) : (
-          /* 거래처별 거래액 탭 */
+          /* 거래처별 주문액 탭 */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="grid grid-cols-[1fr_90px_120px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
               <span>거래처명</span>
               <span className="text-right">주문건수</span>
-              <span className="text-right">거래액</span>
+              <span className="text-right">주문액</span>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
               {accountSales.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
-                  해당 기간에 거래액 데이터가 없습니다
+                  해당 기간에 주문액 데이터가 없습니다
                 </div>
               ) : (
                 accountSales.map((as, idx) => (
