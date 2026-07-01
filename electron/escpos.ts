@@ -128,14 +128,14 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(hrBuf(), nl())
 
   // 메뉴 헤더
-  p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf('메뉴명', '수량', mW), nl(), CMD.BOLD_OFF, CMD.SIZE_NORMAL)
+  p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf('메뉴명', '수량', mW), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
   p(hrBuf(), nl())
 
   // 메뉴 목록
   for (const item of order.items) {
-    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(item.menu_name, String(item.quantity), mW), nl(), CMD.BOLD_OFF, CMD.SIZE_NORMAL)
+    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(item.menu_name, String(item.quantity), mW), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
     for (const opt of item.options) {
-      p(sizeCmd(oSize), enc(`  ${opt.option_name}`), nl(), CMD.SIZE_NORMAL)
+      p(sizeCmd(oSize), enc(`  ${opt.option_name}`), CMD.SIZE_NORMAL, nl())
     }
   }
 
@@ -176,12 +176,12 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
 
   // 메뉴 목록 (양쪽 정렬, 크기 적용)
   for (const item of order.items) {
-    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(`${item.menu_name} x${item.quantity}`, formatWon(item.subtotal), mW), nl(), CMD.BOLD_OFF, CMD.SIZE_NORMAL)
+    p(sizeCmd(mSize), CMD.BOLD_ON, rowBuf(`${item.menu_name} x${item.quantity}`, formatWon(item.subtotal), mW), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
     for (const opt of item.options) {
       const optLabel = opt.extra_price > 0
         ? `${opt.option_name} +${opt.extra_price.toLocaleString('ko-KR')}원`
         : opt.option_name
-      p(sizeCmd(oSize), enc(`  ${optLabel}`), nl(), CMD.SIZE_NORMAL)
+      p(sizeCmd(oSize), enc(`  ${optLabel}`), CMD.SIZE_NORMAL, nl())
     }
   }
 
