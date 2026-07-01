@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 
 interface PrinterSettings { portName: string }
@@ -372,28 +372,33 @@ export default function Settings() {
                     {/* 가게요청 */}
                     <div>가게요청 : 없음</div>
                     <div>{'----------------------------------'}</div>
-                    {/* 메뉴 3열 테이블 */}
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:4, fontWeight:'bold' }}>
-                      <span>메뉴명</span><span>수량</span><span>가격</span>
-                    </div>
-                    <div style={{ borderTop:'1px dotted #000', margin:'2px 0' }} />
-                    {[
-                      { name: '단호박 샐러드', qty: 1, price: '10,500원', opt: '레몬 드레싱',     optPrice: '' },
-                      { name: '치킨텐더 랩',   qty: 1, price: '13,000원', opt: '멕시칸 소스',     optPrice: '+1,000원' },
-                    ].map((item, i) => {
+                    {/* 메뉴 3열 테이블 — 단일 grid로 헤더+행 정렬 */}
+                    {(() => {
                       const menuPx = receipt.customerMenuSize   === 'large' ? 16 : receipt.customerMenuSize   === 'normal' ? 12 : 8
                       const optPx  = receipt.customerOptionSize === 'large' ? 16 : receipt.customerOptionSize === 'normal' ? 12 : 8
+                      const items = [
+                        { name: '단호박 샐러드', qty: 1, price: '10,500원', opt: '레몬 드레싱',  optPrice: '' },
+                        { name: '치킨텐더 랩',   qty: 1, price: '13,000원', opt: '멕시칸 소스', optPrice: '+1,000원' },
+                      ]
                       return (
-                        <div key={i}>
-                          <div style={{ fontWeight:'bold', fontSize:menuPx, display:'grid', gridTemplateColumns:'1fr auto auto', gap:4 }}>
-                            <span>{item.name}</span><span>{item.qty}</span><span>{item.price}</span>
-                          </div>
-                          <div style={{ fontSize:optPx, color:'#555' }}>
-                            {`  > ${item.opt}${item.optPrice ? `  ${item.optPrice}` : ''}`}
-                          </div>
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:4 }}>
+                          <span style={{ fontWeight:'bold' }}>메뉴명</span>
+                          <span style={{ fontWeight:'bold', textAlign:'right' }}>수량</span>
+                          <span style={{ fontWeight:'bold', textAlign:'right' }}>가격</span>
+                          <div style={{ gridColumn:'1/-1', borderTop:'1px dotted #000', margin:'2px 0' }} />
+                          {items.map((item, i) => (
+                            <React.Fragment key={i}>
+                              <span style={{ fontWeight:'bold', fontSize:menuPx }}>{item.name}</span>
+                              <span style={{ fontWeight:'bold', fontSize:menuPx, textAlign:'right' }}>{item.qty}</span>
+                              <span style={{ fontWeight:'bold', fontSize:menuPx, textAlign:'right' }}>{item.price}</span>
+                              <div style={{ gridColumn:'1/-1', fontSize:optPx, color:'#555' }}>
+                                {`  > ${item.opt}${item.optPrice ? `  ${item.optPrice}` : ''}`}
+                              </div>
+                            </React.Fragment>
+                          ))}
                         </div>
                       )
-                    })}
+                    })()}
                     <div>{'----------------------------------'}</div>
                     {/* 금액 요약 */}
                     <div>메뉴 소계 : 23,500원</div>
