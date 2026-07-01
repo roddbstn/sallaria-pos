@@ -358,7 +358,8 @@ export default function Settings() {
                 <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
                   <div style={previewWrap}>
                     {/* 헤더 */}
-                    <div style={{ textAlign:'center', fontWeight:'bold' }}>샐러리아 침산점 - 선결제 영수증</div>
+                    <div style={{ textAlign:'center', fontWeight:'bold' }}>[고객용]</div>
+                    <div style={{ textAlign:'center' }}>샐러리아 침산점 - 선결제 영수증</div>
                     <div>{'----------------------------------'}</div>
                     {/* 블록1 */}
                     <div><span>주문번호 : </span><b>1301</b></div>

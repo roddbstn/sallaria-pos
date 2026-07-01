@@ -231,8 +231,9 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
 
   // 헤더
   p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL)
-  p(enc('샐러리아 침산점 - 선결제 영수증'), nl())
-  p(CMD.SIZE_NORMAL, CMD.BOLD_OFF, CMD.ALIGN_LEFT)
+  p(enc('[고객용]'), nl())
+  p(CMD.BOLD_OFF, enc('샐러리아 침산점 - 선결제 영수증'), nl())
+  p(CMD.SIZE_NORMAL, CMD.ALIGN_LEFT)
   p(hrBuf(), nl())
 
   // 블록1: 주문번호 / 주문일시
