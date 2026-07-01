@@ -216,7 +216,7 @@ export default function App() {
       const { data } = await supabase
         .from('orders')
         .select(`
-          order_code, orderer_name, orderer_phone,
+          order_number, order_code, orderer_name, orderer_phone,
           ordered_at, total_amount, balance_before, balance_after,
           method, status, note,
           accounts ( account_name ),
@@ -249,7 +249,7 @@ export default function App() {
     let channel: ReturnType<typeof supabase.channel> | null = null
 
     const ORDER_SELECT = `
-      order_code, orderer_name, orderer_phone,
+      order_number, order_code, orderer_name, orderer_phone,
       ordered_at, total_amount, balance_before, balance_after,
       method, status, note,
       accounts ( account_name ),
@@ -322,7 +322,7 @@ export default function App() {
     if (phase !== 'main') return
 
     const ORDER_SELECT_POLL = `
-      order_code, orderer_name, orderer_phone,
+      order_number, order_code, orderer_name, orderer_phone,
       ordered_at, total_amount, balance_before, balance_after,
       method, status, note,
       accounts ( account_name ),
@@ -797,7 +797,7 @@ export default function App() {
         {/* ── 운영시간 설정 모달 ── */}
         {hoursOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50" onClick={() => setHoursOpen(false)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[420px] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-xl w-[420px] overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
               <div className="px-6 pt-5 pb-4 border-b border-gray-border flex items-start justify-between">
                 <div>
                   <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
@@ -815,7 +815,7 @@ export default function App() {
                   >마감 예약</button>
                 )}
               </div>
-              <div className="px-6 py-4 divide-y divide-gray-100">
+              <div className="px-6 py-2 divide-y divide-gray-100 overflow-y-auto flex-1">
                 {[
                   { key: 'mon', label: '월' },
                   { key: 'tue', label: '화' },
@@ -834,7 +834,7 @@ export default function App() {
                   const closeT = parseT(day.close)
 
                   return (
-                    <div key={key} className="flex items-center gap-3 py-3">
+                    <div key={key} className="flex items-center gap-3 py-2">
                       <span className="w-5 text-[13px] font-bold text-ink">{label}</span>
                       {/* 토글 */}
                       <button
@@ -844,7 +844,7 @@ export default function App() {
                         <span className={`absolute top-[4px] left-[4px] w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${day.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
                       </button>
                       {day.enabled ? (
-                        <div className="flex flex-col gap-1.5 flex-1">
+                        <div className="flex flex-col gap-1 flex-1">
                           {(['open', 'close'] as const).map(field => {
                             const { h, m } = field === 'open' ? openT : closeT
                             return (

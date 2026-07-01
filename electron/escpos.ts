@@ -125,8 +125,8 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(CMD.INIT)
 
   // 헤더
-  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL, enc('[주방용]'), nl())
-  p(enc('샐러리아 침산점'), nl(), CMD.SIZE_NORMAL, CMD.BOLD_OFF)
+  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL, enc('샐러리아 침산점 - 선결제 영수증'), nl())
+  p(enc('[주방용]'), nl(), CMD.SIZE_NORMAL, CMD.BOLD_OFF)
   p(CMD.ALIGN_LEFT)
   p(hrBuf(), nl())
 
@@ -136,6 +136,9 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(rowBuf('거래처',   order.account_name), nl())
   p(rowBuf('주문자',   order.orderer_name), nl())
   p(rowBuf('이용방법', order.method), nl())
+  if (order.delivery_address) {
+    p(rowBuf('배달주소', order.delivery_address), nl())
+  }
   p(rowBuf('주문일시', formatDate(order.ordered_at)), nl())
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
@@ -161,7 +164,14 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
 
   p(hrBuf(), nl())
   p(CMD.SIZE_SMALL)
-  p(rowBuf('비고', order.note || '없음'), nl())
+  if (order.note) {
+    p(enc('고객요청:'), nl())
+    for (const line of wrapName(order.note, BASE_W - 2)) {
+      p(enc('  ' + line), nl())
+    }
+  } else {
+    p(enc('고객요청: 없음'), nl())
+  }
   p(CMD.SIZE_NORMAL)
   p(CMD.FEED_CUT)
 
@@ -180,7 +190,7 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(CMD.INIT)
 
   // 헤더
-  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL, enc('샐러리아 침산점'), nl(), CMD.SIZE_NORMAL, CMD.BOLD_OFF)
+  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL, enc('샐러리아 침산점 - 선결제 영수증'), nl(), CMD.SIZE_NORMAL, CMD.BOLD_OFF)
   p(CMD.ALIGN_LEFT)
   p(hrBuf(), nl())
 
@@ -189,7 +199,13 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(rowBuf('주문번호', order.order_number ?? order.order_code), nl())
   p(rowBuf('거래처',   order.account_name), nl())
   p(rowBuf('주문자',   order.orderer_name), nl())
+  if (order.orderer_phone) {
+    p(rowBuf('연락처', order.orderer_phone), nl())
+  }
   p(rowBuf('이용방법', order.method), nl())
+  if (order.delivery_address) {
+    p(rowBuf('배달주소', order.delivery_address), nl())
+  }
   p(rowBuf('주문일시', formatDate(order.ordered_at)), nl())
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
@@ -234,6 +250,22 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
     p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
   }
   p(CMD.SIZE_NORMAL)
+
+  if (order.delivery_note || order.note) {
+    p(hrBuf(), nl())
+    p(CMD.SIZE_SMALL)
+    if (order.delivery_note) {
+      for (const line of wrapName(`배달요청: ${order.delivery_note}`, BASE_W)) {
+        p(enc(line), nl())
+      }
+    }
+    if (order.note) {
+      for (const line of wrapName(`고객요청: ${order.note}`, BASE_W)) {
+        p(enc(line), nl())
+      }
+    }
+    p(CMD.SIZE_NORMAL)
+  }
 
   p(CMD.FEED_CUT)
 

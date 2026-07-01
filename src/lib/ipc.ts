@@ -2,6 +2,28 @@
 
 import type { Order } from './mock-data'
 
+function parseNote(raw: string | null | undefined): {
+  deliveryAddress: string | null
+  deliveryNote: string | null
+  customerNote: string | null
+} {
+  if (!raw) return { deliveryAddress: null, deliveryNote: null, customerNote: null }
+  const parts = raw.split(' / ')
+  let deliveryAddress: string | null = null
+  let deliveryNote: string | null = null
+  const customerParts: string[] = []
+  for (const part of parts) {
+    if (part.startsWith('[배달주소] ')) {
+      deliveryAddress = part.slice('[배달주소] '.length)
+    } else if (part.startsWith('[배달요청] ')) {
+      deliveryNote = part.slice('[배달요청] '.length)
+    } else if (part.trim()) {
+      customerParts.push(part.trim())
+    }
+  }
+  return { deliveryAddress, deliveryNote, customerNote: customerParts.join(', ') || null }
+}
+
 type API = typeof import('../../../electron/preload').PosAPI extends infer T ? T : never
 
 export const api: API = (window as unknown as { api: API }).api
@@ -20,13 +42,14 @@ export const formatDate = (iso: string) => {
  */
 export function orderToPayload(o: Order) {
   const deliveryFee = o.method === '배달' ? 3500 : 0
+  const { deliveryAddress, deliveryNote, customerNote } = parseNote(o.remarks)
   return {
-    order_code:     o.code,
-    order_number:   o.orderNumber,
-    account_name:   o.accountName,
-    orderer_name:   o.orderer,
-    method:         o.method,
-    ordered_at:     o.createdAt,
+    order_code:       o.code,
+    order_number:     o.orderNumber,
+    account_name:     o.accountName,
+    orderer_name:     o.orderer,
+    method:           o.method,
+    ordered_at:       o.createdAt,
     items: o.items.map(item => ({
       menu_name:   item.name,
       quantity:    item.qty,
@@ -34,11 +57,13 @@ export function orderToPayload(o: Order) {
       subtotal:    item.price * item.qty,
       options:     item.options.map(name => ({ option_name: name, extra_price: 0 })),
     })),
-    menu_subtotal:  o.total - deliveryFee,
-    delivery_fee:   deliveryFee,
-    total_amount:   o.total,
-    balance_before: o.balanceBefore ?? 0,
-    balance_after:  o.balanceAfter  ?? 0,
-    note:           o.remarks || null,
+    menu_subtotal:    o.total - deliveryFee,
+    delivery_fee:     deliveryFee,
+    total_amount:     o.total,
+    balance_before:   o.balanceBefore ?? 0,
+    balance_after:    o.balanceAfter  ?? 0,
+    note:             customerNote,
+    delivery_address: deliveryAddress,
+    delivery_note:    deliveryNote,
   }
 }

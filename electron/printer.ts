@@ -27,19 +27,22 @@ export interface OrderItem {
 }
 
 export interface OrderPayload {
-  order_code:     string
-  order_number?:  string
-  account_name:   string
-  orderer_name:   string
-  method:         string
-  ordered_at:     string
-  items:          OrderItem[]
-  menu_subtotal:  number
-  delivery_fee:   number
-  total_amount:   number
-  balance_before: number
-  balance_after:  number
-  note?:          string | null
+  order_code:        string
+  order_number?:     string
+  account_name:      string
+  orderer_name:      string
+  orderer_phone?:    string | null
+  method:            string
+  ordered_at:        string
+  items:             OrderItem[]
+  menu_subtotal:     number
+  delivery_fee:      number
+  total_amount:      number
+  balance_before:    number
+  balance_after:     number
+  note?:             string | null   // 고객요청사항만 (파싱 후)
+  delivery_address?: string | null   // 배달주소
+  delivery_note?:    string | null   // 배달요청사항
 }
 
 // ── 유틸 ──────────────────────────────────────────────────────────────────────
@@ -91,20 +94,22 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>${BASE_STYLE}</style></head><body>
-  <div class="c b">[주방용]</div>
-  <div class="c">샐러리아 침산점</div>
+  <div class="c b">샐러리아 침산점 - 선결제 영수증</div>
+  <div class="c">[주방용]</div>
   <hr class="hr">
   <div>주문번호: ${order.order_number ?? order.order_code}</div>
   <div>거래처: ${order.account_name}</div>
   <div>주문자: ${order.orderer_name}</div>
   <div>이용방법: ${order.method}</div>
+  ${order.delivery_address ? `<div>배달주소: ${order.delivery_address}</div>` : ''}
   <div>주문일시: ${formatDate(order.ordered_at)}</div>
   <hr class="hr">
   <div class="row b"><span>메뉴명</span><span class="r">수량</span></div>
   <hr class="hr">
   ${itemRows}
   <hr class="hr">
-  <div>${order.note ? `비고: ${order.note}` : '비고: (없음)'}</div>
+  <hr class="hr">
+  <div>${order.note ? `고객요청: ${order.note}` : '고객요청: (없음)'}</div>
 </body></html>`
 }
 
@@ -130,12 +135,13 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>${BASE_STYLE}</style></head><body>
-  <div class="c b">샐러리아 침산점</div>
+  <div class="c b">샐러리아 침산점 - 선결제 영수증</div>
   <hr class="hr">
   <div>주문번호: ${order.order_number ?? order.order_code}</div>
   <div>거래처: ${order.account_name}</div>
-  <div>주문자: ${order.orderer_name}</div>
+  <div>주문자: ${order.orderer_name}${order.orderer_phone ? ` (${order.orderer_phone})` : ''}</div>
   <div>이용방법: ${order.method}</div>
+  ${order.delivery_address ? `<div>배달주소: ${order.delivery_address}</div>` : ''}
   <div>주문일시: ${formatDate(order.ordered_at)}</div>
   <hr class="hr">
   ${itemRows}
@@ -147,6 +153,11 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
   <div class="row"><span>주문 전 잔액</span><span class="r">${formatWon(order.balance_before)}</span></div>
   <div class="row b"><span>주문 후 잔액</span><span class="r">${formatWon(order.balance_after)}</span></div>
   ${balanceWarning}
+  ${(order.delivery_note || order.note) ? `
+  <hr class="hr">
+  ${order.delivery_note ? `<div>배달요청: ${order.delivery_note}</div>` : ''}
+  ${order.note ? `<div>고객요청: ${order.note}</div>` : ''}
+` : ''}
 </body></html>`
 }
 
