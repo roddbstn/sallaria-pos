@@ -126,7 +126,7 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
     const { data, error } = await supabase
       .from('orders')
       .select(`
-        order_code, order_number, orderer_name,
+        order_code, order_number, orderer_name, orderer_phone,
         ordered_at, menu_subtotal, delivery_fee, total_amount,
         balance_before, balance_after, method, note,
         accounts ( account_name ),
@@ -152,6 +152,7 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
       order_number:   (data as any).order_number ?? undefined,
       account_name:   (data.accounts as any)?.account_name ?? '',
       orderer_name:   data.orderer_name,
+      orderer_phone:  (data as any).orderer_phone ?? null,
       method:         data.method,
       ordered_at:     data.ordered_at,
       items: ((data.order_items as any[]) ?? []).map((item: any) => ({
