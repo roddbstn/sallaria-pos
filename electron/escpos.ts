@@ -29,20 +29,19 @@ const CMD = {
   FEED_CUT:     Buffer.from([GS,  0x56, 0x42, 0x04]),
 }
 
-// 크기별 라인 폭 (한 줄에 들어가는 ASCII 문자 수)
-// SIZE_SMALL(1x width): 48  SIZE_MEDIUM(2x width): 24  SIZE_LARGE(3x width): 16
-const BASE_W = 48  // 기본 구분선 / 정보 라인 폭
+// 실측: 이 프린터는 1배 폭 기준 42자 폭
+// SIZE_SMALL(1x width): 42  SIZE_MEDIUM(2x width): 21  SIZE_LARGE(3x width): 14
+const BASE_W = 42  // 기본 구분선 / 정보 라인 폭
 
 function sizeCmd(s: 'small' | 'normal' | 'large'): Buffer {
-  if (s === 'large')  return CMD.SIZE_LARGE
-  if (s === 'normal') return CMD.SIZE_MEDIUM
-  return CMD.SIZE_SMALL
+  if (s === 'large')  return CMD.SIZE_MEDIUM  // 2x2 — 큰 표시 (짧은 이름용)
+  if (s === 'normal') return CMD.SIZE_SMALL   // 1x2 — 보통 (긴 이름도 전폭 표시)
+  return CMD.SIZE_SMALL                        // 1x2 — 기본
 }
 
 function lineW(s: 'small' | 'normal' | 'large'): number {
-  if (s === 'large')  return 16
-  if (s === 'normal') return 24
-  return 48
+  if (s === 'large')  return 21  // 2x 폭 → 42/2
+  return 42                       // 1x 폭 → 전폭
 }
 
 // ── 인코딩 / 레이아웃 유틸 ─────────────────────────────────────────────────
