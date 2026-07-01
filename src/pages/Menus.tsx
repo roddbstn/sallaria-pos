@@ -979,7 +979,7 @@ export default function Menus() {
             </div>
           </div>
           {/* 테이블 헤더 */}
-          <div className="grid grid-cols-[36px_48px_2fr_1fr_90px_90px_90px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+          <div className="grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
             <span></span><span></span><span>메뉴명</span>
             <span>카테고리</span><span>가격</span><span>판매상태</span><span>표시</span>
           </div>
@@ -992,7 +992,7 @@ export default function Menus() {
             ) : (
               filteredMenus.map(menu => (
                 <div key={menu.code} onClick={() => selectMenu(menu)}
-                  className={`grid grid-cols-[36px_48px_2fr_1fr_90px_90px_90px] px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
+                  className={`grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px] px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
                     ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
                 >
                   <input type="checkbox" checked={checked.has(menu.code)}
