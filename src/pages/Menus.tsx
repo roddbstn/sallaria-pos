@@ -222,20 +222,40 @@ export default function Menus() {
   useEffect(() => {
     const container = optionScrollRef.current
     if (!container || storeGroups.length === 0) return
-    const HEADER_OFFSET = 104 // px: header + nav bar height
-    function spy() {
-      if (isOptionScrollingRef.current) return
-      let current = storeGroups[0].id
-      for (const g of storeGroups) {
-        const el = optionGroupRefs.current[g.id]
-        if (!el) continue
-        const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top
-        if (top <= HEADER_OFFSET) current = g.id
+
+    const intersecting = new Set<string>()
+    const HEADER_H = 104
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (isOptionScrollingRef.current) return
+        entries.forEach(entry => {
+          const gId = (entry.target as HTMLElement).dataset.groupId
+          if (!gId) return
+          if (entry.isIntersecting) intersecting.add(gId)
+          else intersecting.delete(gId)
+        })
+        if (intersecting.size === 0) return
+        for (const g of storeGroups) {
+          if (intersecting.has(g.id)) {
+            setActiveOptionGroup(g.id)
+            break
+          }
+        }
+      },
+      {
+        root: container,
+        rootMargin: `-${HEADER_H}px 0px 0px 0px`,
+        threshold: 0,
       }
-      setActiveOptionGroup(current)
+    )
+
+    for (const g of storeGroups) {
+      const el = optionGroupRefs.current[g.id]
+      if (el) observer.observe(el)
     }
-    container.addEventListener('scroll', spy, { passive: true })
-    return () => container.removeEventListener('scroll', spy)
+
+    return () => observer.disconnect()
   }, [storeGroups])
 
   useEffect(() => {
@@ -1317,7 +1337,7 @@ export default function Menus() {
               <div
                 ref={optionTabsBarRef}
                 className="flex gap-1.5 px-6 pb-2 overflow-x-auto"
-                style={{ scrollbarWidth: 'none' }}
+                style={{ scrollbarWidth: 'thin', scrollbarColor: '#D7D7D7 transparent' }}
               >
                 {storeGroups.map(g => (
                   <button
@@ -1383,7 +1403,7 @@ export default function Menus() {
             )}
 
             {storeGroups.map(group => (
-              <div key={group.id} ref={el => { optionGroupRefs.current[group.id] = el }}>
+              <div key={group.id} ref={el => { optionGroupRefs.current[group.id] = el }} data-group-id={group.id}>
                 <OptionGroupCard
                   group={group}
                   usedBy={group.usedBy}
