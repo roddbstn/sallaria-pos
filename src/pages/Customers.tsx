@@ -86,7 +86,7 @@ export default function Customers() {
       .select('*')
       .eq('is_active', !inactive)
       .eq('store_id', storeId)
-      .order('account_name')
+      .order('created_at', { ascending: true })
     if (!error && data) setAccounts(data as DbAccount[])
   }
 
@@ -448,8 +448,8 @@ export default function Customers() {
         </div>
 
         {/* 테이블 헤더 */}
-        <div className="grid grid-cols-[1fr_60px_80px_110px_80px_80px_90px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
-          <span>거래처명</span><span>유형</span><span>담당자</span>
+        <div className="grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+          <span>#</span><span>거래처명</span><span>유형</span><span>담당자</span>
           <span>연락처</span><span>PIN</span><span>현재잔액</span><span>이번달</span>
         </div>
 
@@ -465,12 +465,13 @@ export default function Customers() {
               {search ? '검색 결과가 없습니다' : showInactive ? '비활성 거래처가 없습니다' : '등록된 거래처가 없습니다'}
             </div>
           ) : (
-            filtered.map(acc => (
+            filtered.map((acc, idx) => (
               <button
                 key={acc.account_code}
                 onClick={() => setSelected(acc)}
-                className="w-full grid grid-cols-[1fr_60px_80px_110px_80px_80px_90px] px-6 py-3 text-left hover:bg-gray-bg transition-colors text-[13px]"
+                className="w-full grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-6 py-3 text-left hover:bg-gray-bg transition-colors text-[13px]"
               >
+                <span className="text-gray-text text-[12px]">{idx + 1}</span>
                 <span className="font-semibold text-ink">{acc.account_name}</span>
                 <span>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[acc.account_type]}`}>
