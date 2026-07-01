@@ -686,6 +686,15 @@ export default function Menus() {
       return
     }
 
+    // 가격(필수) 옵션 그룹의 extra_price를 0으로 유지
+    // (base_price가 실제 가격 소스 — extra_price가 남아있으면 주문 시 이중 계산됨)
+    const gaGyeokGroup = selected.optionGroups.find(g => g.name.startsWith('가격(필수)'))
+    if (gaGyeokGroup && gaGyeokGroup.items.some(it => it.extra > 0)) {
+      await supabase.from('option_items')
+        .update({ extra_price: 0 })
+        .eq('option_group_id', gaGyeokGroup.id)
+    }
+
     applyLocalUpdate({ ...selected, name: editForm.name.trim(), price: priceNum, description: editForm.description, imageUrl, soldOut: editForm.soldOut, active: editForm.active })
     setEditMode(false)
   }
@@ -773,7 +782,7 @@ export default function Menus() {
     }
   }
 
-  async function addStoreItem(groupId: string, name: string, extra: number) {
+  async function addStoreItem(groupId: string, name: string, extra: number): Promise<OptionItem | null> {
     const grp = storeGroups.find(g => g.id === groupId)
     const maxOrder = grp?.items.length ?? 0
     const { data, error } = await supabase
@@ -781,10 +790,11 @@ export default function Menus() {
       .insert({ option_group_id: groupId, name, extra_price: extra, display_order: maxOrder })
       .select('id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order')
       .single()
-    if (error || !data) { console.error(error); return }
+    if (error || !data) { console.error(error); return null }
     const item: OptionItem = { id: data.id, name: data.name, extra: data.extra_price,
       soldOut: data.is_sold_out, hidden: data.is_hidden, isPopular: data.is_popular }
     setStoreGroups(prev => prev.map(g => g.id !== groupId ? g : { ...g, items: [...g.items, item] }))
+    return item
   }
 
   async function updateStoreItem(groupId: string, itemId: string, updates: Partial<OptionItem>) {
@@ -887,6 +897,51 @@ export default function Menus() {
         items: g.items.map(it => it.id !== itemId ? it : { ...it, [field]: newVal }),
       }
     ))
+  }
+
+  // ── 메뉴 상세 모달: 옵션 그룹 인라인 편집 핸들러 ──────────────────────────
+  async function modalUpdateItem(groupId: string, itemId: string, updates: Partial<OptionItem>) {
+    await updateStoreItem(groupId, itemId, updates)
+    if (!selected) return
+    applyLocalUpdate({
+      ...selected,
+      optionGroups: selected.optionGroups.map(g =>
+        g.id !== groupId ? g : { ...g, items: g.items.map(it => it.id !== itemId ? it : { ...it, ...updates }) }
+      ),
+    })
+  }
+
+  async function modalDeleteItem(groupId: string, itemId: string) {
+    await deleteStoreItem(groupId, itemId)
+    if (!selected) return
+    applyLocalUpdate({
+      ...selected,
+      optionGroups: selected.optionGroups.map(g =>
+        g.id !== groupId ? g : { ...g, items: g.items.filter(it => it.id !== itemId) }
+      ),
+    })
+  }
+
+  async function modalAddItem(groupId: string, name: string, extra: number) {
+    const item = await addStoreItem(groupId, name, extra)
+    if (!item || !selected) return
+    applyLocalUpdate({
+      ...selected,
+      optionGroups: selected.optionGroups.map(g =>
+        g.id !== groupId ? g : { ...g, items: [...g.items, item] }
+      ),
+    })
+  }
+
+  async function modalUpdateGroup(groupId: string, updates: Partial<OptionGroup>) {
+    await updateStoreGroup(groupId, updates)
+    if (!selected) return
+    applyLocalUpdate({
+      ...selected,
+      optionGroups: selected.optionGroups.map(g =>
+        g.id !== groupId ? g : { ...g, ...updates }
+      ),
+    })
   }
 
   return (
@@ -1249,55 +1304,39 @@ export default function Menus() {
                 </div>
               )}
 
-              {/* 옵션 그룹 세부내용 — 보기 모드에서 연결된 그룹의 항목 표시 */}
-              {!editMode && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[13px] font-extrabold text-ink">옵션 그룹</span>
-                    {selected.optionGroups.length > 0 && (
-                      <span className="text-[11px] text-gray-text">{selected.optionGroups.length}개 연결됨</span>
+              {/* 옵션 그룹 세부내용 — 보기 모드에서 인라인 편집 가능 (가격(필수) 그룹 제외) */}
+              {!editMode && (() => {
+                const editableGroups = selected.optionGroups
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[13px] font-extrabold text-ink">옵션 그룹</span>
+                      {editableGroups.length > 0 && (
+                        <span className="text-[11px] text-gray-text">{editableGroups.length}개 연결됨</span>
+                      )}
+                    </div>
+                    {editableGroups.length === 0 ? (
+                      <div className="text-[13px] text-gray-text text-center py-8 border border-dashed border-gray-border rounded-xl">
+                        연결된 옵션 그룹이 없습니다
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {editableGroups.map(g => (
+                          <OptionGroupCard
+                            key={g.id}
+                            group={g}
+                            onUpdateGroup={updates => modalUpdateGroup(g.id, updates)}
+                            onDeleteGroup={() => deleteStoreGroup(g.id)}
+                            onUpdateItem={(itemId, updates) => modalUpdateItem(g.id, itemId, updates)}
+                            onDeleteItem={itemId => modalDeleteItem(g.id, itemId)}
+                            onAddItem={(name, extra) => modalAddItem(g.id, name, extra)}
+                          />
+                        ))}
+                      </div>
                     )}
                   </div>
-                  {selected.optionGroups.length === 0 ? (
-                    <div className="text-[13px] text-gray-text text-center py-8 border border-dashed border-gray-border rounded-xl">
-                      연결된 옵션 그룹이 없습니다
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {selected.optionGroups.map(g => (
-                        <div key={g.id} className="border border-gray-border rounded-xl overflow-hidden">
-                          {/* 그룹 헤더 */}
-                          <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-bg border-b border-gray-border">
-                            <span className="text-[13px] font-extrabold text-ink">{g.name}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${g.isRequired ? 'bg-ink text-white' : 'bg-gray-200 text-gray-text'}`}>
-                              {g.isRequired ? '필수' : '선택'}
-                            </span>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">
-                              {g.isMulti ? `복수${g.maxSelect ? ` (최대 ${g.maxSelect})` : ''}` : '단일'}
-                            </span>
-                          </div>
-                          {/* 항목 목록 */}
-                          <div className="divide-y divide-gray-border">
-                            {g.items.map(item => (
-                              <div key={item.id} className={`flex items-center justify-between px-4 py-2 ${item.soldOut ? 'opacity-50' : ''}`}>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[13px] text-ink">{item.name}</span>
-                                  {item.isPopular && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">인기</span>}
-                                  {item.soldOut   && <span className="text-[10px] font-bold text-gray-text bg-gray-100 px-1.5 py-0.5 rounded-full">품절</span>}
-                                  {item.hidden    && <span className="text-[10px] font-bold text-gray-text bg-gray-100 px-1.5 py-0.5 rounded-full">숨김</span>}
-                                </div>
-                                <span className="text-[12px] font-semibold text-gray-text flex-shrink-0">
-                                  {item.extra > 0 ? `+${won(item.extra)}` : '기본'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                )
+              })()}
             </div>
           </div>
 
