@@ -113,7 +113,7 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
   <hr class="hr">
   <div>이용방법 : <b>${order.method}</b></div>
   <div>주문자   : ${order.orderer_name}</div>
-  ${order.orderer_phone ? `<div>전화번호 : ${order.orderer_phone}</div>` : ''}
+  <div>전화번호 : ${order.orderer_phone || '없음'}</div>
   <hr class="hr">
   ${deliveryBlock}
   <div style="display:grid;grid-template-columns:1fr auto;gap:4px">
@@ -165,7 +165,7 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
   <hr class="hr">
   <div>이용방법 : <b>${order.method}</b></div>
   <div>주문자   : ${order.orderer_name}</div>
-  ${order.orderer_phone ? `<div>전화번호 : ${order.orderer_phone}</div>` : ''}
+  <div>전화번호 : ${order.orderer_phone || '없음'}</div>
   <hr class="hr">
   ${deliveryBlock}
   <div style="display:grid;grid-template-columns:1fr auto auto;gap:4px">

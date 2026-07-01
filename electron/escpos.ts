@@ -168,7 +168,7 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(CMD.SIZE_SMALL)
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc('주문자   : ' + order.orderer_name), nl())
-  if (order.orderer_phone) p(enc('전화번호 : ' + order.orderer_phone), nl())
+  p(enc('전화번호 : ' + (order.orderer_phone || '없음')), nl())
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 
@@ -246,7 +246,7 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(CMD.SIZE_SMALL)
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc('주문자   : ' + order.orderer_name), nl())
-  if (order.orderer_phone) p(enc('전화번호 : ' + order.orderer_phone), nl())
+  p(enc('전화번호 : ' + (order.orderer_phone || '없음')), nl())
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 
