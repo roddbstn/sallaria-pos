@@ -7,8 +7,8 @@ const firebaseConfig = {
   projectId:         'sallaria',
   storageBucket:     'sallaria.firebasestorage.app',
   messagingSenderId: '486697301968',
-  appId:             '1:486697301968:web:7fc9191674c62fd1e1abd5',
-  measurementId:     'G-NJXGY6HD8S',
+  appId:             '1:486697301968:web:110d6d7d1fb4f75ae1abd5',
+  measurementId:     'G-YD3Q9P3DEX',
 }
 
 let analytics: Analytics | null = null
