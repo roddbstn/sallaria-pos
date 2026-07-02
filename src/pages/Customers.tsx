@@ -115,7 +115,7 @@ export default function Customers() {
       .from('orders')
       .select(`
         order_code, orderer_name, orderer_phone,
-        ordered_at, total_amount, method, status, note,
+        ordered_at, total_amount, balance_after, method, status, note,
         accounts ( account_name ),
         order_items (
           menu_name, quantity, unit_price,
@@ -139,10 +139,11 @@ export default function Customers() {
         price:   item.unit_price,
         options: (item.order_item_options ?? []).map((o: any) => o.option_name as string),
       })),
-      total:    row.total_amount,
-      prepMins: 0,
-      createdAt: row.ordered_at,
-      remarks:   row.note ?? '',
+      total:        row.total_amount,
+      balanceAfter: row.balance_after ?? undefined,
+      prepMins:     0,
+      createdAt:    row.ordered_at,
+      remarks:      row.note ?? '',
     })))
   }
 
@@ -657,6 +658,15 @@ export default function Customers() {
                                     </div>
                                   ))}
                                 </div>
+                                {/* 주문 후 잔액 */}
+                                {o.balanceAfter !== undefined && o.status !== '취소' && (
+                                  <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-border">
+                                    <span className="text-[11px] text-gray-text">주문 후 잔액</span>
+                                    <span className={`text-[11px] font-bold ${o.balanceAfter < 0 ? 'text-danger' : 'text-green'}`}>
+                                      {o.balanceAfter < 0 ? `- ${won(Math.abs(o.balanceAfter))}` : won(o.balanceAfter)}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             )
                           })
