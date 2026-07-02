@@ -83,9 +83,8 @@ const BASE_STYLE = `
 
 /** ① 주방용 */
 export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSettings): string {
-  const menuPt   = MENU_PT[settings.menuSize]
-  const optPtNum = parseInt(OPTION_PT[settings.optionSize])
-  const optPt    = `${Math.round(optPtNum * 0.8)}pt`   // 옵션 글자 80% 크기
+  const menuPt = `${Math.round(parseInt(MENU_PT[settings.menuSize]) * 0.8)}pt`
+  const optPt  = `${Math.round(parseInt(OPTION_PT[settings.optionSize]) * 0.8)}pt`
 
   const itemCells = order.items.map(item => `
     <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
@@ -147,9 +146,8 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
 
 /** ② 고객용 (잔액·합계 포함) */
 export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptSettings): string {
-  const menuPt   = MENU_PT[settings.customerMenuSize]
-  const optPtNum = parseInt(OPTION_PT[settings.customerOptionSize])
-  const optPt    = `${Math.round(optPtNum * 0.8)}pt`   // 옵션 글자 80% 크기
+  const menuPt = `${Math.round(parseInt(MENU_PT[settings.customerMenuSize]) * 0.8)}pt`
+  const optPt  = `${Math.round(parseInt(OPTION_PT[settings.customerOptionSize]) * 0.8)}pt`
 
   const itemCells = order.items.map(item => `
     <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
