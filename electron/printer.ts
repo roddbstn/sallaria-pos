@@ -78,25 +78,22 @@ const BASE_STYLE = `
   .opt { padding-left: 8px; color: #333; }
 `
 
-// ── 옵션 가격 포맷 ────────────────────────────────────────────────────────────
-
-/** 옵션 1줄: 이름 + extra_price > 0이면 "+N원" 표시 */
-function optPriceStr(extraPrice: number): string {
-  return extraPrice > 0 ? ` +${extraPrice.toLocaleString('ko-KR')}원` : ''
-}
 
 // ── HTML 영수증 빌더 ──────────────────────────────────────────────────────────
 
-/** ① 주방용 (가격 없음) */
+/** ① 주방용 */
 export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSettings): string {
-  const menuPt = MENU_PT[settings.menuSize]
-  const optPt  = OPTION_PT[settings.optionSize]
+  const menuPt   = MENU_PT[settings.menuSize]
+  const optPtNum = parseInt(OPTION_PT[settings.optionSize])
+  const optPt    = `${Math.round(optPtNum * 0.8)}pt`   // 옵션 글자 80% 크기
 
   const itemCells = order.items.map(item => `
     <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
     <span style="font-size:${menuPt};font-weight:bold;text-align:right">${item.quantity}</span>
-    ${item.options.map(o =>
-      `<div class="opt" style="font-size:${optPt};grid-column:1/-1">&gt; ${o.option_name}${optPriceStr(o.extra_price)}</div>`
+    <span style="font-size:${menuPt};font-weight:bold;text-align:right">${formatWon(item.subtotal)}</span>
+    ${item.options.map(o => `
+      <div class="opt" style="font-size:${optPt};grid-column:1/3">&gt; ${o.option_name}</div>
+      <div style="font-size:${optPt};text-align:right;white-space:nowrap">${o.extra_price > 0 ? `(+${o.extra_price.toLocaleString('ko-KR')}원)` : ''}</div>`
     ).join('')}
   `).join('')
 
@@ -111,10 +108,12 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
     <hr class="hr">
   `
 
+  const balanceWarning = order.balance_after < 0
+    ? `<div style="font-size:7pt">※ 잔액 부족 — 다음 충전 시 정산</div>` : ''
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>${BASE_STYLE}
 .sub-hr { border:none; border-top:1px dotted #000; margin:2px 0; }
-.menu-row { display:grid; grid-template-columns:1fr auto; gap:4px; }
 </style></head><body>
   <div class="c b">[주방용]</div>
   <div class="c">샐러리아 침산점 - 선결제 영수증</div>
@@ -127,20 +126,30 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
   <div>전화번호 : ${order.orderer_phone || '없음'}</div>
   <hr class="hr">
   ${deliveryBlock}
-  <div style="display:grid;grid-template-columns:1fr auto;gap:4px">
+  <div style="display:grid;grid-template-columns:1fr auto auto;row-gap:2px;column-gap:10px">
     <span style="font-weight:bold">메뉴명</span>
     <span style="font-weight:bold;text-align:right">수량</span>
+    <span style="font-weight:bold;text-align:right">가격</span>
     <div style="grid-column:1/-1"><hr class="sub-hr"></div>
     ${itemCells}
   </div>
   <hr class="hr">
+  <div class="row"><span>메뉴 소계</span><span class="r">${formatWon(order.menu_subtotal)}</span></div>
+  ${order.delivery_fee > 0 ? `<div class="row"><span>배달료</span><span class="r">${formatWon(order.delivery_fee)}</span></div>` : ''}
+  <hr class="hr">
+  <div class="row b"><span>합  계</span><span class="r">${formatWon(order.total_amount)}</span></div>
+  <hr class="hr">
+  <div class="row"><span>주문전 잔액</span><span class="r">${formatWon(order.balance_before)}</span></div>
+  <div class="row b"><span>주문후 잔액</span><span class="r">${formatWon(order.balance_after)}</span></div>
+  ${balanceWarning}
 </body></html>`
 }
 
 /** ② 고객용 (잔액·합계 포함) */
 export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptSettings): string {
-  const menuPt = MENU_PT[settings.customerMenuSize]
-  const optPt  = OPTION_PT[settings.customerOptionSize]
+  const menuPt   = MENU_PT[settings.customerMenuSize]
+  const optPtNum = parseInt(OPTION_PT[settings.customerOptionSize])
+  const optPt    = `${Math.round(optPtNum * 0.8)}pt`   // 옵션 글자 80% 크기
 
   const itemCells = order.items.map(item => `
     <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
@@ -148,7 +157,7 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
     <span style="font-size:${menuPt};font-weight:bold;text-align:right">${formatWon(item.subtotal)}</span>
     ${item.options.map(o => `
       <div class="opt" style="font-size:${optPt};grid-column:1/3">&gt; ${o.option_name}</div>
-      <div style="font-size:${optPt};text-align:right;white-space:nowrap">${o.extra_price > 0 ? `+${o.extra_price.toLocaleString('ko-KR')}원` : ''}</div>`
+      <div style="font-size:${optPt};text-align:right;white-space:nowrap">${o.extra_price > 0 ? `(+${o.extra_price.toLocaleString('ko-KR')}원)` : ''}</div>`
     ).join('')}
   `).join('')
 
@@ -181,7 +190,7 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
   <div>전화번호 : ${order.orderer_phone || '없음'}</div>
   <hr class="hr">
   ${deliveryBlock}
-  <div style="display:grid;grid-template-columns:1fr auto auto;gap:4px">
+  <div style="display:grid;grid-template-columns:1fr auto auto;row-gap:2px;column-gap:10px">
     <span style="font-weight:bold">메뉴명</span>
     <span style="font-weight:bold;text-align:right">수량</span>
     <span style="font-weight:bold;text-align:right">가격</span>
