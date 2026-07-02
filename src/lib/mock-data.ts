@@ -4,12 +4,19 @@ export type OrderStatus = '주문완료' | '조리중' | '완료' | '취소'
 export type Method      = '포장' | '매장 식사' | '배달'
 export type AccountType = '과' | '기업' | '개인' | '기타'
 
+export interface OrderItemOptionDetail {
+  name:       string
+  extraPrice: number
+  groupName?: string   // option_groups.name (가격(필수) 처리용)
+}
+
 export interface OrderItem {
-  name:     string
-  qty:      number
-  price:    number
-  options:  string[]
-  imageUrl?: string
+  name:          string
+  qty:           number
+  price:         number
+  options:       string[]
+  optionDetails?: OrderItemOptionDetail[]
+  imageUrl?:     string
 }
 
 export interface Order {

@@ -304,14 +304,6 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                             </div>
                           )
                         })()}
-                        {o.balanceAfter !== undefined && (
-                          <div className="bg-gray-bg rounded-xl px-4 py-3 mb-4 flex justify-between items-center">
-                            <span className="text-[13px] font-medium text-gray-text">{o.accountName}</span>
-                            <span className="text-[13px] font-medium text-gray-text">
-                              현재 잔액: <span className={o.balanceAfter <= 0 ? 'text-danger' : ''}>{won(o.balanceAfter)}</span>
-                            </span>
-                          </div>
-                        )}
                         <div className="flex gap-3 mt-2">
                           <button
                             onClick={() => setStage('reject')}

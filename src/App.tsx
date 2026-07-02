@@ -225,7 +225,7 @@ export default function App() {
           order_items (
             order_item_id, menu_name, quantity, unit_price,
             menus ( image_url ),
-            order_item_options ( id, option_name, extra_price )
+            order_item_options ( id, option_name, extra_price, option_items ( option_groups ( name ) ) )
           )
         `)
         .eq('order_code', rawRow.order_code)
@@ -258,7 +258,7 @@ export default function App() {
       order_items (
         order_item_id, menu_name, quantity, unit_price,
         menus ( image_url ),
-        order_item_options ( id, option_name, extra_price )
+        order_item_options ( id, option_name, extra_price, option_items ( option_groups ( name ) ) )
       )
     `
 
@@ -331,7 +331,7 @@ export default function App() {
       order_items (
         order_item_id, menu_name, quantity, unit_price,
         menus ( image_url ),
-        order_item_options ( id, option_name, extra_price )
+        order_item_options ( id, option_name, extra_price, option_items ( option_groups ( name ) ) )
       )
     `
 
@@ -496,6 +496,13 @@ export default function App() {
   async function pushIsOpen(next: boolean) {
     setIsOpen(next)
     localStorage.setItem('pos_is_open', JSON.stringify(next))
+    // 수동 닫기 시 force_open 오버라이드 제거 (자동 동기화 재개)
+    if (!next) {
+      try {
+        const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
+        if (ov?.type === 'force_open') localStorage.removeItem('pos_today_override')
+      } catch { /* ignore */ }
+    }
     if (session?.storeId) {
       await supabase.from('stores').update({ is_open: next }).eq('id', session.storeId)
     }
@@ -510,6 +517,9 @@ export default function App() {
   }
 
   function confirmForceOpen() {
+    // 운영시간 외 수동 오픈 — 오늘 날짜로 force_open 오버라이드 저장
+    const todayStr = new Date().toISOString().slice(0, 10)
+    localStorage.setItem('pos_today_override', JSON.stringify({ date: todayStr, type: 'force_open' }))
     pushIsOpen(true)
     setOffHoursConfirm(false)
   }
@@ -540,6 +550,9 @@ export default function App() {
             const cur2 = now.getHours() * 60 + now.getMinutes()
             const [eh, em] = (ov.time as string).split(':').map(Number)
             if (cur2 >= eh * 60 + em) shouldBeOpen = false
+          } else if (ov.type === 'force_open') {
+            // 수동 강제 오픈 — 자동 동기화가 닫지 않도록 유지
+            shouldBeOpen = true
           }
         }
       } catch {}
@@ -1048,6 +1061,11 @@ function dbOrderToMock(row: any): Order {
       qty:      item.quantity,
       price:    item.unit_price,
       options:  (item.order_item_options ?? []).map((o: any) => o.option_name),
+      optionDetails: (item.order_item_options ?? []).map((o: any) => ({
+        name:       o.option_name,
+        extraPrice: o.extra_price ?? 0,
+        groupName:  o.option_items?.option_groups?.name ?? undefined,
+      })),
       imageUrl: item.menus?.image_url ?? undefined,
     })),
   }

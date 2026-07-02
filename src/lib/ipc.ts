@@ -60,7 +60,13 @@ export function orderToPayload(o: Order) {
       quantity:    item.qty,
       unit_price:  item.price,
       subtotal:    item.price * item.qty,
-      options:     item.options.map(name => ({ option_name: name, extra_price: 0 })),
+      options: item.optionDetails
+        ? item.optionDetails.map(od => ({
+            option_name: od.name,
+            extra_price: od.extraPrice,
+            group_name:  od.groupName,
+          }))
+        : item.options.map(name => ({ option_name: name, extra_price: 0 })),
     })),
     menu_subtotal:    o.total - deliveryFee,
     delivery_fee:     deliveryFee,
