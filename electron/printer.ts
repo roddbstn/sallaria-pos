@@ -78,25 +78,11 @@ const BASE_STYLE = `
   .opt { padding-left: 8px; color: #333; }
 `
 
-// ── 옵션 표시명/가격 계산 ──────────────────────────────────────────────────────
+// ── 옵션 가격 포맷 ────────────────────────────────────────────────────────────
 
-/** group_name이 "가격..." 계열이면 true */
-function isGagyeokGroup(groupName?: string): boolean {
-  return !!groupName && (groupName.startsWith('가격(필수)') || groupName.startsWith('가격-') || groupName === '가격')
-}
-
-/** 가격 옵션의 display 이름: "가격(필수)-포케음료세트" → "포케음료세트", 없으면 option_name 그대로 */
-function gagyeokDisplayName(optionName: string, groupName?: string): string {
-  if (!groupName) return optionName
-  const dash = groupName.indexOf('-')
-  if (dash !== -1) return groupName.slice(dash + 1)
-  return optionName
-}
-
-/** 메뉴 1줄의 기본가 (unit_price - 모든 extra_price 합산) */
-function calcBasePrice(item: OrderItem): number {
-  const extraSum = item.options.reduce((s, o) => s + (o.extra_price ?? 0), 0)
-  return item.unit_price - extraSum
+/** 옵션 1줄: 이름 + extra_price > 0이면 "+N원" 표시 */
+function optPriceStr(extraPrice: number): string {
+  return extraPrice > 0 ? ` +${extraPrice.toLocaleString('ko-KR')}원` : ''
 }
 
 // ── HTML 영수증 빌더 ──────────────────────────────────────────────────────────
@@ -106,20 +92,13 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
   const menuPt = MENU_PT[settings.menuSize]
   const optPt  = OPTION_PT[settings.optionSize]
 
-  const itemCells = order.items.map(item => {
-    const basePrice = calcBasePrice(item)
-    return `
+  const itemCells = order.items.map(item => `
     <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
     <span style="font-size:${menuPt};font-weight:bold;text-align:right">${item.quantity}</span>
-    ${item.options.map(o => {
-      if (isGagyeokGroup(o.group_name)) {
-        const name  = gagyeokDisplayName(o.option_name, o.group_name)
-        const price = basePrice > 0 ? ` +${basePrice.toLocaleString('ko-KR')}원` : ''
-        return `<div class="opt" style="font-size:${optPt};grid-column:1/-1">&gt; ${name}${price}</div>`
-      }
-      return `<div class="opt" style="font-size:${optPt};grid-column:1/-1">&gt; ${o.option_name}${o.extra_price > 0 ? ` +${o.extra_price.toLocaleString('ko-KR')}원` : ''}</div>`
-    }).join('')}
-  `}).join('')
+    ${item.options.map(o =>
+      `<div class="opt" style="font-size:${optPt};grid-column:1/-1">&gt; ${o.option_name}${optPriceStr(o.extra_price)}</div>`
+    ).join('')}
+  `).join('')
 
   const deliveryBlock = order.delivery_address ? `
     <div>배달주소 : ${order.delivery_address}</div>
@@ -163,26 +142,15 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
   const menuPt = MENU_PT[settings.customerMenuSize]
   const optPt  = OPTION_PT[settings.customerOptionSize]
 
-  // 옵션 행: 이름(col1-2 span) + 가격(col3)
-  function optionRow(o: OrderItem['options'][number], basePrice: number): string {
-    const isGagyeok = isGagyeokGroup(o.group_name)
-    const name      = isGagyeok ? gagyeokDisplayName(o.option_name, o.group_name) : o.option_name
-    const price     = isGagyeok
-      ? (basePrice > 0 ? `+${basePrice.toLocaleString('ko-KR')}원` : '')
-      : (o.extra_price > 0 ? `+${o.extra_price.toLocaleString('ko-KR')}원` : '')
-    return `
-      <div class="opt" style="font-size:${optPt};grid-column:1/3">&gt; ${name}</div>
-      <div style="font-size:${optPt};text-align:right;white-space:nowrap">${price}</div>`
-  }
-
-  const itemCells = order.items.map(item => {
-    const basePrice = calcBasePrice(item)
-    return `
+  const itemCells = order.items.map(item => `
     <span style="font-size:${menuPt};font-weight:bold">${item.menu_name}</span>
     <span style="font-size:${menuPt};font-weight:bold;text-align:right">${item.quantity}</span>
     <span style="font-size:${menuPt};font-weight:bold;text-align:right">${formatWon(item.subtotal)}</span>
-    ${item.options.map(o => optionRow(o, basePrice)).join('')}
-  `}).join('')
+    ${item.options.map(o => `
+      <div class="opt" style="font-size:${optPt};grid-column:1/3">&gt; ${o.option_name}</div>
+      <div style="font-size:${optPt};text-align:right;white-space:nowrap">${o.extra_price > 0 ? `+${o.extra_price.toLocaleString('ko-KR')}원` : ''}</div>`
+    ).join('')}
+  `).join('')
 
   const deliveryBlock = order.delivery_address ? `
     <div>배달주소 : ${order.delivery_address}</div>
