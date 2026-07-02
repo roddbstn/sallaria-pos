@@ -33,16 +33,6 @@ const CMD = {
 // SIZE_SMALL(1x width): 42  SIZE_MEDIUM(2x width): 21  SIZE_LARGE(3x width): 14
 const BASE_W = 42  // 기본 구분선 / 정보 라인 폭
 
-function sizeCmd(s: 'small' | 'normal' | 'large'): Buffer {
-  if (s === 'large')  return CMD.SIZE_MEDIUM  // 2x2 — 큰 표시 (짧은 이름용)
-  if (s === 'normal') return CMD.SIZE_SMALL   // 1x2 — 보통 (긴 이름도 전폭 표시)
-  return CMD.SIZE_SMALL                        // 1x2 — 기본
-}
-
-function lineW(s: 'small' | 'normal' | 'large'): number {
-  if (s === 'large')  return 21  // 2x 폭 → 42/2
-  return 42                       // 1x 폭 → 전폭
-}
 
 // ── 인코딩 / 레이아웃 유틸 ─────────────────────────────────────────────────
 
@@ -122,29 +112,17 @@ function formatDate(iso: string): string {
 }
 
 // ── 메뉴 열 너비 계산 ─────────────────────────────────────────────────────
-
-function kitchenCols(mSize: 'small'|'normal'|'large'): { nameW: number; qtyW: number } {
-  const W = lineW(mSize)
-  const qtyW = mSize === 'large' ? 3 : 4
-  return { nameW: W - qtyW, qtyW }
-}
-
-function customerCols(mSize: 'small'|'normal'|'large'): { nameW: number; qtyW: number; priceW: number } {
-  const W = lineW(mSize)
-  const qtyW   = mSize === 'large' ? 3 : 4
-  const priceW = mSize === 'large' ? 7 : 9
-  return { nameW: W - qtyW - priceW, qtyW, priceW }
-}
+// 메뉴 테이블은 항상 SIZE_NORMAL(1x1, 42자) 사용 → BASE_W 기준으로 고정
+const MENU_W    = BASE_W   // 42
+const QTY_W     = 4
+const PRICE_W   = 10
+const COL_SEP   = 2        // 수량↔가격 사이 공백
+const NAME_W    = MENU_W - QTY_W - COL_SEP - PRICE_W   // 26
 
 // ── 영수증 빌더 ────────────────────────────────────────────────────────────
 
-/** ① 주방용 (가격 없음) */
+/** ① 주방용 */
 export function buildKitchenReceiptEscPos(order: OrderPayload, settings: ReceiptSettings): Buffer {
-  const mSize = settings.menuSize
-  const oSize = settings.optionSize
-  const { nameW, qtyW } = kitchenCols(mSize)
-  const W = lineW(mSize)
-
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
 
@@ -175,13 +153,9 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   // 블록3: 배달 정보 (배달일 때만)
   if (order.delivery_address) {
     p(CMD.SIZE_SMALL)
-    for (const line of wrapName('배달주소 : ' + order.delivery_address, BASE_W)) {
-      p(enc(line), nl())
-    }
+    for (const line of wrapName('배달주소 : ' + order.delivery_address, BASE_W)) p(enc(line), nl())
     if (order.delivery_detail) {
-      for (const line of wrapName('배달상세 : ' + order.delivery_detail, BASE_W)) {
-        p(enc(line), nl())
-      }
+      for (const line of wrapName('배달상세 : ' + order.delivery_detail, BASE_W)) p(enc(line), nl())
     }
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
     p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())
@@ -194,44 +168,56 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
     p(hrBuf(), nl())
   }
 
-  // 메뉴 테이블 헤더 (2열)
-  p(sizeCmd(mSize), CMD.BOLD_ON)
-  p(enc(padL('메뉴명', nameW) + padR('수량', qtyW)))
-  p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
-  p(sizeCmd(mSize), subHrBuf(W), CMD.SIZE_NORMAL, nl())
+  // 메뉴 테이블 헤더 (3열, SIZE_NORMAL = 작은 크기)
+  p(CMD.SIZE_NORMAL, CMD.BOLD_ON)
+  p(enc(padL('메뉴명', NAME_W) + padR('수량', QTY_W) + ' '.repeat(COL_SEP) + padR('가격', PRICE_W)))
+  p(CMD.BOLD_OFF, nl())
+  p(subHrBuf(MENU_W), nl())
 
   // 메뉴 목록
   for (const item of order.items) {
-    const qtyStr = String(item.quantity)
-    const nameLines = wrapName(item.menu_name, nameW)
+    const qtyStr   = String(item.quantity)
+    const priceStr = formatWon(item.subtotal)
+    const nameLines = wrapName(item.menu_name, NAME_W)
     for (let i = 0; i < nameLines.length; i++) {
       const isLast = i === nameLines.length - 1
-      p(sizeCmd(mSize), CMD.BOLD_ON)
-      if (isLast) p(enc(padL(nameLines[i], nameW) + padR(qtyStr, qtyW)))
-      else        p(enc(padL(nameLines[i], nameW) + ' '.repeat(qtyW)))
-      p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+      p(CMD.SIZE_NORMAL, CMD.BOLD_ON)
+      if (isLast) p(enc(padL(nameLines[i], NAME_W) + padR(qtyStr, QTY_W) + ' '.repeat(COL_SEP) + padR(priceStr, PRICE_W)))
+      else        p(enc(padL(nameLines[i], NAME_W) + ' '.repeat(QTY_W + COL_SEP + PRICE_W)))
+      p(CMD.BOLD_OFF, nl())
     }
     for (const opt of item.options) {
       const optLabel = opt.extra_price > 0
-        ? `  > ${opt.option_name} +${opt.extra_price.toLocaleString('ko-KR')}원`
+        ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
         : `  > ${opt.option_name}`
-      p(sizeCmd(oSize), enc(optLabel), CMD.SIZE_NORMAL, nl())
+      p(CMD.SIZE_NORMAL, enc(clamp(optLabel, MENU_W)), nl())
     }
   }
 
   p(hrBuf(), nl())
-  p(CMD.FEED_CUT)
 
+  // 금액 요약
+  p(CMD.SIZE_SMALL)
+  p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
+  if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
+  p(CMD.SIZE_NORMAL)
+  p(hrBuf(), nl())
+  p(CMD.SIZE_SMALL, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+  p(hrBuf(), nl())
+
+  // 잔액
+  p(CMD.SIZE_SMALL)
+  p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
+  p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
+  if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
+  p(CMD.SIZE_NORMAL)
+
+  p(CMD.FEED_CUT)
   return Buffer.concat(chunks)
 }
 
 /** ② 고객용 (잔액·합계 포함) */
 export function buildCustomerReceiptEscPos(order: OrderPayload, settings: ReceiptSettings): Buffer {
-  const mSize = settings.customerMenuSize
-  const oSize = settings.customerOptionSize
-  const { nameW, qtyW, priceW } = customerCols(mSize)
-  const W = lineW(mSize)
-
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
 
@@ -262,13 +248,9 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   // 블록3: 배달 정보 + 요청사항
   if (order.delivery_address) {
     p(CMD.SIZE_SMALL)
-    for (const line of wrapName('배달주소 : ' + order.delivery_address, BASE_W)) {
-      p(enc(line), nl())
-    }
+    for (const line of wrapName('배달주소 : ' + order.delivery_address, BASE_W)) p(enc(line), nl())
     if (order.delivery_detail) {
-      for (const line of wrapName('배달상세 : ' + order.delivery_detail, BASE_W)) {
-        p(enc(line), nl())
-      }
+      for (const line of wrapName('배달상세 : ' + order.delivery_detail, BASE_W)) p(enc(line), nl())
     }
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
     p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())
@@ -281,29 +263,29 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
     p(hrBuf(), nl())
   }
 
-  // 메뉴 테이블 헤더 (3열)
-  p(sizeCmd(mSize), CMD.BOLD_ON)
-  p(enc(padL('메뉴명', nameW) + padR('수량', qtyW) + padR('가격', priceW)))
-  p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
-  p(sizeCmd(mSize), subHrBuf(W), CMD.SIZE_NORMAL, nl())
+  // 메뉴 테이블 헤더 (3열, SIZE_NORMAL = 작은 크기)
+  p(CMD.SIZE_NORMAL, CMD.BOLD_ON)
+  p(enc(padL('메뉴명', NAME_W) + padR('수량', QTY_W) + ' '.repeat(COL_SEP) + padR('가격', PRICE_W)))
+  p(CMD.BOLD_OFF, nl())
+  p(subHrBuf(MENU_W), nl())
 
   // 메뉴 목록
   for (const item of order.items) {
     const qtyStr   = String(item.quantity)
     const priceStr = formatWon(item.subtotal)
-    const nameLines = wrapName(item.menu_name, nameW)
+    const nameLines = wrapName(item.menu_name, NAME_W)
     for (let i = 0; i < nameLines.length; i++) {
       const isLast = i === nameLines.length - 1
-      p(sizeCmd(mSize), CMD.BOLD_ON)
-      if (isLast) p(enc(padL(nameLines[i], nameW) + padR(qtyStr, qtyW) + padR(priceStr, priceW)))
-      else        p(enc(padL(nameLines[i], nameW) + ' '.repeat(qtyW + priceW)))
-      p(CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+      p(CMD.SIZE_NORMAL, CMD.BOLD_ON)
+      if (isLast) p(enc(padL(nameLines[i], NAME_W) + padR(qtyStr, QTY_W) + ' '.repeat(COL_SEP) + padR(priceStr, PRICE_W)))
+      else        p(enc(padL(nameLines[i], NAME_W) + ' '.repeat(QTY_W + COL_SEP + PRICE_W)))
+      p(CMD.BOLD_OFF, nl())
     }
     for (const opt of item.options) {
       const optLabel = opt.extra_price > 0
-        ? `${opt.option_name} +${opt.extra_price.toLocaleString('ko-KR')}원`
-        : opt.option_name
-      p(sizeCmd(oSize), enc('  > ' + optLabel), CMD.SIZE_NORMAL, nl())
+        ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
+        : `  > ${opt.option_name}`
+      p(CMD.SIZE_NORMAL, enc(clamp(optLabel, MENU_W)), nl())
     }
   }
 
@@ -312,9 +294,7 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   // 금액 요약
   p(CMD.SIZE_SMALL)
   p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
-  if (order.delivery_fee > 0) {
-    p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
-  }
+  if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
   p(CMD.SIZE_SMALL, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
@@ -324,13 +304,10 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(CMD.SIZE_SMALL)
   p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
   p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
-  if (order.balance_after < 0) {
-    p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
-  }
+  if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
   p(CMD.SIZE_NORMAL)
 
   p(CMD.FEED_CUT)
-
   return Buffer.concat(chunks)
 }
 
