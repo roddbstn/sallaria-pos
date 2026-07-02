@@ -21,7 +21,7 @@ function parsedNote(raw: string) {
 }
 
 // 복사 버튼 컴포넌트
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray' | 'black' }) {
   const [copied, setCopied] = useState(false)
   function handleCopy() {
     navigator.clipboard.writeText(text).then(() => {
@@ -29,11 +29,16 @@ function CopyButton({ text }: { text: string }) {
       setTimeout(() => setCopied(false), 1500)
     })
   }
+  const style = copied
+    ? { backgroundColor: '#E6F4EC', color: '#017333' }
+    : variant === 'black'
+      ? { backgroundColor: '#1E1E1E', color: '#FFFFFF' }
+      : { backgroundColor: '#F0F0F0', color: '#727272' }
   return (
     <button
       onClick={handleCopy}
-      className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors flex-shrink-0"
-      style={copied ? { backgroundColor: '#E6F4EC', color: '#017333' } : { backgroundColor: '#F0F0F0', color: '#727272' }}
+      className="ml-1.5 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors flex-shrink-0"
+      style={style}
     >
       {copied ? '✓ 복사됨' : '복사'}
     </button>
@@ -182,11 +187,11 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
           {queue.map((o, idx) => (
             <div
               key={o.code}
-              style={{ width: CARD_W, flexShrink: 0 }}
-              className={`bg-white rounded-2xl overflow-hidden ${idx > 0 ? 'opacity-60' : ''}`}
+              style={{ width: CARD_W, flexShrink: 0, maxHeight: 'calc(100vh - 40px)' }}
+              className={`bg-white rounded-2xl overflow-hidden flex flex-col ${idx > 0 ? 'opacity-60' : ''}`}
             >
               {/* ── 헤더 (대시보드 카드 스타일) ── */}
-              <div className="bg-ink px-5 py-3">
+              <div className="bg-ink px-5 py-3 flex-shrink-0">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-white font-medium text-[16px]">
                     #{o.orderNumber ?? String(idx + 1)}
@@ -205,13 +210,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                     {o.phone && (
                     <div className="flex items-center gap-1">
                       <span className="text-white/60 text-[12px]">{o.phone}</span>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(o.phone!)}
-                        className="text-white/40 hover:text-white/80 transition-colors text-[10px] px-1 py-0.5 rounded"
-                        title="전화번호 복사"
-                      >
-                        📋
-                      </button>
+                      <CopyButton text={o.phone} variant="gray" />
                     </div>
                   )}
                   </div>
@@ -220,7 +219,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
               </div>
 
               {/* ── 카드 본문 (첫 번째만 인터랙티브) ── */}
-              <div className="px-6 py-5">
+              <div className="px-6 py-5 overflow-y-auto flex-1">
                 {idx === 0 ? (
                   <>
                     {/* 1단계: 주문 요약 */}
@@ -274,20 +273,24 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                                   <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 space-y-1.5">
                                     <div className="flex items-center justify-between text-[13px] text-ink font-semibold">
                                       <span className="flex-1 min-w-0 truncate">{deliveryAddress}</span>
-                                      <CopyButton text={deliveryAddress} />
+                                      <CopyButton text={deliveryAddress} variant="black" />
                                     </div>
                                     {deliveryDetail && (
                                       <div className="flex items-center justify-between text-[12px] text-gray-text">
                                         <span className="flex-1 min-w-0 truncate">{deliveryDetail}</span>
-                                        <CopyButton text={deliveryDetail} />
-                                      </div>
-                                    )}
-                                    {deliveryNote && (
-                                      <div className="text-[12px] text-gray-text border-t border-orange-200 pt-1.5 mt-1">
-                                        배달 요청: {deliveryNote}
+                                        <CopyButton text={deliveryDetail} variant="black" />
                                       </div>
                                     )}
                                   </div>
+                                  {deliveryNote && (
+                                    <div className="mt-2">
+                                      <div className="text-[12px] font-bold text-gray-text mb-1">배달 요청사항 📝</div>
+                                      <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 flex items-center justify-between gap-2">
+                                        <span className="text-[13px] text-ink flex-1 min-w-0">{deliveryNote}</span>
+                                        <CopyButton text={deliveryNote} variant="black" />
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {!deliveryAddress && !customerNote && (
