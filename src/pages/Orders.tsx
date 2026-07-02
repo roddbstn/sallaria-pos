@@ -57,6 +57,7 @@ function mapRow(row: any): Order {
     remarks:       row.note ?? '',
     balanceBefore: row.balance_before,
     balanceAfter:  row.balance_after,
+    isDeleted:     row.is_deleted ?? false,
   }
 }
 
@@ -428,11 +429,14 @@ export default function Orders() {
   const [selected,     setSelected]     = useState<Order | null>(null)
   const [selectedMenuName,    setSelectedMenuName]    = useState<string | null>(null)
   const [selectedAccountName, setSelectedAccountName] = useState<string | null>(null)
-  const [orders,   setOrders]   = useState<Order[]>([])
-  const [loading,  setLoading]  = useState(false)
-  const [reprintMsg, setReprintMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [orders,      setOrders]      = useState<Order[]>([])
+  const [loading,     setLoading]     = useState(false)
+  const [reprintMsg,  setReprintMsg]  = useState<{ ok: boolean; text: string } | null>(null)
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [checkedCodes, setCheckedCodes] = useState<Set<string>>(new Set())
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
-  async function fetchOrders(start: string | null, end: string | null) {
+  async function fetchOrders(start: string | null, end: string | null, deleted = showDeleted) {
     if (!start) { setOrders([]); return }
     setLoading(true)
     const s = `${start}T00:00:00`
@@ -442,7 +446,7 @@ export default function Orders() {
       .select(`
         order_code, order_number, orderer_name, orderer_phone,
         ordered_at, total_amount, balance_before, balance_after,
-        method, status, note,
+        method, status, note, is_deleted,
         accounts ( account_name ),
         order_items (
           order_item_id, menu_name, quantity, unit_price,
@@ -451,22 +455,51 @@ export default function Orders() {
       `)
       .gte('ordered_at', s)
       .lte('ordered_at', e)
+      .eq('is_deleted', deleted)
       .order('ordered_at', { ascending: false })
 
     if (!error && data) setOrders(data.map(mapRow))
     setLoading(false)
   }
 
-  // 날짜 범위 변경 시 재조회
+  async function handleDeleteChecked() {
+    if (checkedCodes.size === 0) return
+    const codes = [...checkedCodes]
+    const { error } = await supabase
+      .from('orders')
+      .update({ is_deleted: true })
+      .in('order_code', codes)
+    if (error) { console.error('삭제 실패:', error); return }
+    setCheckedCodes(new Set())
+    setDeleteConfirm(false)
+    setSelected(null)
+    fetchOrders(startDate, endDate, false)
+  }
+
+  async function handleRestoreOrder(orderCode: string) {
+    const { error } = await supabase
+      .from('orders')
+      .update({ is_deleted: false })
+      .eq('order_code', orderCode)
+    if (error) { console.error('복구 실패:', error); return }
+    setSelected(null)
+    fetchOrders(startDate, endDate, true)
+  }
+
+  // 날짜 범위 or 삭제 보기 토글 시 재조회
   useEffect(() => {
-    fetchOrders(startDate, endDate)
-  }, [startDate, endDate])
+    setCheckedCodes(new Set())
+    setDeleteConfirm(false)
+    fetchOrders(startDate, endDate, showDeleted)
+  }, [startDate, endDate, showDeleted])
 
   function handleRangeChange(s: string | null, e: string | null) {
     setStartDate(s)
     setEndDate(e)
     setSelected(null)
     setSelectedMenuName(null)
+    setCheckedCodes(new Set())
+    setDeleteConfirm(false)
   }
 
   function handleTabChange(t: '주문내역' | '메뉴별매출' | '거래처별매출') {
@@ -533,18 +566,46 @@ export default function Orders() {
         {tab === '주문내역' ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* 상태 필터 */}
-            <div className="px-5 py-2.5 flex gap-1 flex-shrink-0 border-b border-gray-border bg-gray-bg">
-              {STATUS_OPTIONS.map(({ label, value }) => (
+            <div className="px-5 py-2.5 flex items-center gap-1 flex-shrink-0 border-b border-gray-border bg-gray-bg">
+              {!showDeleted && STATUS_OPTIONS.map(({ label, value }) => (
                 <button key={value} onClick={() => setStatusFilter(value)}
                   className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors
                     ${statusFilter === value ? 'bg-ink text-white' : 'bg-white text-gray-text bg-gray-100 hover:bg-gray-200'}`}>
                   {label}
                 </button>
               ))}
+              <div className="flex-1" />
+              {/* 삭제 모드 */}
+              {!showDeleted && checkedCodes.size > 0 && (
+                deleteConfirm ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-danger font-semibold">{checkedCodes.size}건 삭제할까요?</span>
+                    <button onClick={handleDeleteChecked}
+                      className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-danger text-white hover:bg-red-700 transition-colors">
+                      확인
+                    </button>
+                    <button onClick={() => setDeleteConfirm(false)}
+                      className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-gray-200 text-ink hover:bg-gray-300 transition-colors">
+                      취소
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setDeleteConfirm(true)}
+                    className="px-3 py-1 rounded-full text-[11px] font-bold bg-danger text-white hover:bg-red-700 transition-colors">
+                    선택 삭제 ({checkedCodes.size}건)
+                  </button>
+                )
+              )}
+              <button onClick={() => { setShowDeleted(v => !v); setSelected(null); setCheckedCodes(new Set()) }}
+                className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ml-1
+                  ${showDeleted ? 'bg-ink text-white' : 'bg-white text-gray-text bg-gray-100 hover:bg-gray-200'}`}>
+                {showDeleted ? '← 일반 주문' : '삭제된 주문'}
+              </button>
             </div>
 
             {/* 테이블 헤더 */}
-            <div className="grid grid-cols-[80px_1fr_62px_80px_100px_58px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+            <div className="grid grid-cols-[28px_80px_1fr_62px_80px_100px_58px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+              <span />
               <span>주문번호</span>
               <span>거래처 · 주문자</span>
               <span>주문일시</span>
@@ -565,25 +626,50 @@ export default function Orders() {
                   해당 기간에 주문이 없습니다
                 </div>
               ) : (
-                listFiltered.map(order => (
-                  <button key={order.code} onClick={() => setSelected(order)}
-                    className={`w-full grid grid-cols-[80px_1fr_62px_80px_100px_58px] px-5 py-3 text-left hover:bg-gray-bg transition-colors text-[13px]
-                      ${selected?.code === order.code ? 'bg-green-soft' : ''}`}>
-                    <span className="font-mono text-[11px] text-gray-text self-center">#{order.orderNumber ?? order.code.slice(0, 6)}</span>
-                    <span className="font-semibold text-ink self-center">
-                      {order.accountName}
-                      <span className="text-gray-text font-normal ml-1">· {order.orderer}</span>
-                    </span>
-                    <span className="text-[11px] text-gray-text self-center">{formatDate(order.createdAt)}</span>
-                    <span className="self-center">
-                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${METHOD_BADGE[order.method]}`}>{order.method}</span>
-                    </span>
-                    <span className="font-bold text-right self-center">{won(order.total)}</span>
-                    <span className="text-center self-center">
-                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[order.status]}`}>{order.status}</span>
-                    </span>
-                  </button>
-                ))
+                listFiltered.map(order => {
+                  const isChecked = checkedCodes.has(order.code)
+                  return (
+                    <div key={order.code}
+                      className={`w-full grid grid-cols-[28px_80px_1fr_62px_80px_100px_58px] px-5 py-3 text-[13px] transition-colors items-center
+                        ${selected?.code === order.code ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
+                      {/* 체크박스 */}
+                      {!showDeleted ? (
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={e => {
+                            e.stopPropagation()
+                            setCheckedCodes(prev => {
+                              const next = new Set(prev)
+                              if (e.target.checked) next.add(order.code)
+                              else next.delete(order.code)
+                              return next
+                            })
+                            setDeleteConfirm(false)
+                          }}
+                          className="w-3.5 h-3.5 accent-danger cursor-pointer"
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : <span />}
+                      {/* 나머지 셀 — 클릭 시 상세 */}
+                      <button className="contents text-left" onClick={() => setSelected(order)}>
+                        <span className="font-mono text-[11px] text-gray-text">#{order.orderNumber ?? order.code.slice(0, 6)}</span>
+                        <span className="font-semibold text-ink">
+                          {order.accountName}
+                          <span className="text-gray-text font-normal ml-1">· {order.orderer}</span>
+                        </span>
+                        <span className="text-[11px] text-gray-text">{formatDate(order.createdAt)}</span>
+                        <span>
+                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${METHOD_BADGE[order.method]}`}>{order.method}</span>
+                        </span>
+                        <span className="font-bold text-right">{won(order.total)}</span>
+                        <span className="text-center">
+                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[order.status]}`}>{order.status}</span>
+                        </span>
+                      </button>
+                    </div>
+                  )
+                })
               )}
             </div>
           </div>
@@ -700,7 +786,15 @@ export default function Orders() {
                               </span>
                             </div>
                           )}
-                          {deliveryNote && <Row label="배달 요청사항" value={deliveryNote} />}
+                          {deliveryNote && (
+                            <div className="flex justify-between text-[13px]">
+                              <span className="text-gray-text">배달 요청사항</span>
+                              <span className="flex items-center text-ink text-right max-w-[60%]">
+                                <span className="truncate">{deliveryNote}</span>
+                                <CopyBtn text={deliveryNote} />
+                              </span>
+                            </div>
+                          )}
                         </>
                       )}
                       {!deliveryAddress && !customerNote && <Row label="요청사항" value={selected.remarks} />}
@@ -727,25 +821,35 @@ export default function Orders() {
                 <span className="text-[13px] text-gray-text font-semibold">현재 상태</span>
                 <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[selected.status]}`}>{selected.status}</span>
               </div>
-              <button
-                onClick={async () => {
-                  setReprintMsg(null)
-                  const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
-                  const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected) })
-                  if (!res) return
-                  setReprintMsg(res.ok
-                    ? { ok: true,  text: '영수증을 출력합니다' }
-                    : { ok: false, text: res.error ?? '출력 실패' }
-                  )
-                  setTimeout(() => setReprintMsg(null), 3000)
-                }}
-                className="w-full py-2.5 rounded-xl border-2 border-gray-border text-[13px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
-                🖨 영수증 재출력
-              </button>
-              {reprintMsg && (
-                <div className={`mt-2 text-center text-[12px] font-semibold ${reprintMsg.ok ? 'text-green' : 'text-danger'}`}>
-                  {reprintMsg.ok ? '✅' : '⚠️'} {reprintMsg.text}
-                </div>
+              {selected.isDeleted ? (
+                <button
+                  onClick={() => handleRestoreOrder(selected.code)}
+                  className="w-full py-2.5 rounded-xl text-[13px] font-bold text-green hover:bg-green-soft transition-colors border border-green/30">
+                  주문 복구
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={async () => {
+                      setReprintMsg(null)
+                      const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
+                      const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected) })
+                      if (!res) return
+                      setReprintMsg(res.ok
+                        ? { ok: true,  text: '영수증을 출력합니다' }
+                        : { ok: false, text: res.error ?? '출력 실패' }
+                      )
+                      setTimeout(() => setReprintMsg(null), 3000)
+                    }}
+                    className="w-full py-2.5 rounded-xl border-2 border-gray-border text-[13px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
+                    🖨 영수증 재출력
+                  </button>
+                  {reprintMsg && (
+                    <div className={`mt-2 text-center text-[12px] font-semibold ${reprintMsg.ok ? 'text-green' : 'text-danger'}`}>
+                      {reprintMsg.ok ? '✅' : '⚠️'} {reprintMsg.text}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

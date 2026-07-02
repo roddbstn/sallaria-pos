@@ -27,6 +27,7 @@ export interface Order {
   remarks:       string
   balanceBefore?: number  // 주문 전 잔액
   balanceAfter?:  number  // 주문 후 잔액
+  isDeleted?:     boolean // 소프트 삭제
 }
 
 export interface Account {
