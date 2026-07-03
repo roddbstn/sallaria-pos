@@ -297,6 +297,17 @@ export default function App() {
             fetchAndQueue(payload.new.order_code)
           }
         )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'stores' },
+          (payload: any) => {
+            const newIsOpen = payload.new?.is_open
+            if (typeof newIsOpen === 'boolean') {
+              setIsOpen(newIsOpen)
+              localStorage.setItem('pos_is_open', JSON.stringify(newIsOpen))
+            }
+          }
+        )
         .subscribe((status: string) => {
           if (status === 'SUBSCRIBED') {
             setWsStatus('connected')
