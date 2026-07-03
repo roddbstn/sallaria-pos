@@ -109,10 +109,10 @@ export default function App() {
   const [showPwConfirm, setShowPwConfirm] = useState(false)
 
   // 운영 상태 + 운영시간
-  const [isOpen,        setIsOpen]        = useState(() => {
-    const s = localStorage.getItem('pos_is_open')
-    return s !== null ? JSON.parse(s) : true
-  })
+  // is_open 진실 공급원 = DB. localStorage 캐시 없음.
+  const [isOpen,        setIsOpen]        = useState(false)
+  // 수동 토글 시 set → syncIsOpen이 같은 기기에서 덮어쓰지 않도록
+  const manualOverrideRef = useRef<{ value: boolean; until: number } | null>(null)
   const [hoursOpen,     setHoursOpen]     = useState(false)
   const [operatingHours, setOperatingHours] = useState<Record<string, { enabled: boolean; open: string; close: string }>>(() => {
     try {
@@ -176,10 +176,9 @@ export default function App() {
     const store = stores[0]
     setSession({ userId, clientId: client.id, storeId: store.id, storeName: store.name })
 
-    // DB의 is_open 값으로 초기 상태 동기화 (새 PC 설치 시 localStorage 기본값 true 문제 해결)
+    // DB의 is_open 값으로 초기 상태 동기화
     if (store.is_open !== undefined && store.is_open !== null) {
       setIsOpen(store.is_open)
-      localStorage.setItem('pos_is_open', JSON.stringify(store.is_open))
     }
     track('pos_store_login', { store_id: store.id, store_name: store.name })
     setPhase('main')
@@ -304,9 +303,8 @@ export default function App() {
             const newIsOpen = payload.new?.is_open
             if (typeof newIsOpen === 'boolean') {
               setIsOpen(newIsOpen)
-              localStorage.setItem('pos_is_open', JSON.stringify(newIsOpen))
-              // 다른 PC의 토글이 권위 있음 — 로컬 오버라이드 제거 (충돌 방지)
-              localStorage.removeItem('pos_today_override')
+              // 다른 기기의 변경이 권위 있음 — 수동 오버라이드 해제
+              manualOverrideRef.current = null
             }
           }
         )
@@ -514,14 +512,8 @@ export default function App() {
 
   async function pushIsOpen(next: boolean) {
     setIsOpen(next)
-    localStorage.setItem('pos_is_open', JSON.stringify(next))
-    // 수동 토글 시 오버라이드 저장 — syncIsOpen이 덮어쓰지 않도록
-    const todayStr = new Date().toISOString().slice(0, 10)
-    if (next) {
-      localStorage.setItem('pos_today_override', JSON.stringify({ date: todayStr, type: 'force_open' }))
-    } else {
-      localStorage.setItem('pos_today_override', JSON.stringify({ date: todayStr, type: 'force_close' }))
-    }
+    // 수동 토글 — 2분간 syncIsOpen이 같은 기기에서 덮어쓰지 않도록
+    manualOverrideRef.current = { value: next, until: Date.now() + 2 * 60_000 }
     if (session?.storeId) {
       await supabase.from('stores').update({ is_open: next }).eq('id', session.storeId)
     }
@@ -536,9 +528,6 @@ export default function App() {
   }
 
   function confirmForceOpen() {
-    // 운영시간 외 수동 오픈 — 오늘 날짜로 force_open 오버라이드 저장
-    const todayStr = new Date().toISOString().slice(0, 10)
-    localStorage.setItem('pos_today_override', JSON.stringify({ date: todayStr, type: 'force_open' }))
     pushIsOpen(true)
     setOffHoursConfirm(false)
   }
@@ -558,7 +547,7 @@ export default function App() {
         shouldBeOpen = cur >= oh * 60 + om && cur < ch * 60 + cm
       }
 
-      // 오늘 오버라이드 체크 (수동 토글 또는 마감 예약)
+      // 마감 예약 오버라이드 체크 (holiday / early)
       try {
         const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
         const todayStr = now.toISOString().slice(0, 10)
@@ -569,22 +558,21 @@ export default function App() {
             const cur2 = now.getHours() * 60 + now.getMinutes()
             const [eh, em] = (ov.time as string).split(':').map(Number)
             if (cur2 >= eh * 60 + em) shouldBeOpen = false
-          } else if (ov.type === 'force_open') {
-            shouldBeOpen = true
-          } else if (ov.type === 'force_close') {
-            // 수동 종료 — 자동 동기화가 되돌리지 않도록 유지
-            shouldBeOpen = false
           }
         }
       } catch {}
 
+      // 수동 토글 직후 2분간은 syncIsOpen이 덮어쓰지 않음
+      const mo = manualOverrideRef.current
+      if (mo && Date.now() < mo.until) return
+
+      // 만료된 오버라이드 해제
+      if (mo) manualOverrideRef.current = null
 
       setIsOpen(prev => {
-        if (prev !== shouldBeOpen) {
-          localStorage.setItem('pos_is_open', JSON.stringify(shouldBeOpen))
-          if (session?.storeId) {
-            supabase.from('stores').update({ is_open: shouldBeOpen }).eq('id', session.storeId)
-          }
+        if (prev !== shouldBeOpen && session?.storeId) {
+          supabase.from('stores').update({ is_open: shouldBeOpen }).eq('id', session.storeId)
+          // Realtime이 모든 기기에 전파하므로 여기서 setIsOpen 불필요 (단, 자기 자신 포함 전파 보장용)
         }
         return shouldBeOpen
       })
