@@ -305,6 +305,8 @@ export default function App() {
             if (typeof newIsOpen === 'boolean') {
               setIsOpen(newIsOpen)
               localStorage.setItem('pos_is_open', JSON.stringify(newIsOpen))
+              // 다른 PC의 토글이 권위 있음 — 로컬 오버라이드 제거 (충돌 방지)
+              localStorage.removeItem('pos_today_override')
             }
           }
         )
