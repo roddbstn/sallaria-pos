@@ -513,12 +513,12 @@ export default function App() {
   async function pushIsOpen(next: boolean) {
     setIsOpen(next)
     localStorage.setItem('pos_is_open', JSON.stringify(next))
-    // 수동 닫기 시 force_open 오버라이드 제거 (자동 동기화 재개)
-    if (!next) {
-      try {
-        const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
-        if (ov?.type === 'force_open') localStorage.removeItem('pos_today_override')
-      } catch { /* ignore */ }
+    // 수동 토글 시 오버라이드 저장 — syncIsOpen이 덮어쓰지 않도록
+    const todayStr = new Date().toISOString().slice(0, 10)
+    if (next) {
+      localStorage.setItem('pos_today_override', JSON.stringify({ date: todayStr, type: 'force_open' }))
+    } else {
+      localStorage.setItem('pos_today_override', JSON.stringify({ date: todayStr, type: 'force_close' }))
     }
     if (session?.storeId) {
       await supabase.from('stores').update({ is_open: next }).eq('id', session.storeId)
@@ -556,7 +556,7 @@ export default function App() {
         shouldBeOpen = cur >= oh * 60 + om && cur < ch * 60 + cm
       }
 
-      // 오늘 마감 예약 오버라이드 체크
+      // 오늘 오버라이드 체크 (수동 토글 또는 마감 예약)
       try {
         const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
         const todayStr = now.toISOString().slice(0, 10)
@@ -568,8 +568,10 @@ export default function App() {
             const [eh, em] = (ov.time as string).split(':').map(Number)
             if (cur2 >= eh * 60 + em) shouldBeOpen = false
           } else if (ov.type === 'force_open') {
-            // 수동 강제 오픈 — 자동 동기화가 닫지 않도록 유지
             shouldBeOpen = true
+          } else if (ov.type === 'force_close') {
+            // 수동 종료 — 자동 동기화가 되돌리지 않도록 유지
+            shouldBeOpen = false
           }
         }
       } catch {}
@@ -589,7 +591,7 @@ export default function App() {
     syncIsOpen()
     const id = setInterval(syncIsOpen, 60_000)
     return () => clearInterval(id)
-  }, [operatingHours])
+  }, [operatingHours, session?.storeId])
 
   function saveOperatingHours() {
     setOperatingHours(hoursDraft)
