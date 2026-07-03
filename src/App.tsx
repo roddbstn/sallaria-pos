@@ -163,7 +163,7 @@ export default function App() {
     // stores 조회
     const { data: stores } = await supabase
       .from('stores')
-      .select('id, name')
+      .select('id, name, is_open')
       .eq('client_id', client.id)
       .limit(1)
 
@@ -175,6 +175,12 @@ export default function App() {
 
     const store = stores[0]
     setSession({ userId, clientId: client.id, storeId: store.id, storeName: store.name })
+
+    // DB의 is_open 값으로 초기 상태 동기화 (새 PC 설치 시 localStorage 기본값 true 문제 해결)
+    if (store.is_open !== undefined && store.is_open !== null) {
+      setIsOpen(store.is_open)
+      localStorage.setItem('pos_is_open', JSON.stringify(store.is_open))
+    }
     track('pos_store_login', { store_id: store.id, store_name: store.name })
     setPhase('main')
   }
