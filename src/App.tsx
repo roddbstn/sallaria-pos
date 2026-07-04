@@ -514,8 +514,15 @@ export default function App() {
     setIsOpen(next)
     // 수동 토글 — 2분간 syncIsOpen이 같은 기기에서 덮어쓰지 않도록
     manualOverrideRef.current = { value: next, until: Date.now() + 2 * 60_000 }
-    if (session?.storeId) {
-      await supabase.from('stores').update({ is_open: next }).eq('id', session.storeId)
+    if (!session?.storeId) {
+      showToast('스토어 세션 없음 — 재로그인 필요')
+      return
+    }
+    const { error } = await supabase.from('stores').update({ is_open: next }).eq('id', session.storeId)
+    if (error) {
+      showToast(`운영 상태 저장 실패: ${error.message}`)
+      setIsOpen(!next) // 롤백
+      manualOverrideRef.current = null
     }
   }
 
