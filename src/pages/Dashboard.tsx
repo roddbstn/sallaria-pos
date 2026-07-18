@@ -349,6 +349,20 @@ export default function Dashboard() {
       showActionError('완료 처리에 실패했습니다. 다시 시도해주세요.')
       return
     }
+
+    // QR 웹에 완료 알림 broadcast (fire-and-forget)
+    ;(async () => {
+      const ch = supabase.channel(`orders:order_code=${code}`)
+      await new Promise<void>(resolve => {
+        ch.subscribe(s => {
+          if (s !== 'SUBSCRIBED') return
+          ch.send({ type: 'broadcast', event: 'ORDER_COMPLETED', payload: {} })
+            .finally(() => { supabase.removeChannel(ch); resolve() })
+        })
+        setTimeout(resolve, 3000)
+      })
+    })()
+
     await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
   }
 

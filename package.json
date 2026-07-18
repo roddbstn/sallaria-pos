@@ -1,6 +1,6 @@
 {
   "name": "freepos",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "프리POS 앱",
   "main": "out/main/index.js",
   "scripts": {
