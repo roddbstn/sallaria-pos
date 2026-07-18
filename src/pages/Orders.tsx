@@ -1,23 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
-import { type Order, type OrderStatus } from '../lib/mock-data'
-import { won, formatDate, orderToPayload } from '../lib/ipc'
+import { type Order } from '../lib/mock-data'
+import { won, formatDate, orderToPayload, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
+import { mapOrderRow } from '../lib/mappers'
 
-// note 문자열에서 배달/요청 정보 파싱
-function parsedNote(raw: string) {
-  const parts = raw.split(' / ')
-  let deliveryAddress: string | null = null
-  let deliveryDetail: string | null = null
-  let deliveryNote: string | null = null
-  const customerParts: string[] = []
-  for (const part of parts) {
-    if (part.startsWith('[배달주소] ')) deliveryAddress = part.slice('[배달주소] '.length)
-    else if (part.startsWith('[배달상세] ')) deliveryDetail = part.slice('[배달상세] '.length)
-    else if (part.startsWith('[배달요청] ')) deliveryNote = part.slice('[배달요청] '.length)
-    else if (part.trim()) customerParts.push(part.trim())
-  }
-  return { deliveryAddress, deliveryDetail, deliveryNote, customerNote: customerParts.join(', ') || null }
-}
+// parseNote는 lib/ipc.ts에서 import
 
 // 인라인 복사 버튼
 function CopyBtn({ text }: { text: string }) {
@@ -33,34 +20,7 @@ function CopyBtn({ text }: { text: string }) {
   )
 }
 
-// ── DB row → Order 변환 ───────────────────────────────────────────────────────
-const DB_METHOD_MAP: Record<string, string> = { '내점': '매장 식사', '포장': '포장', '배달': '배달' }
-
-function mapRow(row: any): Order {
-  return {
-    code:          row.order_code,
-    orderNumber:   row.order_number ?? undefined,
-    accountName:   row.accounts?.account_name ?? '',
-    orderer:       row.orderer_name,
-    phone:         row.orderer_phone ?? undefined,
-    method:        (DB_METHOD_MAP[row.method] ?? row.method) as Order['method'],
-    status:        row.status as OrderStatus,
-    items:         (row.order_items ?? []).map((item: any) => ({
-      name:    item.menu_name,
-      qty:     item.quantity,
-      price:   item.unit_price,
-      options:       (item.order_item_options ?? []).map((o: any) => o.option_name as string),
-      optionDetails: (item.order_item_options ?? []).map((o: any) => ({ name: o.option_name, extraPrice: o.extra_price ?? 0 })),
-    })),
-    total:         row.total_amount,
-    prepMins:      0,
-    createdAt:     row.ordered_at,
-    remarks:       row.note ?? '',
-    balanceBefore: row.balance_before,
-    balanceAfter:  row.balance_after,
-    isDeleted:     row.is_deleted ?? false,
-  }
-}
+// mapOrderRow는 lib/mappers.ts에서 import
 
 // ── 상태 필터 옵션 ─────────────────────────────────────────────────────────────
 const STATUS_OPTIONS: { label: string; value: OrderStatus | 'all' }[] = [
@@ -459,7 +419,7 @@ export default function Orders() {
       .eq('is_deleted', deleted)
       .order('ordered_at', { ascending: false })
 
-    if (!error && data) setOrders(data.map(mapRow))
+    if (!error && data) setOrders(data.map(mapOrderRow))
     setLoading(false)
   }
 
@@ -765,7 +725,7 @@ export default function Orders() {
                 <Row label="주문일시"  value={formatDate(selected.createdAt)} />
                 <Row label="합계"      value={won(selected.total)} bold />
                 {selected.remarks && (() => {
-                  const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parsedNote(selected.remarks)
+                  const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parseNote(selected.remarks)
                   return (
                     <>
                       {customerNote && <Row label="가게 요청사항" value={customerNote} />}

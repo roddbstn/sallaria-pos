@@ -8,13 +8,16 @@ function isValidEmail(v: string) {
 }
 
 export default function Auth({ onSuccess }: { onSuccess: () => void }) {
-  const [tab,      setTab]      = useState<AuthTab>('login')
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm,  setConfirm]  = useState('')
-  const [loading,  setLoading]  = useState(false)
+  const [tab,        setTab]        = useState<AuthTab>('login')
+  const [email,      setEmail]      = useState('')
+  const [password,   setPassword]   = useState('')
+  const [confirm,    setConfirm]    = useState('')
+  const [loading,    setLoading]    = useState(false)
   const [serverError, setServerError] = useState('')
-  const [done,     setDone]     = useState(false)
+  const [done,       setDone]       = useState(false)
+  const [rememberMe, setRememberMe] = useState(
+    () => localStorage.getItem('sallaria_pos_remember') !== 'false'
+  )
 
   // 필드별 touched 상태 (blur 이후 검증 표시)
   const [touched, setTouched] = useState({ email: false, password: false, confirm: false })
@@ -58,6 +61,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
       if (tab === 'login') {
         const { error: e } = await supabase.auth.signInWithPassword({ email, password })
         if (e) throw e
+        localStorage.setItem('sallaria_pos_remember', rememberMe ? 'true' : 'false')
       } else {
         const { error: e } = await supabase.auth.signUp({ email, password })
         if (e) throw e
@@ -110,9 +114,9 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
 
         {/* 로고 */}
         <div className="text-center mb-8">
-          <div className="text-[28px] mb-1">🥗</div>
-          <h1 className="text-[20px] font-bold text-ink">샐러리아 POS</h1>
-          <p className="text-[12px] text-gray-text mt-1">선결제 주문 관리 시스템</p>
+          <div className="text-[28px] mb-1">🏪</div>
+          <h1 className="text-[20px] font-bold text-ink">프리POS</h1>
+          <p className="text-[12px] text-gray-text mt-1">선결제도 POS로 관리하세요</p>
         </div>
 
         {/* 탭 */}
@@ -188,6 +192,30 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
                 <p className="text-[12px] text-danger mt-1">{confirmError}</p>
               )}
             </div>
+          )}
+
+          {/* 자동 로그인 체크박스 (로그인 탭만) */}
+          {tab === 'login' && (
+            <label className="flex items-center gap-2 cursor-pointer select-none py-1">
+              <div
+                onClick={() => setRememberMe(v => !v)}
+                className={[
+                  'w-[18px] h-[18px] rounded-[4px] border-2 flex items-center justify-center transition-colors duration-150 flex-shrink-0',
+                  rememberMe
+                    ? 'bg-[#16a84c] border-[#16a84c]'
+                    : 'bg-white border-gray-border',
+                ].join(' ')}
+              >
+                {rememberMe && (
+                  <svg width="10" height="7" viewBox="0 0 10 7" fill="none">
+                    <path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </div>
+              <span onClick={() => setRememberMe(v => !v)} className="text-[13px] text-gray-text">
+                자동 로그인
+              </span>
+            </label>
           )}
 
           {/* 서버 에러 */}

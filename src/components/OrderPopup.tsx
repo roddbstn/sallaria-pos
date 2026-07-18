@@ -1,24 +1,8 @@
 import { useState } from 'react'
 import { type Order } from '../lib/mock-data'
-import { won, orderToPayload } from '../lib/ipc'
+import { won, orderToPayload, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { track } from '../lib/firebase'
-
-// note 문자열에서 배달/요청 정보 파싱
-function parsedNote(raw: string) {
-  const parts = raw.split(' / ')
-  let deliveryAddress: string | null = null
-  let deliveryDetail: string | null = null
-  let deliveryNote: string | null = null
-  const customerParts: string[] = []
-  for (const part of parts) {
-    if (part.startsWith('[배달주소] ')) deliveryAddress = part.slice('[배달주소] '.length)
-    else if (part.startsWith('[배달상세] ')) deliveryDetail = part.slice('[배달상세] '.length)
-    else if (part.startsWith('[배달요청] ')) deliveryNote = part.slice('[배달요청] '.length)
-    else if (part.trim()) customerParts.push(part.trim())
-  }
-  return { deliveryAddress, deliveryDetail, deliveryNote, customerNote: customerParts.join(', ') || null }
-}
 
 // 복사 버튼 컴포넌트
 function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray' | 'black' }) {
@@ -54,7 +38,7 @@ interface Props {
 type Stage = 'summary' | 'approve' | 'reject'
 
 const REJECT_REASONS = ['재료 소진', '마감시간 초과', '주문 폭주', '매장 사정', '기타']
-const PREP_PRESETS   = [5, 10, 15, 20, 25, 30]
+const PREP_PRESETS   = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
 
 const METHOD_BADGE: Record<string, string> = {
   '포장':    'bg-blue-100 text-blue-700',
@@ -256,7 +240,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                           </div>
                         </div>
                         {o.remarks && (() => {
-                          const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parsedNote(o.remarks)
+                          const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parseNote(o.remarks)
                           return (
                             <div className="mb-3 space-y-2">
                               {customerNote && (
@@ -346,28 +330,23 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                             <span className="text-[18px] font-semibold text-gray-text ml-1">분</span>
                           </div>
                           <button
-                            onClick={() => setPrepMins(p => Math.min(60, p + 1))}
+                            onClick={() => setPrepMins(p => Math.min(90, p + 1))}
                             className="w-12 h-12 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[22px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
                             +
                           </button>
                         </div>
-                        <div className="flex justify-center mb-5">
-                          <div className="border border-gray-border rounded-2xl flex items-center overflow-hidden">
-                            {PREP_PRESETS.map((mins, i) => (
-                              <>
-                                {i > 0 && <div key={`sep-${mins}`} className="w-px h-5 bg-gray-border flex-shrink-0" />}
-                                <button
-                                  key={mins}
-                                  onClick={() => setPrepMins(mins)}
-                                  className={`px-4 py-2.5 font-medium text-[13px] transition-colors duration-75
-                                    ${prepMins === mins
-                                      ? 'bg-ink text-white'
-                                      : 'text-gray-text hover:bg-gray-bg'}`}>
-                                  {mins}분
-                                </button>
-                              </>
-                            ))}
-                          </div>
+                        <div className="grid grid-cols-6 gap-1.5 mb-5">
+                          {PREP_PRESETS.map(mins => (
+                            <button
+                              key={mins}
+                              onClick={() => setPrepMins(mins)}
+                              className={`py-2 rounded-xl font-medium text-[13px] transition-colors duration-75 border
+                                ${prepMins === mins
+                                  ? 'bg-ink text-white border-ink'
+                                  : 'text-gray-text border-gray-border hover:bg-gray-bg'}`}>
+                              {mins}분
+                            </button>
+                          ))}
                         </div>
                         <div className="bg-gray-bg rounded-xl px-4 py-3 mb-5 text-[13px] text-gray-text font-semibold leading-relaxed">
                           <strong className="text-ink">"약 {prepMins}분 후 준비 예정"</strong>으로 안내됩니다.

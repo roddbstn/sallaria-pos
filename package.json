@@ -1,7 +1,7 @@
 {
-  "name": "sallaria-pos",
-  "version": "0.1.2",
-  "description": "샐러리아 침산점 POS 앱",
+  "name": "freepos",
+  "version": "0.1.3",
+  "description": "프리POS 앱",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -53,8 +53,8 @@
   },
   "author": "Sallaria",
   "build": {
-    "appId": "kr.sallaria.pos",
-    "productName": "선결제 고객 POS",
+    "appId": "kr.freepos.app",
+    "productName": "프리POS",
     "npmRebuild": false,
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"

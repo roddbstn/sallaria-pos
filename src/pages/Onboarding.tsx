@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { track } from '../lib/firebase'
+import QRCode from 'qrcode'
+
+const ORDER_BASE_URL = 'https://sallaria.web.app'
 
 interface Props {
   clientId:   string
@@ -17,11 +20,13 @@ const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
 const BAUD_RATES = [9600, 19200, 38400, 115200]
 
 export default function Onboarding({ clientId, onComplete }: Props) {
-  const [step,         setStep]         = useState<1 | 2 | 3>(1)
+  const [step,         setStep]         = useState<1 | 2 | 3 | 4>(1)
   const [businessName, setBusinessName] = useState('')
   const [address,      setAddress]      = useState('')
   const [loading,      setLoading]      = useState(false)
   const [error,        setError]        = useState('')
+  const [newStoreId,   setNewStoreId]   = useState('')
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null)
 
   // Step 2: 프린터
   const [ports,       setPorts]       = useState<string[]>([])
@@ -92,7 +97,8 @@ export default function Onboarding({ clientId, onComplete }: Props) {
         .single()
       if (e) throw e
       track('pos_store_registered', { store_id: data.id, store_name: data.name })
-      onComplete(data.id, data.name)
+      setNewStoreId(data.id)
+      setStep(4)
     } catch (e: any) {
       setError(e.message ?? '오류가 발생했습니다.')
     } finally {
@@ -100,7 +106,18 @@ export default function Onboarding({ clientId, onComplete }: Props) {
     }
   }
 
-  const STEPS = ['상호명 입력', '프린터 연결', '매장 주소']
+  // Step 4: QR 캔버스 그리기
+  useEffect(() => {
+    if (step !== 4 || !newStoreId || !qrCanvasRef.current) return
+    const url = `${ORDER_BASE_URL}?store=${newStoreId}`
+    QRCode.toCanvas(qrCanvasRef.current, url, {
+      width: 200,
+      margin: 2,
+      color: { dark: '#1E1E1E', light: '#FFFFFF' },
+    })
+  }, [step, newStoreId])
+
+  const STEPS = ['상호명 입력', '프린터 연결', '매장 주소', 'QR 코드']
 
   return (
     <div className="flex h-full items-center justify-center bg-gray-bg">
@@ -108,13 +125,13 @@ export default function Onboarding({ clientId, onComplete }: Props) {
 
         {/* 진행 단계 */}
         <div className="flex items-center gap-2 mb-8">
-          {[1, 2, 3].map(s => (
+          {[1, 2, 3, 4].map(s => (
             <div key={s} className="flex items-center gap-2">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold
                 ${step >= s ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text'}`}>
                 {s}
               </div>
-              {s < 3 && <div className={`w-8 h-0.5 ${step > s ? 'bg-ink' : 'bg-gray-200'}`} />}
+              {s < 4 && <div className={`w-6 h-0.5 ${step > s ? 'bg-ink' : 'bg-gray-200'}`} />}
             </div>
           ))}
           <span className="ml-2 text-[13px] text-gray-text">{STEPS[step - 1]}</span>
@@ -132,7 +149,7 @@ export default function Onboarding({ clientId, onComplete }: Props) {
                   type="text"
                   value={businessName}
                   onChange={e => setBusinessName(e.target.value)}
-                  placeholder="예: 샐러리아 침산점"
+                  placeholder="예: 행복 포케 북구점"
                   autoFocus
                   required
                   className="w-full border border-gray-border rounded-lg px-3 py-2.5 text-[15px] focus:outline-none focus:border-green transition-colors"
@@ -260,7 +277,7 @@ export default function Onboarding({ clientId, onComplete }: Props) {
                 disabled={loading}
                 className="w-full py-3 bg-ink text-white rounded-xl font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {loading ? '생성 중...' : '시작하기'}
+                {loading ? '생성 중...' : '다음'}
               </button>
               <button
                 type="button"
@@ -270,6 +287,39 @@ export default function Onboarding({ clientId, onComplete }: Props) {
                 나중에 입력
               </button>
             </form>
+          </>
+        )}
+
+        {/* ── Step 4: QR 코드 안내 ── */}
+        {step === 4 && (
+          <>
+            <h1 className="text-[22px] font-bold text-ink mb-2">준비 완료!</h1>
+            <p className="text-[13px] text-gray-text mb-6 leading-relaxed">
+              아래 QR 코드를 인쇄해서 카운터나 테이블에 붙여주세요.<br />
+              고객이 스캔하면 바로 주문 화면이 열립니다.
+            </p>
+
+            <div className="flex flex-col items-center gap-3 mb-6">
+              <canvas ref={qrCanvasRef} className="rounded-xl" />
+              <p className="text-[11px] text-gray-text break-all text-center">
+                {`${ORDER_BASE_URL}?store=${newStoreId}`}
+              </p>
+            </div>
+
+            <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 mb-6">
+              <p className="text-[12px] text-gray-text leading-relaxed">
+                💡 <span className="font-semibold text-ink">다음 단계</span><br />
+                고객 주문을 받으려면 <span className="font-semibold">메뉴 관리</span> 탭에서<br />
+                메뉴와 거래처를 먼저 등록해 주세요.
+              </p>
+            </div>
+
+            <button
+              onClick={() => onComplete(newStoreId, businessName.trim())}
+              className="w-full py-3 bg-ink text-white rounded-xl font-bold text-[14px] hover:opacity-90 transition-opacity"
+            >
+              POS 시작하기
+            </button>
           </>
         )}
       </div>

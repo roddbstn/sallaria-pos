@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useOperatingHours } from './hooks/useOperatingHours'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { track } from './lib/firebase'
@@ -108,29 +109,25 @@ export default function App() {
   const [showPw,        setShowPw]        = useState(false)
   const [showPwConfirm, setShowPwConfirm] = useState(false)
 
-  // 운영 상태 + 운영시간
-  // is_open 진실 공급원 = DB. localStorage 캐시 없음.
-  const [isOpen,        setIsOpen]        = useState(false)
-  // 수동 토글 시 set → syncIsOpen이 같은 기기에서 덮어쓰지 않도록
-  const manualOverrideRef = useRef<{ value: boolean; until: number } | null>(null)
-  const [hoursOpen,     setHoursOpen]     = useState(false)
-  const [operatingHours, setOperatingHours] = useState<Record<string, { enabled: boolean; open: string; close: string }>>(() => {
-    try {
-      const s = localStorage.getItem('pos_operating_hours')
-      return s ? JSON.parse(s) : defaultOperatingHours()
-    } catch { return defaultOperatingHours() }
-  })
-  const [hoursDraft, setHoursDraft] = useState<Record<string, { enabled: boolean; open: string; close: string }>>({})
+  // 운영 상태 + 운영시간 — useOperatingHours 훅으로 분리
 
   // ── 인증 + 스토어 로딩 ──────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       if (!s) { setPhase('auth'); return }
+      // 자동 로그인 비활성화 시 저장된 세션 무효화
+      if (localStorage.getItem('sallaria_pos_remember') === 'false') {
+        await supabase.auth.signOut()
+        setPhase('auth')
+        return
+      }
       setAuthObj(s)
       loadStoreSession(s.user.id, s.user.email ?? '')
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      // INITIAL_SESSION 은 getSession()에서 이미 처리 — 중복 제외
+      if (event === 'INITIAL_SESSION') return
       if (event === 'TOKEN_REFRESH_FAILED' || !s) {
         setPhase('auth'); setSession(null); setAuthObj(null); return
       }
@@ -288,10 +285,10 @@ export default function App() {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
 
       channel = supabase
-        .channel(`app-new-orders-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+        .channel(`store-${session?.storeId}-orders`)
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'orders' },
+          { event: 'INSERT', schema: 'public', table: 'orders', filter: `store_id=eq.${session?.storeId}` },
           (payload: any) => {
             fetchAndQueue(payload.new.order_code)
           }
@@ -333,7 +330,7 @@ export default function App() {
       if (retryTimer) clearTimeout(retryTimer)
       if (channel) supabase.removeChannel(channel)
     }
-  }, [phase])
+  }, [phase, session?.storeId])
 
   // ── 폴링 폴백: Realtime 누락 주문 복구 (30초마다) ──────────────────────────
   // Realtime이 끊긴 사이 들어온 '주문완료' 상태 주문을 폴링으로 잡아냄
@@ -358,6 +355,7 @@ export default function App() {
         .from('orders')
         .select(ORDER_SELECT_POLL)
         .eq('status', '주문완료')
+        .eq('store_id', session?.storeId ?? '')
         .gte('ordered_at', cutoff)
 
       for (const row of data ?? []) {
@@ -373,7 +371,7 @@ export default function App() {
     poll()
     const id = setInterval(poll, 30_000)
     return () => clearInterval(id)
-  }, [phase])
+  }, [phase, session?.storeId])
 
   // ── 새 주문 소리 알림 ────────────────────────────────────────────────────────
   const prevQueueLen = useRef(0)
@@ -389,6 +387,25 @@ export default function App() {
     setToast(msg)
     setToastTimer(setTimeout(() => setToast(''), 3000))
   }
+
+  // 운영 상태 + 운영시간 훅 (is_open 진실 공급원 = DB)
+  const {
+    isOpen, setIsOpen,
+    hoursOpen, setHoursOpen,
+    operatingHours,
+    hoursDraft, setHoursDraft,
+    offHoursConfirm, setOffHoursConfirm,
+    closureOpen, setClosureOpen,
+    closureType, setClosureType,
+    closureTime, setClosureTime,
+    closureActive,
+    manualOverrideRef,
+    toggleIsOpen,
+    confirmForceOpen,
+    saveOperatingHours,
+    confirmClosure,
+    cancelClosure,
+  } = useOperatingHours(session?.storeId, showToast)
 
   function dismissPopup() {
     setQueue(q => q.slice(1))
@@ -460,142 +477,6 @@ export default function App() {
     setProfileSaving(false)
   }
 
-  function defaultOperatingHours() {
-    const days: Record<string, { enabled: boolean; open: string; close: string }> = {}
-    const week = ['mon','tue','wed','thu','fri','sat','sun']
-    week.forEach(d => {
-      days[d] = { enabled: d !== 'sun', open: '09:00', close: '21:00' }
-    })
-    days['sun'] = { enabled: false, open: '10:00', close: '18:00' }
-    return days
-  }
-
-  const [offHoursConfirm, setOffHoursConfirm] = useState(false)
-
-  // 마감 예약
-  const [closureOpen,   setClosureOpen]   = useState(false)
-  const [closureType,   setClosureType]   = useState<'holiday' | 'early'>('holiday')
-  const [closureTime,   setClosureTime]   = useState('18:00')
-  const [closureActive, setClosureActive] = useState(() => {
-    try {
-      const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
-      return ov?.date === new Date().toISOString().slice(0, 10)
-    } catch { return false }
-  })
-
-  function confirmClosure() {
-    const today = new Date().toISOString().slice(0, 10)
-    localStorage.setItem('pos_today_override', JSON.stringify({
-      date: today,
-      type: closureType,
-      time: closureType === 'early' ? closureTime : undefined,
-    }))
-    setClosureActive(true)
-    setClosureOpen(false)
-  }
-
-  function cancelClosure() {
-    localStorage.removeItem('pos_today_override')
-    setClosureActive(false)
-  }
-
-  function isCurrentlyInOperatingHours() {
-    const now = new Date()
-    const dayKey = ['sun','mon','tue','wed','thu','fri','sat'][now.getDay()]
-    const day = operatingHours[dayKey]
-    if (!day?.enabled) return false
-    const cur = now.getHours() * 60 + now.getMinutes()
-    const [oh, om] = day.open.split(':').map(Number)
-    const [ch, cm] = day.close.split(':').map(Number)
-    return cur >= oh * 60 + om && cur < ch * 60 + cm
-  }
-
-  async function pushIsOpen(next: boolean) {
-    setIsOpen(next)
-    // 수동 토글 — 2분간 syncIsOpen이 같은 기기에서 덮어쓰지 않도록
-    manualOverrideRef.current = { value: next, until: Date.now() + 2 * 60_000 }
-    if (!session?.storeId) {
-      showToast('스토어 세션 없음 — 재로그인 필요')
-      return
-    }
-    const { error } = await supabase.from('stores').update({ is_open: next }).eq('id', session.storeId)
-    if (error) {
-      showToast(`운영 상태 저장 실패: ${error.message}`)
-      setIsOpen(!next) // 롤백
-      manualOverrideRef.current = null
-    }
-  }
-
-  function toggleIsOpen() {
-    if (!isOpen && !isCurrentlyInOperatingHours()) {
-      setOffHoursConfirm(true)
-      return
-    }
-    pushIsOpen(!isOpen)
-  }
-
-  function confirmForceOpen() {
-    pushIsOpen(true)
-    setOffHoursConfirm(false)
-  }
-
-  // 운영시간 기준 자동 ON/OFF (1분마다 체크)
-  useEffect(() => {
-    function syncIsOpen() {
-      const now = new Date()
-      const dayKey = ['sun','mon','tue','wed','thu','fri','sat'][now.getDay()]
-      const day = operatingHours[dayKey]
-
-      let shouldBeOpen = false
-      if (day?.enabled) {
-        const cur  = now.getHours() * 60 + now.getMinutes()
-        const [oh, om] = day.open.split(':').map(Number)
-        const [ch, cm] = day.close.split(':').map(Number)
-        shouldBeOpen = cur >= oh * 60 + om && cur < ch * 60 + cm
-      }
-
-      // 마감 예약 오버라이드 체크 (holiday / early)
-      try {
-        const ov = JSON.parse(localStorage.getItem('pos_today_override') || 'null')
-        const todayStr = now.toISOString().slice(0, 10)
-        if (ov?.date === todayStr) {
-          if (ov.type === 'holiday') {
-            shouldBeOpen = false
-          } else if (ov.type === 'early' && ov.time) {
-            const cur2 = now.getHours() * 60 + now.getMinutes()
-            const [eh, em] = (ov.time as string).split(':').map(Number)
-            if (cur2 >= eh * 60 + em) shouldBeOpen = false
-          }
-        }
-      } catch {}
-
-      // 수동 토글 직후 2분간은 syncIsOpen이 덮어쓰지 않음
-      const mo = manualOverrideRef.current
-      if (mo && Date.now() < mo.until) return
-
-      // 만료된 오버라이드 해제
-      if (mo) manualOverrideRef.current = null
-
-      setIsOpen(prev => {
-        if (prev !== shouldBeOpen && session?.storeId) {
-          supabase.from('stores').update({ is_open: shouldBeOpen }).eq('id', session.storeId)
-          // Realtime이 모든 기기에 전파하므로 여기서 setIsOpen 불필요 (단, 자기 자신 포함 전파 보장용)
-        }
-        return shouldBeOpen
-      })
-    }
-
-    syncIsOpen()
-    const id = setInterval(syncIsOpen, 60_000)
-    return () => clearInterval(id)
-  }, [operatingHours, session?.storeId])
-
-  function saveOperatingHours() {
-    setOperatingHours(hoursDraft)
-    localStorage.setItem('pos_operating_hours', JSON.stringify(hoursDraft))
-    setHoursOpen(false)
-  }
-
   // ── 로딩 ─────────────────────────────────────────────────────────────────────
   if (phase === 'loading') {
     return (
@@ -645,10 +526,10 @@ export default function App() {
           {/* 프로필 버튼 */}
           <button
             onClick={openProfile}
-            title={session.storeName || '샐러리아'}
+            title={session.storeName || '프리POS'}
             className="mt-4 mb-2 w-10 h-10 rounded-full bg-[#16a84c] text-white flex items-center justify-center text-[16px] font-bold hover:opacity-85 transition-opacity flex-shrink-0"
           >
-            {(session.storeName || '샐')[0]}
+            {(session.storeName || '프')[0]}
           </button>
 
           <nav className="flex-1 flex flex-col items-center gap-1 py-2 w-full">
@@ -700,11 +581,23 @@ export default function App() {
 
           {/* 연결 상태 */}
           <div className="pb-4 flex flex-col items-center gap-1.5">
-            <div title={wsStatus === 'connected' ? '실시간 연결됨' : '연결 끊김'}>
+            <div className="relative group flex items-center justify-center">
               <span className={`w-2 h-2 rounded-full block ${wsStatus === 'connected' ? 'bg-green' : 'bg-danger'}`} />
+              <div className="pointer-events-none absolute left-full ml-2.5 bottom-1/2 translate-y-1/2
+                              whitespace-nowrap rounded-md bg-[#1E1E1E] text-white text-[11px] font-medium px-2 py-1
+                              opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
+                <span className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#1E1E1E]" />
+                {wsStatus === 'connected' ? '실시간 연결됨' : '실시간 연결 끊김'}
+              </div>
             </div>
-            <div title={`프린터 ${printerOk ? '정상' : '오프라인'}`}>
+            <div className="relative group flex items-center justify-center">
               <span className={`w-2 h-2 rounded-full block ${printerOk ? 'bg-green' : 'bg-danger'}`} />
+              <div className="pointer-events-none absolute left-full ml-2.5 bottom-1/2 translate-y-1/2
+                              whitespace-nowrap rounded-md bg-[#1E1E1E] text-white text-[11px] font-medium px-2 py-1
+                              opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
+                <span className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#1E1E1E]" />
+                {printerOk ? '프린터 정상' : '프린터 오프라인'}
+              </div>
             </div>
           </div>
         </aside>
@@ -924,10 +817,10 @@ export default function App() {
               <div className="px-6 pt-6 pb-5 border-b border-gray-border">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-[#16a84c] text-white flex items-center justify-center text-[20px] font-bold flex-shrink-0">
-                    {(session.storeName || '샐')[0]}
+                    {(session.storeName || '프')[0]}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[16px] font-extrabold text-ink leading-tight truncate">{session.storeName || '샐러리아'}</div>
+                    <div className="text-[16px] font-extrabold text-ink leading-tight truncate">{session.storeName || '프리POS'}</div>
                     <div className="text-[12px] text-gray-text mt-0.5 truncate">{authObj?.user.email ?? ''}</div>
                   </div>
                 </div>

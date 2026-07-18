@@ -2,7 +2,7 @@
 
 import type { Order } from './mock-data'
 
-function parseNote(raw: string | null | undefined): {
+export function parseNote(raw: string | null | undefined): {
   deliveryAddress: string | null
   deliveryDetail: string | null
   deliveryNote: string | null

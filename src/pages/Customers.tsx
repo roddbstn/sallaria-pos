@@ -4,7 +4,8 @@ import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
 import { track } from '../lib/firebase'
-import type { Order, OrderStatus } from '../lib/mock-data'
+import type { Order } from '../lib/mock-data'
+import { mapOrderRow } from '../lib/mappers'
 
 const BASE_URL = 'https://sallaria.web.app'
 
@@ -26,7 +27,6 @@ const TYPE_BADGE: Record<string, string> = {
   '기타': 'bg-gray-100 text-gray-text',
 }
 
-const DB_METHOD_MAP: Record<string, string> = { '내점': '매장 식사', '포장': '포장', '배달': '배달' }
 
 const INPUT_CLS = 'w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[14px] focus:outline-none focus:border-b-2 focus:border-[#16a84c] transition-colors'
 
@@ -45,10 +45,13 @@ export default function Customers() {
   const [deposits,     setDeposits]     = useState<DbDeposit[]>([])
   const [monthlyUsage, setMonthlyUsage] = useState<Record<string, number>>({})
   const [loading,      setLoading]      = useState(true)
+  const [fetchError,   setFetchError]   = useState(false)
+  const [retryCount,   setRetryCount]   = useState(0)
   const [pinVisible,   setPinVisible]   = useState<string | null>(null)
   const [chargeOpen,   setChargeOpen]   = useState(false)
   const [chargeAmt,    setChargeAmt]    = useState('')
   const [chargeMemo,   setChargeMemo]   = useState('')
+  const [chargeError,  setChargeError]  = useState('')
   const [search,       setSearch]       = useState('')
   const [kioskQr,      setKioskQr]      = useState(false)
   const [accountQr,    setAccountQr]    = useState<string | null>(null) // account_code
@@ -88,7 +91,8 @@ export default function Customers() {
       .eq('is_active', !inactive)
       .eq('store_id', storeId)
       .order('created_at', { ascending: true })
-    if (!error && data) setAccounts(data as DbAccount[])
+    if (error) throw error
+    if (data) setAccounts(data as DbAccount[])
   }
 
   // ── 이번달 거래처별 사용액 계산 ───────────────────────────────────────────────
@@ -126,25 +130,7 @@ export default function Customers() {
       .order('ordered_at', { ascending: false })
       .limit(30)
 
-    setAccountOrders((data ?? []).map((row: any) => ({
-      code:        row.order_code,
-      accountName: row.accounts?.account_name ?? '',
-      orderer:     row.orderer_name,
-      phone:       row.orderer_phone ?? undefined,
-      method:      (DB_METHOD_MAP[row.method] ?? row.method) as Order['method'],
-      status:      row.status as OrderStatus,
-      items:       (row.order_items ?? []).map((item: any) => ({
-        name:    item.menu_name,
-        qty:     item.quantity,
-        price:   item.unit_price,
-        options: (item.order_item_options ?? []).map((o: any) => o.option_name as string),
-      })),
-      total:        row.total_amount,
-      balanceAfter: row.balance_after ?? undefined,
-      prepMins:     0,
-      createdAt:    row.ordered_at,
-      remarks:      row.note ?? '',
-    })))
+    setAccountOrders((data ?? []).map(mapOrderRow))
   }
 
   // ── 선택 거래처 충전 이력 조회 ────────────────────────────────────────────────
@@ -161,13 +147,19 @@ export default function Customers() {
   useEffect(() => {
     async function load() {
       setLoading(true)
+      setFetchError(false)
       setSelected(null)
       setDeleteConfirm(false)
-      await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages()])
-      setLoading(false)
+      try {
+        await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages()])
+      } catch {
+        setFetchError(true)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
-  }, [showInactive])
+  }, [showInactive, retryCount])
 
   // ── 선택 거래처 변경 시 이력 로딩 ─────────────────────────────────────────────
   useEffect(() => {
@@ -246,7 +238,7 @@ export default function Customers() {
       if (depErr) console.error('초기 잔액 이력 기록 실패:', depErr)
     }
 
-    await fetchAccounts()
+    await fetchAccounts().catch(() => {})
     setNewForm({ name: '', type: '과', org: '', manager: '', phone: '', pin: '', warnThreshold: '30000', initialDeposit: '', initialDepositMemo: '' })
     setAddPinError('')
     setAddOpen(false)
@@ -265,6 +257,7 @@ export default function Customers() {
 
     if (error) {
       console.error('충전 실패:', error)
+      setChargeError('충전에 실패했습니다. 다시 시도해주세요.')
       return
     }
 
@@ -274,11 +267,18 @@ export default function Customers() {
       amount:          amt,
     })
 
-    await Promise.all([fetchAccounts(), fetchDeposits(selected.account_code)])
-    setSelected(prev => prev ? { ...prev, current_balance: prev.current_balance + amt } : prev)
+    await Promise.all([fetchAccounts(), fetchDeposits(selected.account_code)]).catch(() => {})
+    // 계산값 대신 DB에서 최신 잔액 직접 조회해 selected 갱신
+    const { data: refreshed } = await supabase
+      .from('accounts')
+      .select('*')
+      .eq('account_code', selected.account_code)
+      .single()
+    if (refreshed) setSelected(refreshed as DbAccount)
     setChargeOpen(false)
     setChargeAmt('')
     setChargeMemo('')
+    setChargeError('')
   }
 
   // ── 정보 수정 열기 ────────────────────────────────────────────────────────────
@@ -346,7 +346,7 @@ export default function Customers() {
       })
     }
 
-    await fetchAccounts()
+    await fetchAccounts().catch(() => {})
     setSelected(prev => prev ? {
       ...prev,
       account_name:      editForm.name.trim(),
@@ -370,7 +370,7 @@ export default function Customers() {
       .update({ is_active: false })
       .eq('account_code', selected.account_code)
     if (error) { console.error('삭제 실패:', error); return }
-    await fetchAccounts(showInactive)
+    await fetchAccounts(showInactive).catch(() => {})
     setSelected(null)
     setDeleteConfirm(false)
   }
@@ -379,24 +379,23 @@ export default function Customers() {
   async function handleSaveDeposit(deposit: DbDeposit) {
     const newAmt = parseInt(editDepositAmt.replace(/[^0-9-]/g, ''), 10)
     if (isNaN(newAmt) || !selected) return
-    const delta = newAmt - deposit.amount
 
-    const { error } = await supabase
-      .from('deposits')
-      .update({ amount: newAmt, note: editDepositNote.trim() || null })
-      .eq('deposit_id', deposit.deposit_id)
+    // deposits UPDATE + accounts.current_balance 조정을 RPC로 원자적 처리
+    const { error } = await supabase.rpc('update_deposit', {
+      p_deposit_id: deposit.deposit_id,
+      p_amount:     newAmt,
+      p_note:       editDepositNote.trim() || null,
+    })
     if (error) { console.error('충전 수정 실패:', error); return }
 
-    if (delta !== 0) {
-      const newBalance = selected.current_balance + delta
-      await supabase
-        .from('accounts')
-        .update({ current_balance: newBalance })
-        .eq('account_code', selected.account_code)
-      setSelected(prev => prev ? { ...prev, current_balance: newBalance } : prev)
-    }
-
-    await Promise.all([fetchAccounts(), fetchDeposits(selected.account_code)])
+    await Promise.all([fetchAccounts(), fetchDeposits(selected.account_code)]).catch(() => {})
+    // 잔액은 fetchAccounts 후 DB에서 다시 조회해 selected 갱신
+    const { data: refreshed } = await supabase
+      .from('accounts')
+      .select('*')
+      .eq('account_code', selected.account_code)
+      .single()
+    if (refreshed) setSelected(refreshed as DbAccount)
     setEditingDepositId(null)
   }
 
@@ -408,7 +407,7 @@ export default function Customers() {
       .update({ is_active: true })
       .eq('account_code', selected.account_code)
     if (error) { console.error('복구 실패:', error); return }
-    await fetchAccounts(showInactive)
+    await fetchAccounts(showInactive).catch(() => {})
     setSelected(null)
   }
 
@@ -469,6 +468,17 @@ export default function Customers() {
             <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
               <div className="w-6 h-6 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
               불러오는 중...
+            </div>
+          ) : fetchError ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-text text-[13px] gap-3">
+              <div className="text-[36px]">⚠️</div>
+              <div className="font-bold text-ink text-[14px]">거래처 목록을 불러오지 못했습니다</div>
+              <button
+                onClick={() => setRetryCount(c => c + 1)}
+                className="px-4 py-2 rounded-lg bg-ink text-white text-[12px] font-bold hover:bg-ink/80 transition-colors"
+              >
+                다시 시도
+              </button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
@@ -639,6 +649,10 @@ export default function Customers() {
                                     <StatusTag status={o.status} />
                                     <span className="font-bold text-ink">{won(o.total)}</span>
                                   </div>
+                                </div>
+                                {/* 주문자 */}
+                                <div className="text-[11px] text-gray-text mb-1">
+                                  {o.orderer}{o.phone ? ` · ${o.phone}` : ''}
                                 </div>
                                 {/* 메뉴별 한 줄씩 */}
                                 <div className="space-y-1.5 border-t border-gray-border pt-2">
@@ -1064,8 +1078,11 @@ export default function Customers() {
               <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
                 placeholder="예: 6월 충전" className={INPUT_CLS} />
             </div>
+            {chargeError && (
+              <p className="text-[12px] text-danger font-semibold mb-3">{chargeError}</p>
+            )}
             <div className="flex gap-3">
-              <button onClick={() => setChargeOpen(false)}
+              <button onClick={() => { setChargeOpen(false); setChargeError('') }}
                 className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
                 취소
               </button>

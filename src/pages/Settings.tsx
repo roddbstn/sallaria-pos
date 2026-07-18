@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
+import { useStore } from '../lib/store-context'
 
 interface PrinterSettings { portName: string }
 interface ReceiptSettings  {
@@ -25,6 +26,7 @@ const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
 const SIZE_LABELS: Record<string, string> = { small: '기본', normal: '보통', large: '크게' }
 
 export default function Settings() {
+  const { storeName } = useStore()
   const [comPorts,   setComPorts]   = useState<ComPort[]>([])
   const [printer,    setPrinter]    = useState<PrinterSettings>({ portName: '' })
   const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' })
@@ -293,7 +295,7 @@ export default function Settings() {
                 <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
                   <div style={previewWrap}>
                     <div style={{ textAlign:'center', fontWeight:'bold' }}>[주방용]</div>
-                    <div style={{ textAlign:'center' }}>샐러리아 침산점 - 선결제 영수증</div>
+                    <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
                     <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
                     <div><span>주문번호 : </span><b>11602</b></div>
                     <div>주문일시 : 2026/07/02 10:53</div>
@@ -364,7 +366,7 @@ export default function Settings() {
                 <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
                   <div style={previewWrap}>
                     <div style={{ textAlign:'center', fontWeight:'bold' }}>[고객용]</div>
-                    <div style={{ textAlign:'center' }}>샐러리아 침산점 - 선결제 영수증</div>
+                    <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
                     <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
                     <div><span>주문번호 : </span><b>11602</b></div>
                     <div>주문일시 : 2026/07/02 10:53</div>
@@ -439,7 +441,7 @@ export default function Settings() {
         </button>
 
         <div className="mt-8 text-center text-[12px] text-gray-text">
-          <div className="font-bold">샐러리아 POS v0.1.0</div>
+          <div className="font-bold">프리POS v0.1.0</div>
           <div className="mt-0.5">Electron + React + Supabase</div>
         </div>
       </div>

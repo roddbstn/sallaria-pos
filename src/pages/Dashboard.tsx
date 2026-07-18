@@ -1,14 +1,33 @@
 import { useState, useEffect } from 'react'
-import { type Order, type OrderStatus } from '../lib/mock-data'
-import { won } from '../lib/ipc'
+import { type Order } from '../lib/mock-data'
+import { won, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
+import { mapOrderRow } from '../lib/mappers'
 
-// DB의 '내점'을 Order 타입의 '매장 식사'로 매핑
-const DB_METHOD_TO_ORDER: Record<string, Order['method']> = {
-  '포장':  '포장',
-  '내점':  '매장 식사',
-  '배달':  '배달',
+function CopyButton({ text, onDark = false }: { text: string; onDark?: boolean }) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation()
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+  const style = copied
+    ? { backgroundColor: '#E6F4EC', color: '#017333' }
+    : onDark
+      ? { backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)' }
+      : { backgroundColor: '#F0F0F0', color: '#727272' }
+  return (
+    <button
+      onClick={handleCopy}
+      className="ml-1 px-2 py-0.5 rounded text-[10px] font-semibold flex-shrink-0 transition-colors"
+      style={style}
+    >
+      {copied ? '✓' : '복사'}
+    </button>
+  )
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -69,9 +88,15 @@ function OrderCard({
             {!isCancelled && <ElapsedBadge createdAt={order.createdAt} />}
           </div>
         </div>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-white/80 text-[12px]">{order.accountName} · {order.orderer}{order.phone ? ` · ${order.phone}` : ''}</span>
-          <span className="text-white font-semibold text-[16px]">{METHOD_LABEL[order.method]}</span>
+        <div className="flex items-start justify-between mb-3 gap-2">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="text-white/80 text-[12px] leading-snug">
+              {order.accountName} · {order.orderer}
+              {order.phone ? <><br />{order.phone}</> : ''}
+            </span>
+            {order.phone && <CopyButton text={order.phone} onDark />}
+          </div>
+          <span className="text-white font-semibold text-[16px] flex-shrink-0">{METHOD_LABEL[order.method]}</span>
         </div>
 
         {/* ── 완료 버튼 or 거부됨 배지 ── */}
@@ -105,11 +130,43 @@ function OrderCard({
             ))}
           </div>
         ))}
-        {order.remarks && (
-          <div className="mt-1 text-[11px] text-yellow-700 bg-yellow-50 rounded px-2 py-1 font-semibold">
-            💬 {order.remarks}
-          </div>
-        )}
+        {order.remarks && (() => {
+          const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parseNote(order.remarks)
+          return (
+            <div className="mt-1 space-y-1">
+              {customerNote && (
+                <div className="text-[11px] text-yellow-700 bg-yellow-50 rounded px-2 py-1 font-semibold">
+                  💬 {customerNote}
+                </div>
+              )}
+              {deliveryAddress && (
+                <div className="bg-orange-50 border border-orange-200 rounded px-2 py-1.5 space-y-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-orange-800 font-semibold truncate">🛵 {deliveryAddress}</span>
+                    <CopyButton text={deliveryAddress} />
+                  </div>
+                  {deliveryDetail && (
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] text-orange-700 truncate">{deliveryDetail}</span>
+                      <CopyButton text={deliveryDetail} />
+                    </div>
+                  )}
+                  {deliveryNote && (
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] text-orange-700 truncate">📝 {deliveryNote}</span>
+                      <CopyButton text={deliveryNote} />
+                    </div>
+                  )}
+                </div>
+              )}
+              {!deliveryAddress && !customerNote && (
+                <div className="text-[11px] text-yellow-700 bg-yellow-50 rounded px-2 py-1 font-semibold">
+                  💬 {order.remarks}
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       {/* ── 합계 ── */}
@@ -137,32 +194,6 @@ function OrderCard({
 }
 
 // ── DB row → Order 타입 변환 ──────────────────────────────────────────────────
-function mapRowToOrder(row: any): Order {
-  const items = (row.order_items ?? []).map((item: any) => ({
-    name:    item.menu_name,
-    qty:     item.quantity,
-    price:   item.unit_price,
-    options: (item.order_item_options ?? []).map((opt: any) => opt.option_name as string),
-  }))
-
-  return {
-    code:          row.order_code,
-    orderNumber:   row.order_number ?? undefined,
-    accountName:   row.accounts?.account_name ?? '',
-    orderer:       row.orderer_name,
-    phone:         row.orderer_phone ?? undefined,
-    method:        DB_METHOD_TO_ORDER[row.method] ?? '포장',
-    status:        row.status as OrderStatus,
-    items,
-    total:         row.total_amount,
-    prepMins:      0,   // DB에 준비시간 컬럼 없음 — 기본 0
-    createdAt:     row.ordered_at,
-    remarks:       row.note ?? '',
-    balanceBefore: row.balance_before ?? undefined,
-    balanceAfter:  row.balance_after  ?? undefined,
-  }
-}
-
 // ── 오늘 날짜 범위 (KST 기준) ────────────────────────────────────────────────
 function todayRange(): { start: string; end: string } {
   const now = new Date()
@@ -181,7 +212,14 @@ export default function Dashboard() {
   const [activeOrders,  setActiveOrders]  = useState<Order[]>([])
   const [todayOrders,   setTodayOrders]   = useState<Order[]>([])
   const [loading,       setLoading]       = useState(true)
+  const [fetchError,    setFetchError]    = useState(false)
+  const [actionError,   setActionError]   = useState('')
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
+
+  function showActionError(msg: string) {
+    setActionError(msg)
+    setTimeout(() => setActionError(''), 3000)
+  }
 
   // ── 오늘 전체 주문 조회 (통계 + 완료 목록) ──────────────────────────────────
   async function fetchTodayOrders() {
@@ -200,6 +238,7 @@ export default function Dashboard() {
         order_items (
           menu_name,
           quantity,
+          unit_price,
           order_item_options ( option_name )
         )
       `)
@@ -209,26 +248,9 @@ export default function Dashboard() {
 
     if (error) {
       console.error('오늘 주문 조회 실패:', error)
-      return
+      throw error
     }
-    setTodayOrders((data ?? []).map(r => ({
-      code:        r.order_code,
-      orderNumber: r.order_number ?? undefined,
-      accountName: r.accounts?.account_name ?? '',
-      orderer:     r.orderer_name ?? '',
-      method:      DB_METHOD_TO_ORDER[r.method] ?? '포장',
-      status:      r.status as OrderStatus,
-      items:       (r.order_items ?? []).map((item: any) => ({
-        name:    item.menu_name,
-        qty:     item.quantity,
-        price:   0,
-        options: (item.order_item_options ?? []).map((o: any) => o.option_name as string),
-      })),
-      total:       r.total_amount,
-      prepMins:    0,
-      createdAt:   r.ordered_at,
-      remarks:     '',
-    })))
+    setTodayOrders((data ?? []).map(mapOrderRow))
   }
 
   // ── 활성 주문 조회 (주문완료 · 조리중 + 오늘 취소된 주문) ────────────────────
@@ -270,11 +292,11 @@ export default function Dashboard() {
 
     if (error) {
       console.error('활성 주문 조회 실패:', error)
-      return
+      throw error
     }
 
     // 활성 주문 먼저, 취소 주문은 뒤에
-    const rows = (data ?? []).map(mapRowToOrder)
+    const rows = (data ?? []).map(mapOrderRow)
     const active    = rows.filter(o => o.status !== '취소')
     const cancelled = rows.filter(o => o.status === '취소')
     setActiveOrders([...active, ...cancelled])
@@ -284,8 +306,14 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       setLoading(true)
-      await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
-      setLoading(false)
+      setFetchError(false)
+      try {
+        await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
+      } catch {
+        setFetchError(true)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [storeId])
@@ -298,8 +326,8 @@ export default function Dashboard() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         () => {
-          fetchActiveOrders()
-          fetchTodayOrders()
+          fetchActiveOrders().catch(() => {})
+          fetchTodayOrders().catch(() => {})
         }
       )
       .subscribe()
@@ -318,6 +346,7 @@ export default function Dashboard() {
 
     if (error) {
       console.error('완료 처리 실패:', error)
+      showActionError('완료 처리에 실패했습니다. 다시 시도해주세요.')
       return
     }
     await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
@@ -329,6 +358,8 @@ export default function Dashboard() {
 
     if (error) {
       console.error('취소 처리 실패:', error)
+      showActionError('취소 처리에 실패했습니다. 다시 시도해주세요.')
+      setConfirmCancel(null)
       return
     }
     await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
@@ -365,6 +396,13 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── 액션 에러 배너 ── */}
+      {actionError && (
+        <div className="px-8 py-2 bg-red-50 border-b border-red-200 text-[13px] text-danger font-semibold flex-shrink-0">
+          ⚠️ {actionError}
+        </div>
+      )}
+
       {/* ── 본문: 주문 카드 + 우측 사이드바 ── */}
       <div className="flex-1 flex overflow-hidden">
 
@@ -374,6 +412,18 @@ export default function Dashboard() {
             <div className="h-full flex flex-col items-center justify-center text-gray-text">
               <div className="w-10 h-10 border-4 border-green border-t-transparent rounded-full animate-spin mb-4" />
               <div className="text-[15px] font-medium">주문을 불러오는 중...</div>
+            </div>
+          ) : fetchError ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-text gap-3">
+              <div className="text-[40px]">⚠️</div>
+              <div className="text-[16px] font-bold text-ink">주문을 불러오지 못했습니다</div>
+              <div className="text-[13px]">네트워크 상태를 확인하고 다시 시도해주세요.</div>
+              <button
+                onClick={() => { setFetchError(false); setLoading(true); Promise.all([fetchActiveOrders(), fetchTodayOrders()]).catch(() => setFetchError(true)).finally(() => setLoading(false)) }}
+                className="mt-2 px-5 py-2 rounded-lg bg-ink text-white text-[13px] font-bold hover:bg-ink/80 transition-colors"
+              >
+                다시 시도
+              </button>
             </div>
           ) : activeOrders.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-text">
