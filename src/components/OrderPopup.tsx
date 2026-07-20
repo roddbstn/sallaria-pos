@@ -318,7 +318,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                             <polyline points="12 19 5 12 12 5" />
                           </svg>
                         </button>
-                        <div className="text-[15px] font-bold mb-5">예상 소요시간</div>
+                        <div className="text-[15px] font-bold mb-5">{order.method === '배달' ? '배달 출발까지 예상 소요시간' : '예상 소요시간'}</div>
                         <div className="flex items-center justify-center gap-4 mb-5">
                           <button
                             onClick={() => setPrepMins(p => Math.max(1, p - 1))}
@@ -349,7 +349,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                           ))}
                         </div>
                         <div className="bg-gray-bg rounded-xl px-4 py-3 mb-5 text-[13px] text-gray-text font-semibold leading-relaxed">
-                          <strong className="text-ink">"약 {prepMins}분 후 준비 예정"</strong>으로 안내됩니다.
+                          <strong className="text-ink">"약 {prepMins}분 후 {order.method === '배달' ? '배달 출발' : '준비'} 예정"</strong>으로 안내됩니다.
                         </div>
                         <button
                           onClick={handleApprove}
