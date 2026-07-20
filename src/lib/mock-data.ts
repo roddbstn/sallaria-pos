@@ -23,6 +23,7 @@ export interface Order {
   code:          string
   orderNumber?:  string   // 주문번호 (예: "1101", "1201")
   accountName:   string
+  accountType?:  string   // '과' | '기업' | '개인' | '기타'
   orderer:       string
   phone?:        string   // 주문자 연락처
   method:        Method
@@ -35,6 +36,7 @@ export interface Order {
   balanceBefore?: number  // 주문 전 잔액
   balanceAfter?:  number  // 주문 후 잔액
   isDeleted?:     boolean // 소프트 삭제
+  deliveryDepartedAt?: string // 배달 출발 시각 (POS 출발 알림 클릭 시 기록)
 }
 
 export interface Account {

@@ -129,7 +129,7 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
         order_code, order_number, orderer_name, orderer_phone,
         ordered_at, menu_subtotal, delivery_fee, total_amount,
         balance_before, balance_after, method, note,
-        accounts ( account_name ),
+        accounts ( account_name, account_type ),
         order_items (
           order_item_id, quantity, unit_price, subtotal,
           menus ( name ),
@@ -151,6 +151,7 @@ async function autoPrintOrder(orderCode: string): Promise<void> {
       order_code:     data.order_code,
       order_number:   (data as any).order_number ?? undefined,
       account_name:   (data.accounts as any)?.account_name ?? '',
+      account_type:   (data.accounts as any)?.account_type ?? undefined,
       orderer_name:   data.orderer_name,
       orderer_phone:  (data as any).orderer_phone ?? null,
       method:         data.method,

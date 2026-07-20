@@ -285,10 +285,10 @@ export default function App() {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
 
       channel = supabase
-        .channel(`store-${session?.storeId}-orders`)
+        .channel(`store-${session?.storeId}-orders-${Date.now()}`)
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'orders', filter: `store_id=eq.${session?.storeId}` },
+          { event: 'INSERT', schema: 'public', table: 'orders' },
           (payload: any) => {
             fetchAndQueue(payload.new.order_code)
           }
@@ -391,6 +391,7 @@ export default function App() {
   // 운영 상태 + 운영시간 훅 (is_open 진실 공급원 = DB)
   const {
     isOpen, setIsOpen,
+    autoOpenEnabled,
     hoursOpen, setHoursOpen,
     operatingHours,
     hoursDraft, setHoursDraft,
@@ -399,8 +400,9 @@ export default function App() {
     closureType, setClosureType,
     closureTime, setClosureTime,
     closureActive,
-    manualOverrideRef,
+    overrideType,
     toggleIsOpen,
+    toggleAutoOpenEnabled,
     confirmForceOpen,
     saveOperatingHours,
     confirmClosure,

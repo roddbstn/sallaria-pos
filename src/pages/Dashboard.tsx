@@ -36,6 +36,8 @@ const METHOD_LABEL: Record<string, string> = {
   '배달':    '배달',
 }
 
+const REJECT_REASONS = ['재료 소진', '마감시간 초과', '주문 폭주', '매장 사정', '기타']
+
 function useElapsed(createdAt: string) {
   const [mins, setMins] = useState(() =>
     Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
@@ -110,7 +112,7 @@ function OrderCard({
             style={{ backgroundColor: '#16a84c' }}
             className="w-full py-2.5 text-white font-semibold text-[15px] rounded-xl hover:opacity-90 transition-opacity"
           >
-            완료
+            {order.method === '배달' ? '🛵 출발 완료' : '완료'}
           </button>
         )}
       </div>
@@ -193,7 +195,6 @@ function OrderCard({
   )
 }
 
-// ── DB row → Order 타입 변환 ──────────────────────────────────────────────────
 // ── 오늘 날짜 범위 (KST 기준) ────────────────────────────────────────────────
 function todayRange(): { start: string; end: string } {
   const now = new Date()
@@ -206,6 +207,22 @@ function todayRange(): { start: string; end: string } {
   }
 }
 
+// ── KST 날짜 문자열 헬퍼 ────────────────────────────────────────────────────
+function toKstDateStr(isoStr: string): string {
+  const kst = new Date(new Date(isoStr).getTime() + 9 * 60 * 60 * 1000)
+  return kst.toISOString().slice(0, 10)
+}
+function todayKstStr():     string { return toKstDateStr(new Date().toISOString()) }
+function yesterdayKstStr(): string {
+  const d = new Date(); d.setDate(d.getDate() - 1)
+  return toKstDateStr(d.toISOString())
+}
+function getDayLabel(dateStr: string): string {
+  if (dateStr === todayKstStr())     return '오늘'
+  if (dateStr === yesterdayKstStr()) return '어제'
+  return `${parseInt(dateStr.slice(5, 7))}월 ${parseInt(dateStr.slice(8, 10))}일`
+}
+
 export default function Dashboard() {
   const { storeId } = useStore()   // 현재는 필터링에 미사용. 향후 다점포 지원용.
 
@@ -215,6 +232,7 @@ export default function Dashboard() {
   const [fetchError,    setFetchError]    = useState(false)
   const [actionError,   setActionError]   = useState('')
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
+  const [cancelReason,  setCancelReason]  = useState('')
 
   function showActionError(msg: string) {
     setActionError(msg)
@@ -234,7 +252,7 @@ export default function Dashboard() {
         status,
         total_amount,
         ordered_at,
-        accounts ( account_name ),
+        accounts ( account_name, account_type ),
         order_items (
           menu_name,
           quantity,
@@ -273,7 +291,8 @@ export default function Dashboard() {
         method,
         status,
         note,
-        accounts ( account_name ),
+        delivery_departed_at,
+        accounts ( account_name, account_type ),
         order_items (
           order_item_id,
           menu_name,
@@ -287,7 +306,8 @@ export default function Dashboard() {
           )
         )
       `)
-      .or(`and(status.in.(주문완료,조리중),ordered_at.gte.${start},ordered_at.lte.${end}),and(status.eq.취소,ordered_at.gte.${start},ordered_at.lte.${end})`)
+      // 주문완료·조리중은 날짜 무관 전체 조회, 취소는 오늘만
+      .or(`status.in.(주문완료,조리중),and(status.eq.취소,ordered_at.gte.${start},ordered_at.lte.${end})`)
       .order('ordered_at', { ascending: true })
 
     if (error) {
@@ -295,9 +315,17 @@ export default function Dashboard() {
       throw error
     }
 
-    // 활성 주문 먼저, 취소 주문은 뒤에
     const rows = (data ?? []).map(mapOrderRow)
-    const active    = rows.filter(o => o.status !== '취소')
+
+    // 활성 주문: 날짜 내림차순(오늘→어제), 같은 날 내 시간 오름차순(오래된 주문 먼저)
+    const active = rows
+      .filter(o => o.status !== '취소')
+      .sort((a, b) => {
+        const dayA = toKstDateStr(a.createdAt)
+        const dayB = toKstDateStr(b.createdAt)
+        if (dayA !== dayB) return dayB.localeCompare(dayA)
+        return a.createdAt.localeCompare(b.createdAt)
+      })
     const cancelled = rows.filter(o => o.status === '취소')
     setActiveOrders([...active, ...cancelled])
   }
@@ -338,10 +366,16 @@ export default function Dashboard() {
   }, [])
 
   // ── 완료 처리 ─────────────────────────────────────────────────────────────────
-  async function handleComplete(code: string) {
+  async function handleComplete(code: string, method?: string) {
+    const isDelivery = method === '배달'
+    const departedAt = isDelivery ? new Date().toISOString() : undefined
+
+    const updateData: Record<string, unknown> = { status: '완료' }
+    if (departedAt) updateData.delivery_departed_at = departedAt
+
     const { error } = await supabase
       .from('orders')
-      .update({ status: '완료' })
+      .update(updateData)
       .eq('order_code', code)
 
     if (error) {
@@ -351,13 +385,19 @@ export default function Dashboard() {
     }
 
     // QR 웹에 완료 알림 broadcast (fire-and-forget)
+    // 배달 주문은 DELIVERY_DEPARTED도 함께 전송하여 출발 시각 전달
     ;(async () => {
       const ch = supabase.channel(`orders:order_code=${code}`)
       await new Promise<void>(resolve => {
         ch.subscribe(s => {
           if (s !== 'SUBSCRIBED') return
-          ch.send({ type: 'broadcast', event: 'ORDER_COMPLETED', payload: {} })
-            .finally(() => { supabase.removeChannel(ch); resolve() })
+          const sends: Promise<unknown>[] = [
+            ch.send({ type: 'broadcast', event: 'ORDER_COMPLETED', payload: departedAt ? { departed_at: departedAt } : {} }),
+          ]
+          if (departedAt) {
+            sends.push(ch.send({ type: 'broadcast', event: 'DELIVERY_DEPARTED', payload: { departed_at: departedAt } }))
+          }
+          Promise.all(sends).finally(() => { supabase.removeChannel(ch); resolve() })
         })
         setTimeout(resolve, 3000)
       })
@@ -366,20 +406,46 @@ export default function Dashboard() {
     await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
   }
 
-  // ── 취소 처리 (잔액 환원 포함 RPC) ───────────────────────────────────────────
+  // ── 취소 처리 (잔액 환원 포함 RPC + ORDER_REJECTED 브로드캐스트) ─────────────
   async function handleCancel(code: string) {
-    const { error } = await supabase.rpc('cancel_order', { p_order_code: code })
+    const reason = cancelReason || '매장 사정'
+    const { error } = await supabase.rpc('cancel_order', {
+      p_order_code: code,
+      p_allow_after_cooking: true,
+      p_note: reason,
+    })
 
     if (error) {
-      console.error('취소 처리 실패:', error)
-      showActionError('취소 처리에 실패했습니다. 다시 시도해주세요.')
+      console.error('취소 처리 실패:', error.code, error.message, error)
+      showActionError(`취소 처리 실패: ${error.message ?? '다시 시도해주세요.'}`)
       setConfirmCancel(null)
+      setCancelReason('')
       return
     }
+
+    // ORDER_REJECTED 브로드캐스트 (QR웹 거부 사유 화면 전환)
+    ;(async () => {
+      const ch = supabase.channel(`orders:order_code=${code}`)
+      await new Promise<void>(resolve => {
+        ch.subscribe(s => {
+          if (s !== 'SUBSCRIBED') return
+          ch.send({ type: 'broadcast', event: 'ORDER_REJECTED', payload: { reason } })
+            .finally(() => { supabase.removeChannel(ch); resolve() })
+        })
+        setTimeout(resolve, 3000)
+      })
+    })()
+
+    // Electron IPC
+    const w = window as unknown as { api?: { rejectOrder?: Function } }
+    w.api?.rejectOrder?.({ orderCode: code, reason })
+
     await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
     setConfirmCancel(null)
+    setCancelReason('')
   }
 
+  // ── 출발 알림 처리 ───────────────────────────────────────────────────────────────
   // ── 통계 계산 ─────────────────────────────────────────────────────────────────
   const todayTotal = todayOrders
     .filter(o => o.status !== '취소')
@@ -445,17 +511,57 @@ export default function Dashboard() {
               <div className="text-[18px] font-bold">대기 중인 주문이 없습니다</div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-              {activeOrders.map((order, idx) => (
-                <OrderCard
-                  key={order.code}
-                  order={order}
-                  idx={idx}
-                  onComplete={() => handleComplete(order.code)}
-                  onCancel={() => setConfirmCancel(order.code)}
-                />
-              ))}
-            </div>
+            (() => {
+                // 날짜별 그룹화
+                const groups: { label: string; orders: Order[] }[] = []
+                let lastDay = ''
+                for (const order of activeOrders.filter(o => o.status !== '취소')) {
+                  const day = toKstDateStr(order.createdAt)
+                  if (day !== lastDay) {
+                    groups.push({ label: getDayLabel(day), orders: [] })
+                    lastDay = day
+                  }
+                  groups[groups.length - 1].orders.push(order)
+                }
+                const cancelled = activeOrders.filter(o => o.status === '취소')
+
+                return (
+                  <div className="space-y-6">
+                    {groups.map(({ label, orders }, gi) => (
+                      <div key={label}>
+                        <div className="text-[11px] font-extrabold text-gray-text tracking-wide mb-2">{label}</div>
+                        <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+                          {orders.map((order, idx) => (
+                            <OrderCard
+                              key={order.code}
+                              order={order}
+                              idx={gi * 100 + idx}
+                              onComplete={() => handleComplete(order.code, order.method)}
+                              onCancel={() => setConfirmCancel(order.code)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    {cancelled.length > 0 && (
+                      <div>
+                        <div className="text-[11px] font-extrabold text-gray-text tracking-wide mb-2">취소</div>
+                        <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+                          {cancelled.map((order, idx) => (
+                            <OrderCard
+                              key={order.code}
+                              order={order}
+                              idx={idx}
+                              onComplete={() => handleComplete(order.code)}
+                              onCancel={() => setConfirmCancel(order.code)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()
           )}
         </div>
 
@@ -531,20 +637,36 @@ export default function Dashboard() {
       {confirmCancel && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-[340px]">
-            <div className="text-[17px] font-extrabold mb-2">주문을 취소하시겠어요?</div>
-            <div className="text-[13px] text-gray-text mb-5 leading-relaxed">
-              취소 시 선결제 잔액이 자동으로 환원됩니다.<br />이 작업은 되돌릴 수 없습니다.
+            <div className="text-[17px] font-extrabold mb-1">주문을 취소하시겠어요?</div>
+            <div className="text-[13px] text-gray-text mb-4 leading-relaxed">
+              취소 시 선결제 잔액이 자동으로 환원됩니다.
+            </div>
+            <div className="text-[14px] font-bold mb-3">거부 사유를 선택해주세요</div>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {REJECT_REASONS.map(r => (
+                <button
+                  key={r}
+                  onClick={() => setCancelReason(r)}
+                  className={`py-2.5 rounded-xl border-2 text-[13px] font-semibold transition-colors
+                    ${cancelReason === r
+                      ? 'border-danger bg-red-50 text-danger'
+                      : 'bg-gray-100 text-gray-text hover:bg-gray-200 border-transparent'}`}
+                >
+                  {r}
+                </button>
+              ))}
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setConfirmCancel(null)}
+                onClick={() => { setConfirmCancel(null); setCancelReason('') }}
                 className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg transition-colors"
               >
                 돌아가기
               </button>
               <button
                 onClick={() => handleCancel(confirmCancel)}
-                className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors"
+                disabled={!cancelReason}
+                className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors disabled:opacity-40"
               >
                 취소 확정
               </button>

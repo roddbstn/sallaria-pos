@@ -51,6 +51,7 @@ export function orderToPayload(o: Order) {
     order_code:       o.code,
     order_number:     o.orderNumber,
     account_name:     o.accountName,
+    account_type:     o.accountType,
     orderer_name:     o.orderer,
     orderer_phone:    o.phone ?? null,
     method:           o.method,

@@ -9,7 +9,9 @@ function isValidEmail(v: string) {
 
 export default function Auth({ onSuccess }: { onSuccess: () => void }) {
   const [tab,        setTab]        = useState<AuthTab>('login')
-  const [email,      setEmail]      = useState('')
+  const [email,      setEmail]      = useState(
+    () => localStorage.getItem('sallaria_pos_saved_email') ?? ''
+  )
   const [password,   setPassword]   = useState('')
   const [confirm,    setConfirm]    = useState('')
   const [loading,    setLoading]    = useState(false)
@@ -17,6 +19,9 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
   const [done,       setDone]       = useState(false)
   const [rememberMe, setRememberMe] = useState(
     () => localStorage.getItem('sallaria_pos_remember') !== 'false'
+  )
+  const [saveId, setSaveId] = useState(
+    () => localStorage.getItem('sallaria_pos_save_id') === 'true'
   )
 
   // 필드별 touched 상태 (blur 이후 검증 표시)
@@ -62,6 +67,12 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
         const { error: e } = await supabase.auth.signInWithPassword({ email, password })
         if (e) throw e
         localStorage.setItem('sallaria_pos_remember', rememberMe ? 'true' : 'false')
+        localStorage.setItem('sallaria_pos_save_id', saveId ? 'true' : 'false')
+        if (saveId) {
+          localStorage.setItem('sallaria_pos_saved_email', email)
+        } else {
+          localStorage.removeItem('sallaria_pos_saved_email')
+        }
       } else {
         const { error: e } = await supabase.auth.signUp({ email, password })
         if (e) throw e
@@ -196,26 +207,51 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
 
           {/* 자동 로그인 체크박스 (로그인 탭만) */}
           {tab === 'login' && (
-            <label className="flex items-center gap-2 cursor-pointer select-none py-1">
-              <div
-                onClick={() => setRememberMe(v => !v)}
-                className={[
-                  'w-[18px] h-[18px] rounded-[4px] border-2 flex items-center justify-center transition-colors duration-150 flex-shrink-0',
-                  rememberMe
-                    ? 'bg-[#16a84c] border-[#16a84c]'
-                    : 'bg-white border-gray-border',
-                ].join(' ')}
-              >
-                {rememberMe && (
-                  <svg width="10" height="7" viewBox="0 0 10 7" fill="none">
-                    <path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </div>
-              <span onClick={() => setRememberMe(v => !v)} className="text-[13px] text-gray-text">
-                자동 로그인
-              </span>
-            </label>
+            <div className="flex items-center justify-between py-1">
+              {/* ID 저장하기 */}
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <div
+                  onClick={() => setSaveId(v => !v)}
+                  className={[
+                    'w-[18px] h-[18px] rounded-[4px] border-2 flex items-center justify-center transition-colors duration-150 flex-shrink-0',
+                    saveId
+                      ? 'bg-[#16a84c] border-[#16a84c]'
+                      : 'bg-white border-gray-border',
+                  ].join(' ')}
+                >
+                  {saveId && (
+                    <svg width="10" height="7" viewBox="0 0 10 7" fill="none">
+                      <path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </div>
+                <span onClick={() => setSaveId(v => !v)} className="text-[13px] text-gray-text">
+                  ID 저장
+                </span>
+              </label>
+
+              {/* 자동 로그인 */}
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <div
+                  onClick={() => setRememberMe(v => !v)}
+                  className={[
+                    'w-[18px] h-[18px] rounded-[4px] border-2 flex items-center justify-center transition-colors duration-150 flex-shrink-0',
+                    rememberMe
+                      ? 'bg-[#16a84c] border-[#16a84c]'
+                      : 'bg-white border-gray-border',
+                  ].join(' ')}
+                >
+                  {rememberMe && (
+                    <svg width="10" height="7" viewBox="0 0 10 7" fill="none">
+                      <path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </div>
+                <span onClick={() => setRememberMe(v => !v)} className="text-[13px] text-gray-text">
+                  자동 로그인
+                </span>
+              </label>
+            </div>
           )}
 
           {/* 서버 에러 */}

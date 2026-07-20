@@ -55,7 +55,8 @@ export default function Customers() {
   const [search,       setSearch]       = useState('')
   const [kioskQr,      setKioskQr]      = useState(false)
   const [accountQr,    setAccountQr]    = useState<string | null>(null) // account_code
-  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges'>('orders')
+  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members'>('orders')
+  const [members,      setMembers]      = useState<{ id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]>([])
   const [orderPage,    setOrderPage]    = useState(0)
   const [chargePage,   setChargePage]   = useState(0)
 
@@ -133,6 +134,16 @@ export default function Customers() {
     setAccountOrders((data ?? []).map(mapOrderRow))
   }
 
+  // ── 선택 거래처 누적 주문자 조회 ─────────────────────────────────────────────
+  async function fetchMembers(accountCode: string) {
+    const { data } = await supabase
+      .from('account_members')
+      .select('id, name, phone, order_count, last_ordered_at')
+      .eq('account_code', accountCode)
+      .order('order_count', { ascending: false })
+    setMembers((data ?? []) as typeof members)
+  }
+
   // ── 선택 거래처 충전 이력 조회 ────────────────────────────────────────────────
   async function fetchDeposits(accountCode: string) {
     const { data } = await supabase
@@ -166,6 +177,7 @@ export default function Customers() {
     if (!selected) return
     fetchAccountOrders(selected.account_code)
     fetchDeposits(selected.account_code)
+    fetchMembers(selected.account_code)
     setOrderPage(0)
     setChargePage(0)
   }, [selected?.account_code])
@@ -615,11 +627,11 @@ export default function Customers() {
 
               {/* 이력 탭 */}
               <div className="flex gap-0 border-b border-gray-border mb-3">
-                {(['orders', 'charges'] as const).map(t => (
+                {(['orders', 'charges', 'members'] as const).map(t => (
                   <button key={t} onClick={() => { setDetailTab(t); setOrderPage(0); setChargePage(0) }}
                     className={`px-4 py-2 text-[12px] font-bold border-b-2 transition-colors
                       ${detailTab === t ? 'border-[#16a84c] text-[#16a84c]' : 'border-transparent text-gray-text hover:text-ink'}`}>
-                    {t === 'orders' ? '주문 내역' : '충전 이력'}
+                    {t === 'orders' ? '주문 내역' : t === 'charges' ? '충전 이력' : `누적 주문자 ${members.length > 0 ? `(${members.length})` : ''}`}
                   </button>
                 ))}
               </div>
@@ -809,6 +821,51 @@ export default function Customers() {
                   </div>
                 )
               })()}
+
+              {/* 누적 주문자 */}
+              {detailTab === 'members' && (
+                <div>
+                  {members.length === 0 ? (
+                    <div className="text-[13px] text-gray-text py-2">등록된 주문자 없음</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {members.map((m, idx) => {
+                        const lastDt = m.last_ordered_at ? new Date(m.last_ordered_at) : null
+                        const lastStr = lastDt
+                          ? lastDt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
+                          : '—'
+                        return (
+                          <div key={m.id} className="bg-gray-bg rounded-lg px-3 py-2.5 flex items-center gap-3 text-[12px] group/member">
+                            <span className="text-[11px] text-gray-text w-5 text-center flex-shrink-0">{idx + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-ink truncate">{m.name}</div>
+                              <div className="text-gray-text text-[11px] mt-0.5">
+                                {m.phone ?? '—'} · 마지막 {lastStr}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-[11px] font-bold text-green bg-green-soft px-2 py-0.5 rounded-full">
+                                {m.order_count}회
+                              </span>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`'${m.name}' 주문자를 삭제할까요?`)) return
+                                  const { error } = await supabase.from('account_members').delete().eq('id', m.id)
+                                  if (error) { alert('삭제에 실패했습니다.'); return }
+                                  setMembers(prev => prev.filter(x => x.id !== m.id))
+                                }}
+                                className="text-[11px] font-bold text-gray-text border border-gray-border rounded-md px-2 py-0.5 hover:bg-white hover:text-danger hover:border-danger transition-colors opacity-0 group-hover/member:opacity-100"
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 삭제 / 복구 — 맨 하단 */}
               <div className="pt-5 mt-5 border-t border-gray-border">

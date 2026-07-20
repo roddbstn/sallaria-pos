@@ -147,6 +147,9 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc('주문자   : ' + order.orderer_name), nl())
   p(enc('전화번호 : ' + (order.orderer_phone || '없음')), nl())
+  if (order.account_type === '과' || order.account_type === '기업') {
+    p(enc('거래처   : ' + order.account_name), nl())
+  }
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 
@@ -242,6 +245,9 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc('주문자   : ' + order.orderer_name), nl())
   p(enc('전화번호 : ' + (order.orderer_phone || '없음')), nl())
+  if (order.account_type === '과' || order.account_type === '기업') {
+    p(enc('거래처   : ' + order.account_name), nl())
+  }
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
 

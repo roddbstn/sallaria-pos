@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { type Order } from '../lib/mock-data'
 import { won, formatDate, orderToPayload, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
@@ -216,8 +216,10 @@ interface DateRangePanelProps {
 
 function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelProps) {
   const [picking, setPicking] = useState<'start' | 'end'>('start')
+  const [activeQuick, setActiveQuick] = useState<string | null>('오늘')
 
   function handleDaySelect(ymd: string) {
+    setActiveQuick(null)
     if (picking === 'start') {
       onRangeChange(ymd, null)
       setPicking('end')
@@ -231,7 +233,8 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
     }
   }
 
-  function setQuick(start: string, end: string) {
+  function setQuick(label: string, start: string, end: string) {
+    setActiveQuick(label)
     onRangeChange(start, end)
     setPicking('start')
   }
@@ -273,14 +276,14 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
   }
 
   const quickButtons = [
-    { label: '오늘',       onClick: () => setQuick(today, today) },
-    { label: '어제',       onClick: () => { const y = getYesterday(); setQuick(y, y) } },
-    { label: '지난 7일',   onClick: () => { const [s,e] = getLast7Days(); setQuick(s,e) } },
-    { label: '이번 달',    onClick: () => { const [s,e] = getThisMonth(); setQuick(s,e) } },
-    { label: '지난 달',    onClick: () => { const [s,e] = getLastMonth(); setQuick(s,e) } },
-    { label: '지난 3개월', onClick: () => { const [s,e] = getLast3Months(); setQuick(s,e) } },
-    { label: '지난 6개월', onClick: () => { const [s,e] = getLast6Months(); setQuick(s,e) } },
-    { label: '올해',       onClick: () => { const [s,e] = getThisYear(); setQuick(s,e) } },
+    { label: '오늘',       onClick: () => setQuick('오늘',       today, today) },
+    { label: '어제',       onClick: () => { const y = getYesterday(); setQuick('어제', y, y) } },
+    { label: '지난 7일',   onClick: () => { const [s,e] = getLast7Days();   setQuick('지난 7일',   s, e) } },
+    { label: '이번 달',    onClick: () => { const [s,e] = getThisMonth();   setQuick('이번 달',    s, e) } },
+    { label: '지난 달',    onClick: () => { const [s,e] = getLastMonth();   setQuick('지난 달',    s, e) } },
+    { label: '지난 3개월', onClick: () => { const [s,e] = getLast3Months(); setQuick('지난 3개월', s, e) } },
+    { label: '지난 6개월', onClick: () => { const [s,e] = getLast6Months(); setQuick('지난 6개월', s, e) } },
+    { label: '올해',       onClick: () => { const [s,e] = getThisYear();    setQuick('올해',       s, e) } },
   ]
 
   return (
@@ -303,7 +306,10 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
           <p className="text-[11px] font-bold text-gray-text mb-2">빠른 선택</p>
           {quickButtons.map(btn => (
             <button key={btn.label} onClick={btn.onClick}
-              className="w-full text-left px-3 py-2 rounded-lg text-[12px] font-medium text-ink bg-gray-100 hover:bg-gray-200 transition-colors">
+              className={`w-full text-left px-3 py-2 rounded-lg text-[12px] font-medium transition-colors
+                ${activeQuick === btn.label
+                  ? 'bg-ink text-white'
+                  : 'bg-gray-100 text-ink hover:bg-gray-200'}`}>
               {btn.label}
             </button>
           ))}
@@ -397,6 +403,32 @@ export default function Orders() {
   const [checkedCodes, setCheckedCodes] = useState<Set<string>>(new Set())
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
+  // ── 거래처 제외 필터 ────────────────────────────────────────────────────────
+  const [excludedAccounts, setExcludedAccounts] = useState<Set<string>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('pos_excluded_accounts') || '[]')
+      return new Set(Array.isArray(saved) ? saved : [])
+    } catch { return new Set() }
+  })
+  const [showAccountFilter, setShowAccountFilter] = useState(false)
+  const filterBtnRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    localStorage.setItem('pos_excluded_accounts', JSON.stringify([...excludedAccounts]))
+  }, [excludedAccounts])
+
+  // 팝오버 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!showAccountFilter) return
+    function onDown(e: MouseEvent) {
+      if (filterBtnRef.current && !filterBtnRef.current.contains(e.target as Node)) {
+        setShowAccountFilter(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showAccountFilter])
+
   async function fetchOrders(start: string | null, end: string | null, deleted = showDeleted) {
     if (!start) { setOrders([]); return }
     setLoading(true)
@@ -470,28 +502,39 @@ export default function Orders() {
     setSelectedAccountName(null)
   }
 
-  // 통계 계산
+  // 거래처 제외 필터 적용된 주문
+  const filteredOrders = useMemo(
+    () => excludedAccounts.size === 0
+      ? orders
+      : orders.filter(o => !excludedAccounts.has(o.accountName)),
+    [orders, excludedAccounts],
+  )
+
+  // 팝오버용 — 전체 거래처 목록 (필터 무관)
+  const allAccountSales = useMemo(() => calcAccountSales(orders), [orders])
+
+  // 통계 계산 (제외 필터 반영)
   const stats = useMemo(() => {
-    const valid       = orders.filter(o => o.status !== '취소')
+    const valid       = filteredOrders.filter(o => o.status !== '취소')
     const totalSales  = valid.reduce((sum, o) => sum + o.total, 0)
     const days        = dayCount(startDate, endDate)
     const avgSales    = days > 0 ? Math.round(totalSales / days) : 0
     const orderCount  = valid.length
-    const cancelCount = orders.filter(o => o.status === '취소').length
+    const cancelCount = filteredOrders.filter(o => o.status === '취소').length
     return { totalSales, avgSales, orderCount, cancelCount }
-  }, [orders, startDate, endDate])
+  }, [filteredOrders, startDate, endDate])
 
   // 상태 필터 (주문내역 탭)
   const listFiltered = useMemo(
-    () => orders.filter(o => statusFilter === 'all' || o.status === statusFilter),
-    [orders, statusFilter],
+    () => filteredOrders.filter(o => statusFilter === 'all' || o.status === statusFilter),
+    [filteredOrders, statusFilter],
   )
 
   // 메뉴별 매출
-  const menuSales = useMemo(() => calcMenuSales(orders), [orders])
+  const menuSales = useMemo(() => calcMenuSales(filteredOrders), [filteredOrders])
 
   // 거래처별 매출
-  const accountSales = useMemo(() => calcAccountSales(orders), [orders])
+  const accountSales = useMemo(() => calcAccountSales(filteredOrders), [filteredOrders])
 
   return (
     <div className="h-full flex overflow-hidden bg-white">
@@ -501,11 +544,78 @@ export default function Orders() {
 
         {/* 통계 카드 */}
         <div className="px-5 py-4 border-b border-gray-border flex-shrink-0">
-          <div className="text-[18px] font-extrabold mb-3 text-ink">주문 관리</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[18px] font-extrabold text-ink">주문 관리</div>
+
+            {/* 거래처 필터 버튼 */}
+            <div ref={filterBtnRef} className="relative">
+              <button
+                onClick={() => setShowAccountFilter(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors
+                  ${excludedAccounts.size > 0
+                    ? 'border-orange-300 bg-orange-50 text-orange-700'
+                    : 'border-gray-border bg-gray-bg text-gray-text hover:bg-gray-100'}`}
+              >
+                ⚙ {excludedAccounts.size > 0 ? `고객 ${excludedAccounts.size}명 제외 중` : '거래처 필터'}
+              </button>
+
+              {/* 팝오버 */}
+              {showAccountFilter && (
+                <div className="absolute right-0 top-full mt-1 w-[300px] bg-white rounded-xl shadow-xl border border-gray-border z-30 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-border">
+                    <span className="text-[13px] font-bold text-ink">거래처 필터</span>
+                    {excludedAccounts.size > 0 && (
+                      <button
+                        onClick={() => setExcludedAccounts(new Set())}
+                        className="text-[11px] text-orange-600 font-semibold hover:text-orange-800 transition-colors"
+                      >
+                        모두 포함
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-[260px] overflow-y-auto">
+                    {allAccountSales.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-[13px] text-gray-text">이 기간에 주문이 없습니다</div>
+                    ) : allAccountSales.map(acc => (
+                      <label key={acc.name} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-bg cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!excludedAccounts.has(acc.name)}
+                          onChange={e => {
+                            setExcludedAccounts(prev => {
+                              const next = new Set(prev)
+                              if (e.target.checked) next.delete(acc.name)
+                              else next.add(acc.name)
+                              return next
+                            })
+                          }}
+                          className="w-4 h-4 accent-ink flex-shrink-0"
+                        />
+                        <span className="flex-1 text-[13px] text-ink truncate">{acc.name}</span>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-[11px] text-gray-text">{acc.count}건</div>
+                          <div className="text-[12px] font-semibold text-ink">{won(acc.total)}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="border-t border-gray-border px-4 py-2.5 bg-gray-bg">
+                    <button
+                      onClick={() => setShowAccountFilter(false)}
+                      className="w-full py-2 rounded-lg bg-ink text-white text-[13px] font-bold hover:bg-ink/80 transition-colors"
+                    >
+                      닫기
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="flex gap-3">
-            <StatCard label="합계 주문액"    value={won(stats.totalSales)} sub="취소 제외" />
+            <StatCard label="합계 주문액"    value={won(stats.totalSales)} sub={excludedAccounts.size > 0 ? `${excludedAccounts.size}개 제외` : '취소 제외'} />
             <StatCard label="일 평균 주문액"  value={won(stats.avgSales)}   sub={`${dayCount(startDate, endDate)}일 기준`} />
-            <StatCard label="주문 건수"       value={`${stats.orderCount}건`} sub="취소 제외" />
+            <StatCard label="주문 건수"       value={`${stats.orderCount}건`} sub={excludedAccounts.size > 0 ? `${excludedAccounts.size}개 제외` : '취소 제외'} />
             <StatCard label="취소 건수"       value={`${stats.cancelCount}건`} />
           </div>
         </div>

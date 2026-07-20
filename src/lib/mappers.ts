@@ -36,6 +36,7 @@ export function mapOrderRow(row: any): Order {
     code:          row.order_code,
     orderNumber:   row.order_number ?? undefined,
     accountName:   row.accounts?.account_name ?? '',
+    accountType:   row.accounts?.account_type ?? undefined,
     orderer:       row.orderer_name,
     phone:         row.orderer_phone ?? undefined,
     method:        (DB_METHOD_MAP[row.method] ?? row.method) as Order['method'],
@@ -58,5 +59,6 @@ export function mapOrderRow(row: any): Order {
     balanceBefore: row.balance_before ?? undefined,
     balanceAfter:  row.balance_after  ?? undefined,
     isDeleted:     row.is_deleted ?? false,
+    deliveryDepartedAt: row.delivery_departed_at ?? undefined,
   }
 }
