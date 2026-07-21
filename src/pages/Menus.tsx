@@ -6,6 +6,7 @@ import { useStore } from '../lib/store-context'
 
 type MenuTab      = 'menu' | 'option' | 'category'
 type StatusFilter = 'all' | 'active' | 'soldOut' | 'hidden'
+type TagFilter    = 'popular' | 'recommended' | 'new' | null
 
 // ── DB row → 내부 타입 변환 ───────────────────────────────────────────────────
 function mapDbMenu(row: any): MenuDetail {
@@ -35,16 +36,19 @@ function mapDbMenu(row: any): MenuDetail {
     .filter(Boolean) as OptionGroup[]
 
   return {
-    code:        row.id,
-    name:        row.name,
-    emoji:       '🍽️',
-    price:       row.base_price,
-    description: row.description ?? '',
-    imageUrl:    row.image_url ?? undefined,
-    categoryId:  row.category_id,
-    active:      !row.is_hidden,
-    soldOut:     row.is_sold_out,
-    order:       row.display_order,
+    code:          row.id,
+    name:          row.name,
+    emoji:         '🍽️',
+    price:         row.base_price,
+    description:   row.description ?? '',
+    imageUrl:      row.image_url ?? undefined,
+    categoryId:    row.category_id,
+    active:        !row.is_hidden,
+    soldOut:       row.is_sold_out,
+    order:         row.display_order,
+    isPopular:     row.is_popular     ?? false,
+    isRecommended: row.is_recommended ?? false,
+    isNew:         row.is_new         ?? false,
     optionGroups,
   }
 }
@@ -70,6 +74,7 @@ export default function Menus() {
   const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [catFilter,    setCatFilter]    = useState<string>('all')
+  const [tagFilter,    setTagFilter]    = useState<TagFilter>(null)
   const [checked,      setChecked]      = useState<Set<string>>(new Set())
   const [selected,     setSelected]     = useState<MenuDetail | null>(null)
   const [loading,      setLoading]      = useState(true)
@@ -149,7 +154,7 @@ export default function Menus() {
       .from('menus')
       .select(`
         id, category_id, name, description, base_price, image_url,
-        is_sold_out, is_hidden, display_order,
+        is_sold_out, is_hidden, display_order, is_popular, is_recommended, is_new,
         menu_option_groups (
           display_order,
           option_groups (
@@ -309,8 +314,22 @@ export default function Menus() {
       : statusFilter === 'soldOut' ? m.soldOut
       : !m.active
     const matchCat = catFilter === 'all' || m.categoryId === catFilter
-    return matchSearch && matchStatus && matchCat
+    const matchTag =
+      tagFilter === null          ? true
+      : tagFilter === 'popular'     ? m.isPopular
+      : tagFilter === 'recommended' ? m.isRecommended
+      : m.isNew
+    return matchSearch && matchStatus && matchCat && matchTag
   })
+
+  // ── 메뉴 태그 토글 ─────────────────────────────────────────────────────────
+  async function toggleTag(menu: MenuDetail, tag: 'isPopular' | 'isRecommended' | 'isNew', e: React.MouseEvent) {
+    e.stopPropagation()
+    const dbField = tag === 'isPopular' ? 'is_popular' : tag === 'isRecommended' ? 'is_recommended' : 'is_new'
+    const next = !menu[tag]
+    setMenus(prev => prev.map(m => m.code === menu.code ? { ...m, [tag]: next } : m))
+    await supabase.from('menus').update({ [dbField]: next }).eq('id', menu.code)
+  }
 
   // ── 메뉴 선택 ──────────────────────────────────────────────────────────────
   function selectMenu(menu: MenuDetail) {
@@ -989,7 +1008,7 @@ export default function Menus() {
       {!loading && tab === 'menu' && (
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* 검색 + 상태 필터 */}
+          {/* 검색 + 상태 필터 + 태그 필터 */}
           <div className="px-6 pt-3 pb-2 flex items-center gap-3 flex-shrink-0">
             <input
               value={search} onChange={e => setSearch(e.target.value)}
@@ -1006,6 +1025,19 @@ export default function Menus() {
                 <button key={v} onClick={() => setStatusFilter(v)}
                   className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors
                     ${statusFilter === v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 ml-auto">
+              {([
+                { v: 'popular'     as TagFilter, l: '인기',   on: 'bg-[#FFF3E0] text-[#F97316]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
+                { v: 'recommended' as TagFilter, l: '추천',   on: 'bg-[#E6F4EC] text-[#017333]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
+                { v: 'new'         as TagFilter, l: '신메뉴', on: 'bg-[#E8F0FD] text-[#1D6FE8]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
+              ]).map(({ v, l, on, off }) => (
+                <button key={String(v)} onClick={() => setTagFilter(tagFilter === v ? null : v)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors
+                    ${tagFilter === v ? on : off}`}>
                   {l}
                 </button>
               ))}
@@ -1034,9 +1066,9 @@ export default function Menus() {
             </div>
           </div>
           {/* 테이블 헤더 */}
-          <div className="grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+          <div className="grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px_150px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
             <span></span><span></span><span>메뉴명</span>
-            <span>카테고리</span><span>가격</span><span>판매상태</span><span>표시</span>
+            <span>카테고리</span><span>가격</span><span>판매상태</span><span>표시</span><span>태그</span>
           </div>
           {/* 목록 */}
           <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
@@ -1047,7 +1079,7 @@ export default function Menus() {
             ) : (
               filteredMenus.map(menu => (
                 <div key={menu.code} onClick={() => selectMenu(menu)}
-                  className={`grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px] px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
+                  className={`grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px_150px] px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
                     ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
                 >
                   <input type="checkbox" checked={checked.has(menu.code)}
@@ -1078,6 +1110,23 @@ export default function Menus() {
                       ? <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">숨김</span>
                       : <span className="text-[11px] font-semibold text-ink bg-gray-bg px-2 py-0.5 rounded-full">노출</span>
                     }
+                  </span>
+                  <span className="flex gap-1" onClick={e => e.stopPropagation()}>
+                    <button onClick={e => toggleTag(menu, 'isPopular', e)}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
+                        ${menu.isPopular ? 'bg-[#FFF3E0] text-[#F97316]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      인기
+                    </button>
+                    <button onClick={e => toggleTag(menu, 'isRecommended', e)}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
+                        ${menu.isRecommended ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      추천
+                    </button>
+                    <button onClick={e => toggleTag(menu, 'isNew', e)}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
+                        ${menu.isNew ? 'bg-[#E8F0FD] text-[#1D6FE8]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      신메뉴
+                    </button>
                   </span>
                 </div>
               ))

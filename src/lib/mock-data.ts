@@ -59,14 +59,17 @@ export interface Category {
 }
 
 export interface Menu {
-  code:       string
-  name:       string
-  categoryId: string | null   // null = 카테고리 미지정
-  price:      number
-  emoji:      string
-  active:     boolean
-  soldOut:    boolean
-  order:      number
+  code:          string
+  name:          string
+  categoryId:    string | null   // null = 카테고리 미지정
+  price:         number
+  emoji:         string
+  active:        boolean
+  soldOut:       boolean
+  order:         number
+  isPopular:     boolean
+  isRecommended: boolean
+  isNew:         boolean
 }
 
 export interface MenuOption {
@@ -249,12 +252,12 @@ export const MOCK_CATEGORIES: Category[] = [
 
 // ── 메뉴 목업 (레거시 — Menus 페이지는 MOCK_MENU_DETAILS 사용) ────────────────
 export const MOCK_MENUS: Menu[] = [
-  { code: 'M001', name: '단호박 샐러드',   categoryId: null, price: 9500,  emoji: '🥗', active: true,  soldOut: false, order: 1 },
-  { code: 'M002', name: '치킨텐더 랩',    categoryId: null, price: 8500,  emoji: '🌯', active: true,  soldOut: false, order: 2 },
-  { code: 'M003', name: '그릭 샐러드',    categoryId: null, price: 9000,  emoji: '🥗', active: true,  soldOut: false, order: 3 },
-  { code: 'M004', name: '연어 포케',      categoryId: null, price: 12000, emoji: '🍱', active: true,  soldOut: true,  order: 4 },
-  { code: 'M005', name: '닭가슴살 샐러드', categoryId: null, price: 10500, emoji: '🥗', active: true,  soldOut: false, order: 5 },
-  { code: 'M006', name: '아사이 볼',      categoryId: null, price: 11000, emoji: '🍇', active: false, soldOut: false, order: 6 },
+  { code: 'M001', name: '단호박 샐러드',   categoryId: null, price: 9500,  emoji: '🥗', active: true,  soldOut: false, order: 1, isPopular: false, isRecommended: false, isNew: false },
+  { code: 'M002', name: '치킨텐더 랩',    categoryId: null, price: 8500,  emoji: '🌯', active: true,  soldOut: false, order: 2, isPopular: false, isRecommended: false, isNew: false },
+  { code: 'M003', name: '그릭 샐러드',    categoryId: null, price: 9000,  emoji: '🥗', active: true,  soldOut: false, order: 3, isPopular: false, isRecommended: false, isNew: false },
+  { code: 'M004', name: '연어 포케',      categoryId: null, price: 12000, emoji: '🍱', active: true,  soldOut: true,  order: 4, isPopular: false, isRecommended: false, isNew: false },
+  { code: 'M005', name: '닭가슴살 샐러드', categoryId: null, price: 10500, emoji: '🥗', active: true,  soldOut: false, order: 5, isPopular: false, isRecommended: false, isNew: false },
+  { code: 'M006', name: '아사이 볼',      categoryId: null, price: 11000, emoji: '🍇', active: false, soldOut: false, order: 6, isPopular: false, isRecommended: false, isNew: false },
 ]
 
 // ── 신규 주문 팝업용 목업 ─────────────────────────────────────────────────────
@@ -284,7 +287,7 @@ export const MOCK_NEW_ORDER_2: Order = {
 export const MOCK_MENU_DETAILS: MenuDetail[] = [
   {
     code: 'M001', name: '클래식 포케', categoryId: null,
-    price: 11500, emoji: '🥗', active: true, soldOut: false, order: 1,
+    price: 11500, emoji: '🥗', active: true, soldOut: false, order: 1, isPopular: false, isRecommended: false, isNew: false,
     description: '연어, 아보카도, 옥수수가 들어간 기본 포케볼',
     optionGroups: [
       {
@@ -323,7 +326,7 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
   },
   {
     code: 'M002', name: '매콤 치킨 포케', categoryId: null,
-    price: 12000, emoji: '🌶️', active: true, soldOut: false, order: 2,
+    price: 12000, emoji: '🌶️', active: true, soldOut: false, order: 2, isPopular: false, isRecommended: false, isNew: false,
     description: '매콤한 양념에 버무린 닭다리살 포케',
     optionGroups: [
       {
@@ -351,7 +354,7 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
   },
   {
     code: 'M003', name: '시저 샐러드', categoryId: null,
-    price: 9900, emoji: '🥗', active: true, soldOut: false, order: 3,
+    price: 9900, emoji: '🥗', active: true, soldOut: false, order: 3, isPopular: false, isRecommended: false, isNew: false,
     description: '로메인, 파마산, 크루통과 시저 드레싱',
     optionGroups: [
       {
@@ -373,7 +376,7 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
   },
   {
     code: 'M004', name: '그릭 샐러드', categoryId: null,
-    price: 10500, emoji: '🫙', active: true, soldOut: false, order: 4,
+    price: 10500, emoji: '🫙', active: true, soldOut: false, order: 4, isPopular: false, isRecommended: false, isNew: false,
     description: '페타치즈, 올리브, 토마토의 지중해식 샐러드',
     optionGroups: [
       {
@@ -386,7 +389,7 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
   },
   {
     code: 'M005', name: '베이컨 에그 랩', categoryId: null,
-    price: 8400, emoji: '🌯', active: true, soldOut: false, order: 5,
+    price: 8400, emoji: '🌯', active: true, soldOut: false, order: 5, isPopular: false, isRecommended: false, isNew: false,
     description: '바삭한 베이컨과 스크램블 에그',
     optionGroups: [
       {
@@ -400,7 +403,7 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
   },
   {
     code: 'M006', name: '닭갈비 도시락', categoryId: null,
-    price: 11000, emoji: '🍱', active: true, soldOut: false, order: 6,
+    price: 11000, emoji: '🍱', active: true, soldOut: false, order: 6, isPopular: false, isRecommended: false, isNew: false,
     description: '매콤한 닭갈비와 잡곡밥',
     optionGroups: [
       {
@@ -415,13 +418,13 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
   },
   {
     code: 'M007', name: '제육 도시락', categoryId: null,
-    price: 10500, emoji: '🍱', active: true, soldOut: false, order: 7,
+    price: 10500, emoji: '🍱', active: true, soldOut: false, order: 7, isPopular: false, isRecommended: false, isNew: false,
     description: '잘 익은 제육볶음과 잡곡밥',
     optionGroups: [],
   },
   {
     code: 'M008', name: '아메리카노', categoryId: null,
-    price: 2500, emoji: '☕', active: true, soldOut: false, order: 8,
+    price: 2500, emoji: '☕', active: true, soldOut: false, order: 8, isPopular: false, isRecommended: false, isNew: false,
     description: '깔끔한 에스프레소 베이스',
     optionGroups: [
       {
@@ -435,13 +438,13 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
   },
   {
     code: 'M009', name: '제로콜라', categoryId: null,
-    price: 2000, emoji: '🥤', active: true, soldOut: false, order: 9,
+    price: 2000, emoji: '🥤', active: true, soldOut: false, order: 9, isPopular: false, isRecommended: false, isNew: false,
     description: '시원하게 제공',
     optionGroups: [],
   },
   {
     code: 'M010', name: '햄 치즈 샌드위치', categoryId: null,
-    price: 7900, emoji: '🥪', active: false, soldOut: false, order: 10,
+    price: 7900, emoji: '🥪', active: false, soldOut: false, order: 10, isPopular: false, isRecommended: false, isNew: false,
     description: '클래식 햄과 체다 치즈',
     optionGroups: [],
   },
