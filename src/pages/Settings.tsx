@@ -39,6 +39,7 @@ export default function Settings() {
   const [testMsg,    setTestMsg]    = useState('')
   const [alertVolume,  setAlertVolume]  = useState(getSavedVolume)
   const [receiptTab, setReceiptTab] = useState<'kitchen' | 'customer'>('kitchen')
+  const [previewType, setPreviewType] = useState<'개인' | '과' | '기업'>('과')
 
   useEffect(() => {
     const a = api()
@@ -292,53 +293,65 @@ export default function Settings() {
               ))}
               <div className="mt-3">
                 <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
+                {/* 예시 유형 탭 */}
+                <div className="flex gap-1.5 mb-3">
+                  {(['개인', '과', '기업'] as const).map(t => (
+                    <button key={t} onClick={() => setPreviewType(t)}
+                      className={['px-3 py-1 rounded-lg text-[11px] font-bold border transition-colors',
+                        previewType === t ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text border-gray-border hover:bg-gray-200'].join(' ')}>
+                      {t === '개인' ? '개인 (픽업)' : t === '과' ? '과 (매장식사)' : '기업 (배달)'}
+                    </button>
+                  ))}
+                </div>
                 <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
                   <div style={previewWrap}>
-                    <div style={{ textAlign:'center', fontWeight:'bold' }}>[주방용]</div>
-                    <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div><span>주문번호 : </span><b>11602</b></div>
-                    <div>주문일시 : 2026/07/02 10:53</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div><span>이용방법 : </span><b>배달</b></div>
-                    <div>주문자   : 김정보</div>
-                    <div>전화번호 : 010-7706-4224</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div>배달주소 : 대구 북구 침산로21길 23</div>
-                    <div>배달상세 : 103동 907호</div>
-                    <div>가게요청 : 수저: 포크 0</div>
-                    <div>배달요청 : 초인종, 노크 없이 문 앞에만 놔주세요.</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    {/* 메뉴 테이블 */}
-                    <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}>
-                      <span>메뉴명</span><span>수량</span>
-                    </div>
-                    <div style={{ borderTop:'1px dotted #000', margin:'2px 0' }} />
                     {(() => {
                       const menuPx = receipt.menuSize   === 'large' ? 16 : receipt.menuSize   === 'normal' ? 12 : 8
                       const optPx  = receipt.optionSize === 'large' ? 16 : receipt.optionSize === 'normal' ? 12 : 8
+                      const ex = previewType === '개인'
+                        ? { orderer: '홍길동', phone: '010-****-1234', method: '포장', account: '홍길동', type: '개인', delivery: false }
+                        : previewType === '과'
+                        ? { orderer: '김민준', phone: '010-****-5678', method: '매장 식사', account: '중구청 OO과', type: '과', delivery: false }
+                        : { orderer: '이서연', phone: '010-****-9012', method: '배달', account: 'OO기업', type: '기업', delivery: true }
                       const options = [
-                        { name: '포케음료세트',         price: 13000 },
-                        { name: '생연어 포케 100g',     price: 5500 },
-                        { name: '현미밥',               price: 0 },
-                        { name: '치폴레 스리라차',       price: 0 },
-                        { name: 'ICE 아메리카노',        price: 0 },
-                        { name: '구운 통밀식빵 추가',    price: 1500 },
+                        { name: '생연어 포케 100g', price: 5500 },
+                        { name: '현미밥', price: 0 },
+                        { name: '아보카도 추가', price: 1500 },
                       ]
-                      return (
-                        <div>
-                          <div style={{ fontWeight:'bold', fontSize:menuPx, display:'flex', justifyContent:'space-between' }}>
-                            <span>포케+음료선택1 세트</span><span>1</span>
-                          </div>
-                          {options.map((o, i) => (
-                            <div key={i} style={{ fontSize:optPx, color:'#555', paddingLeft:6 }}>
-                              {`> ${o.name}${o.price > 0 ? ` +${o.price.toLocaleString('ko-KR')}원` : ''}`}
-                            </div>
-                          ))}
+                      return <>
+                        <div style={{ textAlign:'center', fontWeight:'bold' }}>[주방용]</div>
+                        <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div><span>주문번호 : </span><b>11602</b></div>
+                        <div>주문일시 : 2026/07/20 12:30</div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div><span>이용방법 : </span><b>{ex.method}</b></div>
+                        <div>주문자   : {ex.orderer}</div>
+                        <div>전화번호 : {ex.phone}</div>
+                        <div>거래처   : {ex.account}</div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        {ex.delivery && <>
+                          <div>배달주소 : 대구 북구 침산로21길 23</div>
+                          <div>배달상세 : 103동 907호</div>
+                          <div>가게요청 : 없음</div>
+                          <div>배달요청 : 문 앞에 두고 초인종 눌러주세요.</div>
+                          <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        </>}
+                        <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}>
+                          <span>메뉴명</span><span>수량</span>
                         </div>
-                      )
+                        <div style={{ borderTop:'1px dotted #000', margin:'2px 0' }} />
+                        <div style={{ fontWeight:'bold', fontSize:menuPx, display:'flex', justifyContent:'space-between' }}>
+                          <span>포케+음료세트</span><span>1</span>
+                        </div>
+                        {options.map((o, i) => (
+                          <div key={i} style={{ fontSize:optPx, color:'#555', paddingLeft:6 }}>
+                            {`> ${o.name}${o.price > 0 ? ` +${o.price.toLocaleString('ko-KR')}원` : ''}`}
+                          </div>
+                        ))}
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                      </>
                     })()}
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
                   </div>
                 </div>
               </div>
@@ -363,46 +376,59 @@ export default function Settings() {
               ))}
               <div className="mt-3">
                 <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
+                {/* 예시 유형 탭 (kitchen과 공유) */}
+                <div className="flex gap-1.5 mb-3">
+                  {(['개인', '과', '기업'] as const).map(t => (
+                    <button key={t} onClick={() => setPreviewType(t)}
+                      className={['px-3 py-1 rounded-lg text-[11px] font-bold border transition-colors',
+                        previewType === t ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text border-gray-border hover:bg-gray-200'].join(' ')}>
+                      {t === '개인' ? '개인 (픽업)' : t === '과' ? '과 (매장식사)' : '기업 (배달)'}
+                    </button>
+                  ))}
+                </div>
                 <div className="bg-gray-200 rounded-xl p-5 flex justify-center">
                   <div style={previewWrap}>
-                    <div style={{ textAlign:'center', fontWeight:'bold' }}>[고객용]</div>
-                    <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div><span>주문번호 : </span><b>11602</b></div>
-                    <div>주문일시 : 2026/07/02 10:53</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div><span>이용방법 : </span><b>배달</b></div>
-                    <div>주문자   : 김정보</div>
-                    <div>전화번호 : 010-7706-4224</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div>배달주소 : 대구 북구 침산로21길 23</div>
-                    <div>배달상세 : 103동 907호</div>
-                    <div>가게요청 : 수저: 포크 0</div>
-                    <div>배달요청 : 초인종, 노크 없이 문 앞에만 놔주세요.</div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    {/* 메뉴 3열 테이블 */}
                     {(() => {
                       const menuPx = receipt.customerMenuSize   === 'large' ? 16 : receipt.customerMenuSize   === 'normal' ? 12 : 8
                       const optPx  = receipt.customerOptionSize === 'large' ? 16 : receipt.customerOptionSize === 'normal' ? 12 : 8
+                      const ex = previewType === '개인'
+                        ? { orderer: '홍길동', phone: '010-****-1234', method: '포장', account: '홍길동', type: '개인', delivery: false, subtotal: 16500, total: 16500 }
+                        : previewType === '과'
+                        ? { orderer: '김민준', phone: '010-****-5678', method: '매장 식사', account: '중구청 OO과', type: '과', delivery: false, subtotal: 16500, total: 16500 }
+                        : { orderer: '이서연', phone: '010-****-9012', method: '배달', account: 'OO기업', type: '기업', delivery: true, subtotal: 16500, total: 20000 }
                       const options = [
-                        { name: '포케음료세트',         price: 13000 },
-                        { name: '생연어 포케 100g',     price: 5500 },
-                        { name: '현미밥',               price: 0 },
-                        { name: '치폴레 스리라차',       price: 0 },
-                        { name: 'ICE 아메리카노',        price: 0 },
-                        { name: '구운 통밀식빵 추가',    price: 1500 },
+                        { name: '생연어 포케 100g', price: 5500 },
+                        { name: '현미밥', price: 0 },
+                        { name: '아보카도 추가', price: 1500 },
                       ]
-                      return (
+                      return <>
+                        <div style={{ textAlign:'center', fontWeight:'bold' }}>[고객용]</div>
+                        <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div><span>주문번호 : </span><b>11602</b></div>
+                        <div>주문일시 : 2026/07/20 12:30</div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div><span>이용방법 : </span><b>{ex.method}</b></div>
+                        <div>주문자   : {ex.orderer}</div>
+                        <div>전화번호 : {ex.phone}</div>
+                        <div>거래처   : {ex.account}</div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        {ex.delivery && <>
+                          <div>배달주소 : 대구 북구 침산로21길 23</div>
+                          <div>배달상세 : 103동 907호</div>
+                          <div>가게요청 : 없음</div>
+                          <div>배달요청 : 문 앞에 두고 초인종 눌러주세요.</div>
+                          <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        </>}
+                        {/* 메뉴 3열 테이블 */}
                         <div style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:4 }}>
                           <span style={{ fontWeight:'bold' }}>메뉴명</span>
                           <span style={{ fontWeight:'bold', textAlign:'right' }}>수량</span>
                           <span style={{ fontWeight:'bold', textAlign:'right' }}>가격</span>
                           <div style={{ gridColumn:'1/-1', borderTop:'1px dotted #000', margin:'2px 0' }} />
-                          {/* 메뉴 행 */}
-                          <span style={{ fontWeight:'bold', fontSize:menuPx }}>포케+음료선택1 세트</span>
+                          <span style={{ fontWeight:'bold', fontSize:menuPx }}>포케+음료세트</span>
                           <span style={{ fontWeight:'bold', fontSize:menuPx, textAlign:'right' }}>1</span>
-                          <span style={{ fontWeight:'bold', fontSize:menuPx, textAlign:'right' }}>20,000원</span>
-                          {/* 옵션 행: 이름(col1-2) + 가격(col3) */}
+                          <span style={{ fontWeight:'bold', fontSize:menuPx, textAlign:'right' }}>16,500원</span>
                           {options.map((o, i) => (
                             <React.Fragment key={i}>
                               <div style={{ fontSize:optPx, color:'#555', gridColumn:'1/3', paddingLeft:6 }}>{`> ${o.name}`}</div>
@@ -412,16 +438,16 @@ export default function Settings() {
                             </React.Fragment>
                           ))}
                         </div>
-                      )
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div style={{ display:'flex', justifyContent:'space-between' }}><span>메뉴 소계</span><span>{ex.subtotal.toLocaleString('ko-KR')}원</span></div>
+                        {ex.delivery && <div style={{ display:'flex', justifyContent:'space-between' }}><span>배달료</span><span>3,500원</span></div>}
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>합  계</span><span>{ex.total.toLocaleString('ko-KR')}원</span></div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div style={{ display:'flex', justifyContent:'space-between' }}><span>주문전 잔액</span><span>864,800원</span></div>
+                        <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>주문후 잔액</span><span>{(864800 - ex.total).toLocaleString('ko-KR')}원</span></div>
+                      </>
                     })()}
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div style={{ display:'flex', justifyContent:'space-between' }}><span>메뉴 소계</span><span>20,000원</span></div>
-                    <div style={{ display:'flex', justifyContent:'space-between' }}><span>배달료</span><span>3,500원</span></div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>합  계</span><span>23,500원</span></div>
-                    <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                    <div style={{ display:'flex', justifyContent:'space-between' }}><span>주문전 잔액</span><span>864,800원</span></div>
-                    <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>주문후 잔액</span><span>841,300원</span></div>
                   </div>
                 </div>
               </div>
