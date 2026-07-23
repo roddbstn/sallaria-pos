@@ -2105,7 +2105,7 @@ export default function Menus() {
                                 const val = e.target.value
                                 setCatDeleteRemap(prev => val ? { ...prev, [m.code]: val } : (() => { const n = { ...prev }; delete n[m.code]; return n })())
                               }}
-                              className={`flex-shrink-0 text-[12px] font-semibold border rounded-lg px-2 py-1.5 focus:outline-none transition-colors ${mapped ? 'border-green text-green bg-white' : 'border-gray-border text-gray-text bg-white'}`}
+                              className={`flex-shrink-0 w-28 text-[12px] font-semibold border rounded-lg px-2 py-1.5 focus:outline-none transition-colors ${mapped ? 'border-green text-green bg-white' : 'border-gray-border text-gray-text bg-white'}`}
                             >
                               <option value="">카테고리 선택</option>
                               {otherCats.map(c => (
