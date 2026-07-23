@@ -427,23 +427,12 @@ export default function Menus() {
   }
 
   async function deleteCategory(id: string) {
-    // 먼저 연결된 메뉴들의 category_id를 null로 해제 (FK 제약 방지)
-    const { error: unlinkErr } = await supabase
-      .from('menus')
-      .update({ category_id: null })
-      .eq('category_id', id)
-    if (unlinkErr) {
-      alert('메뉴 카테고리 해제 실패: ' + unlinkErr.message)
-      return
-    }
     const { error } = await supabase.from('categories').delete().eq('id', id)
     if (error) {
       alert('카테고리 삭제 실패: ' + error.message)
       return
     }
-    setMenus(prev => prev.map(m => m.categoryId === id ? { ...m, categoryId: undefined } : m))
     setCategories(prev => prev.filter(c => c.id !== id))
-    if (selected?.categoryId === id) setSelected(null)
   }
 
   async function moveCategoryUp(id: string) {
@@ -2068,31 +2057,29 @@ export default function Menus() {
               {/* 헤더 */}
               <div className="px-6 py-5 flex-shrink-0">
                 <div className="text-[17px] font-extrabold mb-1">
-                  <span className="text-danger">'{cat.name}'</span> 카테고리를 삭제하시겠어요?
+                  <span className="text-danger">'{cat.name}'</span> 카테고리 삭제
                 </div>
                 <div className="text-[13px] text-gray-text">
                   {catMenus.length > 0
-                    ? `아래 ${catMenus.length}개 메뉴의 카테고리가 해제됩니다.`
-                    : '이 카테고리에 연결된 메뉴가 없습니다.'}
+                    ? '이 카테고리에 속한 메뉴를 먼저 다른 카테고리로 옮겨야 삭제할 수 있습니다.'
+                    : '카테고리를 삭제합니다. 이 작업은 되돌릴 수 없습니다.'}
                 </div>
               </div>
 
-              {/* 메뉴 목록 */}
+              {/* 메뉴 목록 (있을 때만) */}
               {catMenus.length > 0 && (
-                <div className="flex-1 overflow-y-auto px-6 pb-4">
+                <div className="flex-1 overflow-y-auto px-6 pb-2">
+                  <div className="text-[11px] font-bold text-danger mb-2">이동이 필요한 메뉴 {catMenus.length}개</div>
                   <div className="space-y-2">
                     {catMenus.map(m => (
-                      <div key={m.code} className="flex items-center gap-3 bg-gray-bg rounded-xl px-3 py-2.5">
-                        <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <div key={m.code} className="flex items-center gap-3 bg-red-50 rounded-xl px-3 py-2.5">
+                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
                           {m.imageUrl
                             ? <img src={m.imageUrl} alt={m.name} className="w-full h-full object-cover" />
-                            : <span className="text-[24px]">{m.emoji}</span>
+                            : <span className="text-[20px]">{m.emoji}</span>
                           }
                         </div>
-                        <div>
-                          <div className="text-[13px] font-semibold text-ink">{m.name}</div>
-                          <div className="text-[12px] text-gray-text">{won(m.price)}</div>
-                        </div>
+                        <div className="text-[13px] font-semibold text-ink">{m.name}</div>
                       </div>
                     ))}
                   </div>
@@ -2105,12 +2092,27 @@ export default function Menus() {
                   className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
                   취소
                 </button>
-                <button
-                  onClick={() => { deleteCategory(catDeleteModalId); setCatDeleteModalId(null) }}
-                  className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors"
-                >
-                  삭제
-                </button>
+                {catMenus.length === 0 ? (
+                  <button
+                    onClick={() => { deleteCategory(catDeleteModalId!); setCatDeleteModalId(null) }}
+                    className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors"
+                  >
+                    삭제
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setCatDeleteModalId(null)
+                      setCatEditNameDraft(cat.name)
+                      setCatEditChecked(new Set(catMenus.map(m => m.code)))
+                      setCatEditSearch('')
+                      setCatEditModalId(catDeleteModalId)
+                    }}
+                    className="flex-1 py-3 rounded-xl bg-[#1E1E1E] text-white font-bold hover:opacity-90 transition-opacity"
+                  >
+                    수정으로 이동
+                  </button>
+                )}
               </div>
             </div>
           </div>
