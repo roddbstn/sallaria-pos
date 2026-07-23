@@ -122,6 +122,7 @@ export default function Menus() {
   const [catEditNameDraft,   setCatEditNameDraft]   = useState('')
   const [catEditChecked,     setCatEditChecked]     = useState<Set<string>>(new Set())
   const [catEditSaving,      setCatEditSaving]      = useState(false)
+  const [catEditSearch,      setCatEditSearch]      = useState('')
   const [dragId,             setDragId]             = useState<string | null>(null)
   const [dragOverId,         setDragOverId]         = useState<string | null>(null)
   const [catDeleteModalId,   setCatDeleteModalId]   = useState<string | null>(null)
@@ -1792,7 +1793,22 @@ export default function Menus() {
             </div>
           )}
 
-          <div className="mt-4 border border-gray-border rounded-xl overflow-hidden divide-y divide-gray-border">
+          {/* 카테고리 pill 버튼 바 — 클릭 시 메뉴 탭으로 이동 */}
+          {sortedCategories().length > 0 && (
+            <div className="mt-4 mb-1 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              {sortedCategories().map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => { setCatFilter(cat.id); setTab('menu') }}
+                  className="flex-shrink-0 px-4 py-1.5 rounded-full text-[13px] font-semibold border border-gray-border bg-white text-gray-text hover:bg-green-soft hover:border-green hover:text-green transition-colors"
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-2 border border-gray-border rounded-xl overflow-hidden divide-y divide-gray-border">
             {sortedCategories().length === 0 && (
               <div className="py-10 text-center text-[13px] text-gray-text">
                 카테고리가 없습니다. 위에서 추가해주세요.
@@ -1849,18 +1865,12 @@ export default function Menus() {
                         e.stopPropagation()
                         setCatEditNameDraft(cat.name)
                         setCatEditChecked(new Set(catMenus.map(m => m.code)))
+                        setCatEditSearch('')
                         setCatEditModalId(cat.id)
                       }}
                       className="flex-shrink-0 text-[12px] font-semibold text-gray-text bg-gray-100 px-2.5 py-1 rounded-lg hover:bg-gray-200 transition-colors"
                     >
                       수정
-                    </button>
-
-                    <button
-                      onClick={e => { e.stopPropagation(); setCatDeleteModalId(cat.id) }}
-                      className="flex-shrink-0 text-[12px] font-semibold text-danger border border-danger/30 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors"
-                    >
-                      삭제
                     </button>
 
                     {/* 펼침 화살표 */}
@@ -1941,7 +1951,15 @@ export default function Menus() {
               {/* 헤더 */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-border flex-shrink-0">
                 <div className="text-[16px] font-extrabold">카테고리 수정</div>
-                <button onClick={() => setCatEditModalId(null)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setCatDeleteModalId(catEditModalId); setCatEditModalId(null) }}
+                    className="text-[12px] font-semibold text-danger border border-danger/30 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                  >
+                    삭제
+                  </button>
+                  <button onClick={() => setCatEditModalId(null)} className="text-gray-text hover:text-ink text-[18px] leading-none">✕</button>
+                </div>
               </div>
 
               {/* 이름 */}
@@ -1955,15 +1973,23 @@ export default function Menus() {
               </div>
 
               {/* 메뉴 선택 */}
-              <div className="px-6 pb-2 flex-shrink-0">
-                <div className="text-[11px] font-bold text-gray-text mb-2">메뉴 선택 <span className="font-normal text-gray-text/70">(체크된 메뉴가 이 카테고리에 속합니다)</span></div>
+              <div className="px-6 pb-2 pt-1 flex-shrink-0 space-y-2">
+                <div className="text-[11px] font-bold text-gray-text">메뉴 선택 <span className="font-normal text-gray-text/70">(체크된 메뉴가 이 카테고리에 속합니다)</span></div>
+                <input
+                  value={catEditSearch}
+                  onChange={e => setCatEditSearch(e.target.value)}
+                  placeholder="메뉴명 검색"
+                  className="w-full border border-gray-border rounded-xl px-3 py-2 text-[13px] focus:outline-none focus:border-green"
+                />
               </div>
               <div className="flex-1 overflow-y-auto px-6 pb-4">
                 {menus.length === 0 ? (
                   <div className="text-[13px] text-gray-text py-4 text-center">등록된 메뉴가 없습니다</div>
                 ) : (
                   <div className="space-y-1.5">
-                    {menus.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(m => {
+                    {menus.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                    .filter(m => !catEditSearch.trim() || m.name.includes(catEditSearch.trim()))
+                    .map(m => {
                       const checked = catEditChecked.has(m.code)
                       return (
                         <label key={m.code} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${checked ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
