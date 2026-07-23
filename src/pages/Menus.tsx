@@ -427,12 +427,21 @@ export default function Menus() {
   }
 
   async function deleteCategory(id: string) {
-    const { error } = await supabase.from('categories').delete().eq('id', id)
-    if (error) {
-      console.error('카테고리 삭제 실패 (메뉴가 남아있는지 확인):', error)
+    // 먼저 연결된 메뉴들의 category_id를 null로 해제 (FK 제약 방지)
+    const { error: unlinkErr } = await supabase
+      .from('menus')
+      .update({ category_id: null })
+      .eq('category_id', id)
+    if (unlinkErr) {
+      alert('메뉴 카테고리 해제 실패: ' + unlinkErr.message)
       return
     }
-    setMenus(prev => prev.filter(m => m.categoryId !== id))
+    const { error } = await supabase.from('categories').delete().eq('id', id)
+    if (error) {
+      alert('카테고리 삭제 실패: ' + error.message)
+      return
+    }
+    setMenus(prev => prev.map(m => m.categoryId === id ? { ...m, categoryId: undefined } : m))
     setCategories(prev => prev.filter(c => c.id !== id))
     if (selected?.categoryId === id) setSelected(null)
   }
