@@ -126,6 +126,7 @@ export default function Menus() {
   const [dragId,             setDragId]             = useState<string | null>(null)
   const [dragOverId,         setDragOverId]         = useState<string | null>(null)
   const [catDeleteModalId,   setCatDeleteModalId]   = useState<string | null>(null)
+  const [catDeleteRemap,     setCatDeleteRemap]     = useState<Record<string, string>>({}) // menuCode → 새 categoryId
 
   const [addMenuOpen,   setAddMenuOpen]   = useState(false)
   const [addModalTab,   setAddModalTab]   = useState<'bulk' | 'detail'>('bulk')
@@ -426,12 +427,21 @@ export default function Menus() {
     setCatEditModalId(null)
   }
 
-  async function deleteCategory(id: string) {
-    const { error } = await supabase.from('categories').delete().eq('id', id)
-    if (error) {
-      alert('카테고리 삭제 실패: ' + error.message)
-      return
+  async function deleteCategory(id: string, remap: Record<string, string> = {}) {
+    // 메뉴들을 새 카테고리로 이동
+    const remapEntries = Object.entries(remap)
+    if (remapEntries.length > 0) {
+      const results = await Promise.all(
+        remapEntries.map(([menuCode, newCatId]) =>
+          supabase.from('menus').update({ category_id: newCatId }).eq('id', menuCode)
+        )
+      )
+      const moveErr = results.find(r => r.error)?.error
+      if (moveErr) { alert('메뉴 이동 실패: ' + moveErr.message); return }
+      setMenus(prev => prev.map(m => remap[m.code] ? { ...m, categoryId: remap[m.code] } : m))
     }
+    const { error } = await supabase.from('categories').delete().eq('id', id)
+    if (error) { alert('카테고리 삭제 실패: ' + error.message); return }
     setCategories(prev => prev.filter(c => c.id !== id))
   }
 
@@ -1951,7 +1961,7 @@ export default function Menus() {
                 <div className="text-[16px] font-extrabold">카테고리 수정</div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => { setCatDeleteModalId(catEditModalId); setCatEditModalId(null) }}
+                    onClick={() => { setCatDeleteRemap({}); setCatDeleteModalId(catEditModalId); setCatEditModalId(null) }}
                     className="text-[12px] font-semibold text-danger border border-danger/30 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors"
                   >
                     삭제
@@ -2061,59 +2071,78 @@ export default function Menus() {
                 </div>
                 <div className="text-[13px] text-gray-text">
                   {catMenus.length > 0
-                    ? '이 카테고리에 속한 메뉴를 먼저 다른 카테고리로 옮겨야 삭제할 수 있습니다.'
+                    ? '각 메뉴를 이동할 카테고리를 선택하면 삭제할 수 있습니다.'
                     : '카테고리를 삭제합니다. 이 작업은 되돌릴 수 없습니다.'}
                 </div>
               </div>
 
-              {/* 메뉴 목록 (있을 때만) */}
-              {catMenus.length > 0 && (
-                <div className="flex-1 overflow-y-auto px-6 pb-2">
-                  <div className="text-[11px] font-bold text-danger mb-2">이동이 필요한 메뉴 {catMenus.length}개</div>
-                  <div className="space-y-2">
-                    {catMenus.map(m => (
-                      <div key={m.code} className="flex items-center gap-3 bg-red-50 rounded-xl px-3 py-2.5">
-                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {m.imageUrl
-                            ? <img src={m.imageUrl} alt={m.name} className="w-full h-full object-cover" />
-                            : <span className="text-[20px]">{m.emoji}</span>
-                          }
-                        </div>
-                        <div className="text-[13px] font-semibold text-ink">{m.name}</div>
-                      </div>
-                    ))}
+              {/* 메뉴 목록 + 카테고리 드롭다운 */}
+              {catMenus.length > 0 && (() => {
+                const otherCats = categories.filter(c => c.id !== catDeleteModalId)
+                const allMapped = catMenus.every(m => !!catDeleteRemap[m.code])
+                return (
+                  <div className="flex-1 overflow-y-auto px-6 pb-2">
+                    <div className="text-[11px] font-bold text-danger mb-2">
+                      이동 필요 {catMenus.length}개 · {catMenus.filter(m => catDeleteRemap[m.code]).length}개 지정됨
+                    </div>
+                    <div className="space-y-2">
+                      {catMenus.map(m => {
+                        const mapped = !!catDeleteRemap[m.code]
+                        return (
+                          <div key={m.code} className={`flex items-center gap-3 rounded-xl px-3 py-2 transition-colors ${mapped ? 'bg-green-soft' : 'bg-red-50'}`}>
+                            <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {m.imageUrl
+                                ? <img src={m.imageUrl} alt={m.name} className="w-full h-full object-cover" />
+                                : <span className="text-[18px]">{m.emoji}</span>
+                              }
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] font-semibold text-ink truncate">{m.name}</div>
+                            </div>
+                            <select
+                              value={catDeleteRemap[m.code] ?? ''}
+                              onChange={e => {
+                                const val = e.target.value
+                                setCatDeleteRemap(prev => val ? { ...prev, [m.code]: val } : (() => { const n = { ...prev }; delete n[m.code]; return n })())
+                              }}
+                              className={`flex-shrink-0 text-[12px] font-semibold border rounded-lg px-2 py-1.5 focus:outline-none transition-colors ${mapped ? 'border-green text-green bg-white' : 'border-gray-border text-gray-text bg-white'}`}
+                            >
+                              <option value="">카테고리 선택</option>
+                              {otherCats.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {catMenus.length > 0 && !allMapped && (
+                      <p className="text-[11px] text-gray-text mt-3">모든 메뉴에 카테고리를 지정하면 삭제 버튼이 활성화됩니다.</p>
+                    )}
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* 푸터 */}
-              <div className="flex gap-3 px-6 py-4 border-t border-gray-border flex-shrink-0">
-                <button onClick={() => setCatDeleteModalId(null)}
-                  className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
-                  취소
-                </button>
-                {catMenus.length === 0 ? (
-                  <button
-                    onClick={() => { deleteCategory(catDeleteModalId!); setCatDeleteModalId(null) }}
-                    className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors"
-                  >
-                    삭제
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setCatDeleteModalId(null)
-                      setCatEditNameDraft(cat.name)
-                      setCatEditChecked(new Set(catMenus.map(m => m.code)))
-                      setCatEditSearch('')
-                      setCatEditModalId(catDeleteModalId)
-                    }}
-                    className="flex-1 py-3 rounded-xl bg-[#1E1E1E] text-white font-bold hover:opacity-90 transition-opacity"
-                  >
-                    수정으로 이동
-                  </button>
-                )}
-              </div>
+              {(() => {
+                const allMapped = catMenus.every(m => !!catDeleteRemap[m.code])
+                const canDelete = catMenus.length === 0 || allMapped
+                return (
+                  <div className="flex gap-3 px-6 py-4 border-t border-gray-border flex-shrink-0">
+                    <button onClick={() => setCatDeleteModalId(null)}
+                      className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
+                      취소
+                    </button>
+                    <button
+                      disabled={!canDelete}
+                      onClick={() => { deleteCategory(catDeleteModalId!, catDeleteRemap); setCatDeleteModalId(null) }}
+                      className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           </div>
         )
