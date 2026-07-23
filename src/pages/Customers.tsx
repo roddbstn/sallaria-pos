@@ -455,7 +455,7 @@ export default function Customers() {
               onClick={() => setKioskQr(true)}
               className="px-4 py-2 bg-gray-100 rounded-lg text-[13px] font-bold hover:bg-gray-100 transition-colors"
             >
-              🖨 키오스크 QR
+              🖨 매장 공용 QR
             </button>
             {!showInactive && (
               <button
@@ -908,8 +908,13 @@ export default function Customers() {
             <div className="space-y-5">
               <div>
                 <label className="text-[11px] font-bold text-gray-text block mb-1">거래처명 <span className="text-danger">*</span></label>
-                <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="예: 북구청 공원녹지과" className={INPUT_CLS} />
+                <div className="relative">
+                  <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value.slice(0, 25) }))}
+                    maxLength={25} placeholder="예: 북구청 공원녹지과" className={INPUT_CLS} />
+                  <span className={`absolute right-2.5 bottom-2 text-[10px] ${newForm.name.length >= 25 ? 'text-danger' : 'text-gray-text'}`}>
+                    {newForm.name.length}/25
+                  </span>
+                </div>
               </div>
 
               <div>
@@ -1026,7 +1031,13 @@ export default function Customers() {
             <div className="space-y-5">
               <div>
                 <label className="text-[11px] font-bold text-gray-text block mb-1">거래처명 <span className="text-danger">*</span></label>
-                <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} className={INPUT_CLS} />
+                <div className="relative">
+                  <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value.slice(0, 25) }))}
+                    maxLength={25} className={INPUT_CLS} />
+                  <span className={`absolute right-2.5 bottom-2 text-[10px] ${editForm.name.length >= 25 ? 'text-danger' : 'text-gray-text'}`}>
+                    {editForm.name.length}/25
+                  </span>
+                </div>
               </div>
               <div>
                 <label className="text-[11px] font-bold text-gray-text block mb-2">유형</label>

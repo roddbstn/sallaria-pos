@@ -29,6 +29,7 @@ export interface OrderItem {
 export interface OrderPayload {
   order_code:        string
   order_number?:     string
+  store_name?:       string
   account_name:      string
   account_type?:     string   // '과' | '기업' | '개인' | '기타'
   orderer_name:      string
@@ -116,7 +117,7 @@ export function buildKitchenReceiptHtml(order: OrderPayload, settings: ReceiptSe
 .sub-hr { border:none; border-top:1px dotted #000; margin:2px 0; }
 </style></head><body>
   <div class="c b">[주방용]</div>
-  <div class="c">샐러리아 침산점 - 선결제 영수증</div>
+  <div class="c">${order.store_name ?? '샐러리아 침산점'} - 선결제 영수증</div>
   <hr class="hr">
   <div>주문번호 : <b>${order.order_number ?? order.order_code}</b></div>
   <div>주문일시 : ${formatDate(order.ordered_at)}</div>
@@ -180,7 +181,7 @@ export function buildCustomerReceiptHtml(order: OrderPayload, settings: ReceiptS
 .sub-hr { border:none; border-top:1px dotted #000; margin:2px 0; }
 </style></head><body>
   <div class="c b">[고객용]</div>
-  <div class="c">샐러리아 침산점 - 선결제 영수증</div>
+  <div class="c">${order.store_name ?? '샐러리아 침산점'} - 선결제 영수증</div>
   <hr class="hr">
   <div>주문번호 : <b>${order.order_number ?? order.order_code}</b></div>
   <div>주문일시 : ${formatDate(order.ordered_at)}</div>

@@ -3,6 +3,7 @@ import { type Order } from '../lib/mock-data'
 import { won, orderToPayload, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { track } from '../lib/firebase'
+import { useStore } from '../lib/store-context'
 
 // 복사 버튼 컴포넌트
 function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray' | 'black' }) {
@@ -53,6 +54,7 @@ const CARD_GAP = 20  // 카드 간격(px)
 let lastPrepMins = 15
 
 export default function OrderPopup({ queue, onClose, onApprove }: Props) {
+  const { storeName } = useStore()
   const [stage,    setStage]    = useState<Stage>('summary')
   const [prepMins, setPrepMins] = useState(lastPrepMins)
   const [reason,   setReason]   = useState('')
@@ -96,7 +98,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
 
     // ③ Electron IPC (영수증 출력)
     const w = window as unknown as { api?: { approveOrder?: Function } }
-    await w.api?.approveOrder?.({ order: orderToPayload(order), prepMins })
+    await w.api?.approveOrder?.({ order: orderToPayload(order, storeName), prepMins })
 
     track('pos_order_approved', {
       order_code:        order.code,

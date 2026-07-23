@@ -66,6 +66,7 @@ export interface Menu {
   emoji:         string
   active:        boolean
   soldOut:       boolean
+  soldOutUntil?: string | null   // null = 영구 품절, ISO string = 오늘 품절
   order:         number
   isPopular:     boolean
   isRecommended: boolean
@@ -83,27 +84,31 @@ export interface MenuOption {
 }
 
 export interface OptionItem {
-  id:        string
-  name:      string
-  extra:     number
-  soldOut:   boolean
-  hidden:    boolean
-  isPopular: boolean
+  id:           string
+  name:         string
+  extra:        number
+  soldOut:      boolean
+  soldOutUntil: string | null  // null = 영구 품절, ISO string = 오늘 품절
+  hidden:       boolean
+  isPopular:    boolean
 }
 
 export interface OptionGroup {
-  id:         string
-  name:       string
-  isRequired: boolean
-  isMulti:    boolean
-  maxSelect:  number | null
-  items:      OptionItem[]
+  id:           string
+  name:         string
+  isRequired:   boolean
+  isMulti:      boolean
+  maxSelect:    number | null
+  isSoldOut?:   boolean
+  soldOutUntil?: string | null  // null = 영구 품절, ISO string = 오늘 품절
+  items:        OptionItem[]
 }
 
 export interface MenuDetail extends Menu {
-  description:  string
-  imageUrl?:    string
-  optionGroups: OptionGroup[]
+  description:   string
+  imageUrl?:     string
+  soldOutUntil?: string | null  // null = 영구 품절, ISO string = 오늘 품절
+  optionGroups:  OptionGroup[]
 }
 
 // ── 주문 목업 ─────────────────────────────────────────────────────────────────
@@ -293,33 +298,33 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
       {
         id: 'OG1', name: '베이스', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI1', name: '현미밥',       extra: 0, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI2', name: '메밀면',       extra: 0, soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI3', name: '샐러드 베이스', extra: 0, soldOut: true,  hidden: false, isPopular: false },
+          { id: 'OI1', name: '현미밥',       extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI2', name: '메밀면',       extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI3', name: '샐러드 베이스', extra: 0, soldOut: true,  soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
       {
         id: 'OG2', name: '가격 (용량)', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI4', name: '100g', extra: 0,    soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI5', name: '200g', extra: 3000, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI4', name: '100g', extra: 0,    soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI5', name: '200g', extra: 3000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
       {
         id: 'OG3', name: '드레싱 (기본)', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI6', name: '오리엔탈', extra: 0, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI7', name: '발사믹',   extra: 0, soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI8', name: '시저',     extra: 0, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI6', name: '오리엔탈', extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI7', name: '발사믹',   extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI8', name: '시저',     extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
       {
         id: 'OG4', name: '토핑 추가', isRequired: false, isMulti: true, maxSelect: 3,
         items: [
-          { id: 'OI9',  name: '아보카도 추가', extra: 1500, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI10', name: '새우 추가',     extra: 2000, soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI11', name: '연어 추가',     extra: 2500, soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI12', name: '베이컨',        extra: 1000, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI9',  name: '아보카도 추가', extra: 1500, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI10', name: '새우 추가',     extra: 2000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI11', name: '연어 추가',     extra: 2500, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI12', name: '베이컨',        extra: 1000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
     ],
@@ -332,22 +337,22 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
       {
         id: 'OG1', name: '베이스', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI1', name: '현미밥', extra: 0, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI2', name: '메밀면', extra: 0, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI1', name: '현미밥', extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI2', name: '메밀면', extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
       {
         id: 'OG2', name: '가격 (용량)', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI4', name: '100g', extra: 0,    soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI5', name: '200g', extra: 3000, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI4', name: '100g', extra: 0,    soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI5', name: '200g', extra: 3000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
       {
         id: 'OG4', name: '토핑 추가', isRequired: false, isMulti: true, maxSelect: 3,
         items: [
-          { id: 'OI9',  name: '아보카도 추가', extra: 1500, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI12', name: '베이컨',        extra: 1000, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI9',  name: '아보카도 추가', extra: 1500, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI12', name: '베이컨',        extra: 1000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
     ],
@@ -360,16 +365,16 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
       {
         id: 'OG3', name: '드레싱', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI8', name: '시저',     extra: 0, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI6', name: '오리엔탈', extra: 0, soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI7', name: '발사믹',   extra: 0, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI8', name: '시저',     extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI6', name: '오리엔탈', extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI7', name: '발사믹',   extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
       {
         id: 'OG5', name: '추가 토핑', isRequired: false, isMulti: true, maxSelect: null,
         items: [
-          { id: 'OI13', name: '닭가슴살 추가', extra: 2000, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI9',  name: '아보카도 추가', extra: 1500, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI13', name: '닭가슴살 추가', extra: 2000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI9',  name: '아보카도 추가', extra: 1500, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
     ],
@@ -382,7 +387,7 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
       {
         id: 'OG5', name: '추가 토핑', isRequired: false, isMulti: true, maxSelect: null,
         items: [
-          { id: 'OI13', name: '닭가슴살 추가', extra: 2000, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI13', name: '닭가슴살 추가', extra: 2000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
     ],
@@ -395,8 +400,8 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
       {
         id: 'OG6', name: '음료 추가', isRequired: false, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI14', name: '아메리카노 추가', extra: 2000, soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI15', name: '제로콜라 추가',   extra: 1500, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI14', name: '아메리카노 추가', extra: 2000, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI15', name: '제로콜라 추가',   extra: 1500, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
     ],
@@ -409,9 +414,9 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
       {
         id: 'OG7', name: '매운맛', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI16', name: '순한맛', extra: 0, soldOut: false, hidden: false, isPopular: false },
-          { id: 'OI17', name: '보통',   extra: 0, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI18', name: '매운맛', extra: 0, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI16', name: '순한맛', extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
+          { id: 'OI17', name: '보통',   extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI18', name: '매운맛', extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
     ],
@@ -430,8 +435,8 @@ export const MOCK_MENU_DETAILS: MenuDetail[] = [
       {
         id: 'OG8', name: '온도', isRequired: true, isMulti: false, maxSelect: null,
         items: [
-          { id: 'OI19', name: '아이스', extra: 0, soldOut: false, hidden: false, isPopular: true  },
-          { id: 'OI20', name: '핫',     extra: 0, soldOut: false, hidden: false, isPopular: false },
+          { id: 'OI19', name: '아이스', extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: true  },
+          { id: 'OI20', name: '핫',     extra: 0, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false },
         ],
       },
     ],

@@ -3,6 +3,7 @@ import { type Order } from '../lib/mock-data'
 import { won, formatDate, orderToPayload, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { mapOrderRow } from '../lib/mappers'
+import { useStore } from '../lib/store-context'
 
 // parseNote는 lib/ipc.ts에서 import
 
@@ -308,7 +309,7 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
             <button key={btn.label} onClick={btn.onClick}
               className={`w-full text-left px-3 py-2 rounded-lg text-[12px] font-medium transition-colors
                 ${activeQuick === btn.label
-                  ? 'bg-ink text-white'
+                  ? 'bg-green-soft text-green font-bold'
                   : 'bg-gray-100 text-ink hover:bg-gray-200'}`}>
               {btn.label}
             </button>
@@ -351,21 +352,24 @@ function calcMenuSales(orders: Order[]): MenuSales[] {
 }
 
 // ── 거래처별 매출 집계 ────────────────────────────────────────────────────────
-interface AccountSales { name: string; count: number; total: number }
+interface AccountSales { name: string; count: number; ordererCount: number; total: number }
 
 function calcAccountSales(orders: Order[]): AccountSales[] {
-  const map = new Map<string, AccountSales>()
+  const map = new Map<string, { count: number; orderers: Set<string>; total: number }>()
   for (const order of orders) {
     if (order.status === '취소') continue
     const existing = map.get(order.accountName)
     if (existing) {
       existing.count += 1
+      existing.orderers.add(order.orderer)
       existing.total += order.total
     } else {
-      map.set(order.accountName, { name: order.accountName, count: 1, total: order.total })
+      map.set(order.accountName, { count: 1, orderers: new Set([order.orderer]), total: order.total })
     }
   }
-  return Array.from(map.values()).sort((a, b) => b.total - a.total)
+  return Array.from(map.entries())
+    .map(([name, v]) => ({ name, count: v.count, ordererCount: v.orderers.size, total: v.total }))
+    .sort((a, b) => b.total - a.total)
 }
 
 // ── 날짜 범위 내 날 수 ────────────────────────────────────────────────────────
@@ -387,6 +391,7 @@ function Row({ label, value, mono, bold }: { label: string; value: string; mono?
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function Orders() {
+  const { storeName } = useStore()
   const today = toYMD(new Date())
 
   const [startDate, setStartDate] = useState<string | null>(today)
@@ -776,9 +781,10 @@ export default function Orders() {
         ) : (
           /* 거래처별 주문액 탭 */
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="grid grid-cols-[1fr_90px_120px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+            <div className="grid grid-cols-[1fr_72px_72px_120px] px-5 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
               <span>거래처명</span>
               <span className="text-right">주문건수</span>
+              <span className="text-right">주문인 수</span>
               <span className="text-right">주문액</span>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
@@ -789,13 +795,14 @@ export default function Orders() {
               ) : (
                 accountSales.map((as, idx) => (
                   <button key={as.name} onClick={() => setSelectedAccountName(as.name)}
-                    className={`w-full grid grid-cols-[1fr_90px_120px] px-5 py-3 text-left text-[13px] transition-colors
+                    className={`w-full grid grid-cols-[1fr_72px_72px_120px] px-5 py-3 text-left text-[13px] transition-colors
                       ${selectedAccountName === as.name ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
                     <span className="font-semibold text-ink flex items-center gap-1.5">
                       {idx === 0 && <span>🏆</span>}
                       {as.name}
                     </span>
                     <span className="text-right text-gray-text">{as.count}건</span>
+                    <span className="text-right text-gray-text">{as.ordererCount}명</span>
                     <span className="text-right font-bold text-ink">{won(as.total)}</span>
                   </button>
                 ))
@@ -904,7 +911,7 @@ export default function Orders() {
                     onClick={async () => {
                       setReprintMsg(null)
                       const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
-                      const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected) })
+                      const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected, storeName) })
                       if (!res) return
                       setReprintMsg(res.ok
                         ? { ok: true,  text: '영수증을 출력합니다' }

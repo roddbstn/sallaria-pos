@@ -59,3 +59,8 @@ body {
 ::-webkit-scrollbar       { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--gray-border); border-radius: 3px; }
+
+/* 옵션 그룹 네비게이션 바 — 수평 스크롤바 굵게 */
+.option-tabs-scrollbar::-webkit-scrollbar { height: 8px; }
+.option-tabs-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.option-tabs-scrollbar::-webkit-scrollbar-thumb { background: var(--gray-border); border-radius: 4px; }

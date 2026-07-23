@@ -394,7 +394,9 @@ export default function App() {
     autoOpenEnabled,
     hoursOpen, setHoursOpen,
     operatingHours,
+    breakTime,
     hoursDraft, setHoursDraft,
+    breakDraft, setBreakDraft,
     offHoursConfirm, setOffHoursConfirm,
     closureOpen, setClosureOpen,
     closureType, setClosureType,
@@ -569,7 +571,7 @@ export default function App() {
             </span>
             {/* 시계 아이콘 버튼 */}
             <button
-              onClick={() => { setHoursDraft({ ...operatingHours }); setHoursOpen(true) }}
+              onClick={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }}
               title="운영시간 설정"
               className="flex items-center gap-1 px-2 h-8 rounded-lg text-gray-text hover:bg-gray-bg hover:text-ink transition-colors"
             >
@@ -752,45 +754,91 @@ export default function App() {
                   { key: 'sun', label: '일' },
                 ].map(({ key, label }) => {
                   const day = hoursDraft[key] ?? { enabled: true, open: '09:00', close: '21:00' }
+                  const brk = breakDraft[key] ?? { enabled: false, start: '14:00', end: '17:00' }
                   const parseT = (t: string) => { const [h, m] = t.split(':'); return { h: parseInt(h), m } }
                   const setTime = (field: 'open' | 'close', h: number, m: string) => {
                     setHoursDraft(prev => ({ ...prev, [key]: { ...day, [field]: `${String(h).padStart(2,'0')}:${m}` } }))
                   }
+                  const setBreakField = (field: 'start' | 'end', h: number, m: string) => {
+                    setBreakDraft(prev => ({ ...prev, [key]: { ...brk, [field]: `${String(h).padStart(2,'0')}:${m}` } }))
+                  }
                   const openT  = parseT(day.open)
                   const closeT = parseT(day.close)
+                  const brkStartT = parseT(brk.start)
+                  const brkEndT   = parseT(brk.end)
 
                   return (
-                    <div key={key} className="flex items-center gap-3 py-2">
-                      <span className="w-5 text-[13px] font-bold text-ink">{label}</span>
-                      {/* 토글 */}
-                      <button
-                        onClick={() => setHoursDraft(prev => ({ ...prev, [key]: { ...day, enabled: !day.enabled } }))}
-                        className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
-                      >
-                        <span className={`absolute top-[4px] left-[4px] w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${day.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
-                      </button>
-                      {day.enabled ? (
-                        <div className="flex flex-col gap-1 flex-1">
-                          {(['open', 'close'] as const).map(field => {
-                            const { h, m } = field === 'open' ? openT : closeT
-                            return (
-                              <div key={field} className="flex items-center gap-1.5">
-                                <span className="text-[10px] text-gray-text w-6 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
-                                <HourTicker value={h} onChange={newH => setTime(field, newH, m)} />
-                                <span className="text-gray-text text-[12px] mx-0.5">:</span>
-                                {['00','15','30','45'].map(min => (
-                                  <button
-                                    key={min}
-                                    onClick={() => setTime(field, h, min)}
-                                    className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-green-soft text-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                                  >{min}</button>
-                                ))}
-                              </div>
-                            )
-                          })}
+                    <div key={key} className="py-2 space-y-1.5">
+                      {/* 영업 시간 행 */}
+                      <div className="flex items-center gap-3">
+                        <span className="w-5 text-[13px] font-bold text-ink">{label}</span>
+                        {/* 영업 토글 */}
+                        <button
+                          onClick={() => setHoursDraft(prev => ({ ...prev, [key]: { ...day, enabled: !day.enabled } }))}
+                          className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
+                        >
+                          <span className={`absolute top-[4px] left-[4px] w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${day.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
+                        </button>
+                        {day.enabled ? (
+                          <div className="flex flex-col gap-1 flex-1">
+                            {(['open', 'close'] as const).map(field => {
+                              const { h, m } = field === 'open' ? openT : closeT
+                              return (
+                                <div key={field} className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-gray-text w-6 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
+                                  <HourTicker value={h} onChange={newH => setTime(field, newH, m)} />
+                                  <span className="text-gray-text text-[12px] mx-0.5">:</span>
+                                  {['00','15','30','45'].map(min => (
+                                    <button
+                                      key={min}
+                                      onClick={() => setTime(field, h, min)}
+                                      className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-green-soft text-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                                    >{min}</button>
+                                  ))}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-[12px] text-gray-text flex-1">운영 안 함</span>
+                        )}
+                      </div>
+
+                      {/* 브레이크타임 행 (영업일만) */}
+                      {day.enabled && (
+                        <div className="flex items-start gap-3 pl-8">
+                          <span className="text-[12px] font-semibold text-gray-text w-[70px] pt-1.5 flex-shrink-0">브레이크타임</span>
+                          {/* 브레이크 토글 */}
+                          <button
+                            onClick={() => setBreakDraft(prev => ({ ...prev, [key]: { ...brk, enabled: !brk.enabled } }))}
+                            className={`relative w-10 h-6 rounded-full flex-shrink-0 mt-1 transition-colors duration-200 ${brk.enabled ? 'bg-orange-400' : 'bg-gray-200'}`}
+                          >
+                            <span className={`absolute top-[4px] left-[4px] w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${brk.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
+                          </button>
+                          {brk.enabled ? (
+                            <div className="flex flex-col gap-1 flex-1">
+                              {(['start', 'end'] as const).map(field => {
+                                const { h, m } = field === 'start' ? brkStartT : brkEndT
+                                return (
+                                  <div key={field} className="flex items-center gap-1.5">
+                                    <span className="text-[10px] text-gray-text w-6 flex-shrink-0">{field === 'start' ? '시작' : '종료'}</span>
+                                    <HourTicker value={h} onChange={newH => setBreakField(field, newH, m)} />
+                                    <span className="text-gray-text text-[12px] mx-0.5">:</span>
+                                    {['00','15','30','45'].map(min => (
+                                      <button
+                                        key={min}
+                                        onClick={() => setBreakField(field, h, min)}
+                                        className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                                      >{min}</button>
+                                    ))}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <span className="text-[12px] text-gray-text pt-1">없음</span>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-[12px] text-gray-text flex-1">운영 안 함</span>
                       )}
                     </div>
                   )

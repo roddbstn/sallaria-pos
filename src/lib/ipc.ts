@@ -44,12 +44,13 @@ export const formatDate = (iso: string) => {
  * 렌더러의 Order 타입 → 프린터 IPC로 전달할 OrderPayload 형태로 변환
  * (mock-data Order.items.options 는 string[] 이라 extra_price = 0 처리)
  */
-export function orderToPayload(o: Order) {
+export function orderToPayload(o: Order, storeName?: string) {
   const deliveryFee = o.method === '배달' ? 3500 : 0
   const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parseNote(o.remarks)
   return {
     order_code:       o.code,
     order_number:     o.orderNumber,
+    store_name:       storeName,
     account_name:     o.accountName,
     account_type:     o.accountType,
     orderer_name:     o.orderer,

@@ -7,6 +7,21 @@ import { useStore } from '../lib/store-context'
 type MenuTab      = 'menu' | 'option' | 'category'
 type StatusFilter = 'all' | 'active' | 'soldOut' | 'hidden'
 type TagFilter    = 'popular' | 'recommended' | 'new' | null
+type SoldOutState = 'active' | 'today' | 'permanent'
+
+// ── 품절 상태 헬퍼 ────────────────────────────────────────────────────────────
+function getSoldOutState(soldOut: boolean, soldOutUntil: string | null | undefined): SoldOutState {
+  if (!soldOut) return 'active'
+  if (soldOutUntil) return 'today'
+  return 'permanent'
+}
+
+// KST 오늘 자정 (23:59:59) ISO string 반환 (POS 앱은 KST 환경에서 실행)
+function getKSTEndOfDay(): string {
+  const d = new Date()
+  d.setHours(23, 59, 59, 999)
+  return d.toISOString()
+}
 
 // ── DB row → 내부 타입 변환 ───────────────────────────────────────────────────
 function mapDbMenu(row: any): MenuDetail {
@@ -24,12 +39,13 @@ function mapDbMenu(row: any): MenuDetail {
         items:      (g.option_items ?? [])
           .sort((a: any, b: any) => a.display_order - b.display_order)
           .map((it: any): OptionItem => ({
-            id:        it.id,
-            name:      it.name,
-            extra:     it.extra_price,
-            soldOut:   it.is_sold_out,
-            hidden:    it.is_hidden,
-            isPopular: it.is_popular,
+            id:           it.id,
+            name:         it.name,
+            extra:        it.extra_price,
+            soldOut:      it.is_sold_out,
+            soldOutUntil: it.sold_out_until ?? null,
+            hidden:       it.is_hidden,
+            isPopular:    it.is_popular,
           })),
       } as OptionGroup
     })
@@ -45,6 +61,7 @@ function mapDbMenu(row: any): MenuDetail {
     categoryId:    row.category_id,
     active:        !row.is_hidden,
     soldOut:       row.is_sold_out,
+    soldOutUntil:  row.sold_out_until ?? null,
     order:         row.display_order,
     isPopular:     row.is_popular     ?? false,
     isRecommended: row.is_recommended ?? false,
@@ -55,13 +72,17 @@ function mapDbMenu(row: any): MenuDetail {
 
 // ── 스토어 옵션 그룹 (옵션 탭용) ─────────────────────────────────────────────
 interface StoreOptionGroup {
-  id:         string
-  name:       string
-  isRequired: boolean
-  isMulti:    boolean
-  maxSelect:  number | null
-  usedBy:     string[]   // 적용된 메뉴명 목록
-  items:      { id: string; name: string; extra: number; soldOut: boolean; hidden: boolean }[]
+  id:           string
+  name:         string
+  isRequired:   boolean
+  isMulti:      boolean
+  maxSelect:    number | null
+  isSoldOut:    boolean
+  soldOutUntil: string | null
+  isHidden:     boolean
+  usedBy:       string[]
+  usedByMenus:  { name: string; soldOut: boolean; hidden: boolean }[]
+  items:        { id: string; name: string; extra: number; soldOut: boolean; soldOutUntil: string | null; hidden: boolean }[]
 }
 
 export default function Menus() {
@@ -82,7 +103,7 @@ export default function Menus() {
   const [deleteConfirm, setDeleteConfirm] = useState<'bulk' | 'single' | null>(null)
 
   const [editMode, setEditMode] = useState(false)
-  const [editForm, setEditForm] = useState({ name: '', price: '', description: '', soldOut: false, active: true })
+  const [editForm, setEditForm] = useState({ name: '', price: '', description: '', soldOutState: 'active' as SoldOutState, active: true, categoryId: '' })
   const [editImageFile,    setEditImageFile]    = useState<File | null>(null)
   const [editImagePreview, setEditImagePreview] = useState('')
   const [editImageError,   setEditImageError]   = useState('')
@@ -130,6 +151,9 @@ export default function Menus() {
   const optionTabsBarRef       = useRef<HTMLDivElement>(null)
   const isOptionScrollingRef   = useRef(false)
 
+  const [optionSearch, setOptionSearch] = useState('')
+  const [optionFilter, setOptionFilter] = useState<'all' | 'active' | 'soldOut' | 'hidden'>('all')
+
   // ── 카테고리 조회 ──────────────────────────────────────────────────────────
   async function fetchCategories(): Promise<Category[]> {
     if (!storeId) return []
@@ -154,13 +178,13 @@ export default function Menus() {
       .from('menus')
       .select(`
         id, category_id, name, description, base_price, image_url,
-        is_sold_out, is_hidden, display_order, is_popular, is_recommended, is_new,
+        is_sold_out, sold_out_until, is_hidden, display_order, is_popular, is_recommended, is_new,
         menu_option_groups (
           display_order,
           option_groups (
             id, name, is_required, is_multi, max_select,
             option_items (
-              id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order
+              id, name, extra_price, is_popular, is_sold_out, sold_out_until, is_hidden, display_order
             )
           )
         )
@@ -176,29 +200,37 @@ export default function Menus() {
     const { data } = await supabase
       .from('option_groups')
       .select(`
-        id, name, display_order, is_required, is_multi, max_select,
-        option_items ( id, name, extra_price, is_sold_out, is_hidden, display_order ),
-        menu_option_groups ( menu_id, menus ( name ) )
+        id, name, display_order, is_required, is_multi, max_select, is_sold_out, sold_out_until, is_hidden,
+        option_items ( id, name, extra_price, is_sold_out, sold_out_until, is_hidden, display_order ),
+        menu_option_groups ( menu_id, menus ( name, is_sold_out, is_hidden ) )
       `)
       .eq('store_id', storeId)
-      .not('name', 'ilike', '가격(필수)%')   // 메뉴별 기본가 그룹은 관리 불필요 — 숨김
+      .not('name', 'ilike', '가격(필수)%')
       .order('name')
 
     setStoreGroups((data ?? []).map((g: any) => ({
-      id:         g.id,
-      name:       g.name,
-      isRequired: g.is_required ?? false,
-      isMulti:    g.is_multi    ?? false,
-      maxSelect:  g.max_select  ?? null,
-      usedBy: (g.menu_option_groups ?? []).map((m: any) => m.menus?.name).filter(Boolean),
-      items:  (g.option_items ?? [])
+      id:           g.id,
+      name:         g.name,
+      isRequired:   g.is_required   ?? false,
+      isMulti:      g.is_multi      ?? false,
+      maxSelect:    g.max_select    ?? null,
+      isSoldOut:    g.is_sold_out   ?? false,
+      soldOutUntil: g.sold_out_until ?? null,
+      isHidden:     g.is_hidden     ?? false,
+      usedBy:     (g.menu_option_groups ?? []).map((m: any) => m.menus?.name).filter(Boolean),
+      usedByMenus: (g.menu_option_groups ?? [])
+        .map((m: any) => m.menus)
+        .filter(Boolean)
+        .map((m: any) => ({ name: m.name, soldOut: m.is_sold_out ?? false, hidden: m.is_hidden ?? false })),
+      items: (g.option_items ?? [])
         .sort((a: any, b: any) => a.display_order - b.display_order)
         .map((it: any) => ({
-          id:      it.id,
-          name:    it.name,
-          extra:   it.extra_price,
-          soldOut: it.is_sold_out,
-          hidden:  it.is_hidden,
+          id:           it.id,
+          name:         it.name,
+          extra:        it.extra_price,
+          soldOut:      it.is_sold_out,
+          soldOutUntil: it.sold_out_until ?? null,
+          hidden:       it.is_hidden,
         })),
     })))
   }
@@ -660,7 +692,14 @@ export default function Menus() {
   // ── 기본 정보 편집 ──────────────────────────────────────────────────────────
   function startEdit() {
     if (!selected) return
-    setEditForm({ name: selected.name, price: String(selected.price), description: selected.description, soldOut: selected.soldOut, active: selected.active })
+    setEditForm({
+      name:         selected.name,
+      price:        String(selected.price),
+      description:  selected.description,
+      soldOutState: getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null),
+      active:       selected.active,
+      categoryId:   selected.categoryId ?? '',
+    })
     setEditImageFile(null)
     setEditImagePreview(selected.imageUrl ?? '')
     setEditMode(true)
@@ -689,13 +728,20 @@ export default function Menus() {
       imageUrl = supabase.storage.from('menu-images').getPublicUrl(up.path).data.publicUrl
     }
 
+    const soldOutUpdates = editForm.soldOutState === 'active'
+      ? { is_sold_out: false, sold_out_until: null }
+      : editForm.soldOutState === 'today'
+      ? { is_sold_out: true, sold_out_until: getKSTEndOfDay() }
+      : { is_sold_out: true, sold_out_until: null }
+
     const { error: updateErr } = await supabase.from('menus').update({
       name:        editForm.name.trim(),
       base_price:  priceNum,
       description: editForm.description || null,
       image_url:   imageUrl ?? null,
-      is_sold_out: editForm.soldOut,
+      category_id: editForm.categoryId || null,
       is_hidden:   !editForm.active,
+      ...soldOutUpdates,
     }).eq('id', selected.code)
 
     setEditSaving(false)
@@ -714,7 +760,17 @@ export default function Menus() {
         .eq('option_group_id', gaGyeokGroup.id)
     }
 
-    applyLocalUpdate({ ...selected, name: editForm.name.trim(), price: priceNum, description: editForm.description, imageUrl, soldOut: editForm.soldOut, active: editForm.active })
+    applyLocalUpdate({
+      ...selected,
+      name:         editForm.name.trim(),
+      price:        priceNum,
+      description:  editForm.description,
+      imageUrl,
+      soldOut:      editForm.soldOutState !== 'active',
+      soldOutUntil: editForm.soldOutState === 'today' ? getKSTEndOfDay() : null,
+      active:       editForm.active,
+      categoryId:   editForm.categoryId || undefined,
+    })
     setEditMode(false)
   }
 
@@ -752,6 +808,23 @@ export default function Menus() {
     applyLocalUpdate({ ...selected, [field]: newVal })
   }
 
+  // ── 메뉴 품절 3단계 상태 직접 설정 ───────────────────────────────────────────
+  async function setMenuSoldOutState(state: SoldOutState) {
+    if (!selected) return
+    const updates =
+      state === 'active'
+        ? { is_sold_out: false, sold_out_until: null }
+        : state === 'today'
+        ? { is_sold_out: true, sold_out_until: getKSTEndOfDay() }
+        : { is_sold_out: true, sold_out_until: null }
+    await supabase.from('menus').update(updates).eq('id', selected.code)
+    applyLocalUpdate({
+      ...selected,
+      soldOut:      state !== 'active',
+      soldOutUntil: state === 'today' ? getKSTEndOfDay() : null,
+    })
+  }
+
   // ── 옵션 그룹 CRUD (스토어 단위 — 옵션 탭용) ────────────────────────────────
   async function createStandaloneGroup() {
     if (!newStoreGroup.name.trim() || !storeId) return
@@ -771,10 +844,15 @@ export default function Menus() {
     if (error || !data) { console.error(error); return }
     setStoreGroups(prev => [...prev, {
       id: data.id, name: data.name,
-      isRequired: data.is_required ?? false,
-      isMulti:    data.is_multi    ?? false,
-      maxSelect:  data.max_select  ?? null,
-      usedBy: [], items: [],
+      isRequired:   data.is_required ?? false,
+      isMulti:      data.is_multi    ?? false,
+      maxSelect:    data.max_select  ?? null,
+      isSoldOut:    false,
+      soldOutUntil: null,
+      isHidden:     false,
+      usedBy:       [],
+      usedByMenus:  [],
+      items:        [],
     }])
     setAddingStoreGroup(false)
     setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
@@ -786,6 +864,7 @@ export default function Menus() {
     if (updates.isRequired !== undefined) dbUpdates.is_required = updates.isRequired
     if (updates.isMulti    !== undefined) dbUpdates.is_multi    = updates.isMulti
     if (updates.maxSelect  !== undefined) dbUpdates.max_select  = updates.maxSelect
+    if ((updates as any).isSoldOut  !== undefined) dbUpdates.is_sold_out = (updates as any).isSoldOut
     if (Object.keys(dbUpdates).length > 0) {
       await supabase.from('option_groups').update(dbUpdates).eq('id', groupId)
     }
@@ -801,6 +880,48 @@ export default function Menus() {
     }
   }
 
+  async function setGroupSoldOutState(groupId: string, state: SoldOutState) {
+    const updates =
+      state === 'active'  ? { is_sold_out: false, sold_out_until: null            }
+      : state === 'today' ? { is_sold_out: true,  sold_out_until: getKSTEndOfDay() }
+      :                     { is_sold_out: true,  sold_out_until: null             }
+    await supabase.from('option_groups').update(updates).eq('id', groupId)
+    const localPatch = { isSoldOut: state !== 'active', soldOutUntil: state === 'today' ? getKSTEndOfDay() : null }
+    setStoreGroups(prev => prev.map(g => g.id === groupId ? { ...g, ...localPatch } : g))
+    // 메뉴 상세 모달에서도 반영 (가격(필수) 등 storeGroups에 없는 그룹 대응)
+    setSelected(prev => {
+      if (!prev) return null
+      return { ...prev, optionGroups: prev.optionGroups.map(g => g.id === groupId ? { ...g, ...localPatch } : g) }
+    })
+  }
+
+  async function toggleGroupHidden(groupId: string) {
+    // storeGroups에 있는 그룹은 현재값에서 toggle, 없는 그룹(가격(필수) 등)은 selected에서 읽음
+    const sgGroup = storeGroups.find(g => g.id === groupId)
+    const selGroup = selected?.optionGroups.find(g => g.id === groupId)
+    const currentHidden = sgGroup?.isHidden ?? (selGroup as any)?.isHidden ?? false
+    const next = !currentHidden
+    await supabase.from('option_groups').update({ is_hidden: next }).eq('id', groupId)
+    setStoreGroups(prev => prev.map(g => g.id === groupId ? { ...g, isHidden: next } : g))
+    setSelected(prev => {
+      if (!prev) return null
+      return { ...prev, optionGroups: prev.optionGroups.map(g => g.id === groupId ? { ...g, isHidden: next } as any : g) }
+    })
+  }
+
+  async function reorderStoreItem(groupId: string, fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx) return
+    const group = storeGroups.find(g => g.id === groupId)
+    if (!group) return
+    const items = [...group.items]
+    const [moved] = items.splice(fromIdx, 1)
+    items.splice(toIdx, 0, moved)
+    setStoreGroups(prev => prev.map(g => g.id !== groupId ? g : { ...g, items }))
+    await Promise.all(items.map((it, i) =>
+      supabase.from('option_items').update({ display_order: i }).eq('id', it.id)
+    ))
+  }
+
   async function addStoreItem(groupId: string, name: string, extra: number): Promise<OptionItem | null> {
     const grp = storeGroups.find(g => g.id === groupId)
     const maxOrder = grp?.items.length ?? 0
@@ -811,18 +932,19 @@ export default function Menus() {
       .single()
     if (error || !data) { console.error(error); return null }
     const item: OptionItem = { id: data.id, name: data.name, extra: data.extra_price,
-      soldOut: data.is_sold_out, hidden: data.is_hidden, isPopular: data.is_popular }
+      soldOut: data.is_sold_out, soldOutUntil: null, hidden: data.is_hidden, isPopular: data.is_popular }
     setStoreGroups(prev => prev.map(g => g.id !== groupId ? g : { ...g, items: [...g.items, item] }))
     return item
   }
 
   async function updateStoreItem(groupId: string, itemId: string, updates: Partial<OptionItem>) {
     const dbUpdates: Record<string, any> = {}
-    if (updates.name      !== undefined) dbUpdates.name        = updates.name
-    if (updates.extra     !== undefined) dbUpdates.extra_price = updates.extra
-    if (updates.soldOut   !== undefined) dbUpdates.is_sold_out = updates.soldOut
-    if (updates.hidden    !== undefined) dbUpdates.is_hidden   = updates.hidden
-    if (updates.isPopular !== undefined) dbUpdates.is_popular  = updates.isPopular
+    if (updates.name         !== undefined) dbUpdates.name          = updates.name
+    if (updates.extra        !== undefined) dbUpdates.extra_price   = updates.extra
+    if (updates.soldOut      !== undefined) dbUpdates.is_sold_out   = updates.soldOut
+    if (updates.soldOutUntil !== undefined) dbUpdates.sold_out_until = updates.soldOutUntil ?? null
+    if (updates.hidden       !== undefined) dbUpdates.is_hidden     = updates.hidden
+    if (updates.isPopular    !== undefined) dbUpdates.is_popular    = updates.isPopular
     if (Object.keys(dbUpdates).length > 0) {
       await supabase.from('option_items').update(dbUpdates).eq('id', itemId)
     }
@@ -857,13 +979,14 @@ export default function Menus() {
     })
   }
 
-  async function bulkAction(action: 'soldOut' | 'unsoldOut' | 'hide' | 'unhide') {
+  async function bulkAction(action: 'soldOut' | 'unsoldOut' | 'todaySoldOut' | 'hide' | 'unhide') {
     const codes = [...checked]
     const updates =
-      action === 'soldOut'   ? { is_sold_out: true  }
-      : action === 'unsoldOut' ? { is_sold_out: false }
-      : action === 'hide'      ? { is_hidden:   true  }
-      :                          { is_hidden:   false }
+      action === 'soldOut'        ? { is_sold_out: true,  sold_out_until: null           }
+      : action === 'unsoldOut'    ? { is_sold_out: false, sold_out_until: null           }
+      : action === 'todaySoldOut' ? { is_sold_out: true,  sold_out_until: getKSTEndOfDay() }
+      : action === 'hide'         ? { is_hidden: true  }
+      :                             { is_hidden: false }
 
     // DB 업데이트 (개별)
     await Promise.all(codes.map(code =>
@@ -872,17 +995,19 @@ export default function Menus() {
 
     setMenus(prev => prev.map(m => {
       if (!checked.has(m.code)) return m
-      if (action === 'soldOut')   return { ...m, soldOut: true  }
-      if (action === 'unsoldOut') return { ...m, soldOut: false }
-      if (action === 'hide')      return { ...m, active: false  }
+      if (action === 'soldOut')        return { ...m, soldOut: true,  soldOutUntil: null             }
+      if (action === 'unsoldOut')      return { ...m, soldOut: false, soldOutUntil: null             }
+      if (action === 'todaySoldOut')   return { ...m, soldOut: true,  soldOutUntil: getKSTEndOfDay() }
+      if (action === 'hide')           return { ...m, active: false  }
       return { ...m, active: true }
     }))
     if (selected && checked.has(selected.code)) {
       setSelected(prev => {
         if (!prev) return null
-        if (action === 'soldOut')   return { ...prev, soldOut: true  }
-        if (action === 'unsoldOut') return { ...prev, soldOut: false }
-        if (action === 'hide')      return { ...prev, active: false  }
+        if (action === 'soldOut')        return { ...prev, soldOut: true,  soldOutUntil: null             }
+        if (action === 'unsoldOut')      return { ...prev, soldOut: false, soldOutUntil: null             }
+        if (action === 'todaySoldOut')   return { ...prev, soldOut: true,  soldOutUntil: getKSTEndOfDay() }
+        if (action === 'hide')           return { ...prev, active: false  }
         return { ...prev, active: true }
       })
     }
@@ -972,11 +1097,11 @@ export default function Menus() {
         <div className="flex gap-2">
           <button onClick={() => { setAddingStoreGroup(true); setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' }); setTab('option') }}
             className="px-4 py-2 bg-gray-100 text-ink rounded-lg text-[13px] font-bold hover:bg-gray-200 transition-colors">
-            + 옵션 추가
+            옵션 추가
           </button>
           <button onClick={openAddMenu}
             className="px-4 py-2 bg-[#16a84c] text-white rounded-lg text-[13px] font-bold hover:bg-[#128040] transition-colors">
-            + 메뉴 추가
+            메뉴 추가
           </button>
         </div>
       </div>
@@ -1031,9 +1156,9 @@ export default function Menus() {
             </div>
             <div className="flex gap-1 ml-auto">
               {([
-                { v: 'popular'     as TagFilter, l: '인기',   on: 'bg-[#FFF3E0] text-[#F97316]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
-                { v: 'recommended' as TagFilter, l: '추천',   on: 'bg-[#E6F4EC] text-[#017333]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
-                { v: 'new'         as TagFilter, l: '신메뉴', on: 'bg-[#E8F0FD] text-[#1D6FE8]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
+                { v: 'popular'     as TagFilter, l: '인기',   on: 'bg-[#F97316] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
+                { v: 'recommended' as TagFilter, l: '추천',   on: 'bg-[#16a84c] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
+                { v: 'new'         as TagFilter, l: '신메뉴', on: 'bg-[#1D6FE8] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
               ]).map(({ v, l, on, off }) => (
                 <button key={String(v)} onClick={() => setTagFilter(tagFilter === v ? null : v)}
                   className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors
@@ -1066,7 +1191,7 @@ export default function Menus() {
             </div>
           </div>
           {/* 테이블 헤더 */}
-          <div className="grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px_150px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
+          <div className="grid grid-cols-[36px_48px_2fr_2fr_90px_72px_72px_150px] gap-x-3 px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
             <span></span><span></span><span>메뉴명</span>
             <span>카테고리</span><span>가격</span><span>판매상태</span><span>표시</span><span>태그</span>
           </div>
@@ -1079,7 +1204,7 @@ export default function Menus() {
             ) : (
               filteredMenus.map(menu => (
                 <div key={menu.code} onClick={() => selectMenu(menu)}
-                  className={`grid grid-cols-[36px_48px_2fr_1.5fr_90px_90px_90px_150px] px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
+                  className={`grid grid-cols-[36px_48px_2fr_2fr_90px_72px_72px_150px] gap-x-3 px-6 py-3 items-center text-[13px] cursor-pointer transition-colors hover:bg-gray-bg
                     ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
                 >
                   <input type="checkbox" checked={checked.has(menu.code)}
@@ -1100,10 +1225,14 @@ export default function Menus() {
                   </span>
                   <span className="font-bold">{won(menu.price)}</span>
                   <span>
-                    {menu.soldOut
-                      ? <span className="text-[11px] font-semibold text-danger bg-red-50 px-2 py-0.5 rounded-full">품절</span>
-                      : <span className="text-[11px] font-semibold text-green bg-green-soft px-2 py-0.5 rounded-full">판매중</span>
-                    }
+                    {(() => {
+                      const state = getSoldOutState(menu.soldOut, menu.soldOutUntil ?? null)
+                      return state === 'today'
+                        ? <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">오늘품절</span>
+                        : state === 'permanent'
+                        ? <span className="text-[11px] font-semibold text-danger bg-red-50 px-2 py-0.5 rounded-full">품절</span>
+                        : <span className="text-[11px] font-semibold text-green bg-green-soft px-2 py-0.5 rounded-full">판매중</span>
+                    })()}
                   </span>
                   <span>
                     {!menu.active
@@ -1114,17 +1243,17 @@ export default function Menus() {
                   <span className="flex gap-1" onClick={e => e.stopPropagation()}>
                     <button onClick={e => toggleTag(menu, 'isPopular', e)}
                       className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${menu.isPopular ? 'bg-[#FFF3E0] text-[#F97316]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${menu.isPopular ? 'bg-[#F97316] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       인기
                     </button>
                     <button onClick={e => toggleTag(menu, 'isRecommended', e)}
                       className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${menu.isRecommended ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${menu.isRecommended ? 'bg-[#16a84c] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       추천
                     </button>
                     <button onClick={e => toggleTag(menu, 'isNew', e)}
                       className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${menu.isNew ? 'bg-[#E8F0FD] text-[#1D6FE8]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${menu.isNew ? 'bg-[#1D6FE8] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       신메뉴
                     </button>
                   </span>
@@ -1166,7 +1295,39 @@ export default function Menus() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={startEdit} className="px-3 py-1.5 text-[12px] font-medium text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">수정</button>
+                    {/* 판매중 / 오늘품절 / 품절 3-segment */}
+                    {(() => {
+                      const state = getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null)
+                      return (
+                        <div className="flex bg-gray-100 rounded-lg p-0.5 text-[11px] font-bold">
+                          {([
+                            { v: 'active',    l: '판매중',   activeStyle: { background: '#017333', color: 'white' } },
+                            { v: 'today',     l: '오늘품절', activeStyle: { background: '#D97706', color: 'white' } },
+                            { v: 'permanent', l: '품절',     activeStyle: { background: '#C92A2A', color: 'white' } },
+                          ] as { v: SoldOutState; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
+                            <button key={v} onClick={() => setMenuSoldOutState(v)}
+                              className="px-2.5 py-1 rounded-md transition-all"
+                              style={state === v ? activeStyle : { color: '#727272' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                    {/* 노출 / 숨김 2-segment */}
+                    <div className="flex bg-gray-100 rounded-lg p-0.5 text-[11px] font-bold">
+                      {([
+                        { v: true,  l: '노출', activeStyle: { background: '#017333', color: 'white' } },
+                        { v: false, l: '숨김', activeStyle: { background: '#6B7280', color: 'white' } },
+                      ] as { v: boolean; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
+                        <button key={String(v)} onClick={() => toggleMenuStatus('active')}
+                          className="px-2.5 py-1 rounded-md transition-all"
+                          style={selected.active === v ? activeStyle : { color: '#727272' }}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={startEdit} className="px-3 py-1.5 text-[12px] font-medium text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">상세 수정</button>
                     <button onClick={() => setDeleteConfirm('single')} className="px-3 py-1.5 text-[12px] font-medium text-danger bg-red-50 rounded-lg hover:bg-red-100">삭제</button>
                     <button onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-text hover:bg-gray-100 text-[18px]">✕</button>
                   </div>
@@ -1244,15 +1405,30 @@ export default function Menus() {
                     <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
                       rows={2} className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[13px] resize-none" />
                   </label>
+                  {/* 카테고리 */}
+                  <label className="block">
+                    <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">카테고리</span>
+                    <select value={editForm.categoryId} onChange={e => setEditForm(p => ({ ...p, categoryId: e.target.value }))}
+                      className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[13px] bg-white">
+                      <option value="">카테고리 없음</option>
+                      {sortedCategories().map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </label>
                   {/* 판매/표시 상태 */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">판매 상태</span>
                       <div className="flex bg-gray-100 rounded-lg p-0.5">
-                        {[{ label: '판매중', val: false }, { label: '품절', val: true }].map(({ label, val }) => (
-                          <button key={label} type="button" onClick={() => setEditForm(p => ({ ...p, soldOut: val }))}
-                            className={`flex-1 py-1.5 rounded-md text-[12px] font-bold transition-all
-                              ${editForm.soldOut === val ? 'bg-white shadow-sm text-ink' : 'text-gray-text'}`}>
+                        {([
+                          { label: '판매중',   val: 'active'    as SoldOutState, activeStyle: { background: '#017333', color: 'white' } },
+                          { label: '오늘품절', val: 'today'     as SoldOutState, activeStyle: { background: '#D97706', color: 'white' } },
+                          { label: '품절',     val: 'permanent' as SoldOutState, activeStyle: { background: '#C92A2A', color: 'white' } },
+                        ] as { label: string; val: SoldOutState; activeStyle: React.CSSProperties }[]).map(({ label, val, activeStyle }) => (
+                          <button key={val} type="button" onClick={() => setEditForm(p => ({ ...p, soldOutState: val }))}
+                            className="flex-1 py-1.5 rounded-md text-[12px] font-bold transition-all"
+                            style={editForm.soldOutState === val ? activeStyle : { color: '#727272' }}>
                             {label}
                           </button>
                         ))}
@@ -1295,9 +1471,14 @@ export default function Menus() {
                     </div>
                     <div className="flex justify-between items-center text-[13px]">
                       <span className="text-gray-text">판매 상태</span>
-                      {selected.soldOut
-                        ? <span className="text-[11px] font-semibold text-danger bg-red-50 px-2 py-0.5 rounded-full">품절</span>
-                        : <span className="text-[11px] font-semibold text-green bg-green-soft px-2 py-0.5 rounded-full">판매중</span>}
+                      {(() => {
+                        const state = getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null)
+                        return state === 'today'
+                          ? <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">오늘품절</span>
+                          : state === 'permanent'
+                          ? <span className="text-[11px] font-semibold text-danger bg-red-50 px-2 py-0.5 rounded-full">품절</span>
+                          : <span className="text-[11px] font-semibold text-green bg-green-soft px-2 py-0.5 rounded-full">판매중</span>
+                      })()}
                     </div>
                     <div className="flex justify-between items-center text-[13px]">
                       <span className="text-gray-text">표시 상태</span>
@@ -1370,17 +1551,28 @@ export default function Menus() {
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {editableGroups.map(g => (
-                          <OptionGroupCard
-                            key={g.id}
-                            group={g}
-                            onUpdateGroup={updates => modalUpdateGroup(g.id, updates)}
-                            onDeleteGroup={() => deleteStoreGroup(g.id)}
-                            onUpdateItem={(itemId, updates) => modalUpdateItem(g.id, itemId, updates)}
-                            onDeleteItem={itemId => modalDeleteItem(g.id, itemId)}
-                            onAddItem={(name, extra) => modalAddItem(g.id, name, extra)}
-                          />
-                        ))}
+                        {editableGroups.map(g => {
+                          const sg = storeGroups.find(s => s.id === g.id)
+                          // g(selected.optionGroups)에 값이 있으면 우선 사용 — 가격(필수) 등 storeGroups에 없는 그룹 대응
+                          const gAny = g as any
+                          return (
+                            <OptionGroupCard
+                              key={g.id}
+                              group={g}
+                              isSoldOut={gAny.isSoldOut ?? sg?.isSoldOut ?? false}
+                              soldOutUntil={gAny.soldOutUntil ?? sg?.soldOutUntil ?? null}
+                              isHidden={gAny.isHidden ?? sg?.isHidden ?? false}
+                              onSetSoldOutState={state => setGroupSoldOutState(g.id, state)}
+                              onToggleHidden={() => toggleGroupHidden(g.id)}
+                              onUpdateGroup={updates => modalUpdateGroup(g.id, updates)}
+                              onDeleteGroup={() => deleteStoreGroup(g.id)}
+                              onUpdateItem={(itemId, updates) => modalUpdateItem(g.id, itemId, updates)}
+                              onDeleteItem={itemId => modalDeleteItem(g.id, itemId)}
+                              onAddItem={(name, extra) => modalAddItem(g.id, name, extra)}
+                              onReorderItem={(fromIdx, toIdx) => reorderStoreItem(g.id, fromIdx, toIdx)}
+                            />
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -1410,102 +1602,155 @@ export default function Menus() {
       )}
 
       {/* ── 옵션 탭 ── */}
-      {!loading && tab === 'option' && (
-        <div ref={optionScrollRef} className="flex-1 overflow-y-auto">
-          {/* 옵션 탭 헤더 */}
-          <div className="sticky top-0 z-10 bg-white border-b border-gray-border">
-            <div className="px-6 py-3 flex items-center justify-between flex-shrink-0">
-              <div>
-                <div className="text-[15px] font-extrabold">옵션 그룹 관리</div>
-                <div className="text-[12px] text-gray-text mt-0.5">그룹을 만들고 메뉴 탭에서 메뉴에 연결하세요.</div>
+      {!loading && tab === 'option' && (() => {
+        const filteredStoreGroups = storeGroups.filter(g => {
+          if (optionFilter === 'active')  return !g.isSoldOut && !g.isHidden && g.items.every(it => !it.soldOut && !it.hidden)
+          if (optionFilter === 'soldOut') return g.isSoldOut || g.items.some(it => it.soldOut)
+          if (optionFilter === 'hidden')  return g.isHidden  || g.items.some(it => it.hidden)
+          return true
+        }).filter(g => {
+          if (!optionSearch.trim()) return true
+          return g.name.includes(optionSearch) || g.items.some(it => it.name.includes(optionSearch))
+        })
+
+        return (
+          <div ref={optionScrollRef} className="flex-1 overflow-y-auto">
+            {/* 옵션 탭 헤더 (메뉴 탭과 동일 구조) */}
+            <div className="sticky top-0 z-10 bg-white">
+              {/* 검색 + 상태 필터 */}
+              <div className="px-6 pt-3 pb-2 flex items-center gap-3 flex-shrink-0">
+                <input
+                  value={optionSearch}
+                  onChange={e => setOptionSearch(e.target.value)}
+                  placeholder="그룹명 · 옵션명 검색"
+                  className="border border-gray-border rounded-lg px-3 py-2 text-[13px] w-52"
+                />
+                <div className="flex gap-1">
+                  {([
+                    { v: 'all',     l: '전체'   },
+                    { v: 'active',  l: '판매중' },
+                    { v: 'soldOut', l: '품절'   },
+                    { v: 'hidden',  l: '숨김'   },
+                  ] as { v: typeof optionFilter; l: string }[]).map(({ v, l }) => (
+                    <button key={v} onClick={() => setOptionFilter(v)}
+                      className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors
+                        ${optionFilter === v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* 옵션 그룹 네비게이션 바 */}
+              <div className="px-6 pb-2 border-b border-gray-border flex-shrink-0">
+                <div ref={optionTabsBarRef} className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+                  {filteredStoreGroups.map(g => (
+                    <button
+                      key={g.id}
+                      ref={el => { optionTabButtonRefs.current[g.id] = el }}
+                      onClick={() => scrollToOptionGroup(g.id)}
+                      className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors
+                        ${activeOptionGroup === g.id
+                          ? 'bg-ink text-white'
+                          : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                    >
+                      {g.name}
+                      {g.isSoldOut && (() => {
+                        const gs = getSoldOutState(g.isSoldOut, g.soldOutUntil)
+                        const isActive = activeOptionGroup === g.id
+                        return gs === 'today'
+                          ? <span style={isActive ? { background: 'rgba(255,255,255,0.2)', color: 'white' } : { background: 'rgba(217,119,6,0.12)', color: '#D97706' }}
+                              className="text-[9px] font-bold px-1 py-0.5 rounded">오늘품절</span>
+                          : <span style={isActive ? { background: 'rgba(255,255,255,0.2)', color: 'white' } : { background: 'rgba(201,42,42,0.1)', color: '#C92A2A' }}
+                              className="text-[9px] font-bold px-1 py-0.5 rounded">품절</span>
+                      })()}
+                      {g.isHidden && (
+                        <span style={activeOptionGroup === g.id
+                          ? { background: 'rgba(255,255,255,0.2)', color: 'white' }
+                          : { background: '#E5E5E5', color: '#727272' }}
+                          className="text-[9px] font-bold px-1 py-0.5 rounded">숨김</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            {/* 옵션 그룹 네비게이션 바 */}
-            {storeGroups.length > 0 && (
-              <div
-                ref={optionTabsBarRef}
-                className="flex gap-1.5 px-6 pb-2 overflow-x-auto"
-                style={{ scrollbarWidth: 'thin', scrollbarColor: '#D7D7D7 transparent' }}
-              >
-                {storeGroups.map(g => (
-                  <button
-                    key={g.id}
-                    ref={el => { optionTabButtonRefs.current[g.id] = el }}
-                    onClick={() => scrollToOptionGroup(g.id)}
-                    className={`flex-shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold transition-colors whitespace-nowrap
-                      ${activeOptionGroup === g.id
-                        ? 'bg-ink text-white'
-                        : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                  >
-                    {g.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
 
-          <div className="px-6 py-4 space-y-4 max-w-[700px]">
-            {/* 그룹 생성 폼 */}
-            {addingStoreGroup && (
-              <div className="border-2 border-green rounded-xl p-4 space-y-3">
-                <input autoFocus value={newStoreGroup.name}
-                  onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
-                  placeholder="옵션 그룹명 (예: 드레싱 선택, 사이즈)"
-                  className="w-full border border-gray-border rounded-lg px-3 py-2 text-[13px]"
-                  onKeyDown={e => e.key === 'Enter' && createStandaloneGroup()}
-                />
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button onClick={() => setNewStoreGroup(p => ({ ...p, isRequired: !p.isRequired }))}
-                    className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
-                      ${newStoreGroup.isRequired ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                    {newStoreGroup.isRequired ? '필수' : '선택 (필수로 변경)'}
-                  </button>
-                  <button onClick={() => setNewStoreGroup(p => ({ ...p, isMulti: !p.isMulti, maxSelect: '' }))}
-                    className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
-                      ${newStoreGroup.isMulti ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                    {newStoreGroup.isMulti ? '복수 선택' : '단일 선택 (복수로 변경)'}
-                  </button>
-                  {newStoreGroup.isMulti && (
-                    <input type="number" min="1" value={newStoreGroup.maxSelect}
-                      onChange={e => setNewStoreGroup(p => ({ ...p, maxSelect: e.target.value }))}
-                      placeholder="최대 N개"
-                      className="w-20 border border-gray-border rounded-lg px-2 py-1 text-[12px]"
-                    />
-                  )}
+            <div className="px-6 py-4 space-y-4 max-w-[700px]">
+              {/* 그룹 생성 폼 */}
+              {addingStoreGroup && (
+                <div className="border-2 border-green rounded-xl p-4 space-y-3">
+                  <input autoFocus value={newStoreGroup.name}
+                    onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
+                    placeholder="옵션 그룹명 (예: 드레싱 선택, 사이즈)"
+                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[13px]"
+                    onKeyDown={e => e.key === 'Enter' && createStandaloneGroup()}
+                  />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button onClick={() => setNewStoreGroup(p => ({ ...p, isRequired: !p.isRequired }))}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
+                        ${newStoreGroup.isRequired ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      {newStoreGroup.isRequired ? '필수' : '선택 (필수로 변경)'}
+                    </button>
+                    <button onClick={() => setNewStoreGroup(p => ({ ...p, isMulti: !p.isMulti, maxSelect: '' }))}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
+                        ${newStoreGroup.isMulti ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      {newStoreGroup.isMulti ? '복수 선택' : '단일 선택 (복수로 변경)'}
+                    </button>
+                    {newStoreGroup.isMulti && (
+                      <input type="number" min="1" value={newStoreGroup.maxSelect}
+                        onChange={e => setNewStoreGroup(p => ({ ...p, maxSelect: e.target.value }))}
+                        placeholder="최대 N개"
+                        className="w-20 border border-gray-border rounded-lg px-2 py-1 text-[12px]"
+                      />
+                    )}
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setAddingStoreGroup(false)}
+                      className="px-3 py-1.5 text-[12px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
+                    <button onClick={createStandaloneGroup} disabled={!newStoreGroup.name.trim()}
+                      className="px-3 py-1.5 text-[12px] font-bold text-white bg-green rounded-lg hover:bg-[#015c28] disabled:opacity-40">
+                      그룹 추가
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2 justify-end">
-                  <button onClick={() => setAddingStoreGroup(false)}
-                    className="px-3 py-1.5 text-[12px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
-                  <button onClick={createStandaloneGroup} disabled={!newStoreGroup.name.trim()}
-                    className="px-3 py-1.5 text-[12px] font-bold text-white bg-green rounded-lg hover:bg-[#015c28] disabled:opacity-40">
-                    그룹 추가
-                  </button>
+              )}
+
+              {storeGroups.length === 0 && !addingStoreGroup && (
+                <div className="text-center py-16 text-gray-text text-[13px]">
+                  등록된 옵션 그룹이 없습니다. 위 버튼으로 추가하세요.
                 </div>
-              </div>
-            )}
+              )}
 
-            {storeGroups.length === 0 && !addingStoreGroup && (
-              <div className="text-center py-16 text-gray-text text-[13px]">
-                등록된 옵션 그룹이 없습니다. 위 버튼으로 추가하세요.
-              </div>
-            )}
+              {filteredStoreGroups.length === 0 && storeGroups.length > 0 && (
+                <div className="text-center py-16 text-gray-text text-[13px]">
+                  검색 결과가 없습니다.
+                </div>
+              )}
 
-            {storeGroups.map(group => (
-              <div key={group.id} ref={el => { optionGroupRefs.current[group.id] = el }} data-group-id={group.id}>
-                <OptionGroupCard
-                  group={group}
-                  usedBy={group.usedBy}
-                  onUpdateGroup={updates => updateStoreGroup(group.id, updates)}
-                  onDeleteGroup={() => deleteStoreGroup(group.id)}
-                  onUpdateItem={(itemId, updates) => updateStoreItem(group.id, itemId, updates)}
-                  onDeleteItem={itemId => deleteStoreItem(group.id, itemId)}
-                  onAddItem={(name, extra) => addStoreItem(group.id, name, extra)}
-                />
-              </div>
-            ))}
+              {filteredStoreGroups.map(group => (
+                <div key={group.id} ref={el => { optionGroupRefs.current[group.id] = el }} data-group-id={group.id}>
+                  <OptionGroupCard
+                    group={group}
+                    isSoldOut={group.isSoldOut}
+                    soldOutUntil={group.soldOutUntil}
+                    isHidden={group.isHidden}
+                    usedByMenus={group.usedByMenus}
+                    searchQuery={optionSearch}
+                    onSetSoldOutState={state => setGroupSoldOutState(group.id, state)}
+                    onToggleHidden={() => toggleGroupHidden(group.id)}
+                    onUpdateGroup={updates => updateStoreGroup(group.id, updates)}
+                    onDeleteGroup={() => deleteStoreGroup(group.id)}
+                    onUpdateItem={(itemId, updates) => updateStoreItem(group.id, itemId, updates)}
+                    onDeleteItem={itemId => deleteStoreItem(group.id, itemId)}
+                    onAddItem={(name, extra) => addStoreItem(group.id, name, extra)}
+                    onReorderItem={(fromIdx, toIdx) => reorderStoreItem(group.id, fromIdx, toIdx)}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── 카테고리 탭 ── */}
       {!loading && tab === 'category' && (
@@ -1520,7 +1765,7 @@ export default function Menus() {
             {!addingCat && (
               <button onClick={() => { setAddingCat(true); setNewCatName('') }}
                 className="px-4 py-2 text-[13px] font-bold text-white bg-[#16a84c] rounded-lg hover:bg-[#128040] transition-colors flex-shrink-0">
-                + 카테고리 추가
+                카테고리 추가
               </button>
             )}
           </div>
@@ -2070,19 +2315,51 @@ export default function Menus() {
       {/* 플로팅 일괄 액션바 */}
       {tab === 'menu' && checked.size > 0 && (() => {
         const checkedMenus = menus.filter(m => checked.has(m.code))
-        const allSoldOut  = checkedMenus.every(m => m.soldOut)
-        const allHidden   = checkedMenus.every(m => !m.active)
+        const states       = checkedMenus.map(m => getSoldOutState(m.soldOut, m.soldOutUntil ?? null))
+        const allActive    = states.every(s => s === 'active')
+        const allToday     = states.every(s => s === 'today')
+        const allPermanent = states.every(s => s === 'permanent')
+        const allHidden    = checkedMenus.every(m => !m.active)
         return (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-ink text-white rounded-2xl shadow-xl px-6 py-3 flex items-center gap-4 z-30">
             <span className="text-[13px] font-semibold text-white/70">{checked.size}개 선택</span>
             <div className="w-px h-5 bg-white/20" />
-            <button onClick={() => bulkAction(allSoldOut ? 'unsoldOut' : 'soldOut')}
-              className="text-[13px] font-bold hover:text-green transition-colors">
-              {allSoldOut ? '품절 해제' : '품절'}
-            </button>
+            {/* 판매 상태 */}
+            {!allActive && (
+              <button onClick={() => bulkAction('unsoldOut')}
+                className="text-[13px] font-bold transition-colors"
+                style={{ color: 'white' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#86EFAC')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'white')}>
+                판매중으로
+              </button>
+            )}
+            {!allActive && !allToday && <div className="w-px h-5 bg-white/20" />}
+            {!allToday && (
+              <button onClick={() => bulkAction('todaySoldOut')}
+                className="text-[13px] font-bold transition-colors"
+                style={{ color: 'white' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#FCD34D')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'white')}>
+                오늘품절
+              </button>
+            )}
+            {!allPermanent && <div className="w-px h-5 bg-white/20" />}
+            {!allPermanent && (
+              <button onClick={() => bulkAction('soldOut')}
+                className="text-[13px] font-bold transition-colors"
+                style={{ color: 'white' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#FCA5A5')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'white')}>
+                품절
+              </button>
+            )}
             <div className="w-px h-5 bg-white/20" />
             <button onClick={() => bulkAction(allHidden ? 'unhide' : 'hide')}
-              className="text-[13px] font-bold hover:text-green transition-colors">
+              className="text-[13px] font-bold transition-colors"
+              style={{ color: 'white' }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#D1D5DB')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'white')}>
               {allHidden ? '숨김 해제' : '숨김'}
             </button>
             <div className="w-px h-5 bg-white/20" />
@@ -2128,27 +2405,39 @@ export default function Menus() {
 
 // ── OptionGroupCard ────────────────────────────────────────────────────────────
 function OptionGroupCard({
-  group, usedBy, onUpdateGroup, onDeleteGroup, onUpdateItem, onDeleteItem, onAddItem,
+  group, isSoldOut, soldOutUntil = null, isHidden, usedByMenus, searchQuery,
+  onSetSoldOutState, onToggleHidden,
+  onUpdateGroup, onDeleteGroup, onUpdateItem, onDeleteItem, onAddItem, onReorderItem,
 }: {
-  group:          OptionGroup
-  usedBy?:        string[]
-  onUpdateGroup:  (updates: Partial<OptionGroup>) => void
-  onDeleteGroup:  () => void
-  onUpdateItem:   (itemId: string, updates: Partial<OptionItem>) => void
-  onDeleteItem:   (itemId: string) => void
-  onAddItem:      (name: string, extra: number) => void
+  group:               OptionGroup
+  isSoldOut:           boolean
+  soldOutUntil?:       string | null
+  isHidden:            boolean
+  usedByMenus?:        { name: string; soldOut: boolean; hidden: boolean }[]
+  searchQuery?:        string
+  onSetSoldOutState:   (state: SoldOutState) => void
+  onToggleHidden:      () => void
+  onUpdateGroup:    (updates: Partial<OptionGroup>) => void
+  onDeleteGroup:    () => void
+  onUpdateItem:     (itemId: string, updates: Partial<OptionItem>) => void
+  onDeleteItem:     (itemId: string) => void
+  onAddItem:        (name: string, extra: number) => void
+  onReorderItem:    (fromIdx: number, toIdx: number) => void
 }) {
-  const [editingName, setEditingName] = useState(false)
-  const [nameDraft,   setNameDraft]   = useState(group.name)
-  const [editingItemId,  setEditingItemId]  = useState<string | null>(null)
-  const [editItemName,   setEditItemName]   = useState('')
-  const [editItemPrice,  setEditItemPrice]  = useState('')
-  const [showAddItem,    setShowAddItem]    = useState(false)
-  const [newItemName,    setNewItemName]    = useState('')
-  const [newItemPrice,   setNewItemPrice]   = useState('0')
-  const [settingsOpen,   setSettingsOpen]   = useState(false)
-  const [settingsName,   setSettingsName]   = useState(group.name)
-  const [deleteConfirm,  setDeleteConfirm]  = useState(false)
+  const [editingName,      setEditingName]      = useState(false)
+  const [nameDraft,        setNameDraft]        = useState(group.name)
+  const [editingItemId,    setEditingItemId]    = useState<string | null>(null)
+  const [editItemName,     setEditItemName]     = useState('')
+  const [editItemPrice,    setEditItemPrice]    = useState('')
+  const [showAddItem,      setShowAddItem]      = useState(false)
+  const [newItemName,      setNewItemName]      = useState('')
+  const [newItemPrice,     setNewItemPrice]     = useState('0')
+  const [settingsOpen,     setSettingsOpen]     = useState(false)
+  const [settingsName,     setSettingsName]     = useState(group.name)
+  const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false)
+  const [deleteItemConfirm,  setDeleteItemConfirm]  = useState<{ id: string; name: string } | null>(null)
+  const [dragItemIdx,      setDragItemIdx]      = useState<number | null>(null)
+  const [dragOverItemIdx,  setDragOverItemIdx]  = useState<number | null>(null)
 
   const SELECT_OPTIONS = [
     { label: '단일 선택',    isMulti: false, max: null },
@@ -2187,9 +2476,16 @@ function OptionGroupCard({
     setShowAddItem(false)
   }
 
+  const sq = searchQuery?.trim() ?? ''
+
+  const groupSoldOutState = getSoldOutState(isSoldOut, soldOutUntil)
+
   return (
-    <div className="border border-gray-border rounded-xl overflow-hidden">
-      {/* 설정 모달 */}
+    <div className={`border rounded-xl overflow-hidden`} style={{
+      borderColor: groupSoldOutState === 'today' ? 'rgba(217,119,6,0.4)' : groupSoldOutState === 'permanent' ? 'rgba(201,42,42,0.4)' : isHidden ? '#D7D7D7' : '#D7D7D7',
+      opacity: isHidden ? 0.6 : 1,
+    }}>
+      {/* 옵션 그룹 삭제 확인 모달 */}
       {settingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-[380px]">
@@ -2233,8 +2529,8 @@ function OptionGroupCard({
               className="w-full py-3 rounded-xl bg-[#16a84c] text-white font-bold text-[14px] hover:bg-[#128040] transition-colors focus:outline-none mb-3">
               저장
             </button>
-            {!deleteConfirm ? (
-              <button onClick={() => setDeleteConfirm(true)}
+            {!deleteGroupConfirm ? (
+              <button onClick={() => setDeleteGroupConfirm(true)}
                 className="w-full py-2.5 rounded-xl border-2 border-danger/40 text-danger font-bold text-[13px] hover:bg-red-50 transition-colors focus:outline-none">
                 삭제
               </button>
@@ -2242,7 +2538,7 @@ function OptionGroupCard({
               <div className="bg-red-50 rounded-xl p-3">
                 <div className="text-[12px] text-danger font-semibold text-center mb-2">정말 삭제하시겠어요?</div>
                 <div className="flex gap-2">
-                  <button onClick={() => setDeleteConfirm(false)}
+                  <button onClick={() => setDeleteGroupConfirm(false)}
                     className="flex-1 py-2 rounded-lg bg-gray-100 text-gray-text text-[12px] font-bold hover:bg-gray-200 focus:outline-none">취소</button>
                   <button onClick={() => { onDeleteGroup(); setSettingsOpen(false) }}
                     className="flex-1 py-2 rounded-lg bg-danger text-white text-[12px] font-bold hover:bg-danger/90 focus:outline-none">삭제 확정</button>
@@ -2253,10 +2549,33 @@ function OptionGroupCard({
         </div>
       )}
 
+      {/* 옵션 항목 삭제 확인 모달 */}
+      {deleteItemConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteItemConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-[300px]" onClick={e => e.stopPropagation()}>
+            <div className="text-[15px] font-bold text-ink mb-1">옵션 삭제</div>
+            <div className="text-[13px] text-gray-text mb-5">
+              <span className="font-semibold text-ink">'{deleteItemConfirm.name}'</span>을(를) 삭제할까요?
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteItemConfirm(null)}
+                className="flex-1 py-2.5 border border-gray-border rounded-xl text-[13px] font-semibold text-gray-text hover:bg-gray-bg">
+                취소
+              </button>
+              <button onClick={() => { onDeleteItem(deleteItemConfirm.id); setDeleteItemConfirm(null) }}
+                className="flex-1 py-2.5 bg-danger text-white rounded-xl text-[13px] font-bold hover:bg-danger/90">
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 좌우 분할 레이아웃 */}
       <div className="flex">
         {/* ── 왼쪽: 그룹 정보 ── */}
-        <div className="w-52 flex-shrink-0 bg-gray-bg border-r border-gray-border px-4 py-3 flex flex-col gap-2">
+        <div className="w-52 flex-shrink-0 border-r border-gray-border px-4 py-3 flex flex-col gap-2"
+          style={{ backgroundColor: groupSoldOutState === 'today' ? 'rgba(254,243,199,0.5)' : groupSoldOutState === 'permanent' ? 'rgba(254,226,226,0.5)' : isHidden ? '#F9FAFB' : '#FAFAFA' }}>
           {/* 그룹명 + ⚙ */}
           <div className="flex items-center justify-between gap-2">
             {editingName ? (
@@ -2272,7 +2591,7 @@ function OptionGroupCard({
               </button>
             )}
             <button
-              onClick={() => { setSettingsName(group.name); setDeleteConfirm(false); setSettingsOpen(true) }}
+              onClick={() => { setSettingsName(group.name); setDeleteGroupConfirm(false); setSettingsOpen(true) }}
               className="flex-shrink-0 text-[20px] text-gray-text hover:text-ink transition-colors leading-none"
             >
               ⚙
@@ -2285,13 +2604,52 @@ function OptionGroupCard({
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
           </div>
 
-          {/* 연결 메뉴 태그 */}
-          {usedBy !== undefined && usedBy.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {usedBy.map(name => (
-                <span key={name} className="text-[11px] font-medium text-ink bg-white border border-gray-border px-2 py-0.5 rounded-md">
-                  {name}
-                </span>
+          {/* 그룹 품절 / 숨김 토글 */}
+          <div className="flex flex-col gap-1.5">
+            {/* 행 1: 판매중 / 오늘품절 / 품절 */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold">
+              {([
+                { v: 'active'    as SoldOutState, l: '판매중',   activeStyle: { background: '#E6F4EC', color: '#017333' } },
+                { v: 'today'     as SoldOutState, l: '오늘품절', activeStyle: { background: '#D97706', color: 'white'   } },
+                { v: 'permanent' as SoldOutState, l: '품절',     activeStyle: { background: '#C92A2A', color: 'white'   } },
+              ]).map(({ v, l, activeStyle }) => (
+                <button key={v} onClick={() => onSetSoldOutState(v)}
+                  className="flex-1 py-1 rounded-md transition-all text-center"
+                  style={groupSoldOutState === v ? activeStyle : { color: '#727272' }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {/* 행 2: 노출 / 숨김 */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold">
+              {([
+                { v: false, l: '노출', activeStyle: { background: '#E6F4EC', color: '#017333' } },
+                { v: true,  l: '숨김', activeStyle: { background: '#1E1E1E', color: 'white'   } },
+              ] as { v: boolean; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
+                <button key={l} onClick={() => { if (isHidden !== v) onToggleHidden() }}
+                  className="flex-1 py-1 rounded-md transition-all text-center"
+                  style={isHidden === v ? activeStyle : { color: '#727272' }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 연결 메뉴 태그 — 품절/숨김 배지 포함 */}
+          {usedByMenus !== undefined && usedByMenus.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {usedByMenus.map(m => (
+                <div key={m.name} className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[11px] font-medium text-ink bg-white border border-gray-border px-2 py-0.5 rounded-md">
+                    {m.name}
+                  </span>
+                  {m.soldOut && (
+                    <span className="text-[9px] font-bold text-white bg-danger rounded px-1 py-0.5 leading-none">품절</span>
+                  )}
+                  {m.hidden && (
+                    <span className="text-[9px] font-bold text-gray-text bg-gray-200 rounded px-1 py-0.5 leading-none">숨김</span>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -2300,8 +2658,9 @@ function OptionGroupCard({
         {/* ── 오른쪽: 항목 목록 ── */}
         <div className="flex-1 min-w-0 bg-white flex flex-col">
           <div className="divide-y divide-gray-border">
-            {group.items.map((item: OptionItem) =>
-              editingItemId === item.id ? (
+            {group.items.map((item: OptionItem, itemIdx: number) => {
+              const isMatch = sq && (item.name.includes(sq))
+              return editingItemId === item.id ? (
                 <div key={item.id} className="flex items-center gap-2 px-3 py-2">
                   <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
@@ -2326,28 +2685,75 @@ function OptionGroupCard({
                     className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#16a84c] text-white text-[10px] font-bold hover:bg-[#128040]">완료</button>
                 </div>
               ) : (
-                <div key={item.id}
-                  className={`flex items-center gap-2 px-3 py-2 text-[12px] group/row transition-colors
-                    ${item.soldOut ? 'bg-red-50' : ''} ${item.hidden ? 'opacity-50' : ''}`}>
+                <div
+                  key={item.id}
+                  draggable
+                  onDragStart={() => setDragItemIdx(itemIdx)}
+                  onDragOver={e => { e.preventDefault(); setDragOverItemIdx(itemIdx) }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    if (dragItemIdx !== null && dragItemIdx !== itemIdx) {
+                      onReorderItem(dragItemIdx, itemIdx)
+                    }
+                    setDragItemIdx(null)
+                    setDragOverItemIdx(null)
+                  }}
+                  onDragEnd={() => { setDragItemIdx(null); setDragOverItemIdx(null) }}
+                  className={`flex items-center gap-2 px-3 py-2 text-[12px] group/row transition-colors border-l-[3px]
+                    ${item.soldOut && !isMatch ? 'bg-red-50' : ''}
+                    ${item.hidden ? 'opacity-50' : ''}
+                    ${dragOverItemIdx === itemIdx && dragItemIdx !== itemIdx ? 'border-t-2 border-green' : ''}
+                    ${dragItemIdx === itemIdx ? 'opacity-40' : ''}
+                    ${isMatch ? 'border-l-green' : 'border-l-transparent'}`}
+                  style={isMatch ? { backgroundColor: 'var(--green-soft)' } : undefined}
+                >
+                  {/* 드래그 핸들 */}
+                  <span className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-border hover:text-gray-text transition-colors"
+                    onMouseDown={e => e.stopPropagation()}>
+                    <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+                      <circle cx="2" cy="2" r="1.5"/><circle cx="6" cy="2" r="1.5"/>
+                      <circle cx="2" cy="6" r="1.5"/><circle cx="6" cy="6" r="1.5"/>
+                      <circle cx="2" cy="10" r="1.5"/><circle cx="6" cy="10" r="1.5"/>
+                    </svg>
+                  </span>
                   <button onClick={() => startEditItem(item)}
                     className="flex items-center gap-1 min-w-0 flex-1 text-left hover:text-green transition-colors">
-                    <span className="font-medium text-ink truncate">{item.name}</span>
+                    <span className={`font-medium text-ink truncate ${isMatch && sq ? 'text-green font-bold' : ''}`}>{item.name}</span>
                     {item.isPopular && <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
                     {item.extra > 0 && <span className="text-gray-text flex-shrink-0">+{won(item.extra)}</span>}
                   </button>
                   <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => onUpdateItem(item.id, { soldOut: !item.soldOut })}
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors
-                        ${item.soldOut ? 'bg-danger text-white border-danger' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>품절</button>
+                    {(() => {
+                      const itemState = getSoldOutState(item.soldOut, item.soldOutUntil ?? null)
+                      // 순환: 판매중 → 오늘품절 → 품절 → 판매중
+                      const nextState: SoldOutState = itemState === 'active' ? 'today' : itemState === 'today' ? 'permanent' : 'active'
+                      const nextUpdates =
+                        nextState === 'active'  ? { soldOut: false, soldOutUntil: null             }
+                        : nextState === 'today' ? { soldOut: true,  soldOutUntil: getKSTEndOfDay() }
+                        :                         { soldOut: true,  soldOutUntil: null             }
+                      return (
+                        <button onClick={() => onUpdateItem(item.id, nextUpdates)}
+                          className="px-1.5 py-0.5 rounded-full text-[10px] font-bold border-0 transition-colors"
+                          style={
+                            itemState === 'today'
+                              ? { backgroundColor: '#FEF3C7', color: '#D97706' }
+                              : itemState === 'permanent'
+                              ? { backgroundColor: '#FEE2E2', color: '#C92A2A' }
+                              : { backgroundColor: '#F3F4F6', color: '#727272' }
+                          }>
+                          {itemState === 'today' ? '오늘품절' : itemState === 'permanent' ? '품절' : '판매중'}
+                        </button>
+                      )
+                    })()}
                     <button onClick={() => onUpdateItem(item.id, { hidden: !item.hidden })}
                       className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors
                         ${item.hidden ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>숨김</button>
-                    <button onClick={() => onDeleteItem(item.id)}
+                    <button onClick={() => setDeleteItemConfirm({ id: item.id, name: item.name })}
                       className="text-[13px] text-gray-text hover:text-danger transition-colors opacity-0 group-hover/row:opacity-100">×</button>
                   </div>
                 </div>
               )
-            )}
+            })}
           </div>
 
           {/* 항목 추가 */}

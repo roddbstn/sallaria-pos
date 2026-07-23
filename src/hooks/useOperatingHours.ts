@@ -4,6 +4,9 @@ import { supabase } from '../lib/supabase'
 type DayHours = { enabled: boolean; open: string; close: string }
 type OperatingHours = Record<string, DayHours>
 
+export type DayBreak = { enabled: boolean; start: string; end: string }
+export type BreakTime = Record<string, DayBreak>
+
 function defaultOperatingHours(): OperatingHours {
   const week = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
   const hours: OperatingHours = {}
@@ -12,6 +15,13 @@ function defaultOperatingHours(): OperatingHours {
   })
   hours['sun'] = { enabled: false, open: '10:00', close: '18:00' }
   return hours
+}
+
+function defaultBreakTime(): BreakTime {
+  const week = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+  const bt: BreakTime = {}
+  week.forEach(d => { bt[d] = { enabled: false, start: '14:00', end: '17:00' } })
+  return bt
 }
 
 // today_override.type 종류:
@@ -27,7 +37,9 @@ export function useOperatingHours(
   const [autoOpenEnabled, setAutoOpenEnabled] = useState(true)
   const [hoursOpen,       setHoursOpen]       = useState(false)
   const [operatingHours,  setOperatingHours]  = useState<OperatingHours>(defaultOperatingHours)
+  const [breakTime,       setBreakTime]       = useState<BreakTime>(defaultBreakTime)
   const [hoursDraft,      setHoursDraft]      = useState<OperatingHours>({})
+  const [breakDraft,      setBreakDraft]      = useState<BreakTime>({})
   const [offHoursConfirm, setOffHoursConfirm] = useState(false)
   const [closureOpen,     setClosureOpen]     = useState(false)
   const [closureType,     setClosureType]     = useState<'holiday' | 'early'>('holiday')
@@ -40,13 +52,14 @@ export function useOperatingHours(
     if (!storeId) return
     supabase
       .from('stores')
-      .select('operating_hours, today_override, auto_open_enabled')
+      .select('operating_hours, break_time, today_override, auto_open_enabled')
       .eq('id', storeId)
       .single()
       .then(({ data }) => {
         if (!data) return
         setAutoOpenEnabled(data.auto_open_enabled ?? true)
         if (data.operating_hours) setOperatingHours(data.operating_hours as OperatingHours)
+        if (data.break_time)      setBreakTime(data.break_time as BreakTime)
 
         const ov = data.today_override as { date: string; type: string; time?: string } | null
         const today = new Date().toISOString().slice(0, 10)
@@ -71,6 +84,7 @@ export function useOperatingHours(
       const now    = new Date()
       const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()]
       const day    = operatingHours[dayKey]
+      const brk    = breakTime[dayKey]
 
       let shouldBeOpen = false
       if (day?.enabled) {
@@ -78,6 +92,15 @@ export function useOperatingHours(
         const [oh, om] = day.open.split(':').map(Number)
         const [ch, cm] = day.close.split(':').map(Number)
         shouldBeOpen = cur >= oh * 60 + om && cur < ch * 60 + cm
+
+        // 브레이크타임 체크
+        if (shouldBeOpen && brk?.enabled) {
+          const [bsh, bsm] = brk.start.split(':').map(Number)
+          const [beh, bem] = brk.end.split(':').map(Number)
+          if (cur >= bsh * 60 + bsm && cur < beh * 60 + bem) {
+            shouldBeOpen = false
+          }
+        }
       }
 
       // 오버라이드 적용
@@ -110,7 +133,7 @@ export function useOperatingHours(
       clearTimeout(timeoutId)
       if (intervalId !== null) clearInterval(intervalId)
     }
-  }, [autoOpenEnabled, operatingHours, overrideType, closureTime, storeId])
+  }, [autoOpenEnabled, operatingHours, breakTime, overrideType, closureTime, storeId])
 
   // ── 헬퍼: is_open DB 업데이트 ────────────────────────────────────────────────
   async function pushIsOpen(next: boolean) {
@@ -193,9 +216,13 @@ export function useOperatingHours(
 
   async function saveOperatingHours() {
     setOperatingHours(hoursDraft)
+    setBreakTime(breakDraft)
     setHoursOpen(false)
     if (!storeId) return
-    const { error } = await supabase.from('stores').update({ operating_hours: hoursDraft }).eq('id', storeId)
+    const { error } = await supabase.from('stores').update({
+      operating_hours: hoursDraft,
+      break_time:      breakDraft,
+    }).eq('id', storeId)
     if (error) showToast(`운영시간 저장 실패: ${error.message}`)
   }
 
@@ -214,7 +241,9 @@ export function useOperatingHours(
     autoOpenEnabled,
     hoursOpen,        setHoursOpen,
     operatingHours,
+    breakTime,
     hoursDraft,       setHoursDraft,
+    breakDraft,       setBreakDraft,
     offHoursConfirm,  setOffHoursConfirm,
     closureOpen,      setClosureOpen,
     closureType,      setClosureType,
