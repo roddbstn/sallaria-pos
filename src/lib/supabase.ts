@@ -16,6 +16,7 @@ export interface DbAccount {
   organization_name: string | null
   contact_person:    string | null
   contact_phone:     string | null
+  business_number:   string | null
   current_balance:   number
   warning_threshold: number
   memo:              string | null
@@ -105,11 +106,13 @@ export interface DbOptionItem {
 }
 
 export interface DbDeposit {
-  deposit_id:   string
-  account_code: string
-  amount:       number
-  note:         string | null
-  created_at:   string
+  deposit_id:      string
+  account_code:    string
+  amount:          number
+  note:            string | null
+  payment_method:  string
+  balance_after:   number
+  created_at:      string
 }
 
 export interface DbStore {

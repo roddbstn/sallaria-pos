@@ -55,7 +55,7 @@ export default function Customers() {
   const [search,       setSearch]       = useState('')
   const [kioskQr,      setKioskQr]      = useState(false)
   const [accountQr,    setAccountQr]    = useState<string | null>(null) // account_code
-  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members'>('orders')
+  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members' | 'statement'>('orders')
   const [members,      setMembers]      = useState<{ id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]>([])
   const [orderPage,    setOrderPage]    = useState(0)
   const [chargePage,   setChargePage]   = useState(0)
@@ -80,9 +80,19 @@ export default function Customers() {
   const [addPinError,  setAddPinError]  = useState('')
   const [editPinError, setEditPinError] = useState('')
   const [showInactive, setShowInactive] = useState(false)
-  const [editingDepositId, setEditingDepositId] = useState<string | null>(null)
-  const [editDepositAmt,   setEditDepositAmt]   = useState('')
-  const [editDepositNote,  setEditDepositNote]  = useState('')
+  const [editingDepositId,  setEditingDepositId]  = useState<string | null>(null)
+  const [editDepositAmt,    setEditDepositAmt]    = useState('')
+  const [editDepositNote,   setEditDepositNote]   = useState('')
+  const [editDepositMethod, setEditDepositMethod] = useState('신용카드')
+  const [chargeMethod,      setChargeMethod]      = useState('신용카드')
+  const [stmtMonth,         setStmtMonth]         = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [stmtAllTime,  setStmtAllTime]  = useState(false)
+  const [stmtOrders,   setStmtOrders]   = useState<any[]>([])
+  const [stmtDeposits, setStmtDeposits] = useState<DbDeposit[]>([])
+  const [stmtLoading,  setStmtLoading]  = useState(false)
 
   // ── 거래처 목록 조회 ──────────────────────────────────────────────────────────
   async function fetchAccounts(inactive = false) {
@@ -154,6 +164,102 @@ export default function Customers() {
     setDeposits((data ?? []) as DbDeposit[])
   }
 
+  // ── 이용내역서 조회 ───────────────────────────────────────────────────────────
+  async function fetchStatement(accountCode: string, month: string, allTime: boolean) {
+    setStmtLoading(true)
+    try {
+      let orderQ = supabase
+        .from('orders')
+        .select('order_code, ordered_at, total_amount, delivery_fee, method, orderer_name, balance_after, order_items ( menu_name, quantity )')
+        .eq('account_code', accountCode)
+        .neq('status', '취소')
+        .order('ordered_at', { ascending: true })
+
+      let depQ = supabase
+        .from('deposits')
+        .select('*')
+        .eq('account_code', accountCode)
+        .order('created_at', { ascending: true })
+
+      if (!allTime) {
+        const [y, m] = month.split('-').map(Number)
+        const start = new Date(y, m - 1, 1).toISOString()
+        const end   = new Date(y, m,     1).toISOString()
+        orderQ = orderQ.gte('ordered_at', start).lt('ordered_at', end) as typeof orderQ
+        depQ   = depQ.gte('created_at', start).lt('created_at', end)   as typeof depQ
+      }
+
+      const [{ data: orders }, { data: deps }] = await Promise.all([orderQ, depQ])
+      setStmtOrders(orders ?? [])
+      setStmtDeposits((deps ?? []) as DbDeposit[])
+    } finally {
+      setStmtLoading(false)
+    }
+  }
+
+  type StmtRow =
+    | { type: 'deposit'; date: string; amount: number; paymentMethod: string; balanceAfter: number }
+    | { type: 'order';   date: string; amount: number; summary: string; note: string; orderer: string; balanceAfter: number }
+
+  function buildStmtRows(): StmtRow[] {
+    return [
+      ...stmtDeposits.map(d => ({
+        type:          'deposit' as const,
+        date:          d.created_at,
+        amount:        d.amount,
+        paymentMethod: d.payment_method ?? '신용카드',
+        balanceAfter:  d.balance_after ?? 0,
+      })),
+      ...stmtOrders.map((o: any) => ({
+        type:         'order' as const,
+        date:         o.ordered_at,
+        amount:       o.total_amount,
+        summary:      (o.order_items ?? []).map((i: any) => `${i.menu_name}${i.quantity}`).join(', '),
+        note:         o.method === '배달' ? `배달료 포함(${(o.delivery_fee ?? 3500).toLocaleString()}원)` : o.method,
+        orderer:      o.orderer_name ?? '',
+        balanceAfter: o.balance_after,
+      })),
+    ].sort((a, b) => a.date.localeCompare(b.date))
+  }
+
+  function downloadCSV() {
+    if (!selected) return
+    const acc  = selected
+    const rows = buildStmtRows()
+
+    const esc     = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const fmt     = (n: number)  => `₩${n.toLocaleString()}`
+    const fmtDate = (iso: string) => {
+      const d = new Date(iso)
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+    }
+
+    const lines: string[][] = [
+      ['선결제 이용내역서','','','','','','','',''],
+      ['회사명', acc.account_name, '', '담당자', acc.contact_person ?? '', '', '', '', ''],
+      ['사업자등록번호', acc.business_number ?? '', '', '전화번호', acc.contact_phone ?? '', '', '', '', ''],
+      ['','','','','','','','',''],
+      ['선결제내역','','','사용내역','','','','','잔액'],
+      ['일자','금액','기타','일자','금액','내역','비고','서명','잔액'],
+      ...rows.map(r =>
+        r.type === 'deposit'
+          ? [fmtDate(r.date), fmt(r.amount), r.paymentMethod, '', '', '', '', '', fmt(r.balanceAfter)]
+          : ['', '', '', fmtDate(r.date), fmt(r.amount), r.summary, r.note, r.orderer, fmt(r.balanceAfter)]
+      ),
+    ]
+
+    const csv  = '\uFEFF' + lines.map(row => row.map(esc).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `선결제이용내역서_${acc.account_name}_${stmtAllTime ? '전체' : stmtMonth}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   // ── 마운트 / showInactive 변경 시 목록 재조회 ────────────────────────────────
   useEffect(() => {
     async function load() {
@@ -181,6 +287,12 @@ export default function Customers() {
     setOrderPage(0)
     setChargePage(0)
   }, [selected?.account_code])
+
+  // ── 이용내역서 탭 활성 / 월 변경 시 조회 ──────────────────────────────────────
+  useEffect(() => {
+    if (detailTab !== 'statement' || !selected) return
+    fetchStatement(selected.account_code, stmtMonth, stmtAllTime)
+  }, [detailTab, stmtMonth, stmtAllTime, selected?.account_code])
 
   const seqMap: Record<string, number> = {}
   accounts.forEach((a, i) => { seqMap[a.account_code] = i + 1 })
@@ -262,9 +374,10 @@ export default function Customers() {
     if (isNaN(amt) || amt <= 0 || !selected) return
 
     const { error } = await supabase.rpc('add_deposit', {
-      p_account_code: selected.account_code,
-      p_amount:       amt,
-      p_note:         chargeMemo || null,
+      p_account_code:   selected.account_code,
+      p_amount:         amt,
+      p_note:           chargeMemo || null,
+      p_payment_method: chargeMethod,
     })
 
     if (error) {
@@ -291,6 +404,7 @@ export default function Customers() {
     setChargeAmt('')
     setChargeMemo('')
     setChargeError('')
+    setChargeMethod('신용카드')
   }
 
   // ── 정보 수정 열기 ────────────────────────────────────────────────────────────
@@ -394,9 +508,10 @@ export default function Customers() {
 
     // deposits UPDATE + accounts.current_balance 조정을 RPC로 원자적 처리
     const { error } = await supabase.rpc('update_deposit', {
-      p_deposit_id: deposit.deposit_id,
-      p_amount:     newAmt,
-      p_note:       editDepositNote.trim() || null,
+      p_deposit_id:     deposit.deposit_id,
+      p_amount:         newAmt,
+      p_note:           editDepositNote.trim() || null,
+      p_payment_method: editDepositMethod,
     })
     if (error) { console.error('충전 수정 실패:', error); return }
 
@@ -627,11 +742,14 @@ export default function Customers() {
 
               {/* 이력 탭 */}
               <div className="flex gap-0 border-b border-gray-border mb-3">
-                {(['orders', 'charges', 'members'] as const).map(t => (
+                {(['orders', 'charges', 'members', 'statement'] as const).map(t => (
                   <button key={t} onClick={() => { setDetailTab(t); setOrderPage(0); setChargePage(0) }}
                     className={`px-4 py-2 text-[12px] font-bold border-b-2 transition-colors
                       ${detailTab === t ? 'border-[#16a84c] text-[#16a84c]' : 'border-transparent text-gray-text hover:text-ink'}`}>
-                    {t === 'orders' ? '주문 내역' : t === 'charges' ? '충전 이력' : `누적 주문자 ${members.length > 0 ? `(${members.length})` : ''}`}
+                    {t === 'orders'    ? '주문 내역'
+                      : t === 'charges'   ? '충전 이력'
+                      : t === 'members'   ? `누적 주문자${members.length > 0 ? ` (${members.length})` : ''}`
+                      : '이용내역서'}
                   </button>
                 ))}
               </div>
@@ -765,6 +883,18 @@ export default function Customers() {
                                       </p>
                                     )
                                   })()}
+                                  <div>
+                                    <p className="text-[10px] font-bold text-gray-text mb-1">결제수단</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
+                                        <button key={m} onClick={() => setEditDepositMethod(m)}
+                                          className={`px-2 py-1 rounded-full border text-[10px] font-semibold transition-colors focus:outline-none
+                                            ${editDepositMethod === m ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-white'}`}>
+                                          {m}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
                                   <input
                                     value={editDepositNote}
                                     onChange={e => setEditDepositNote(e.target.value)}
@@ -785,7 +915,12 @@ export default function Customers() {
                             return (
                               <div key={d.deposit_id} className="bg-gray-bg rounded-lg px-3 py-2.5 flex justify-between items-center text-[12px] group/dep">
                                 <div>
-                                  <div className="font-semibold text-ink">{won(d.amount)}</div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold text-ink">{won(d.amount)}</span>
+                                    <span className="text-[10px] font-semibold text-gray-text bg-white border border-gray-border px-1.5 py-0.5 rounded-full">
+                                      {d.payment_method ?? '신용카드'}
+                                    </span>
+                                  </div>
                                   <div className="text-gray-text">
                                     {date} ({dow}) {time}
                                     {d.note ? ` · ${d.note}` : ''}
@@ -793,7 +928,7 @@ export default function Customers() {
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <button
-                                    onClick={() => { setEditingDepositId(d.deposit_id); setEditDepositAmt(String(d.amount)); setEditDepositNote(d.note ?? '') }}
+                                    onClick={() => { setEditingDepositId(d.deposit_id); setEditDepositAmt(String(d.amount)); setEditDepositNote(d.note ?? ''); setEditDepositMethod(d.payment_method ?? '신용카드') }}
                                     className="text-[11px] font-bold text-gray-text border border-gray-border rounded-md px-2 py-0.5 hover:bg-white hover:text-ink transition-colors opacity-0 group-hover/dep:opacity-100"
                                   >
                                     수정
@@ -866,6 +1001,128 @@ export default function Customers() {
                   )}
                 </div>
               )}
+
+              {/* 이용내역서 */}
+              {detailTab === 'statement' && (() => {
+                const rows = buildStmtRows()
+
+                function prevMonth() {
+                  if (stmtAllTime) { setStmtAllTime(false); return }
+                  const [y, m] = stmtMonth.split('-').map(Number)
+                  const d = new Date(y, m - 2, 1)
+                  setStmtMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+                }
+                function nextMonth() {
+                  if (stmtAllTime) return
+                  const [y, m] = stmtMonth.split('-').map(Number)
+                  const d = new Date(y, m, 1)
+                  setStmtMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+                }
+
+                const fmtRowDate = (iso: string) => {
+                  const d = new Date(iso)
+                  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+                }
+
+                return (
+                  <div>
+                    {/* 컨트롤 바 */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-1">
+                        <button onClick={prevMonth} disabled={stmtAllTime}
+                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">‹</button>
+                        <span className="text-[13px] font-semibold w-24 text-center">
+                          {stmtAllTime ? '전체 기간' : stmtMonth}
+                        </span>
+                        <button onClick={nextMonth} disabled={stmtAllTime}
+                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">›</button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setStmtAllTime(v => !v)}
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors
+                            ${stmtAllTime ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}
+                        >
+                          전체 기간
+                        </button>
+                        <button
+                          onClick={downloadCSV}
+                          className="px-3 py-1.5 rounded-lg bg-ink text-white text-[11px] font-bold hover:bg-ink/80 transition-colors"
+                        >
+                          CSV 다운로드
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 테이블 */}
+                    {stmtLoading ? (
+                      <div className="flex items-center justify-center py-8 text-gray-text text-[13px]">
+                        <div className="w-5 h-5 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
+                        불러오는 중...
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto -mx-1">
+                        <table className="w-full text-[10px] border-collapse" style={{ minWidth: 680 }}>
+                          <thead>
+                            <tr className="bg-gray-bg text-[9px] font-bold text-gray-text uppercase">
+                              <th colSpan={3} className="text-center py-1.5 border border-gray-border">선결제내역</th>
+                              <th colSpan={5} className="text-center py-1.5 border border-gray-border">사용내역</th>
+                              <th rowSpan={2} className="text-center py-1.5 border border-gray-border w-[72px]">잔액</th>
+                            </tr>
+                            <tr className="bg-gray-bg text-[9px] font-semibold text-gray-text">
+                              <th className="py-1 px-1.5 border border-gray-border text-left w-[90px]">일자</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-right w-[68px]">금액</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left w-[56px]">기타</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left w-[90px]">일자</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-right w-[64px]">금액</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left">내역</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left w-[80px]">비고</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left w-[56px]">서명</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.length === 0 ? (
+                              <tr>
+                                <td colSpan={9} className="text-center py-5 text-gray-text text-[12px]">내역 없음</td>
+                              </tr>
+                            ) : rows.map((row, idx) => {
+                              if (row.type === 'deposit') {
+                                return (
+                                  <tr key={idx} className="hover:bg-green-soft/20 transition-colors">
+                                    <td className="py-1 px-1.5 border border-gray-border text-green font-medium">{fmtRowDate(row.date)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold text-green">+{won(row.amount)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.paymentMethod}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold text-ink">{won(row.balanceAfter)}</td>
+                                  </tr>
+                                )
+                              } else {
+                                return (
+                                  <tr key={idx} className="hover:bg-gray-bg/60 transition-colors">
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{fmtRowDate(row.date)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium text-ink">-{won(row.amount)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-ink truncate max-w-[100px]">{row.summary}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.note}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text truncate">{row.orderer}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium" style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>{won(row.balanceAfter)}</td>
+                                  </tr>
+                                )
+                              }
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* 삭제 / 복구 — 맨 하단 */}
               <div className="pt-5 mt-5 border-t border-gray-border">
@@ -1141,6 +1398,18 @@ export default function Customers() {
                 <span className="text-[15px] font-semibold text-gray-text flex-shrink-0">원</span>
               </div>
             </div>
+            <div className="mb-4">
+              <label className="text-[11px] font-bold text-gray-text mb-2 block">결제수단</label>
+              <div className="flex flex-wrap gap-1.5">
+                {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
+                  <button key={m} onClick={() => setChargeMethod(m)}
+                    className={`px-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors focus:outline-none
+                      ${chargeMethod === m ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="mb-5">
               <label className="text-[11px] font-bold text-gray-text mb-1 block">비고 (선택)</label>
               <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
@@ -1150,7 +1419,7 @@ export default function Customers() {
               <p className="text-[12px] text-danger font-semibold mb-3">{chargeError}</p>
             )}
             <div className="flex gap-3">
-              <button onClick={() => { setChargeOpen(false); setChargeError('') }}
+              <button onClick={() => { setChargeOpen(false); setChargeError(''); setChargeMethod('신용카드') }}
                 className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
                 취소
               </button>
