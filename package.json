@@ -1,7 +1,7 @@
 {
-  "name": "freepos",
+  "name": "sunpos",
   "version": "0.1.4",
-  "description": "프리POS 앱",
+  "description": "선포스 앱",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -53,8 +53,8 @@
   },
   "author": "Sallaria",
   "build": {
-    "appId": "kr.freepos.app",
-    "productName": "프리POS",
+    "appId": "kr.sunpos.app",
+    "productName": "선포스",
     "npmRebuild": false,
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"

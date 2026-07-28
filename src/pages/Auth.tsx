@@ -126,7 +126,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
         {/* 로고 */}
         <div className="text-center mb-8">
           <div className="text-[28px] mb-1">🏪</div>
-          <h1 className="text-[20px] font-bold text-ink">프리POS</h1>
+          <h1 className="text-[20px] font-bold text-ink">선포스</h1>
           <p className="text-[12px] text-gray-text mt-1">선결제도 POS로 관리하세요</p>
         </div>
 

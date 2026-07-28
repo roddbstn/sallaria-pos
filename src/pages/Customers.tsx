@@ -59,6 +59,11 @@ export default function Customers() {
   const [members,      setMembers]      = useState<{ id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]>([])
   const [orderPage,    setOrderPage]    = useState(0)
   const [chargePage,   setChargePage]   = useState(0)
+  const [calMonth,     setCalMonth]     = useState(() => {
+    const d = new Date()
+    return { year: d.getFullYear(), month: d.getMonth() }
+  })
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
 
   const PAGE_SIZE = 5
   // 인라인 QR (selected 변경 시 자동 생성)
@@ -736,7 +741,7 @@ export default function Customers() {
                   <InfoRow label="기관명"        value={selected.organization_name ?? '—'} />
                   <InfoRow label="PIN"           value={selected.pin_code} />
                   <InfoRow label="잔액 경고 기준" value={won(selected.warning_threshold)} />
-                  <InfoRow label="이번달 사용액"  value={won(monthlyUsage[selected.account_code] ?? 0)} />
+                  <InfoRow label="이번달 사용액"  value={`-${won(monthlyUsage[selected.account_code] ?? 0)}`} />
                 </div>
               </div>
 
@@ -843,17 +848,176 @@ export default function Customers() {
 
               {/* 충전 이력 */}
               {detailTab === 'charges' && (() => {
-                const total = deposits.length
-                const pages = Math.ceil(total / PAGE_SIZE)
-                const slice = deposits.slice(chargePage * PAGE_SIZE, (chargePage + 1) * PAGE_SIZE)
+                const { year, month } = calMonth
+                const firstDay    = new Date(year, month, 1).getDay()
+                const daysInMonth = new Date(year, month + 1, 0).getDate()
+                const monthLabel  = `${year}년 ${month + 1}월`
+
+                // 이 달 충전 이력
+                const monthDeposits = deposits.filter(d => {
+                  const dt = new Date(d.created_at)
+                  return dt.getFullYear() === year && dt.getMonth() === month
+                })
+
+                // 날짜별 집계
+                const dayMap: Record<number, { count: number; total: number }> = {}
+                monthDeposits.forEach(d => {
+                  const day = new Date(d.created_at).getDate()
+                  if (!dayMap[day]) dayMap[day] = { count: 0, total: 0 }
+                  dayMap[day].count++
+                  dayMap[day].total += d.amount
+                })
+                const monthTotal = monthDeposits.reduce((s, d) => s + d.amount, 0)
+                const monthCount = monthDeposits.length
+
+                // 캘린더 셀
+                const cells: (number | null)[] = []
+                for (let i = 0; i < firstDay; i++) cells.push(null)
+                for (let i = 1; i <= daysInMonth; i++) cells.push(i)
+                while (cells.length % 7 !== 0) cells.push(null)
+
+                const today = new Date()
+                const DAY_LABELS = ['일','월','화','수','목','금','토']
+                const DAY = ['일','월','화','수','목','금','토']
+
                 return (
                   <div>
+                    {/* ── 캘린더 ── */}
+                    <div className="mb-4">
+                      {/* 헤더: 월 이동 + 이번 달 통계 */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setCalMonth(c => { const d = new Date(c.year, c.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}
+                            className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-bg text-gray-text text-[16px] leading-none"
+                          >‹</button>
+                          <button
+                            onClick={() => setMonthPickerOpen(true)}
+                            className="text-[13px] font-bold text-ink w-[88px] text-center hover:text-green transition-colors underline underline-offset-2 decoration-dotted"
+                          >{monthLabel}</button>
+                          <button
+                            onClick={() => setCalMonth(c => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}
+                            className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-bg text-gray-text text-[16px] leading-none"
+                          >›</button>
+                        </div>
+                        <div className="text-right">
+                          {monthCount > 0 ? (
+                            <>
+                              <p className="text-[11px] font-bold text-green">+{won(monthTotal)}</p>
+                              <p className="text-[10px] text-gray-text">{monthCount}회 충전</p>
+                            </>
+                          ) : (
+                            <p className="text-[11px] text-gray-text">충전 없음</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 월 선택 모달 */}
+                      {monthPickerOpen && (() => {
+                        // 충전 이력 있는 월만 집계
+                        const monthSummary: Record<string, { year: number; month: number; total: number; count: number }> = {}
+                        deposits.forEach(d => {
+                          const dt = new Date(d.created_at)
+                          const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+                          if (!monthSummary[key]) monthSummary[key] = { year: dt.getFullYear(), month: dt.getMonth(), total: 0, count: 0 }
+                          monthSummary[key].total += d.amount
+                          monthSummary[key].count++
+                        })
+                        const sortedMonths = Object.entries(monthSummary).sort((a, b) => b[0].localeCompare(a[0]))
+                        const allTimeTotal = deposits.reduce((s, d) => s + d.amount, 0)
+
+                        return (
+                          <div
+                            className="fixed inset-0 z-[300] flex items-center justify-center"
+                            style={{ background: 'rgba(0,0,0,0.35)' }}
+                            onClick={() => setMonthPickerOpen(false)}
+                          >
+                            <div
+                              className="bg-white rounded-2xl shadow-2xl w-[280px] max-h-[420px] flex flex-col overflow-hidden"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {/* 모달 헤더 */}
+                              <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-border flex-shrink-0">
+                                <span className="text-[13px] font-bold text-ink">월 선택</span>
+                                <div className="flex items-center gap-3">
+                                  <div className="text-right">
+                                    <p className="text-[10px] text-gray-text leading-none mb-0.5">총 충전액</p>
+                                    <p className="text-[13px] font-extrabold text-green leading-none">+{won(allTimeTotal)}</p>
+                                  </div>
+                                  <button onClick={() => setMonthPickerOpen(false)} className="text-gray-text text-[16px] hover:text-ink leading-none">✕</button>
+                                </div>
+                              </div>
+                              {/* 월 리스트 */}
+                              <div className="overflow-y-auto flex-1">
+                                {sortedMonths.length === 0 ? (
+                                  <p className="text-[13px] text-gray-text text-center py-6">충전 이력 없음</p>
+                                ) : sortedMonths.map(([key, info]) => {
+                                  const isSelected = calMonth.year === info.year && calMonth.month === info.month
+                                  return (
+                                    <button
+                                      key={key}
+                                      onClick={() => { setCalMonth({ year: info.year, month: info.month }); setMonthPickerOpen(false) }}
+                                      className={`w-full flex items-center justify-between px-4 py-3 text-left border-b border-gray-border/50 transition-colors
+                                        ${isSelected ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}
+                                    >
+                                      <div>
+                                        <span className={`text-[13px] font-bold ${isSelected ? 'text-green' : 'text-ink'}`}>
+                                          {info.year}년 {info.month + 1}월
+                                        </span>
+                                        <span className="text-[10px] text-gray-text ml-2">{info.count}회</span>
+                                      </div>
+                                      <span className={`text-[13px] font-extrabold ${isSelected ? 'text-green' : 'text-ink'}`}>
+                                        +{won(info.total)}
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* 요일 헤더 */}
+                      <div className="grid grid-cols-7 mb-0.5">
+                        {DAY_LABELS.map((d, i) => (
+                          <div key={d} className={`text-center text-[10px] font-bold py-1 ${i === 0 ? 'text-danger' : i === 6 ? 'text-blue-500' : 'text-gray-text'}`}>{d}</div>
+                        ))}
+                      </div>
+
+                      {/* 날짜 그리드 */}
+                      <div className="grid grid-cols-7">
+                        {cells.map((day, idx) => {
+                          if (!day) return <div key={`e${idx}`} className="h-10" />
+                          const hasDeposit = !!dayMap[day]
+                          const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day
+                          const dow = (firstDay + day - 1) % 7
+                          return (
+                            <div key={day} className="flex flex-col items-center h-10 pt-0.5">
+                              <div className={`w-6 h-6 flex items-center justify-center rounded-full text-[11px] font-semibold
+                                ${isToday ? 'bg-ink text-white' : dow === 0 ? 'text-danger' : dow === 6 ? 'text-blue-500' : 'text-ink'}`}>
+                                {day}
+                              </div>
+                              {hasDeposit && (
+                                <div className="flex flex-col items-center gap-0" style={{ marginTop: 1 }}>
+                                  <div className="w-1 h-1 rounded-full bg-green" />
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* ── 구분선 ── */}
+                    <div className="border-t border-gray-border mb-3" />
+
+                    {/* ── 해당 월 충전 리스트 ── */}
                     <div className="space-y-2">
-                      {total === 0
-                        ? <div className="text-[13px] text-gray-text py-2">충전 이력 없음</div>
-                        : slice.map(d => {
-                            const dt = new Date(d.created_at)
-                            const DAY = ['일','월','화','수','목','금','토']
+                      {monthCount === 0
+                        ? <div className="text-[13px] text-gray-text py-2">이 달 충전 이력 없음</div>
+                        : monthDeposits.map(d => {
+                            const dt   = new Date(d.created_at)
                             const date = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
                             const time = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
                             const dow  = DAY[dt.getDay()]
@@ -916,7 +1080,7 @@ export default function Customers() {
                               <div key={d.deposit_id} className="bg-gray-bg rounded-lg px-3 py-2.5 flex justify-between items-center text-[12px] group/dep">
                                 <div>
                                   <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-ink">{won(d.amount)}</span>
+                                    <span className="font-semibold text-green">+{won(d.amount)}</span>
                                     <span className="text-[10px] font-semibold text-gray-text bg-white border border-gray-border px-1.5 py-0.5 rounded-full">
                                       {d.payment_method ?? '신용카드'}
                                     </span>
@@ -930,9 +1094,7 @@ export default function Customers() {
                                   <button
                                     onClick={() => { setEditingDepositId(d.deposit_id); setEditDepositAmt(String(d.amount)); setEditDepositNote(d.note ?? ''); setEditDepositMethod(d.payment_method ?? '신용카드') }}
                                     className="text-[11px] font-bold text-gray-text border border-gray-border rounded-md px-2 py-0.5 hover:bg-white hover:text-ink transition-colors opacity-0 group-hover/dep:opacity-100"
-                                  >
-                                    수정
-                                  </button>
+                                  >수정</button>
                                   <span className="text-[10px] font-bold text-green bg-green-soft px-2 py-0.5 rounded-full flex-shrink-0">충전</span>
                                 </div>
                               </div>
@@ -940,19 +1102,6 @@ export default function Customers() {
                           })
                       }
                     </div>
-                    {pages > 1 && (
-                      <div className="flex items-center justify-center gap-2 mt-3">
-                        <button onClick={() => setChargePage(p => p - 1)} disabled={chargePage === 0}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
-                          ‹ 이전
-                        </button>
-                        <span className="text-[11px] text-gray-text">{chargePage + 1} / {pages}</span>
-                        <button onClick={() => setChargePage(p => p + 1)} disabled={chargePage >= pages - 1}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
-                          다음 ›
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )
               })()}
@@ -982,17 +1131,6 @@ export default function Customers() {
                               <span className="text-[11px] font-bold text-green bg-green-soft px-2 py-0.5 rounded-full">
                                 {m.order_count}회
                               </span>
-                              <button
-                                onClick={async () => {
-                                  if (!confirm(`'${m.name}' 주문자를 삭제할까요?`)) return
-                                  const { error } = await supabase.from('account_members').delete().eq('id', m.id)
-                                  if (error) { alert('삭제에 실패했습니다.'); return }
-                                  setMembers(prev => prev.filter(x => x.id !== m.id))
-                                }}
-                                className="text-[11px] font-bold text-gray-text border border-gray-border rounded-md px-2 py-0.5 hover:bg-white hover:text-danger hover:border-danger transition-colors opacity-0 group-hover/member:opacity-100"
-                              >
-                                삭제
-                              </button>
                             </div>
                           </div>
                         )

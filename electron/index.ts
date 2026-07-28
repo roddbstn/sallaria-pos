@@ -56,7 +56,7 @@ function createWindow(): void {
     minWidth:       800,
     minHeight:      600,
     aspectRatio:    4 / 3,
-    title:          '선결제 고객 POS',
+    title:          '선포스',
     backgroundColor: '#ffffff',
     webPreferences: {
       preload:        join(__dirname, '../preload/preload.js'),
