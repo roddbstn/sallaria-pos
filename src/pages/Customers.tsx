@@ -79,7 +79,7 @@ export default function Customers() {
   const [editOpen,     setEditOpen]     = useState(false)
   const [editForm,     setEditForm]     = useState({
     name: '', type: '과' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '', warnThreshold: '30000',
-    balance: '',
+    balance: '', adjustReason: '',
   })
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [addPinError,  setAddPinError]  = useState('')
@@ -90,14 +90,20 @@ export default function Customers() {
   const [editDepositNote,   setEditDepositNote]   = useState('')
   const [editDepositMethod, setEditDepositMethod] = useState('신용카드')
   const [chargeMethod,      setChargeMethod]      = useState('신용카드')
+  const [chargeDate,        setChargeDate]        = useState('')   // "YYYY-MM-DD"
+  const [chargeTime,        setChargeTime]        = useState('')   // "HH:MM"
+  const [chargeConfirm,     setChargeConfirm]     = useState(false)
+  const [chargeLoading,     setChargeLoading]     = useState(false)
+  const [discTooltip, setDiscTooltip] = useState<{ x: number; y: number; amount: number } | null>(null)
   const [stmtMonth,         setStmtMonth]         = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
   const [stmtAllTime,  setStmtAllTime]  = useState(false)
-  const [stmtOrders,   setStmtOrders]   = useState<any[]>([])
-  const [stmtDeposits, setStmtDeposits] = useState<DbDeposit[]>([])
-  const [stmtLoading,  setStmtLoading]  = useState(false)
+  const [stmtOrders,      setStmtOrders]      = useState<any[]>([])
+  const [stmtDeposits,    setStmtDeposits]    = useState<DbDeposit[]>([])
+  const [stmtAdjustments, setStmtAdjustments] = useState<any[]>([])
+  const [stmtLoading,     setStmtLoading]     = useState(false)
 
   // ── 거래처 목록 조회 ──────────────────────────────────────────────────────────
   async function fetchAccounts(inactive = false) {
@@ -169,51 +175,57 @@ export default function Customers() {
     setDeposits((data ?? []) as DbDeposit[])
   }
 
-  // ── 이용내역서 조회 ───────────────────────────────────────────────────────────
-  async function fetchStatement(accountCode: string, month: string, allTime: boolean) {
+  // ── 이용내역서 조회 (항상 전체 기간 로드, 표시는 buildStmtRows에서 필터) ──────
+  async function fetchStatement(accountCode: string) {
     setStmtLoading(true)
     try {
-      let orderQ = supabase
-        .from('orders')
-        .select('order_code, ordered_at, total_amount, delivery_fee, method, orderer_name, balance_after, order_items ( menu_name, quantity )')
-        .eq('account_code', accountCode)
-        .neq('status', '취소')
-        .order('ordered_at', { ascending: true })
-
-      let depQ = supabase
-        .from('deposits')
-        .select('*')
-        .eq('account_code', accountCode)
-        .order('created_at', { ascending: true })
-
-      if (!allTime) {
-        const [y, m] = month.split('-').map(Number)
-        const start = new Date(y, m - 1, 1).toISOString()
-        const end   = new Date(y, m,     1).toISOString()
-        orderQ = orderQ.gte('ordered_at', start).lt('ordered_at', end) as typeof orderQ
-        depQ   = depQ.gte('created_at', start).lt('created_at', end)   as typeof depQ
-      }
-
-      const [{ data: orders }, { data: deps }] = await Promise.all([orderQ, depQ])
+      const [{ data: orders }, { data: deps }, { data: adjs }] = await Promise.all([
+        supabase
+          .from('orders')
+          .select('order_code, ordered_at, total_amount, delivery_fee, method, orderer_name, balance_after, order_items ( menu_name, quantity )')
+          .eq('account_code', accountCode)
+          .neq('status', '취소')
+          .order('ordered_at', { ascending: true }),
+        supabase
+          .from('deposits')
+          .select('*')
+          .eq('account_code', accountCode)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('balance_adjustments')
+          .select('*')
+          .eq('account_code', accountCode)
+          .order('created_at', { ascending: true }),
+      ])
       setStmtOrders(orders ?? [])
       setStmtDeposits((deps ?? []) as DbDeposit[])
+      setStmtAdjustments(adjs ?? [])
     } finally {
       setStmtLoading(false)
     }
   }
 
   type StmtRow =
-    | { type: 'deposit'; date: string; amount: number; paymentMethod: string; balanceAfter: number }
-    | { type: 'order';   date: string; amount: number; summary: string; note: string; orderer: string; balanceAfter: number }
+    | { type: 'deposit';    date: string; amount: number; paymentMethod: string }
+    | { type: 'adjustment'; date: string; amount: number; balanceBefore: number; balanceAfter: number; reason: string | null }
+    | { type: 'order';      date: string; amount: number; summary: string; note: string; orderer: string; balanceAfter: number; discrepancy?: number }
 
   function buildStmtRows(): StmtRow[] {
-    return [
+    // 전체 행 합산 후 날짜 정렬
+    const all: StmtRow[] = [
       ...stmtDeposits.map(d => ({
         type:          'deposit' as const,
         date:          d.created_at,
         amount:        d.amount,
         paymentMethod: d.payment_method ?? '신용카드',
-        balanceAfter:  d.balance_after ?? 0,
+      })),
+      ...stmtAdjustments.map((a: any) => ({
+        type:          'adjustment' as const,
+        date:          a.created_at,
+        amount:        a.amount,
+        balanceBefore: a.balance_before,
+        balanceAfter:  a.balance_after,
+        reason:        a.reason ?? null,
       })),
       ...stmtOrders.map((o: any) => ({
         type:         'order' as const,
@@ -222,9 +234,42 @@ export default function Customers() {
         summary:      (o.order_items ?? []).map((i: any) => `${i.menu_name}${i.quantity}`).join(', '),
         note:         o.method === '배달' ? `배달료 포함(${(o.delivery_fee ?? 3500).toLocaleString()}원)` : o.method,
         orderer:      o.orderer_name ?? '',
-        balanceAfter: o.balance_after,
+        balanceAfter: o.balance_after ?? 0,
       })),
     ].sort((a, b) => a.date.localeCompare(b.date))
+
+    // 순방향으로 예상 잔액 추적.
+    // 주문 행에서 (예상 잔액 - 주문금액)과 실제 balance_after가 다르면 discrepancy 표시.
+    // 충전 행은 잔액 표시 없음 (소급 입력 가능성으로 신뢰 불가).
+    let expectedBalance = 0
+    const computed = all.map(row => {
+      if (row.type === 'deposit') {
+        expectedBalance += row.amount
+        return row
+      } else if (row.type === 'adjustment') {
+        // 조정은 balance_after가 정확하므로 기준점으로 사용
+        expectedBalance = row.balanceAfter
+        return row
+      } else {
+        const expectedBalanceBefore = expectedBalance
+        const actualBalanceBefore   = row.balanceAfter + row.amount
+        const diff = actualBalanceBefore - expectedBalanceBefore
+        expectedBalance = row.balanceAfter  // 주문 스냅샷으로 보정
+        return { ...row, discrepancy: diff !== 0 ? diff : undefined }
+      }
+    })
+
+    // 월 필터 적용 (데이터는 전체, 표시만 선택 월로 제한)
+    if (!stmtAllTime) {
+      const [y, m] = stmtMonth.split('-').map(Number)
+      const start = new Date(y, m - 1, 1)
+      const end   = new Date(y, m,     1)
+      return computed.filter(r => {
+        const d = new Date(r.date)
+        return d >= start && d < end
+      })
+    }
+    return computed
   }
 
   function downloadCSV() {
@@ -246,11 +291,16 @@ export default function Customers() {
       ['','','','','','','','',''],
       ['선결제내역','','','사용내역','','','','','잔액'],
       ['일자','금액','기타','일자','금액','내역','비고','서명','잔액'],
-      ...rows.map(r =>
-        r.type === 'deposit'
-          ? [fmtDate(r.date), fmt(r.amount), r.paymentMethod, '', '', '', '', '', fmt(r.balanceAfter)]
-          : ['', '', '', fmtDate(r.date), fmt(r.amount), r.summary, r.note, r.orderer, fmt(r.balanceAfter)]
-      ),
+      ...rows.map(r => {
+        if (r.type === 'deposit') {
+          return [fmtDate(r.date), fmt(r.amount), r.paymentMethod, '', '', '', '', '', '']
+        } else if (r.type === 'adjustment') {
+          const sign = r.amount >= 0 ? '+' : ''
+          return [fmtDate(r.date), `${sign}${fmt(r.amount)}`, '잔액조정', '', '', r.reason ?? '', `${fmt(r.balanceBefore)} → ${fmt(r.balanceAfter)}`, '', fmt(r.balanceAfter)]
+        } else {
+          return ['', '', '', fmtDate(r.date), fmt(r.amount), r.summary, r.note, r.orderer, fmt(r.balanceAfter)]
+        }
+      }),
     ]
 
     const csv  = '\uFEFF' + lines.map(row => row.map(esc).join(',')).join('\n')
@@ -296,8 +346,8 @@ export default function Customers() {
   // ── 이용내역서 탭 활성 / 월 변경 시 조회 ──────────────────────────────────────
   useEffect(() => {
     if (detailTab !== 'statement' || !selected) return
-    fetchStatement(selected.account_code, stmtMonth, stmtAllTime)
-  }, [detailTab, stmtMonth, stmtAllTime, selected?.account_code])
+    fetchStatement(selected.account_code)
+  }, [detailTab, selected?.account_code])
 
   const seqMap: Record<string, number> = {}
   accounts.forEach((a, i) => { seqMap[a.account_code] = i + 1 })
@@ -376,18 +426,26 @@ export default function Customers() {
   // ── 충전 등록 ─────────────────────────────────────────────────────────────────
   async function handleCharge() {
     const amt = parseInt(chargeAmt.replace(/,/g, ''), 10)
-    if (isNaN(amt) || amt <= 0 || !selected) return
+    if (isNaN(amt) || amt <= 0 || !selected || chargeLoading) return
+    setChargeLoading(true)
+
+    // 선결제 일시: 입력된 날짜+시간을 KST로 해석해 ISO로 변환
+    const createdAt = chargeDate
+      ? `${chargeDate}T${chargeTime || '00:00'}:00+09:00`
+      : undefined
 
     const { error } = await supabase.rpc('add_deposit', {
       p_account_code:   selected.account_code,
       p_amount:         amt,
       p_note:           chargeMemo || null,
       p_payment_method: chargeMethod,
+      ...(createdAt ? { p_created_at: createdAt } : {}),
     })
 
     if (error) {
       console.error('충전 실패:', error)
       setChargeError('충전에 실패했습니다. 다시 시도해주세요.')
+      setChargeLoading(false)
       return
     }
 
@@ -410,6 +468,7 @@ export default function Customers() {
     setChargeMemo('')
     setChargeError('')
     setChargeMethod('신용카드')
+    setChargeLoading(false)
   }
 
   // ── 정보 수정 열기 ────────────────────────────────────────────────────────────
@@ -422,8 +481,9 @@ export default function Customers() {
       manager:       selected.contact_person ?? '',
       phone:         selected.contact_phone ?? '',
       pin:           selected.pin_code,
-      warnThreshold: String(selected.warning_threshold),
-      balance:       String(selected.current_balance),
+      warnThreshold:  String(selected.warning_threshold),
+      balance:        String(selected.current_balance),
+      adjustReason:   '',
     })
     setEditOpen(true)
   }
@@ -468,16 +528,22 @@ export default function Customers() {
       .eq('account_code', selected.account_code)
     if (error) { console.error('수정 실패:', error); return }
 
-    // 잔액이 바뀐 경우 deposits에 조정 이력 기록
+    // 잔액이 바뀐 경우 balance_adjustments에 이력 기록
     if (balanceValid && balanceDelta !== 0) {
-      await supabase.from('deposits').insert({
-        account_code: selected.account_code,
-        amount:       balanceDelta,
-        note:         '잔액 수동 조정',
+      await supabase.from('balance_adjustments').insert({
+        account_code:   selected.account_code,
+        store_id:       storeId,
+        amount:         balanceDelta,
+        balance_before: selected.current_balance,
+        balance_after:  newBalance,
+        reason:         editForm.adjustReason?.trim() || null,
       })
     }
 
     await fetchAccounts().catch(() => {})
+    if (balanceValid && balanceDelta !== 0) {
+      fetchStatement(selected.account_code).catch(() => {})
+    }
     setSelected(prev => prev ? {
       ...prev,
       account_name:      editForm.name.trim(),
@@ -545,6 +611,22 @@ export default function Customers() {
 
   return (
     <div className="h-full flex overflow-hidden bg-white">
+
+      {/* 잔액 불일치 툴팁 (fixed, overflow 클리핑 없음) */}
+      {discTooltip && (
+        <div
+          className="fixed z-[9999] w-56 rounded-lg bg-ink text-white text-[10px] leading-snug px-2.5 py-2 shadow-lg pointer-events-none"
+          style={{ top: discTooltip.y, right: window.innerWidth - discTooltip.x }}
+        >
+          <span className="font-bold text-white">이 잔액은 맞아요.</span>
+          <br />
+          <span className="text-gray-300">주문 당시 실제로 남아있던 금액이에요.</span>
+          <br /><br />
+          <span className="text-gray-400">다만 충전 기록과 {Math.abs(discTooltip.amount).toLocaleString()}원 차이가 나고 있어요. 거래처 등록 당시 초기 잔액이 기록되지 않았거나, 이전에 잔액을 수정한 적이 있는데 당시에는 그 내역이 정확히 기록되지 않아서 생긴 차이예요.</span>
+          <br /><br />
+          <span className="text-orange-300">8월부터는 잔액을 수정하면 이용내역서에 '잔액조정'으로 남겨지기 때문에 이 표시가 뜨지 않아요.</span>
+        </div>
+      )}
 
       {/* ── 테이블 영역 ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -675,7 +757,17 @@ export default function Customers() {
                   {selected.current_balance < 0 ? `- ${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
                 </span>
                 {!showInactive && (
-                  <button onClick={() => setChargeOpen(true)} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[12px] font-bold hover:bg-[#128040] transition-colors">
+                  <button onClick={() => {
+                    const now = new Date()
+                    setChargeDate(now.toLocaleDateString('en-CA'))
+                    setChargeTime(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`)
+                    setChargeConfirm(false)
+                    setChargeAmt('')
+                    setChargeMemo('')
+                    setChargeMethod('신용카드')
+                    setChargeError('')
+                    setChargeOpen(true)
+                  }} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[12px] font-bold hover:bg-[#128040] transition-colors">
                     💳 충전
                   </button>
                 )}
@@ -1200,22 +1292,22 @@ export default function Customers() {
                       </div>
                     ) : (
                       <div className="overflow-x-auto -mx-1">
-                        <table className="w-full text-[10px] border-collapse" style={{ minWidth: 680 }}>
+                        <table className="text-[10px] border-collapse whitespace-nowrap">
                           <thead>
                             <tr className="bg-gray-bg text-[9px] font-bold text-gray-text uppercase">
                               <th colSpan={3} className="text-center py-1.5 border border-gray-border">선결제내역</th>
                               <th colSpan={5} className="text-center py-1.5 border border-gray-border">사용내역</th>
-                              <th rowSpan={2} className="text-center py-1.5 border border-gray-border w-[72px]">잔액</th>
+                              <th rowSpan={2} className="text-center py-1.5 border border-gray-border px-2">잔액</th>
                             </tr>
                             <tr className="bg-gray-bg text-[9px] font-semibold text-gray-text">
-                              <th className="py-1 px-1.5 border border-gray-border text-left w-[90px]">일자</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-right w-[68px]">금액</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left w-[56px]">기타</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left w-[90px]">일자</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-right w-[64px]">금액</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left">일자</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-right">금액</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left">기타</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left">일자</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-right">금액</th>
                               <th className="py-1 px-1.5 border border-gray-border text-left">내역</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left w-[80px]">비고</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left w-[56px]">서명</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left">비고</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left">서명</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1224,7 +1316,41 @@ export default function Customers() {
                                 <td colSpan={9} className="text-center py-5 text-gray-text text-[12px]">내역 없음</td>
                               </tr>
                             ) : rows.map((row, idx) => {
-                              if (row.type === 'deposit') {
+                              if (row.type === 'adjustment') {
+                                return (
+                                  <tr key={idx} className="bg-orange-50">
+                                    {/* 선결제내역: 일자 */}
+                                    <td className="py-1 px-1.5 border border-gray-border text-orange-600 font-medium whitespace-nowrap">
+                                      <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1 py-0.5 rounded mr-1">잔액조정</span>
+                                      {fmtRowDate(row.date)}
+                                    </td>
+                                    {/* 선결제내역: 금액 */}
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount >= 0 ? 'var(--green)' : 'var(--danger)' }}>
+                                      {row.amount >= 0 ? `+${won(row.amount)}` : `-${won(Math.abs(row.amount))}`}
+                                    </td>
+                                    {/* 선결제내역: 기타 */}
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    {/* 사용내역: 일자 */}
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    {/* 사용내역: 금액 */}
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    {/* 사용내역: 내역 */}
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px]">
+                                      {row.reason || '—'}
+                                    </td>
+                                    {/* 사용내역: 비고 — 조정 전후 잔액 */}
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px] whitespace-nowrap">
+                                      {won(row.balanceBefore)} → {won(row.balanceAfter)}
+                                    </td>
+                                    {/* 사용내역: 서명 */}
+                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    {/* 잔액 */}
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold" style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>
+                                      {won(row.balanceAfter)}
+                                    </td>
+                                  </tr>
+                                )
+                              } else if (row.type === 'deposit') {
                                 return (
                                   <tr key={idx} className="hover:bg-green-soft/20 transition-colors">
                                     <td className="py-1 px-1.5 border border-gray-border text-green font-medium">{fmtRowDate(row.date)}</td>
@@ -1235,7 +1361,7 @@ export default function Customers() {
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold text-ink">{won(row.balanceAfter)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border" />
                                   </tr>
                                 )
                               } else {
@@ -1246,10 +1372,22 @@ export default function Customers() {
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border text-gray-text">{fmtRowDate(row.date)}</td>
                                     <td className="py-1 px-1.5 border border-gray-border text-right font-medium text-ink">-{won(row.amount)}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-ink truncate max-w-[100px]">{row.summary}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-ink">{row.summary}</td>
                                     <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.note}</td>
                                     <td className="py-1 px-1.5 border border-gray-border text-gray-text truncate">{row.orderer}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium" style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>{won(row.balanceAfter)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium">
+                                      <span style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>{won(row.balanceAfter)}</span>
+                                      {row.discrepancy !== undefined && (
+                                        <span
+                                          className="inline-flex items-center justify-center ml-0.5 cursor-help w-3.5 h-3.5 rounded-full bg-green text-white text-[8px] font-bold"
+                                          onMouseEnter={e => {
+                                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                            setDiscTooltip({ x: r.right, y: r.bottom + 6, amount: row.discrepancy! })
+                                          }}
+                                          onMouseLeave={() => setDiscTooltip(null)}
+                                        >?</span>
+                                      )}
+                                    </td>
                                   </tr>
                                 )
                               }
@@ -1493,12 +1631,34 @@ export default function Customers() {
                     </p>
                   )
                 })()}
+                {(() => {
+                  const v = parseInt(editForm.balance.replace(/,/g, ''), 10)
+                  const delta = isNaN(v) ? 0 : v - selected.current_balance
+                  if (isNaN(v) || delta === 0) return null
+                  return (
+                    <div className="mt-2">
+                      <label className="text-[11px] font-bold text-gray-text block mb-1">수정 사유 <span className="text-gray-400 text-[10px] font-normal">(필수)</span></label>
+                      <input
+                        value={editForm.adjustReason}
+                        onChange={e => setEditForm(f => ({ ...f, adjustReason: e.target.value }))}
+                        placeholder="예: 이전 잔액 이월, 오류 수정 등"
+                        className={INPUT_CLS + ' text-[12px]'}
+                      />
+                    </div>
+                  )
+                })()}
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => { setEditOpen(false); setEditPinError('') }} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">취소</button>
               <button onClick={handleEditAccount}
-                disabled={!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4}
+                disabled={(() => {
+                  if (!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4) return true
+                  const v = parseInt(editForm.balance.replace(/,/g, ''), 10)
+                  const delta = isNaN(v) ? 0 : v - (selected?.current_balance ?? 0)
+                  if (delta !== 0 && !editForm.adjustReason.trim()) return true
+                  return false
+                })()}
                 className="flex-1 py-3 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
                 저장
               </button>
@@ -1523,51 +1683,123 @@ export default function Customers() {
       {/* ── 충전 등록 모달 ── */}
       {chargeOpen && selected && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-[360px]">
-            <div className="text-[17px] font-extrabold mb-1">충전 등록</div>
-            <div className="text-[13px] text-gray-text mb-5">{selected.account_name}</div>
-            <div className="mb-4">
-              <label className="text-[11px] font-bold text-gray-text mb-1 block">충전 금액</label>
-              <div className="flex items-baseline gap-2">
-                <input value={chargeAmt} onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, ''))}
-                  placeholder="300000"
-                  inputMode="numeric"
-                  className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-2 text-[18px] font-bold focus:outline-none focus:border-[#16a84c] transition-colors" />
-                <span className="text-[15px] font-semibold text-gray-text flex-shrink-0">원</span>
-              </div>
-            </div>
-            <div className="mb-4">
-              <label className="text-[11px] font-bold text-gray-text mb-2 block">결제수단</label>
-              <div className="flex flex-wrap gap-1.5">
-                {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
-                  <button key={m} onClick={() => setChargeMethod(m)}
-                    className={`px-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors focus:outline-none
-                      ${chargeMethod === m ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}>
-                    {m}
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-[380px]">
+
+            {!chargeConfirm ? (
+              /* ── 1단계: 입력 ── */
+              <>
+                <div className="text-[17px] font-extrabold mb-1">충전 등록</div>
+                <div className="text-[13px] text-gray-text mb-5">{selected.account_name}</div>
+
+                {/* 금액 */}
+                <div className="mb-4">
+                  <label className="text-[11px] font-bold text-gray-text mb-1 block">충전 금액</label>
+                  <div className="flex items-baseline gap-2">
+                    <input value={chargeAmt} onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="300000" inputMode="numeric"
+                      className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-2 text-[18px] font-bold focus:outline-none focus:border-[#16a84c] transition-colors" />
+                    <span className="text-[15px] font-semibold text-gray-text flex-shrink-0">원</span>
+                  </div>
+                </div>
+
+                {/* 결제수단 */}
+                <div className="mb-4">
+                  <label className="text-[11px] font-bold text-gray-text mb-2 block">결제수단</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
+                      <button key={m} onClick={() => setChargeMethod(m)}
+                        className={`px-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors focus:outline-none
+                          ${chargeMethod === m ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 선결제 일시 */}
+                <div className="mb-4">
+                  <label className="text-[11px] font-bold text-gray-text mb-1 block">선결제 일시 <span className="font-normal text-gray-text">(실제 결제한 날짜·시간)</span></label>
+                  <div className="flex gap-2">
+                    <input type="date" value={chargeDate} onChange={e => setChargeDate(e.target.value)}
+                      max={new Date().toLocaleDateString('en-CA')}
+                      className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-green" />
+                    <input type="time" value={chargeTime} onChange={e => setChargeTime(e.target.value)}
+                      className="w-[110px] border border-gray-border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-green" />
+                  </div>
+                </div>
+
+                {/* 비고 */}
+                <div className="mb-5">
+                  <label className="text-[11px] font-bold text-gray-text mb-1 block">비고 (선택)</label>
+                  <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
+                    placeholder="예: 7월 법인카드" className={INPUT_CLS} />
+                </div>
+
+                <div className="flex gap-3">
+                  <button onClick={() => { setChargeOpen(false); setChargeError('') }}
+                    className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
+                    취소
                   </button>
-                ))}
-              </div>
-            </div>
-            <div className="mb-5">
-              <label className="text-[11px] font-bold text-gray-text mb-1 block">비고 (선택)</label>
-              <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
-                placeholder="예: 6월 충전" className={INPUT_CLS} />
-            </div>
-            {chargeError && (
-              <p className="text-[12px] text-danger font-semibold mb-3">{chargeError}</p>
+                  <button
+                    onClick={() => setChargeConfirm(true)}
+                    disabled={!chargeAmt || parseInt(chargeAmt) <= 0}
+                    className="flex-1 py-3 rounded-xl bg-ink text-white font-bold hover:bg-ink/80 transition-colors focus:outline-none disabled:opacity-50">
+                    다음 →
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* ── 2단계: 최종 확인 ── */
+              <>
+                <div className="text-[17px] font-extrabold mb-1">충전 내용 확인</div>
+                <div className="text-[13px] text-gray-text mb-5">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</div>
+
+                <div className="bg-gray-bg rounded-xl p-4 space-y-3 mb-5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[12px] text-gray-text">거래처</span>
+                    <span className="text-[13px] font-bold text-ink">{selected.account_name}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
+                    <span className="text-[12px] text-gray-text">충전 금액</span>
+                    <span className="text-[20px] font-extrabold text-green">+{won(parseInt(chargeAmt))}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
+                    <span className="text-[12px] text-gray-text">결제수단</span>
+                    <span className="text-[13px] font-semibold text-ink">{chargeMethod}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
+                    <span className="text-[12px] text-gray-text">선결제 일시</span>
+                    <span className="text-[13px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
+                  </div>
+                  {chargeMemo && (
+                    <div className="flex justify-between items-center border-t border-gray-border pt-3">
+                      <span className="text-[12px] text-gray-text">비고</span>
+                      <span className="text-[13px] font-semibold text-ink">{chargeMemo}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
+                    <span className="text-[12px] text-gray-text">충전 후 잔액</span>
+                    <span className="text-[13px] font-bold text-ink">{won(selected.current_balance + parseInt(chargeAmt))}</span>
+                  </div>
+                </div>
+
+                {chargeError && (
+                  <p className="text-[12px] text-danger font-semibold mb-3">{chargeError}</p>
+                )}
+                <div className="flex gap-3">
+                  <button onClick={() => { setChargeConfirm(false); setChargeError('') }}
+                    className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
+                    ← 수정
+                  </button>
+                  <button
+                    onClick={handleCharge}
+                    disabled={chargeLoading}
+                    className="flex-1 py-3 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
+                    {chargeLoading ? '처리 중...' : '확정 충전'}
+                  </button>
+                </div>
+              </>
             )}
-            <div className="flex gap-3">
-              <button onClick={() => { setChargeOpen(false); setChargeError(''); setChargeMethod('신용카드') }}
-                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
-                취소
-              </button>
-              <button
-                onClick={handleCharge}
-                disabled={!chargeAmt || parseInt(chargeAmt) <= 0}
-                className="flex-1 py-3 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
-                등록
-              </button>
-            </div>
           </div>
         </div>
       )}
