@@ -34,6 +34,10 @@ const api = {
   onPrinterStatus:  (cb: (s: { connected: boolean; queueLength: number }) => void) =>
     ipcRenderer.on('printer:status', (_e, v) => cb(v)),
   offPrinterStatus: () => ipcRenderer.removeAllListeners('printer:status'),
+
+  // ── 딥링크 (비밀번호 재설정) ─────────────────────────────────────────────────
+  onAuthDeeplink:  (cb: (url: string) => void) => ipcRenderer.on('auth:deeplink', (_e, v) => cb(v)),
+  offAuthDeeplink: () => ipcRenderer.removeAllListeners('auth:deeplink'),
 }
 
 if (process.contextIsolated) {

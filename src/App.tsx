@@ -229,6 +229,12 @@ export default function App() {
   const [showForgotPw,  setShowForgotPw]  = useState(false)
   const [resetEmail,    setResetEmail]    = useState('')
   const [resetSending,  setResetSending]  = useState(false)
+  // 비밀번호 재설정 딥링크 수신 후 새 비밀번호 입력 모달
+  const [showNewPwModal,  setShowNewPwModal]  = useState(false)
+  const [newPw,           setNewPw]           = useState('')
+  const [newPwConfirm,    setNewPwConfirm]    = useState('')
+  const [newPwSaving,     setNewPwSaving]     = useState(false)
+  const [newPwMsg,        setNewPwMsg]        = useState<{ text: string; ok: boolean } | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteLoading,     setDeleteLoading]     = useState(false)
 
@@ -681,7 +687,9 @@ export default function App() {
     const email = resetEmail.trim() || authObj?.user.email || ''
     if (!email) { setProfileMsg({ text: '이메일을 입력해주세요.', ok: false }); return }
     setResetSending(true)
-    const { error } = await supabase.auth.resetPasswordForEmail(email)
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'sunpos://reset-password',
+    })
     if (error) {
       setProfileMsg({ text: '전송 실패: ' + error.message, ok: false })
     } else {
@@ -690,6 +698,50 @@ export default function App() {
       setResetEmail('')
     }
     setResetSending(false)
+  }
+
+  // ── 딥링크 수신 — 비밀번호 재설정 이메일 링크 클릭 시 ──────────────────────
+  useEffect(() => {
+    const api = (window as any).api
+    if (!api?.onAuthDeeplink) return
+
+    const handler = async (url: string) => {
+      // sunpos://reset-password#access_token=XXX&refresh_token=YYY&type=recovery
+      const hash = url.split('#')[1] ?? ''
+      const params = new URLSearchParams(hash)
+      const accessToken  = params.get('access_token')
+      const refreshToken = params.get('refresh_token') ?? ''
+      const type         = params.get('type')
+
+      if (type === 'recovery' && accessToken) {
+        // Supabase 세션 복원
+        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        setNewPw('')
+        setNewPwConfirm('')
+        setNewPwMsg(null)
+        setShowNewPwModal(true)
+      }
+    }
+
+    api.onAuthDeeplink(handler)
+    return () => api.offAuthDeeplink?.()
+  }, [])
+
+  async function handleSaveNewPassword() {
+    if (newPw.length < 6) { setNewPwMsg({ text: '비밀번호는 6자 이상이어야 합니다.', ok: false }); return }
+    if (newPw !== newPwConfirm) { setNewPwMsg({ text: '비밀번호가 일치하지 않습니다.', ok: false }); return }
+    setNewPwSaving(true)
+    const { error } = await supabase.auth.updateUser({ password: newPw })
+    if (error) {
+      setNewPwMsg({ text: '변경 실패: ' + error.message, ok: false })
+    } else {
+      setNewPwMsg({ text: '비밀번호가 변경됐습니다. 다시 로그인해주세요.', ok: true })
+      setTimeout(() => {
+        setShowNewPwModal(false)
+        supabase.auth.signOut()
+      }, 2000)
+    }
+    setNewPwSaving(false)
   }
 
   // ── 로딩 ─────────────────────────────────────────────────────────────────────
@@ -1362,6 +1414,47 @@ export default function App() {
             </div>
           </div>
         )}
+        {/* 새 비밀번호 입력 모달 — 재설정 이메일 링크 클릭 후 */}
+        {showNewPwModal && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-2xl shadow-xl w-[340px] px-6 py-6 flex flex-col gap-4">
+              <div>
+                <div className="text-[16px] font-extrabold text-ink mb-1">새 비밀번호 설정</div>
+                <div className="text-[13px] text-gray-text">6자 이상의 새 비밀번호를 입력해주세요.</div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <input
+                  type="password"
+                  placeholder="새 비밀번호"
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#16a84c]"
+                />
+                <input
+                  type="password"
+                  placeholder="새 비밀번호 확인"
+                  value={newPwConfirm}
+                  onChange={e => setNewPwConfirm(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveNewPassword()}
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#16a84c]"
+                />
+              </div>
+              {newPwMsg && (
+                <div className={`px-3 py-2 rounded-lg text-[12px] font-semibold ${newPwMsg.ok ? 'bg-green-soft text-green' : 'bg-red-50 text-danger'}`}>
+                  {newPwMsg.text}
+                </div>
+              )}
+              <button
+                onClick={handleSaveNewPassword}
+                disabled={newPwSaving || !newPw || !newPwConfirm}
+                className="w-full py-3 rounded-xl bg-[#16a84c] text-white font-bold text-[14px] hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                {newPwSaving ? '저장 중...' : '비밀번호 변경하기'}
+              </button>
+            </div>
+          </div>
+        )}
+
         </div>{/* flex flex-1 overflow-hidden */}
       </div>
     </StoreContext.Provider>

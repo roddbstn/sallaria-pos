@@ -388,12 +388,45 @@ ipcMain.handle('updater:install', () => {
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────
 
+// ── sunpos:// 딥링크 프로토콜 (비밀번호 재설정 이메일 링크용) ──────────────────
+
+// Windows: 앱이 이미 실행 중일 때 두 번째 인스턴스 실행 시도 → URL 수신
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    // Windows에서 딥링크 URL은 argv 마지막 인수로 들어옴
+    const url = argv.find(arg => arg.startsWith('sunpos://'))
+    if (url && mainWindow) {
+      mainWindow.focus()
+      mainWindow.webContents.send('auth:deeplink', url)
+    }
+  })
+}
+
+function handleDeeplinkOnStart(): void {
+  // Windows: 앱이 닫혀 있을 때 딥링크로 실행되면 process.argv에 URL 포함
+  const url = process.argv.find(arg => arg.startsWith('sunpos://'))
+  if (url) {
+    mainWindow?.webContents.once('did-finish-load', () => {
+      mainWindow?.webContents.send('auth:deeplink', url)
+    })
+  }
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('kr.sallaria.pos')
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
 
+  // sunpos:// 프로토콜 핸들러로 등록 (설치된 앱에서만 동작)
+  if (!is.dev) {
+    app.setAsDefaultProtocolClient('sunpos')
+  }
+
   createWindow()
   subscribeRealtime()
+  handleDeeplinkOnStart()
 
   // 설정 탭 진입 시 프린터 상태 초기 전송
   mainWindow?.webContents.once('did-finish-load', () => notifyPrinterStatus())
