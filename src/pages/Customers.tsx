@@ -97,32 +97,72 @@ export default function Customers() {
   <title>${selected.account_name} QR</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100vh; }
     body {
       font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
       background: #fff;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: space-between;
-      min-height: 100vh;
-      padding: 48px 32px 40px;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .top { display: flex; flex-direction: column; align-items: center; gap: 32px; flex: 1; justify-content: center; }
-    h1 { font-size: 28px; font-weight: 800; color: #1E1E1E; text-align: center; }
-    img.qr { width: 340px; height: 340px; }
-    .logo-wrap { display: flex; justify-content: center; }
-    img.logo { height: 36px; object-fit: contain; }
+    .header {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+    h1 {
+      font-size: 56px;
+      font-weight: 900;
+      color: #1E1E1E;
+      text-align: center;
+      line-height: 1.2;
+      letter-spacing: -1px;
+    }
+    .subtitle {
+      font-size: 20px;
+      font-weight: 500;
+      color: #727272;
+      text-align: center;
+    }
+    img.qr { width: 420px; height: 420px; }
+    .footer {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+    }
+    img.logo { width: 210px; object-fit: contain; }
+    .collab {
+      font-size: 22px;
+      font-weight: 600;
+      color: #1E1E1E;
+      white-space: nowrap;
+      margin-bottom: 35px;
+    }
   </style>
 </head>
 <body>
-  <div class="top">
-    <h1>${selected.account_name} QR</h1>
-    <img class="qr" src="${selectedQrDataUrl}" alt="QR"/>
+  <div class="header">
+    <h1>${selected.account_name}</h1>
+    <p class="subtitle">${storeName} 선결제 주문</p>
   </div>
-  <div class="logo-wrap">
-    <img class="logo" src="${logoWithText}" alt="logo"/>
+  <img class="qr" src="${selectedQrDataUrl}" alt="QR"/>
+  <div class="footer">
+    <div class="logo-row">
+      <img class="logo" src="${logoWithText}" alt="logo"/>
+      <span class="collab">×&nbsp;&nbsp;&nbsp;${storeName}</span>
+    </div>
   </div>
 </body>
 </html>`)
