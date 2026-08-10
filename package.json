@@ -54,7 +54,7 @@
   "author": "Sallaria",
   "build": {
     "appId": "kr.sunpos.app",
-    "productName": "선포스",
+    "productName": "sunpos",
     "npmRebuild": false,
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"

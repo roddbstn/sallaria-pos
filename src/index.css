@@ -4,15 +4,15 @@
 
 /* ── 라이트 모드 ── */
 :root {
-  --green:       #017333;
+  --green:       #16a84c;
   --green-soft:  #E6F4EC;
   --ink:         #1E1E1E;
-  --gray-text:   #727272;
-  --gray-border: #D7D7D7;
-  --gray-bg:     #FAFAFA;
+  --gray-text:   #6B7280;
+  --gray-border: #EBEBEB;
+  --gray-bg:     #F4F5F7;
   --danger:      #C92A2A;
   --surface:     #ffffff;
-  --page-bg:     #FAFAFA;
+  --page-bg:     #F4F5F7;
 }
 
 /* ── 다크 모드 ── */
@@ -21,11 +21,11 @@ html.dark {
   --green-soft:  #0a2a18;
   --ink:         #efefef;
   --gray-text:   #909090;
-  --gray-border: #2e2e2e;
-  --gray-bg:     #1c1c1c;
+  --gray-border: #2a2a2a;
+  --gray-bg:     #1a1a1c;
   --danger:      #e57373;
   --surface:     #242424;
-  --page-bg:     #111111;
+  --page-bg:     #111113;
 }
 
 /* bg-white → surface 변수로 자동 전환 */
@@ -64,3 +64,41 @@ body {
 .option-tabs-scrollbar::-webkit-scrollbar { height: 8px; }
 .option-tabs-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .option-tabs-scrollbar::-webkit-scrollbar-thumb { background: var(--gray-border); border-radius: 4px; }
+
+/* 체크박스 스타일 */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid #D7D7D7;
+  border-radius: 3px;
+  background-color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+input[type="checkbox"]:checked {
+  background-color: #017333;
+  border-color: #017333;
+}
+
+input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
+}
+
+input[type="checkbox"]:focus {
+  outline: none;
+}

@@ -15,7 +15,7 @@ function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray'
     })
   }
   const style = copied
-    ? { backgroundColor: '#E6F4EC', color: '#017333' }
+    ? { backgroundColor: '#E6F4EC', color: '#16a84c' }
     : variant === 'black'
       ? { backgroundColor: '#1E1E1E', color: '#FFFFFF' }
       : { backgroundColor: '#F0F0F0', color: '#727272' }

@@ -56,7 +56,7 @@ function createWindow(): void {
     minWidth:       800,
     minHeight:      600,
     aspectRatio:    4 / 3,
-    title:          '선포스',
+    title:          'sunpos',
     backgroundColor: '#ffffff',
     webPreferences: {
       preload:        join(__dirname, '../preload/preload.js'),

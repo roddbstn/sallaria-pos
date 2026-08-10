@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import QRCode from 'qrcode'
+import logoWithText from '../assets/logo-with-text.png'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
 import { track } from '../lib/firebase'
 import type { Order } from '../lib/mock-data'
 import { mapOrderRow } from '../lib/mappers'
+import { useHeaderSlot } from '../lib/header-slot'
 
 const BASE_URL = 'https://sallaria.web.app'
 
@@ -28,7 +30,7 @@ const TYPE_BADGE: Record<string, string> = {
 }
 
 
-const INPUT_CLS = 'w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[14px] focus:outline-none focus:border-b-2 focus:border-[#16a84c] transition-colors'
+const INPUT_CLS = 'w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[11px] focus:outline-none focus:border-b-2 focus:border-[#16a84c] transition-colors'
 
 function formatPhone(raw: string): string {
   const d = raw.replace(/\D/g, '').slice(0, 11)
@@ -38,7 +40,8 @@ function formatPhone(raw: string): string {
 }
 
 export default function Customers() {
-  const { storeId } = useStore()
+  const { storeId, storeName } = useStore()
+  const { setHeaderRight } = useHeaderSlot()
   const [accounts,     setAccounts]     = useState<DbAccount[]>([])
   const [selected,     setSelected]     = useState<DbAccount | null>(null)
   const [accountOrders, setAccountOrders] = useState<Order[]>([])
@@ -53,6 +56,10 @@ export default function Customers() {
   const [chargeMemo,   setChargeMemo]   = useState('')
   const [chargeError,  setChargeError]  = useState('')
   const [search,       setSearch]       = useState('')
+  const [colFilters,   setColFilters]   = useState<{ name: Set<string>; type: Set<string>; balance: Set<string> }>({ name: new Set(), type: new Set(), balance: new Set() })
+  const [nameFilterSearch, setNameFilterSearch] = useState('')
+  const [openFilterCol, setOpenFilterCol] = useState<string | null>(null)
+  const filterDropRef  = useRef<HTMLDivElement>(null)
   const [kioskQr,      setKioskQr]      = useState(false)
   const [accountQr,    setAccountQr]    = useState<string | null>(null) // account_code
   const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members' | 'statement'>('orders')
@@ -67,9 +74,66 @@ export default function Customers() {
 
   const PAGE_SIZE = 5
   // 인라인 QR (selected 변경 시 자동 생성)
-  const selectedQrUrl     = selected ? `${BASE_URL}?store=${storeId}&account=${selected.account_code}` : ''
-  const selectedQrDataUrl = useQrDataUrl(selectedQrUrl)
+  const selectedQrUrl        = selected ? `${BASE_URL}?store=${storeId}&account=${selected.account_code}` : ''
+  const selectedQrDataUrl    = useQrDataUrl(selectedQrUrl)
   const [qrCopied,     setQrCopied]     = useState(false)
+
+  const handlePrintQr = useCallback(() => {
+    if (!selected || !selectedQrDataUrl) return
+
+    // Electron에서는 window.open 팝업이 차단되므로 숨겨진 iframe으로 인쇄
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:0;visibility:hidden;'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document
+    if (!doc) { document.body.removeChild(iframe); return }
+
+    doc.open()
+    doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>${selected.account_name} QR</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 100vh;
+      padding: 48px 32px 40px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .top { display: flex; flex-direction: column; align-items: center; gap: 32px; flex: 1; justify-content: center; }
+    h1 { font-size: 28px; font-weight: 800; color: #1E1E1E; text-align: center; }
+    img.qr { width: 340px; height: 340px; }
+    .logo-wrap { display: flex; justify-content: center; }
+    img.logo { height: 36px; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h1>${selected.account_name} QR</h1>
+    <img class="qr" src="${selectedQrDataUrl}" alt="QR"/>
+  </div>
+  <div class="logo-wrap">
+    <img class="logo" src="${logoWithText}" alt="logo"/>
+  </div>
+</body>
+</html>`)
+    doc.close()
+
+    // 이미지 로드 후 인쇄
+    setTimeout(() => {
+      iframe.contentWindow?.print()
+      setTimeout(() => { document.body.removeChild(iframe) }, 1000)
+    }, 400)
+  }, [selected, selectedQrDataUrl])
 
   const [addOpen,      setAddOpen]      = useState(false)
   const [newForm,      setNewForm]      = useState({
@@ -81,7 +145,8 @@ export default function Customers() {
     name: '', type: '과' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '', warnThreshold: '30000',
     balance: '', adjustReason: '',
   })
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleteConfirm,     setDeleteConfirm]     = useState(false)
+  const [hardDeleteConfirm, setHardDeleteConfirm] = useState(false)
   const [addPinError,  setAddPinError]  = useState('')
   const [editPinError, setEditPinError] = useState('')
   const [showInactive, setShowInactive] = useState(false)
@@ -206,8 +271,8 @@ export default function Customers() {
   }
 
   type StmtRow =
-    | { type: 'deposit';    date: string; amount: number; paymentMethod: string }
-    | { type: 'adjustment'; date: string; amount: number; balanceBefore: number; balanceAfter: number; reason: string | null }
+    | { type: 'deposit';    date: string; amount: number; paymentMethod: string; balanceAfter: number }
+    | { type: 'adjustment'; date: string; amount: number; balanceBefore: number; balanceAfter: number; reason: string | null; orderer: string | null }
     | { type: 'order';      date: string; amount: number; summary: string; note: string; orderer: string; balanceAfter: number; discrepancy?: number }
 
   function buildStmtRows(): StmtRow[] {
@@ -226,6 +291,7 @@ export default function Customers() {
         balanceBefore: a.balance_before,
         balanceAfter:  a.balance_after,
         reason:        a.reason ?? null,
+        orderer:       a.orderer_name ?? null,
       })),
       ...stmtOrders.map((o: any) => ({
         type:         'order' as const,
@@ -245,7 +311,7 @@ export default function Customers() {
     const computed = all.map(row => {
       if (row.type === 'deposit') {
         expectedBalance += row.amount
-        return row
+        return { ...row, balanceAfter: expectedBalance }
       } else if (row.type === 'adjustment') {
         // 조정은 balance_after가 정확하므로 기준점으로 사용
         expectedBalance = row.balanceAfter
@@ -293,10 +359,10 @@ export default function Customers() {
       ['일자','금액','기타','일자','금액','내역','비고','서명','잔액'],
       ...rows.map(r => {
         if (r.type === 'deposit') {
-          return [fmtDate(r.date), fmt(r.amount), r.paymentMethod, '', '', '', '', '', '']
+          return [fmtDate(r.date), r.amount < 0 ? `-${fmt(Math.abs(r.amount))}` : `+${fmt(r.amount)}`, r.paymentMethod, '', '', '', '', '', fmt(r.balanceAfter)]
         } else if (r.type === 'adjustment') {
           const sign = r.amount >= 0 ? '+' : ''
-          return [fmtDate(r.date), `${sign}${fmt(r.amount)}`, '잔액조정', '', '', r.reason ?? '', `${fmt(r.balanceBefore)} → ${fmt(r.balanceAfter)}`, '', fmt(r.balanceAfter)]
+          return [fmtDate(r.date), `${sign}${fmt(r.amount)}`, '잔액조정', '', '', r.reason ?? '', `${fmt(r.balanceBefore)} → ${fmt(r.balanceAfter)}`, r.orderer ?? '', fmt(r.balanceAfter)]
         } else {
           return ['', '', '', fmtDate(r.date), fmt(r.amount), r.summary, r.note, r.orderer, fmt(r.balanceAfter)]
         }
@@ -314,6 +380,14 @@ export default function Customers() {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
+
+  // ── selected 변경 시 충전 모달 초기화 ──────────────────────────────────────────
+  useEffect(() => {
+    setChargeOpen(false)
+    setChargeConfirm(false)
+    setChargeAmt('')
+    setChargeError('')
+  }, [selected?.account_code])
 
   // ── 마운트 / showInactive 변경 시 목록 재조회 ────────────────────────────────
   useEffect(() => {
@@ -333,6 +407,17 @@ export default function Customers() {
     load()
   }, [showInactive, retryCount])
 
+  // ── 컬럼 필터 드롭다운 외부 클릭 닫기 ────────────────────────────────────────
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (filterDropRef.current && !filterDropRef.current.contains(e.target as Node)) {
+        setOpenFilterCol(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
   // ── 선택 거래처 변경 시 이력 로딩 ─────────────────────────────────────────────
   useEffect(() => {
     if (!selected) return
@@ -349,13 +434,77 @@ export default function Customers() {
     fetchStatement(selected.account_code)
   }, [detailTab, selected?.account_code])
 
+  // ── 공유 헤더 슬롯: 비활성 보기 · 검색 · 매장 QR · 거래처 추가 ──────────────
+  useEffect(() => {
+    setHeaderRight(
+      <div className="flex items-center gap-2.5">
+        <button
+          onClick={() => setShowInactive(v => !v)}
+          className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors ${
+            showInactive
+              ? 'border-danger text-danger bg-red-50'
+              : 'border-gray-border text-gray-text hover:bg-gray-bg'
+          }`}
+        >
+          {showInactive ? '비활성 거래처' : '비활성 보기'}
+        </button>
+        <div className="relative w-52 flex-shrink-0">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="거래처명, 담당자 검색"
+            className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-[#16a84c] focus:bg-green-soft transition-colors"
+          />
+          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <circle cx="6.5" cy="6.5" r="4.5" stroke="#727272" strokeWidth="1.5"/>
+            <path d="M10.5 10.5L14 14" stroke="#727272" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <button
+          onClick={() => setKioskQr(true)}
+          className="px-3 py-2 bg-gray-100 rounded-lg text-[11px] font-bold hover:bg-gray-100 transition-colors"
+        >
+          🖨 매장 공용 QR
+        </button>
+        {!showInactive && (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="px-3 py-2 bg-[#16a84c] text-white rounded-lg text-[11px] font-bold hover:bg-[#128040] transition-colors"
+          >
+            거래처 추가
+          </button>
+        )}
+      </div>
+    )
+    return () => setHeaderRight(null)
+  }, [showInactive, search, setHeaderRight])
+
   const seqMap: Record<string, number> = {}
   accounts.forEach((a, i) => { seqMap[a.account_code] = i + 1 })
 
-  const filtered = accounts.filter(a =>
-    a.account_name.includes(search) ||
-    (a.organization_name ?? '').includes(search) ||
-    (a.contact_person ?? '').includes(search)
+  const filtered = accounts.filter(a => {
+    if (search && !a.account_name.includes(search) && !(a.organization_name ?? '').includes(search) && !(a.contact_person ?? '').includes(search)) return false
+    if (colFilters.name.size > 0 && !colFilters.name.has(a.account_code)) return false
+    if (colFilters.type.size > 0 && !colFilters.type.has(a.account_type)) return false
+    if (colFilters.balance.size > 0) {
+      const status = a.current_balance < 0 ? '음수' : a.current_balance < a.warning_threshold ? '경고' : '정상'
+      if (!colFilters.balance.has(status)) return false
+    }
+    return true
+  })
+  const hasColFilter = colFilters.name.size > 0 || colFilters.type.size > 0 || colFilters.balance.size > 0
+  const typeValues   = [...new Set(accounts.map(a => a.account_type))].sort()
+  const balanceValues = ['정상', '경고', '음수']
+
+  function toggleColFilter(col: 'name' | 'type' | 'balance', val: string) {
+    setColFilters(prev => {
+      const next = new Set(prev[col])
+      next.has(val) ? next.delete(val) : next.add(val)
+      return { ...prev, [col]: next }
+    })
+  }
+  const filteredNameOptions = accounts.filter(a =>
+    !nameFilterSearch || a.account_name.includes(nameFilterSearch)
   )
 
   function copyLink(url: string, key: string) {
@@ -597,6 +746,19 @@ export default function Customers() {
     setEditingDepositId(null)
   }
 
+  // ── 거래처 영구 삭제 (하드) ──────────────────────────────────────────────────
+  async function handleHardDeleteAccount() {
+    if (!selected) return
+    const { error } = await supabase
+      .from('accounts')
+      .delete()
+      .eq('account_code', selected.account_code)
+    if (error) { console.error('영구 삭제 실패:', error); return }
+    await fetchAccounts(showInactive).catch(() => {})
+    setSelected(null)
+    setHardDeleteConfirm(false)
+  }
+
   // ── 거래처 복구 ───────────────────────────────────────────────────────────────
   async function handleRestoreAccount() {
     if (!selected) return
@@ -610,7 +772,7 @@ export default function Customers() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden bg-white">
+    <div className="h-full flex overflow-hidden bg-gray-bg gap-3 p-3">
 
       {/* 잔액 불일치 툴팁 (fixed, overflow 클리핑 없음) */}
       {discTooltip && (
@@ -629,73 +791,156 @@ export default function Customers() {
       )}
 
       {/* ── 테이블 영역 ── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-xl shadow-sm">
 
-        {/* 헤더 */}
-        <div className="px-6 py-4 border-b border-gray-border flex-shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="text-[20px] font-extrabold">고객관리</div>
+        {/* 헤더: 필터 초기화 버튼 (활성 시에만 표시) */}
+        {hasColFilter && (
+          <div className="px-5 py-2 border-b border-gray-border flex-shrink-0 flex items-center justify-end">
             <button
-              onClick={() => setShowInactive(v => !v)}
-              className={`px-3 py-1 rounded-full text-[12px] font-bold border transition-colors ${
-                showInactive
-                  ? 'border-danger text-danger bg-red-50'
-                  : 'border-gray-border text-gray-text hover:bg-gray-bg'
-              }`}
+              onClick={() => { setColFilters({ name: new Set(), type: new Set(), balance: new Set() }); setNameFilterSearch('') }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors"
             >
-              {showInactive ? '비활성 거래처' : '비활성 보기'}
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              필터 초기화
             </button>
           </div>
-          <div className="flex items-center gap-3">
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="거래처명, 담당자 검색"
-              className="border border-gray-border rounded-lg px-3 py-2 text-[13px] w-52 focus:outline-none focus:border-[#16a84c] focus:bg-green-soft transition-colors"
-            />
-            <button
-              onClick={() => setKioskQr(true)}
-              className="px-4 py-2 bg-gray-100 rounded-lg text-[13px] font-bold hover:bg-gray-100 transition-colors"
-            >
-              🖨 매장 공용 QR
-            </button>
-            {!showInactive && (
-              <button
-                onClick={() => setAddOpen(true)}
-                className="px-4 py-2 bg-[#16a84c] text-white rounded-lg text-[13px] font-bold hover:bg-[#128040] transition-colors"
-              >
-                + 거래처 추가
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* 테이블 헤더 */}
-        <div className="grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-6 py-2 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
-          <span>#</span><span>거래처명</span><span>유형</span><span>담당자</span>
-          <span>연락처</span><span>PIN</span><span>현재잔액</span><span>이번달</span>
+        <div ref={filterDropRef} className="grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-5 py-2 bg-white text-[11px] font-bold text-gray-text uppercase tracking-wide border-b-2 border-gray-border flex-shrink-0">
+          <span>#</span>
+
+          {/* 거래처명 필터 */}
+          <span className="relative flex items-center gap-0.5">
+            거래처명
+            <button
+              onClick={() => setOpenFilterCol(v => v === 'name' ? null : 'name')}
+              className={`ml-0.5 rounded px-0.5 transition-colors ${colFilters.name.size > 0 ? 'text-green' : 'text-gray-border hover:text-gray-text'}`}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18l-7 8.5V20l-4-2v-5.5L3 4z"/></svg>
+            </button>
+            {openFilterCol === 'name' && (
+              <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-border rounded-xl shadow-lg py-1.5 min-w-[180px] max-h-[280px] flex flex-col">
+                <div className="px-2 pb-1.5 border-b border-gray-border/50 flex-shrink-0">
+                  <input
+                    autoFocus
+                    value={nameFilterSearch}
+                    onChange={e => setNameFilterSearch(e.target.value)}
+                    placeholder="검색..."
+                    className="w-full text-[11px] px-2 py-1 border border-gray-border rounded-lg focus:outline-none focus:border-ink normal-case tracking-normal font-normal"
+                  />
+                </div>
+                <div className="overflow-y-auto flex-1">
+                  {filteredNameOptions.map(a => (
+                    <label key={a.account_code} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-bg cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={colFilters.name.has(a.account_code)}
+                        onChange={() => toggleColFilter('name', a.account_code)}
+                        className="accent-green w-3.5 h-3.5 flex-shrink-0"
+                      />
+                      <span className="text-[11px] font-normal text-ink normal-case tracking-normal truncate">{a.account_name}</span>
+                    </label>
+                  ))}
+                </div>
+                {colFilters.name.size > 0 && (
+                  <button onClick={() => { setColFilters(p => ({ ...p, name: new Set() })); setNameFilterSearch('') }} className="w-full text-left px-3 py-1.5 text-[11px] text-gray-text hover:text-ink border-t border-gray-border/50 flex-shrink-0 normal-case tracking-normal">
+                    초기화
+                  </button>
+                )}
+              </div>
+            )}
+          </span>
+
+          {/* 유형 필터 */}
+          <span className="relative flex items-center gap-0.5">
+            유형
+            <button
+              onClick={() => setOpenFilterCol(v => v === 'type' ? null : 'type')}
+              className={`ml-0.5 rounded px-0.5 transition-colors ${colFilters.type.size > 0 ? 'text-green' : 'text-gray-border hover:text-gray-text'}`}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18l-7 8.5V20l-4-2v-5.5L3 4z"/></svg>
+            </button>
+            {openFilterCol === 'type' && (
+              <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-border rounded-xl shadow-lg py-1.5 min-w-[110px]">
+                {typeValues.map(val => (
+                  <label key={val} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-bg cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={colFilters.type.has(val)}
+                      onChange={() => toggleColFilter('type', val)}
+                      className="accent-green w-3.5 h-3.5"
+                    />
+                    <span className="text-[11px] font-normal text-ink normal-case tracking-normal">{val}</span>
+                  </label>
+                ))}
+                {colFilters.type.size > 0 && (
+                  <button onClick={() => setColFilters(p => ({ ...p, type: new Set() }))} className="w-full text-left px-3 py-1.5 text-[11px] text-gray-text hover:text-ink border-t border-gray-border/50 mt-1 normal-case tracking-normal">
+                    초기화
+                  </button>
+                )}
+              </div>
+            )}
+          </span>
+
+          <span>담당자</span>
+          <span>연락처</span>
+          <span>PIN</span>
+
+          {/* 현재잔액 필터 */}
+          <span className="relative flex items-center gap-0.5">
+            현재잔액
+            <button
+              onClick={() => setOpenFilterCol(v => v === 'balance' ? null : 'balance')}
+              className={`ml-0.5 rounded px-0.5 transition-colors ${colFilters.balance.size > 0 ? 'text-green' : 'text-gray-border hover:text-gray-text'}`}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18l-7 8.5V20l-4-2v-5.5L3 4z"/></svg>
+            </button>
+            {openFilterCol === 'balance' && (
+              <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-border rounded-xl shadow-lg py-1.5 min-w-[110px]">
+                {balanceValues.map(val => (
+                  <label key={val} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-bg cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={colFilters.balance.has(val)}
+                      onChange={() => toggleColFilter('balance', val)}
+                      className="accent-green w-3.5 h-3.5"
+                    />
+                    <span className={`text-[11px] font-normal normal-case tracking-normal ${val === '음수' ? 'text-danger' : val === '경고' ? 'text-orange-500' : 'text-ink'}`}>{val}</span>
+                  </label>
+                ))}
+                {colFilters.balance.size > 0 && (
+                  <button onClick={() => setColFilters(p => ({ ...p, balance: new Set() }))} className="w-full text-left px-3 py-1.5 text-[11px] text-gray-text hover:text-ink border-t border-gray-border/50 mt-1 normal-case tracking-normal">
+                    초기화
+                  </button>
+                )}
+              </div>
+            )}
+          </span>
+
+          <span>이번달</span>
         </div>
 
         {/* 목록 */}
         <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
           {loading ? (
-            <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
+            <div className="h-full flex items-center justify-center text-gray-text text-[11px]">
               <div className="w-6 h-6 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
               불러오는 중...
             </div>
           ) : fetchError ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-text text-[13px] gap-3">
+            <div className="h-full flex flex-col items-center justify-center text-gray-text text-[11px] gap-2.5">
               <div className="text-[36px]">⚠️</div>
-              <div className="font-bold text-ink text-[14px]">거래처 목록을 불러오지 못했습니다</div>
+              <div className="font-bold text-ink text-[11px]">거래처 목록을 불러오지 못했습니다</div>
               <button
                 onClick={() => setRetryCount(c => c + 1)}
-                className="px-4 py-2 rounded-lg bg-ink text-white text-[12px] font-bold hover:bg-ink/80 transition-colors"
+                className="px-3 py-2 rounded-lg bg-ink text-white text-[11px] font-bold hover:bg-ink/80 transition-colors"
               >
                 다시 시도
               </button>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-text text-[13px]">
+            <div className="h-full flex items-center justify-center text-gray-text text-[11px]">
               {search ? '검색 결과가 없습니다' : showInactive ? '비활성 거래처가 없습니다' : '등록된 거래처가 없습니다'}
             </div>
           ) : (
@@ -703,9 +948,9 @@ export default function Customers() {
               <button
                 key={acc.account_code}
                 onClick={() => setSelected(acc)}
-                className="w-full grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-6 py-3 text-left hover:bg-gray-bg transition-colors text-[13px]"
+                className="w-full grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-5 py-2.5 text-left hover:bg-gray-bg transition-colors text-[11px]"
               >
-                <span className="text-gray-text text-[12px]">{seqMap[acc.account_code]}</span>
+                <span className="text-gray-text text-[11px]">{seqMap[acc.account_code]}</span>
                 <span className="font-semibold text-ink">{acc.account_name}</span>
                 <span>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[acc.account_type]}`}>
@@ -713,7 +958,7 @@ export default function Customers() {
                   </span>
                 </span>
                 <span className="text-gray-text">{acc.contact_person ?? '—'}</span>
-                <span className="text-gray-text font-mono text-[12px]">{acc.contact_phone ?? '—'}</span>
+                <span className="text-gray-text font-mono text-[11px]">{acc.contact_phone ?? '—'}</span>
                 <span
                   className="flex items-center gap-1 group"
                   onClick={e => { e.stopPropagation(); setPinVisible(v => v === acc.account_code ? null : acc.account_code) }}
@@ -724,7 +969,7 @@ export default function Customers() {
                     <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
-                <span className={`font-bold ${acc.current_balance < 0 ? 'text-danger' : acc.current_balance < acc.warning_threshold ? 'text-danger' : 'text-ink'}`}>
+                <span className={`font-bold ${acc.current_balance < 0 ? 'text-danger' : acc.current_balance < acc.warning_threshold ? 'text-orange-500' : 'text-ink'}`}>
                   {acc.current_balance < 0 ? `- ${won(Math.abs(acc.current_balance))}` : won(acc.current_balance)}
                 </span>
                 <span className="text-gray-text">
@@ -741,10 +986,10 @@ export default function Customers() {
       {/* ── 거래처 상세 모달 ── */}
       {selected && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40" onClick={() => { setSelected(null); setDeleteConfirm(false) }}>
-          <div className="bg-white rounded-2xl shadow-xl w-[540px] max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-xl w-[720px] max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
             {/* 모달 헤더 */}
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
+            <div className="flex items-center justify-between px-5 pt-6 pb-4 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <div className="text-[18px] font-extrabold text-ink">{selected.account_name}</div>
                 <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${TYPE_BADGE[selected.account_type]}`}>
@@ -753,7 +998,7 @@ export default function Customers() {
               </div>
               <div className="flex items-center gap-2">
                 {/* 잔액 + 충전 버튼 — 헤더 우측 */}
-                <span className={`text-[13px] font-extrabold ${selected.current_balance < 0 ? 'text-danger' : selected.current_balance < selected.warning_threshold ? 'text-danger' : 'text-green'}`}>
+                <span className={`text-[11px] font-extrabold ${selected.current_balance < 0 ? 'text-danger' : selected.current_balance < selected.warning_threshold ? 'text-orange-500' : 'text-green'}`}>
                   {selected.current_balance < 0 ? `- ${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
                 </span>
                 {!showInactive && (
@@ -767,12 +1012,12 @@ export default function Customers() {
                     setChargeMethod('신용카드')
                     setChargeError('')
                     setChargeOpen(true)
-                  }} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[12px] font-bold hover:bg-[#128040] transition-colors">
+                  }} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[11px] font-bold hover:bg-[#128040] transition-colors">
                     💳 충전
                   </button>
                 )}
                 {!showInactive && (
-                  <button onClick={openEdit} className="px-3 py-1.5 rounded-lg border border-gray-border text-[12px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
+                  <button onClick={openEdit} className="px-3 py-1.5 rounded-lg border border-gray-border text-[11px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
                     수정
                   </button>
                 )}
@@ -781,7 +1026,7 @@ export default function Customers() {
             </div>
 
             {/* 스크롤 영역 */}
-            <div className="overflow-y-auto px-6 pb-6 flex-1">
+            <div className="overflow-y-auto px-5 pb-6 flex-1">
 
               {/* QR (좌) + 6가지 정보 (우) */}
               <div className="flex gap-5 mb-5 items-start">
@@ -795,11 +1040,41 @@ export default function Customers() {
                       QR 생성 중…
                     </div>
                   )}
-                  <p className="text-[11px] text-center leading-tight">
-                    <span className="font-semibold text-ink">{selected.account_name}</span>
-                    <span className="text-gray-text"> 전용 QR</span>
+                  {/* 제목 */}
+                  <p className="text-[11px] text-center leading-tight px-1">
+                    <span className="font-semibold text-ink">{storeName}</span>
+                    <span className="text-gray-text"> '{selected.account_name}' 선결제 QR</span>
                   </p>
-                  <div className="flex gap-1 w-full">
+                  {/* URL + 복사 */}
+                  <div className="flex items-center gap-1 w-[120px] border border-gray-border rounded-lg px-2 py-1 bg-gray-bg">
+                    <span className="flex-1 text-[10px] text-gray-text truncate text-left min-w-0" style={{ direction: 'rtl', unicodeBidi: 'plaintext' }}>
+                      {selectedQrUrl}
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedQrUrl)
+                        setQrCopied(true)
+                        setTimeout(() => setQrCopied(false), 2000)
+                      }}
+                      className="flex-shrink-0"
+                      title="URL 복사"
+                    >
+                      {qrCopied ? (
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="#16a84c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="8" height="9" rx="1.5" stroke="#727272" strokeWidth="1.4"/><path d="M11 5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v6A1.5 1.5 0 0 0 4 11.5H5" stroke="#727272" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                      )}
+                    </button>
+                  </div>
+                  {/* PDF 출력 / 이미지 저장 */}
+                  <div className="flex gap-1 w-[120px]">
+                    <button
+                      disabled={!selectedQrDataUrl}
+                      onClick={handlePrintQr}
+                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg bg-ink text-white hover:bg-ink/90 disabled:opacity-40 transition-colors"
+                    >
+                      PDF 출력
+                    </button>
                     <button
                       disabled={!selectedQrDataUrl}
                       onClick={() => {
@@ -813,21 +1088,11 @@ export default function Customers() {
                     >
                       이미지 저장
                     </button>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(selectedQrUrl)
-                        setQrCopied(true)
-                        setTimeout(() => setQrCopied(false), 2000)
-                      }}
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-colors ${qrCopied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}
-                    >
-                      {qrCopied ? '✓ 복사' : '링크 복사'}
-                    </button>
                   </div>
                 </div>
 
                 {/* 오른쪽: 6가지 정보 */}
-                <div className="flex-1 space-y-2 text-[13px] pt-1">
+                <div className="flex-1 space-y-2 text-[11px] pt-1">
                   <InfoRow label="담당자"        value={selected.contact_person ?? '—'} />
                   <InfoRow label="연락처"        value={selected.contact_phone ?? '—'} />
                   <InfoRow label="기관명"        value={selected.organization_name ?? '—'} />
@@ -841,7 +1106,7 @@ export default function Customers() {
               <div className="flex gap-0 border-b border-gray-border mb-3">
                 {(['orders', 'charges', 'members', 'statement'] as const).map(t => (
                   <button key={t} onClick={() => { setDetailTab(t); setOrderPage(0); setChargePage(0) }}
-                    className={`px-4 py-2 text-[12px] font-bold border-b-2 transition-colors
+                    className={`px-3 py-2 text-[11px] font-bold border-b-2 transition-colors
                       ${detailTab === t ? 'border-[#16a84c] text-[#16a84c]' : 'border-transparent text-gray-text hover:text-ink'}`}>
                     {t === 'orders'    ? '주문 내역'
                       : t === 'charges'   ? '충전 이력'
@@ -860,7 +1125,7 @@ export default function Customers() {
                   <div>
                     <div className="space-y-2">
                       {total === 0
-                        ? <div className="text-[13px] text-gray-text py-2">주문 이력 없음</div>
+                        ? <div className="text-[11px] text-gray-text py-2">주문 이력 없음</div>
                         : slice.map(o => {
                             const dt = new Date(o.createdAt)
                             const DAY = ['일','월','화','수','목','금','토']
@@ -868,7 +1133,7 @@ export default function Customers() {
                             const timeStr = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
                             const dow = DAY[dt.getDay()]
                             return (
-                              <div key={o.code} className="bg-gray-bg rounded-lg px-3 py-2.5 text-[12px]">
+                              <div key={o.code} className="bg-gray-bg rounded-lg px-3 py-2 text-[11px]">
                                 {/* 날짜·방법 + 합계·상태 */}
                                 <div className="flex justify-between items-start mb-2">
                                   <span className="text-gray-text">{dateStr} ({dow}) {timeStr} · {o.method}</span>
@@ -985,7 +1250,7 @@ export default function Customers() {
                           >‹</button>
                           <button
                             onClick={() => setMonthPickerOpen(true)}
-                            className="text-[13px] font-bold text-ink w-[88px] text-center hover:text-green transition-colors underline underline-offset-2 decoration-dotted"
+                            className="text-[11px] font-bold text-ink w-[88px] text-center hover:text-green transition-colors underline underline-offset-2 decoration-dotted"
                           >{monthLabel}</button>
                           <button
                             onClick={() => setCalMonth(c => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}
@@ -1029,12 +1294,12 @@ export default function Customers() {
                               onClick={e => e.stopPropagation()}
                             >
                               {/* 모달 헤더 */}
-                              <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-border flex-shrink-0">
-                                <span className="text-[13px] font-bold text-ink">월 선택</span>
-                                <div className="flex items-center gap-3">
+                              <div className="flex items-center justify-between px-3 pt-4 pb-3 border-b border-gray-border flex-shrink-0">
+                                <span className="text-[11px] font-bold text-ink">월 선택</span>
+                                <div className="flex items-center gap-2.5">
                                   <div className="text-right">
                                     <p className="text-[10px] text-gray-text leading-none mb-0.5">총 충전액</p>
-                                    <p className="text-[13px] font-extrabold text-green leading-none">+{won(allTimeTotal)}</p>
+                                    <p className="text-[11px] font-extrabold text-green leading-none">+{won(allTimeTotal)}</p>
                                   </div>
                                   <button onClick={() => setMonthPickerOpen(false)} className="text-gray-text text-[16px] hover:text-ink leading-none">✕</button>
                                 </div>
@@ -1042,23 +1307,23 @@ export default function Customers() {
                               {/* 월 리스트 */}
                               <div className="overflow-y-auto flex-1">
                                 {sortedMonths.length === 0 ? (
-                                  <p className="text-[13px] text-gray-text text-center py-6">충전 이력 없음</p>
+                                  <p className="text-[11px] text-gray-text text-center py-6">충전 이력 없음</p>
                                 ) : sortedMonths.map(([key, info]) => {
                                   const isSelected = calMonth.year === info.year && calMonth.month === info.month
                                   return (
                                     <button
                                       key={key}
                                       onClick={() => { setCalMonth({ year: info.year, month: info.month }); setMonthPickerOpen(false) }}
-                                      className={`w-full flex items-center justify-between px-4 py-3 text-left border-b border-gray-border/50 transition-colors
+                                      className={`w-full flex items-center justify-between px-3 py-2.5 text-left border-b border-gray-border/50 transition-colors
                                         ${isSelected ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}
                                     >
                                       <div>
-                                        <span className={`text-[13px] font-bold ${isSelected ? 'text-green' : 'text-ink'}`}>
+                                        <span className={`text-[11px] font-bold ${isSelected ? 'text-green' : 'text-ink'}`}>
                                           {info.year}년 {info.month + 1}월
                                         </span>
                                         <span className="text-[10px] text-gray-text ml-2">{info.count}회</span>
                                       </div>
-                                      <span className={`text-[13px] font-extrabold ${isSelected ? 'text-green' : 'text-ink'}`}>
+                                      <span className={`text-[11px] font-extrabold ${isSelected ? 'text-green' : 'text-ink'}`}>
                                         +{won(info.total)}
                                       </span>
                                     </button>
@@ -1080,12 +1345,12 @@ export default function Customers() {
                       {/* 날짜 그리드 */}
                       <div className="grid grid-cols-7">
                         {cells.map((day, idx) => {
-                          if (!day) return <div key={`e${idx}`} className="h-10" />
+                          if (!day) return <div key={`e${idx}`} className="h-9" />
                           const hasDeposit = !!dayMap[day]
                           const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day
                           const dow = (firstDay + day - 1) % 7
                           return (
-                            <div key={day} className="flex flex-col items-center h-10 pt-0.5">
+                            <div key={day} className="flex flex-col items-center h-9 pt-0.5">
                               <div className={`w-6 h-6 flex items-center justify-center rounded-full text-[11px] font-semibold
                                 ${isToday ? 'bg-ink text-white' : dow === 0 ? 'text-danger' : dow === 6 ? 'text-blue-500' : 'text-ink'}`}>
                                 {day}
@@ -1107,7 +1372,7 @@ export default function Customers() {
                     {/* ── 해당 월 충전 리스트 ── */}
                     <div className="space-y-2">
                       {monthCount === 0
-                        ? <div className="text-[13px] text-gray-text py-2">이 달 충전 이력 없음</div>
+                        ? <div className="text-[11px] text-gray-text py-2">이 달 충전 이력 없음</div>
                         : monthDeposits.map(d => {
                             const dt   = new Date(d.created_at)
                             const date = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
@@ -1117,7 +1382,7 @@ export default function Customers() {
 
                             if (isEditing) {
                               return (
-                                <div key={d.deposit_id} className="bg-green-soft/40 border border-green/30 rounded-lg px-3 py-2.5 text-[12px] space-y-2">
+                                <div key={d.deposit_id} className="bg-green-soft/40 border border-green/30 rounded-lg px-3 py-2 text-[11px] space-y-2">
                                   <div className="flex items-center gap-2">
                                     <input
                                       autoFocus
@@ -1125,7 +1390,7 @@ export default function Customers() {
                                       onChange={e => setEditDepositAmt(e.target.value.replace(/[^0-9-]/g, ''))}
                                       onKeyDown={e => { if (e.key === 'Enter') handleSaveDeposit(d); if (e.key === 'Escape') setEditingDepositId(null) }}
                                       inputMode="numeric"
-                                      className="flex-1 border-0 border-b-2 border-green bg-transparent px-0 py-1 text-[14px] font-bold focus:outline-none"
+                                      className="flex-1 border-0 border-b-2 border-green bg-transparent px-0 py-1 text-[11px] font-bold focus:outline-none"
                                     />
                                     <span className="text-gray-text flex-shrink-0">원</span>
                                   </div>
@@ -1156,7 +1421,7 @@ export default function Customers() {
                                     onChange={e => setEditDepositNote(e.target.value)}
                                     onKeyDown={e => { if (e.key === 'Enter') handleSaveDeposit(d); if (e.key === 'Escape') setEditingDepositId(null) }}
                                     placeholder="비고 (선택)"
-                                    className="w-full border-0 border-b border-gray-border bg-transparent px-0 py-1 text-[12px] focus:outline-none"
+                                    className="w-full border-0 border-b border-gray-border bg-transparent px-0 py-1 text-[11px] focus:outline-none"
                                   />
                                   <div className="flex gap-2 pt-1">
                                     <button onClick={() => setEditingDepositId(null)}
@@ -1169,7 +1434,7 @@ export default function Customers() {
                             }
 
                             return (
-                              <div key={d.deposit_id} className="bg-gray-bg rounded-lg px-3 py-2.5 flex justify-between items-center text-[12px] group/dep">
+                              <div key={d.deposit_id} className="bg-gray-bg rounded-lg px-3 py-2 flex justify-between items-center text-[11px] group/dep">
                                 <div>
                                   <div className="flex items-center gap-1.5">
                                     <span className="font-semibold text-green">+{won(d.amount)}</span>
@@ -1202,7 +1467,7 @@ export default function Customers() {
               {detailTab === 'members' && (
                 <div>
                   {members.length === 0 ? (
-                    <div className="text-[13px] text-gray-text py-2">등록된 주문자 없음</div>
+                    <div className="text-[11px] text-gray-text py-2">등록된 주문자 없음</div>
                   ) : (
                     <div className="space-y-2">
                       {members.map((m, idx) => {
@@ -1211,7 +1476,7 @@ export default function Customers() {
                           ? lastDt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
                           : '—'
                         return (
-                          <div key={m.id} className="bg-gray-bg rounded-lg px-3 py-2.5 flex items-center gap-3 text-[12px] group/member">
+                          <div key={m.id} className="bg-gray-bg rounded-lg px-3 py-2 flex items-center gap-2.5 text-[11px] group/member">
                             <span className="text-[11px] text-gray-text w-5 text-center flex-shrink-0">{idx + 1}</span>
                             <div className="flex-1 min-w-0">
                               <div className="font-semibold text-ink truncate">{m.name}</div>
@@ -1261,7 +1526,7 @@ export default function Customers() {
                       <div className="flex items-center gap-1">
                         <button onClick={prevMonth} disabled={stmtAllTime}
                           className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">‹</button>
-                        <span className="text-[13px] font-semibold w-24 text-center">
+                        <span className="text-[11px] font-semibold w-24 text-center">
                           {stmtAllTime ? '전체 기간' : stmtMonth}
                         </span>
                         <button onClick={nextMonth} disabled={stmtAllTime}
@@ -1286,25 +1551,25 @@ export default function Customers() {
 
                     {/* 테이블 */}
                     {stmtLoading ? (
-                      <div className="flex items-center justify-center py-8 text-gray-text text-[13px]">
+                      <div className="flex items-center justify-center py-8 text-gray-text text-[11px]">
                         <div className="w-5 h-5 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
                         불러오는 중...
                       </div>
                     ) : (
                       <div className="overflow-x-auto -mx-1">
-                        <table className="text-[10px] border-collapse whitespace-nowrap">
+                        <table className="text-[10px] border-collapse w-full">
                           <thead>
                             <tr className="bg-gray-bg text-[9px] font-bold text-gray-text uppercase">
-                              <th colSpan={3} className="text-center py-1.5 border border-gray-border">선결제내역</th>
-                              <th colSpan={5} className="text-center py-1.5 border border-gray-border">사용내역</th>
-                              <th rowSpan={2} className="text-center py-1.5 border border-gray-border px-2">잔액</th>
+                              <th colSpan={3} className="text-left py-1.5 border border-gray-border px-1.5">선결제내역</th>
+                              <th colSpan={5} className="text-left py-1.5 border border-gray-border px-1.5">사용내역</th>
+                              <th rowSpan={2} className="text-left py-1.5 border border-gray-border px-1.5 whitespace-nowrap">잔액</th>
                             </tr>
                             <tr className="bg-gray-bg text-[9px] font-semibold text-gray-text">
-                              <th className="py-1 px-1.5 border border-gray-border text-left">일자</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-right">금액</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">일자</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">금액</th>
                               <th className="py-1 px-1.5 border border-gray-border text-left">기타</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left">일자</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-right">금액</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">일자</th>
+                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">금액</th>
                               <th className="py-1 px-1.5 border border-gray-border text-left">내역</th>
                               <th className="py-1 px-1.5 border border-gray-border text-left">비고</th>
                               <th className="py-1 px-1.5 border border-gray-border text-left">서명</th>
@@ -1313,7 +1578,7 @@ export default function Customers() {
                           <tbody>
                             {rows.length === 0 ? (
                               <tr>
-                                <td colSpan={9} className="text-center py-5 text-gray-text text-[12px]">내역 없음</td>
+                                <td colSpan={9} className="text-center py-5 text-gray-text text-[11px]">내역 없음</td>
                               </tr>
                             ) : rows.map((row, idx) => {
                               if (row.type === 'adjustment') {
@@ -1321,7 +1586,7 @@ export default function Customers() {
                                   <tr key={idx} className="bg-orange-50">
                                     {/* 선결제내역: 일자 */}
                                     <td className="py-1 px-1.5 border border-gray-border text-orange-600 font-medium whitespace-nowrap">
-                                      <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1 py-0.5 rounded mr-1">잔액조정</span>
+                                      <div className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1 py-0.5 rounded mb-0.5 w-fit">잔액조정</div>
                                       {fmtRowDate(row.date)}
                                     </td>
                                     {/* 선결제내역: 금액 */}
@@ -1335,15 +1600,19 @@ export default function Customers() {
                                     {/* 사용내역: 금액 */}
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     {/* 사용내역: 내역 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px]">
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px] break-words">
                                       {row.reason || '—'}
                                     </td>
                                     {/* 사용내역: 비고 — 조정 전후 잔액 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px] whitespace-nowrap">
-                                      {won(row.balanceBefore)} → {won(row.balanceAfter)}
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px]">
+                                      <span className="whitespace-nowrap">{won(row.balanceBefore)}</span>
+                                      <span className="text-gray-text mx-0.5">→</span>
+                                      <span className="whitespace-nowrap">{won(row.balanceAfter)}</span>
                                     </td>
                                     {/* 사용내역: 서명 */}
-                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px]">
+                                      {row.orderer ?? ''}
+                                    </td>
                                     {/* 잔액 */}
                                     <td className="py-1 px-1.5 border border-gray-border text-right font-bold" style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>
                                       {won(row.balanceAfter)}
@@ -1353,15 +1622,17 @@ export default function Customers() {
                               } else if (row.type === 'deposit') {
                                 return (
                                   <tr key={idx} className="hover:bg-green-soft/20 transition-colors">
-                                    <td className="py-1 px-1.5 border border-gray-border text-green font-medium">{fmtRowDate(row.date)}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold text-green">+{won(row.amount)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-green font-medium whitespace-nowrap">{fmtRowDate(row.date)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount < 0 ? 'var(--danger)' : 'var(--green)' }}>
+                                      {row.amount < 0 ? `-${won(Math.abs(row.amount))}` : `+${won(row.amount)}`}
+                                    </td>
                                     <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.paymentMethod}</td>
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border" />
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold text-green">{won(row.balanceAfter)}</td>
                                   </tr>
                                 )
                               } else {
@@ -1370,11 +1641,11 @@ export default function Customers() {
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
                                     <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{fmtRowDate(row.date)}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium text-ink">-{won(row.amount)}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-ink">{row.summary}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.note}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text truncate">{row.orderer}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text whitespace-nowrap">{fmtRowDate(row.date)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium text-ink whitespace-nowrap">-{won(row.amount)}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-ink break-words">{row.summary}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text break-words">{row.note}</td>
+                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.orderer}</td>
                                     <td className="py-1 px-1.5 border border-gray-border text-right font-medium">
                                       <span style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>{won(row.balanceAfter)}</span>
                                       {row.discrepancy !== undefined && (
@@ -1403,22 +1674,40 @@ export default function Customers() {
               {/* 삭제 / 복구 — 맨 하단 */}
               <div className="pt-5 mt-5 border-t border-gray-border">
                 {showInactive ? (
-                  <button onClick={handleRestoreAccount} className="w-full py-2.5 rounded-xl text-[13px] font-bold text-[#16a84c] hover:bg-green-soft transition-colors border border-[#16a84c]/30 focus:outline-none">
-                    거래처 복구
-                  </button>
+                  <div className="space-y-2">
+                    <button onClick={handleRestoreAccount} className="w-full py-2 rounded-xl text-[11px] font-bold text-[#16a84c] hover:bg-green-soft transition-colors border border-[#16a84c]/30 focus:outline-none">
+                      거래처 복구
+                    </button>
+                    {!hardDeleteConfirm ? (
+                      <button onClick={() => setHardDeleteConfirm(true)} className="w-full py-2 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
+                        영구 삭제
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="mb-2">
+                          <p className="text-[11px] text-center text-ink font-semibold leading-tight">정말 영구 삭제하시겠어요?</p>
+                          <p className="text-[11px] text-center text-danger leading-tight mt-0.5">복구할 수 없습니다.</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setHardDeleteConfirm(false)} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
+                          <button onClick={handleHardDeleteAccount} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">영구 삭제 확인</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : !deleteConfirm ? (
-                  <button onClick={() => setDeleteConfirm(true)} className="w-full py-2.5 rounded-xl text-[13px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
+                  <button onClick={() => setDeleteConfirm(true)} className="w-full py-2 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
                     거래처 삭제
                   </button>
                 ) : (
                   <div className="space-y-2">
                     <div className="mb-5">
-                      <p className="text-[12px] text-center text-ink font-semibold leading-tight">정말 삭제하시겠어요?</p>
+                      <p className="text-[11px] text-center text-ink font-semibold leading-tight">정말 삭제하시겠어요?</p>
                       <p className="text-[11px] text-center text-gray-text leading-tight mt-0.5">추후 복구할 수 있어요.</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2 rounded-xl text-[13px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
-                      <button onClick={handleDeleteAccount} className="flex-1 py-2 rounded-xl text-[13px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">삭제 확인</button>
+                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
+                      <button onClick={handleDeleteAccount} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">삭제 확인</button>
                     </div>
                   </div>
                 )}
@@ -1455,7 +1744,7 @@ export default function Customers() {
                 <div className="flex gap-2">
                   {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
                     <button key={t} onClick={() => setNewForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 py-1.5 rounded-full border text-[12px] font-bold transition-colors focus:outline-none
+                      className={`flex-1 py-1.5 rounded-full border text-[11px] font-bold transition-colors focus:outline-none
                         ${newForm.type === t ? 'border-[#16a84c] text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {t}
                     </button>
@@ -1513,13 +1802,13 @@ export default function Customers() {
                       inputMode="numeric"
                       className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-1.5 text-[16px] font-bold focus:outline-none focus:border-[#16a84c] transition-colors"
                     />
-                    <span className="text-[13px] font-semibold text-gray-text flex-shrink-0">원</span>
+                    <span className="text-[11px] font-semibold text-gray-text flex-shrink-0">원</span>
                   </div>
                   {(() => {
                     const v = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
                     if (!newForm.initialDeposit || isNaN(v) || v === 0) return null
                     return (
-                      <p className={`text-[13px] font-bold mt-1 ${v < 0 ? 'text-danger' : 'text-green'}`}>
+                      <p className={`text-[11px] font-bold mt-1 ${v < 0 ? 'text-danger' : 'text-green'}`}>
                         {v < 0 ? `미수금 -${won(Math.abs(v))}` : `잔액 ${won(v)}`}
                       </p>
                     )
@@ -1537,15 +1826,15 @@ export default function Customers() {
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-2.5 mt-6">
               <button onClick={() => { setAddOpen(false); setAddPinError('') }}
-                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
+                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
                 취소
               </button>
               <button
                 onClick={handleAddAccount}
                 disabled={!newForm.name.trim() || !newForm.manager.trim() || newForm.pin.length !== 4}
-                className="flex-1 py-3 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
+                className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
                 등록
               </button>
             </div>
@@ -1577,7 +1866,7 @@ export default function Customers() {
                 <div className="flex gap-2">
                   {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
                     <button key={t} onClick={() => setEditForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 py-1.5 rounded-full border text-[12px] font-bold transition-colors focus:outline-none
+                      className={`flex-1 py-1.5 rounded-full border text-[11px] font-bold transition-colors focus:outline-none
                         ${editForm.type === t ? 'border-[#16a84c] text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {t}
                     </button>
@@ -1619,7 +1908,7 @@ export default function Customers() {
                     inputMode="numeric"
                     className={INPUT_CLS + ' font-bold'}
                   />
-                  <span className="text-[13px] font-semibold text-gray-text flex-shrink-0">원</span>
+                  <span className="text-[11px] font-semibold text-gray-text flex-shrink-0">원</span>
                 </div>
                 {(() => {
                   const v = parseInt(editForm.balance.replace(/,/g, ''), 10)
@@ -1642,15 +1931,15 @@ export default function Customers() {
                         value={editForm.adjustReason}
                         onChange={e => setEditForm(f => ({ ...f, adjustReason: e.target.value }))}
                         placeholder="예: 이전 잔액 이월, 오류 수정 등"
-                        className={INPUT_CLS + ' text-[12px]'}
+                        className={INPUT_CLS + ' text-[11px]'}
                       />
                     </div>
                   )
                 })()}
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => { setEditOpen(false); setEditPinError('') }} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">취소</button>
+            <div className="flex gap-2.5 mt-6">
+              <button onClick={() => { setEditOpen(false); setEditPinError('') }} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">취소</button>
               <button onClick={handleEditAccount}
                 disabled={(() => {
                   if (!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4) return true
@@ -1659,7 +1948,7 @@ export default function Customers() {
                   if (delta !== 0 && !editForm.adjustReason.trim()) return true
                   return false
                 })()}
-                className="flex-1 py-3 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
+                className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
                 저장
               </button>
             </div>
@@ -1689,16 +1978,18 @@ export default function Customers() {
               /* ── 1단계: 입력 ── */
               <>
                 <div className="text-[17px] font-extrabold mb-1">충전 등록</div>
-                <div className="text-[13px] text-gray-text mb-5">{selected.account_name}</div>
+                <div className="text-[11px] text-gray-text mb-5">{selected.account_name}</div>
 
                 {/* 금액 */}
                 <div className="mb-4">
-                  <label className="text-[11px] font-bold text-gray-text mb-1 block">충전 금액</label>
-                  <div className="flex items-baseline gap-2">
-                    <input value={chargeAmt} onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, ''))}
-                      placeholder="300000" inputMode="numeric"
-                      className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-2 text-[18px] font-bold focus:outline-none focus:border-[#16a84c] transition-colors" />
-                    <span className="text-[15px] font-semibold text-gray-text flex-shrink-0">원</span>
+                  <label className="text-[11px] font-bold text-gray-text mb-1.5 block">충전 금액</label>
+                  <div className="relative">
+                    <input
+                      value={chargeAmt ? Number(chargeAmt).toLocaleString('ko-KR') : ''}
+                      onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="0" inputMode="numeric"
+                      className="w-full border border-gray-border rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-ink focus:outline-none transition-colors" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gray-text pointer-events-none">원</span>
                   </div>
                 </div>
 
@@ -1708,7 +1999,7 @@ export default function Customers() {
                   <div className="flex flex-wrap gap-1.5">
                     {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
                       <button key={m} onClick={() => setChargeMethod(m)}
-                        className={`px-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors focus:outline-none
+                        className={`px-3 py-1.5 rounded-full border text-[11px] font-semibold transition-colors focus:outline-none
                           ${chargeMethod === m ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}>
                         {m}
                       </button>
@@ -1722,9 +2013,9 @@ export default function Customers() {
                   <div className="flex gap-2">
                     <input type="date" value={chargeDate} onChange={e => setChargeDate(e.target.value)}
                       max={new Date().toLocaleDateString('en-CA')}
-                      className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-green" />
+                      className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:outline-none focus:border-green" />
                     <input type="time" value={chargeTime} onChange={e => setChargeTime(e.target.value)}
-                      className="w-[110px] border border-gray-border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-green" />
+                      className="w-[110px] border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:outline-none focus:border-green" />
                   </div>
                 </div>
 
@@ -1735,16 +2026,16 @@ export default function Customers() {
                     placeholder="예: 7월 법인카드" className={INPUT_CLS} />
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex gap-2 justify-end">
                   <button onClick={() => { setChargeOpen(false); setChargeError('') }}
-                    className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
+                    className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-text text-[11px] font-semibold hover:bg-gray-200 focus:outline-none transition-colors">
                     취소
                   </button>
                   <button
                     onClick={() => setChargeConfirm(true)}
                     disabled={!chargeAmt || parseInt(chargeAmt) <= 0}
-                    className="flex-1 py-3 rounded-xl bg-ink text-white font-bold hover:bg-ink/80 transition-colors focus:outline-none disabled:opacity-50">
-                    다음 →
+                    className="px-4 py-1.5 rounded-lg bg-ink text-white text-[11px] font-semibold hover:bg-ink/80 transition-colors focus:outline-none disabled:opacity-50">
+                    다음
                   </button>
                 </div>
               </>
@@ -1752,50 +2043,50 @@ export default function Customers() {
               /* ── 2단계: 최종 확인 ── */
               <>
                 <div className="text-[17px] font-extrabold mb-1">충전 내용 확인</div>
-                <div className="text-[13px] text-gray-text mb-5">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</div>
+                <div className="text-[11px] text-gray-text mb-5">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</div>
 
                 <div className="bg-gray-bg rounded-xl p-4 space-y-3 mb-5">
                   <div className="flex justify-between items-center">
-                    <span className="text-[12px] text-gray-text">거래처</span>
-                    <span className="text-[13px] font-bold text-ink">{selected.account_name}</span>
+                    <span className="text-[11px] text-gray-text">거래처</span>
+                    <span className="text-[11px] font-bold text-ink">{selected.account_name}</span>
                   </div>
                   <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[12px] text-gray-text">충전 금액</span>
-                    <span className="text-[20px] font-extrabold text-green">+{won(parseInt(chargeAmt))}</span>
+                    <span className="text-[11px] text-gray-text">충전 금액</span>
+                    <span className="text-[18px] font-extrabold text-ink">+{won(parseInt(chargeAmt))}</span>
                   </div>
                   <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[12px] text-gray-text">결제수단</span>
-                    <span className="text-[13px] font-semibold text-ink">{chargeMethod}</span>
+                    <span className="text-[11px] text-gray-text">결제수단</span>
+                    <span className="text-[11px] font-semibold text-ink">{chargeMethod}</span>
                   </div>
                   <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[12px] text-gray-text">선결제 일시</span>
-                    <span className="text-[13px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
+                    <span className="text-[11px] text-gray-text">선결제 일시</span>
+                    <span className="text-[11px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
                   </div>
                   {chargeMemo && (
                     <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                      <span className="text-[12px] text-gray-text">비고</span>
-                      <span className="text-[13px] font-semibold text-ink">{chargeMemo}</span>
+                      <span className="text-[11px] text-gray-text">비고</span>
+                      <span className="text-[11px] font-semibold text-ink">{chargeMemo}</span>
                     </div>
                   )}
                   <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[12px] text-gray-text">충전 후 잔액</span>
-                    <span className="text-[13px] font-bold text-ink">{won(selected.current_balance + parseInt(chargeAmt))}</span>
+                    <span className="text-[11px] text-gray-text">충전 후 잔액</span>
+                    <span className="text-[11px] font-bold text-ink">{won(selected.current_balance + parseInt(chargeAmt))}</span>
                   </div>
                 </div>
 
                 {chargeError && (
-                  <p className="text-[12px] text-danger font-semibold mb-3">{chargeError}</p>
+                  <p className="text-[11px] text-danger font-semibold mb-3">{chargeError}</p>
                 )}
-                <div className="flex gap-3">
+                <div className="flex gap-2 justify-end">
                   <button onClick={() => { setChargeConfirm(false); setChargeError('') }}
-                    className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
-                    ← 수정
+                    className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-text text-[11px] font-semibold hover:bg-gray-200 focus:outline-none transition-colors">
+                    취소
                   </button>
                   <button
                     onClick={handleCharge}
                     disabled={chargeLoading}
-                    className="flex-1 py-3 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
-                    {chargeLoading ? '처리 중...' : '확정 충전'}
+                    className="px-4 py-1.5 rounded-lg bg-[#16a84c] text-white text-[11px] font-semibold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
+                    {chargeLoading ? '처리 중...' : '충전 확정'}
                   </button>
                 </div>
               </>
@@ -1856,7 +2147,7 @@ function AccountQrModal({ accountCode, accountName, storeId, onClose }: { accoun
           <div className="text-[17px] font-extrabold">거래처 전용 QR</div>
           <button onClick={onClose} className="text-gray-text hover:text-ink text-[18px]">✕</button>
         </div>
-        <div className="text-[13px] text-gray-text mb-4">
+        <div className="text-[11px] text-gray-text mb-4">
           <span className="font-semibold text-ink">{accountName}</span> 고객 전용 링크입니다.<br />
           스캔하면 PIN 없이 바로 주문자 입력으로 진입합니다.
         </div>
@@ -1866,15 +2157,15 @@ function AccountQrModal({ accountCode, accountName, storeId, onClose }: { accoun
             <div className="text-[11px] font-mono text-gray-text break-all text-center">{url}</div>
           </div>
         ) : (
-          <div className="h-[200px] flex items-center justify-center text-gray-text text-[12px]">QR 생성 중…</div>
+          <div className="h-[200px] flex items-center justify-center text-gray-text text-[11px]">QR 생성 중…</div>
         )}
         <div className="flex gap-2">
           <button onClick={saveImage} disabled={!qrDataUrl}
-            className="flex-1 py-3 rounded-xl font-bold text-[14px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
+            className="flex-1 py-2.5 rounded-xl font-bold text-[11px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
             이미지 저장
           </button>
           <button onClick={copy}
-            className={`flex-1 py-3 rounded-xl font-bold text-[14px] transition-colors
+            className={`flex-1 py-2.5 rounded-xl font-bold text-[11px] transition-colors
               ${copied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}>
             {copied ? '✓ 복사됨' : '링크 복사'}
           </button>
@@ -1910,7 +2201,7 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
           <div className="text-[17px] font-extrabold">키오스크 공용 QR</div>
           <button onClick={onClose} className="text-gray-text hover:text-ink text-[18px]">✕</button>
         </div>
-        <div className="text-[13px] text-gray-text mb-4">
+        <div className="text-[11px] text-gray-text mb-4">
           누구나 거래처를 선택하고 PIN을 입력해 주문할 수 있는 공용 링크입니다.
         </div>
         {qrDataUrl ? (
@@ -1919,15 +2210,15 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
             <div className="text-[11px] font-mono text-gray-text break-all text-center px-2">{url}</div>
           </div>
         ) : (
-          <div className="h-[200px] flex items-center justify-center text-gray-text text-[12px]">QR 생성 중…</div>
+          <div className="h-[200px] flex items-center justify-center text-gray-text text-[11px]">QR 생성 중…</div>
         )}
         <div className="flex gap-2">
           <button onClick={saveImage} disabled={!qrDataUrl}
-            className="flex-1 py-3 rounded-xl font-bold text-[14px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
+            className="flex-1 py-2.5 rounded-xl font-bold text-[11px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
             이미지 저장
           </button>
           <button onClick={copy}
-            className={`flex-1 py-3 rounded-xl font-bold text-[14px] transition-colors
+            className={`flex-1 py-2.5 rounded-xl font-bold text-[11px] transition-colors
               ${copied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}>
             {copied ? '✓ 복사됨' : '링크 복사'}
           </button>

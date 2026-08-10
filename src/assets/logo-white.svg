@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" fill="none">
+  <!-- 아이콘 마크: 흰 테두리 둥근 사각형 -->
+  <rect x="0" y="0" width="64" height="64" rx="16" fill="white" fill-opacity="0.15"/>
+
+  <!-- 영수증 용지 (흰색) -->
+  <rect x="18" y="12" width="28" height="36" rx="3" fill="white"/>
+  <path d="M18 48 L21 44 L24 48 L27 44 L30 48 L33 44 L36 48 L39 44 L42 48 L46 48 L46 12 L18 12 Z" fill="white"/>
+
+  <!-- 체크마크 (그린) -->
+  <path d="M24 31 L28.5 35.5 L40 24" stroke="#017333" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 선포스 텍스트 (흰색) -->
+  <text x="80" y="40" font-family="'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="28" font-weight="800" fill="white" letter-spacing="-0.5">선포스</text>
+
+  <!-- 점 -->
+  <circle cx="162" cy="34" r="3" fill="white" fill-opacity="0.6"/>
+
+  <!-- POS -->
+  <text x="172" y="40" font-family="'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" fill="white" fill-opacity="0.7" letter-spacing="1">POS</text>
+</svg>

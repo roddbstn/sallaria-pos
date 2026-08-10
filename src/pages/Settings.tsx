@@ -11,6 +11,10 @@ interface ReceiptSettings  {
 }
 interface ComPort { path: string; manufacturer: string; friendlyName: string }
 
+interface SettingsProps {
+  onOpenHours: () => void
+}
+
 type Api = {
   getSettings?:     () => Promise<{ printer: PrinterSettings; receipt: ReceiptSettings }>
   listPorts?:       () => Promise<ComPort[]>
@@ -23,9 +27,12 @@ type Api = {
 
 const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
 
+const isWindows = navigator.userAgent.includes('Windows')
+const PORT_LABEL = isWindows ? 'COM 포트' : '포트'
+
 const SIZE_LABELS: Record<string, string> = { small: '기본', normal: '보통', large: '크게' }
 
-export default function Settings() {
+export default function Settings({ onOpenHours }: SettingsProps) {
   const { storeName } = useStore()
   const [comPorts,   setComPorts]   = useState<ComPort[]>([])
   const [printer,    setPrinter]    = useState<PrinterSettings>({ portName: '' })
@@ -64,7 +71,7 @@ export default function Settings() {
   }
 
   async function handleConnect() {
-    if (!printer.portName) { setConnectErr('COM 포트를 먼저 선택해 주세요.'); return }
+    if (!printer.portName) { setConnectErr(`${PORT_LABEL}를 먼저 선택해 주세요.`); return }
     setConnecting(true)
     setConnectErr('')
     await api().updateSettings?.({ printer })
@@ -106,9 +113,23 @@ export default function Settings() {
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-white">
-      <div className="max-w-[600px] mx-auto px-8 py-8">
-        <div className="text-[22px] font-extrabold text-ink mb-8">설정</div>
+    <div className="h-full overflow-y-auto bg-gray-bg">
+      <div className="max-w-[640px] mx-auto px-3 py-3 space-y-3">
+        {/* ── 운영시간 설정 ── */}
+        <Section title="⏰ 운영시간">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[13px] font-semibold text-ink">요일별 운영 스케줄</div>
+              <div className="text-[12px] text-gray-text mt-0.5">영업 시작·종료 시간 및 브레이크타임을 설정합니다</div>
+            </div>
+            <button
+              onClick={onOpenHours}
+              className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors flex-shrink-0"
+            >
+              <ClockIcon /> 시간 설정
+            </button>
+          </div>
+        </Section>
 
         {/* ── 주문 알림음 ── */}
         <Section title="🔔 주문 알림음">
@@ -127,7 +148,7 @@ export default function Settings() {
           <Field label="테스트">
             <button
               onClick={() => playOrderSound(alertVolume)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-opacity"
+              className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors"
             >
               <SoundIcon />알림음 미리 듣기
             </button>
@@ -135,30 +156,30 @@ export default function Settings() {
         </Section>
 
         {/* ── 프린터 연결 (ESC/POS 시리얼) ── */}
-        <Section title="프린터 연결 (COM 포트)">
+        <Section title={`프린터 연결 (${PORT_LABEL})`}>
 
           {/* 연결 상태 배지 */}
           <div className={[
             'flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] font-bold',
-            connected ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-red-50 text-[#C92A2A]',
+            connected ? 'bg-[#E6F4EC] text-[#16a84c]' : 'bg-red-50 text-[#C92A2A]',
           ].join(' ')}>
-            <span className={['w-2.5 h-2.5 rounded-full flex-shrink-0', connected ? 'bg-[#017333]' : 'bg-[#C92A2A]'].join(' ')} />
+            <span className={['w-2.5 h-2.5 rounded-full flex-shrink-0', connected ? 'bg-[#16a84c]' : 'bg-[#C92A2A]'].join(' ')} />
             {connected
               ? `연결됨 — ${printer.portName}`
               : printer.portName
                 ? `미확인 — ${printer.portName} (연결하기 클릭)`
-                : 'COM 포트가 선택되지 않았습니다'}
+                : `${PORT_LABEL}가 선택되지 않았습니다`}
           </div>
 
           {/* STEP 1 — COM 포트 목록 */}
-          <StepCard step="1" title="COM 포트 선택">
+          <StepCard step="1" title={`${PORT_LABEL} 선택`}>
             <p className="text-[12px] text-gray-text mb-3">
               프린터 USB/시리얼 케이블을 연결한 후 목록을 불러오세요.
             </p>
             <button
               onClick={handleScanPorts}
               disabled={loading}
-              className="flex items-center gap-2 px-4 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-60 transition-opacity mb-3"
+              className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 disabled:opacity-60 transition-colors mb-3"
             >
               {loading
                 ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />불러오는 중…</>
@@ -211,7 +232,7 @@ export default function Settings() {
             <button
               onClick={handleConnect}
               disabled={connecting || !printer.portName}
-              className="flex items-center gap-2 px-4 py-2 bg-[#016f30] text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+              className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 disabled:opacity-50 transition-colors"
             >
               {connecting
                 ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />확인 중…</>
@@ -231,9 +252,9 @@ export default function Settings() {
               onClick={handleTestPrint}
               disabled={testing || !printer.portName}
               className={[
-                'flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-opacity',
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors',
                 printer.portName
-                  ? 'bg-[#016f30] text-white hover:opacity-90'
+                  ? 'bg-gray-100 text-ink hover:bg-gray-200'
                   : 'bg-gray-100 text-gray-text cursor-not-allowed',
               ].join(' ')}
             >
@@ -247,7 +268,7 @@ export default function Settings() {
             {testMsg && (
               <div className={[
                 'mt-2 text-[12px] px-3 py-2 rounded-lg',
-                testMsg.includes('정상') ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-red-50 text-[#C92A2A]',
+                testMsg.includes('정상') ? 'bg-[#E6F4EC] text-[#16a84c]' : 'bg-red-50 text-[#C92A2A]',
               ].join(' ')}>{testMsg}</div>
             )}
           </StepCard>
@@ -459,14 +480,14 @@ export default function Settings() {
         <button
           onClick={handleSave}
           className={[
-            'w-full py-3.5 rounded-xl font-bold text-[15px] transition-colors mt-2',
+            'w-full py-3.5 rounded-xl font-bold text-[15px] transition-colors',
             saved ? 'bg-green-soft text-green' : 'bg-[#16a84c] text-white hover:bg-[#128040]',
           ].join(' ')}
         >
           {saved ? '✓ 저장됨' : '설정 저장'}
         </button>
 
-        <div className="mt-8 text-center text-[12px] text-gray-text">
+        <div className="text-center text-[12px] text-gray-text pb-4">
           <div className="font-bold">프리POS v0.1.0</div>
           <div className="mt-0.5">Electron + React + Supabase</div>
         </div>
@@ -489,9 +510,11 @@ function StepCard({ step, title, children }: { step: string; title: string; chil
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mb-8">
-      <div className="text-[14px] font-bold text-ink mb-4 pb-2 border-b border-gray-border">{title}</div>
-      <div className="space-y-4">{children}</div>
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-border">
+        <span className="text-[14px] font-bold text-ink">{title}</span>
+      </div>
+      <div className="px-4 py-4 space-y-4">{children}</div>
     </div>
   )
 }
@@ -502,6 +525,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="text-[12px] font-bold text-gray-text mb-1.5 block">{label}</label>
       {children}
     </div>
+  )
+}
+
+function ClockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
   )
 }
 

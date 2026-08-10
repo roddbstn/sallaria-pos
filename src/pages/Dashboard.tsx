@@ -4,6 +4,7 @@ import { won, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { mapOrderRow } from '../lib/mappers'
+import { useHeaderSlot } from '../lib/header-slot'
 
 function CopyButton({ text, onDark = false }: { text: string; onDark?: boolean }) {
   const [copied, setCopied] = useState(false)
@@ -15,7 +16,7 @@ function CopyButton({ text, onDark = false }: { text: string; onDark?: boolean }
     })
   }
   const style = copied
-    ? { backgroundColor: '#E6F4EC', color: '#017333' }
+    ? { backgroundColor: '#E6F4EC', color: '#16a84c' }
     : onDark
       ? { backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)' }
       : { backgroundColor: '#F0F0F0', color: '#727272' }
@@ -225,6 +226,7 @@ function getDayLabel(dateStr: string): string {
 
 export default function Dashboard() {
   const { storeId } = useStore()   // 현재는 필터링에 미사용. 향후 다점포 지원용.
+  const { setHeaderRight } = useHeaderSlot()
 
   const [activeOrders,  setActiveOrders]  = useState<Order[]>([])
   const [todayOrders,   setTodayOrders]   = useState<Order[]>([])
@@ -233,6 +235,7 @@ export default function Dashboard() {
   const [actionError,   setActionError]   = useState('')
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
   const [cancelReason,  setCancelReason]  = useState('')
+  const [cancelLoading, setCancelLoading] = useState(false)
 
   function showActionError(msg: string) {
     setActionError(msg)
@@ -408,6 +411,8 @@ export default function Dashboard() {
 
   // ── 취소 처리 (잔액 환원 포함 RPC + ORDER_REJECTED 브로드캐스트) ─────────────
   async function handleCancel(code: string) {
+    if (cancelLoading) return
+    setCancelLoading(true)
     const reason = cancelReason || '매장 사정'
     const { error } = await supabase.rpc('cancel_order', {
       p_order_code: code,
@@ -420,6 +425,7 @@ export default function Dashboard() {
       showActionError(`취소 처리 실패: ${error.message ?? '다시 시도해주세요.'}`)
       setConfirmCancel(null)
       setCancelReason('')
+      setCancelLoading(false)
       return
     }
 
@@ -443,6 +449,7 @@ export default function Dashboard() {
     await Promise.all([fetchActiveOrders(), fetchTodayOrders()])
     setConfirmCancel(null)
     setCancelReason('')
+    setCancelLoading(false)
   }
 
   // ── 출발 알림 처리 ───────────────────────────────────────────────────────────────
@@ -451,30 +458,30 @@ export default function Dashboard() {
     .filter(o => o.status !== '취소')
     .reduce((s, o) => s + o.total, 0)
 
-  return (
-    <div className="h-full flex flex-col bg-white overflow-hidden">
-
-      {/* ── 상단 헤더 ── */}
-      <div className="px-8 py-5 border-b border-gray-border bg-white flex items-center justify-between flex-shrink-0">
-        <div>
-          <div className="text-[22px] font-extrabold text-ink">홈</div>
-          <div className="text-[13px] text-gray-text mt-0.5">
-            {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
+  // 헤더에 오늘 주문 통계 박스 주입
+  useEffect(() => {
+    const stats = [
+      { label: '오늘 주문', num: String(todayOrders.length), unit: '건', accent: false },
+      { label: '준비 중',   num: String(activeOrders.filter(o => o.status !== '취소').length), unit: '건', accent: true },
+      { label: '오늘 주문액', num: todayTotal.toLocaleString('ko-KR'), unit: '원', accent: false },
+    ]
+    setHeaderRight(
+      <div className="flex gap-2">
+        {stats.map(({ label, num, unit, accent }) => (
+          <div key={label} className="bg-gray-bg rounded-lg px-3 py-1 flex items-center gap-1.5 whitespace-nowrap">
+            <span className="text-[10px] text-gray-text font-medium">{label}</span>
+            <span className={`text-[14px] font-extrabold ${accent ? 'text-green' : 'text-ink'}`}>
+              {num}<span className="text-[11px] font-light ml-px">{unit}</span>
+            </span>
           </div>
-        </div>
-        <div className="flex gap-4">
-          {[
-            { label: '오늘 주문', value: `${todayOrders.length}건` },
-            { label: '준비 중',  value: `${activeOrders.filter(o => o.status !== '취소').length}건`, accent: true },
-            { label: '오늘 거래액', value: won(todayTotal) },
-          ].map(({ label, value, accent }) => (
-            <div key={label} className="bg-gray-bg rounded-xl px-5 py-3 text-center min-w-[110px]">
-              <div className="text-[11px] text-gray-text font-semibold">{label}</div>
-              <div className={`text-[20px] font-extrabold mt-1 ${accent ? 'text-green' : 'text-ink'}`}>{value}</div>
-            </div>
-          ))}
-        </div>
+        ))}
       </div>
+    )
+    return () => setHeaderRight(null)
+  }, [todayOrders.length, activeOrders, todayTotal])
+
+  return (
+    <div className="h-full flex flex-col bg-gray-bg overflow-hidden">
 
       {/* ── 액션 에러 배너 ── */}
       {actionError && (
@@ -506,9 +513,12 @@ export default function Dashboard() {
               </button>
             </div>
           ) : activeOrders.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-text">
-              <div className="text-[48px] mb-3">✅</div>
-              <div className="text-[18px] font-bold">대기 중인 주문이 없습니다</div>
+            <div className="h-full flex flex-col items-center justify-center">
+              <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg" className="mb-3">
+                <circle cx="26" cy="26" r="26" fill="#16a84c"/>
+                <path d="M15 26.5L22.5 34L37 18" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <div className="text-[15px] font-normal text-[#AAAAAA] tracking-tight">대기 중인 주문이 없습니다</div>
             </div>
           ) : (
             (() => {
@@ -567,12 +577,12 @@ export default function Dashboard() {
 
         {/* ── 우측 사이드바: 오늘 처리된 주문 ── */}
         <div className="w-[220px] flex-shrink-0 border-l border-gray-border bg-white flex flex-col overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-border flex-shrink-0">
-            <div className="text-[12px] font-extrabold text-gray-text">오늘 주문</div>
+          <div className="px-4 py-3 flex-shrink-0">
+            <div className="text-[12px] font-extrabold text-gray-text">주문목록</div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {todayOrders.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-gray-text text-[12px]">없음</div>
+              <div className="h-full flex items-center justify-center"></div>
             ) : (
               <div className="divide-y divide-gray-border">
                 {todayOrders
@@ -665,10 +675,10 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => handleCancel(confirmCancel)}
-                disabled={!cancelReason}
+                disabled={!cancelReason || cancelLoading}
                 className="flex-1 py-3 rounded-xl bg-danger text-white font-bold hover:bg-danger/90 transition-colors disabled:opacity-40"
               >
-                취소 확정
+                {cancelLoading ? '처리 중...' : '취소 확정'}
               </button>
             </div>
           </div>

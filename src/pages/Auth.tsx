@@ -74,9 +74,13 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
           localStorage.removeItem('sallaria_pos_saved_email')
         }
       } else {
-        const { error: e } = await supabase.auth.signUp({ email, password })
+        const { data, error: e } = await supabase.auth.signUp({ email, password })
         if (e) throw e
-        setDone(true)
+        // 세션이 없으면 이메일 인증 필요 → 안내 화면 표시
+        // 세션이 있으면 auto-confirm 상태 → onAuthStateChange가 onboarding으로 전환하므로 done 화면 불필요
+        if (!data.session) {
+          setDone(true)
+        }
       }
     } catch (e: any) {
       const raw = e?.message ?? ''

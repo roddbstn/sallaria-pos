@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- 상단: 검정 블록 -->
+  <rect x="0" y="0" width="100" height="50" fill="#1E1E1E"/>
+  <!-- 하단: 흰 블록 -->
+  <rect x="0" y="50" width="100" height="50" fill="white"/>
+  <!-- 구분 액센트 라인 -->
+  <rect x="0" y="49.5" width="100" height="1.5" fill="#017333"/>
+
+  <!-- SUN — 흰색 -->
+  <text x="17" y="37"
+    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
+    font-weight="800" font-size="30" text-anchor="middle"
+    fill="white">S</text>
+  <text x="50" y="37"
+    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
+    font-weight="800" font-size="30" text-anchor="middle"
+    fill="white">U</text>
+  <text x="83" y="37"
+    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
+    font-weight="800" font-size="30" text-anchor="middle"
+    fill="white">N</text>
+
+  <!-- POS — 초록색 -->
+  <text x="17" y="83"
+    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
+    font-weight="800" font-size="30" text-anchor="middle"
+    fill="#017333">P</text>
+  <text x="50" y="83"
+    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
+    font-weight="800" font-size="30" text-anchor="middle"
+    fill="#017333">O</text>
+  <text x="83" y="83"
+    font-family="'SF Pro Display','Helvetica Neue',Arial,sans-serif"
+    font-weight="800" font-size="30" text-anchor="middle"
+    fill="#017333">S</text>
+</svg>

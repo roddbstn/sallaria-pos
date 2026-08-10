@@ -7,6 +7,14 @@ type OperatingHours = Record<string, DayHours>
 export type DayBreak = { enabled: boolean; start: string; end: string }
 export type BreakTime = Record<string, DayBreak>
 
+export type VacationDay = {
+  id?: string
+  date: string        // 'YYYY-MM-DD'
+  type: 'holiday' | 'custom'
+  openTime?: string   // custom일 때만
+  closeTime?: string  // custom일 때만
+}
+
 function defaultOperatingHours(): OperatingHours {
   const week = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
   const hours: OperatingHours = {}
@@ -42,10 +50,14 @@ export function useOperatingHours(
   const [breakDraft,      setBreakDraft]      = useState<BreakTime>({})
   const [offHoursConfirm, setOffHoursConfirm] = useState(false)
   const [closureOpen,     setClosureOpen]     = useState(false)
-  const [closureType,     setClosureType]     = useState<'holiday' | 'early'>('holiday')
+  const [closureType,     setClosureType]     = useState<'holiday' | 'early'>('early')
   const [closureTime,     setClosureTime]     = useState('18:00')
   const [closureActive,   setClosureActive]   = useState(false)
   const [overrideType,    setOverrideType]    = useState<'holiday' | 'early' | 'force_open' | null>(null)
+
+  // 휴가 예약
+  const [vacationDays,    setVacationDays]    = useState<VacationDay[]>([])
+  const [vacationOpen,    setVacationOpen]    = useState(false)
 
   // ── DB에서 로드 ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -74,6 +86,24 @@ export function useOperatingHours(
           supabase.from('stores').update({ today_override: null }).eq('id', storeId)
         }
       })
+
+    // 휴가 예약 로드
+    supabase
+      .from('store_vacation_days')
+      .select('id, date, type, open_time, close_time')
+      .eq('store_id', storeId)
+      .gte('date', new Date().toISOString().slice(0, 10))
+      .order('date')
+      .then(({ data }) => {
+        if (!data) return
+        setVacationDays(data.map((r: any): VacationDay => ({
+          id:        r.id,
+          date:      r.date,
+          type:      r.type,
+          openTime:  r.open_time  ?? undefined,
+          closeTime: r.close_time ?? undefined,
+        })))
+      })
   }, [storeId])
 
   // ── 1분마다 스케줄 기반 자동 ON/OFF ──────────────────────────────────────────
@@ -82,9 +112,34 @@ export function useOperatingHours(
 
     function syncIsOpen() {
       const now    = new Date()
+      const today  = now.toISOString().slice(0, 10)
       const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()]
       const day    = operatingHours[dayKey]
       const brk    = breakTime[dayKey]
+
+      // 휴가 예약 체크
+      const vacation = vacationDays.find(v => v.date === today)
+      if (vacation) {
+        if (vacation.type === 'holiday') {
+          setIsOpen(prev => {
+            if (prev && storeId) supabase.from('stores').update({ is_open: false }).eq('id', storeId)
+            return false
+          })
+          return
+        }
+        // custom: 지정 시간 동안만 운영
+        if (vacation.type === 'custom' && vacation.openTime && vacation.closeTime) {
+          const cur  = now.getHours() * 60 + now.getMinutes()
+          const [oh, om] = vacation.openTime.split(':').map(Number)
+          const [ch, cm] = vacation.closeTime.split(':').map(Number)
+          const next = cur >= oh * 60 + om && cur < ch * 60 + cm
+          setIsOpen(prev => {
+            if (prev !== next && storeId) supabase.from('stores').update({ is_open: next }).eq('id', storeId)
+            return next
+          })
+          return
+        }
+      }
 
       let shouldBeOpen = false
       if (day?.enabled) {
@@ -133,7 +188,7 @@ export function useOperatingHours(
       clearTimeout(timeoutId)
       if (intervalId !== null) clearInterval(intervalId)
     }
-  }, [autoOpenEnabled, operatingHours, breakTime, overrideType, closureTime, storeId])
+  }, [autoOpenEnabled, operatingHours, breakTime, overrideType, closureTime, vacationDays, storeId])
 
   // ── 헬퍼: is_open DB 업데이트 ────────────────────────────────────────────────
   async function pushIsOpen(next: boolean) {
@@ -226,7 +281,7 @@ export function useOperatingHours(
     if (error) showToast(`운영시간 저장 실패: ${error.message}`)
   }
 
-  // 운영시간 설정 모달에서 "오늘 마감" 확정 (holiday / early)
+  // 운영시간 설정 모달에서 "조기마감" 확정
   async function confirmClosure() {
     await applyOverride(closureType, closureType === 'early' ? closureTime : undefined)
     setClosureOpen(false)
@@ -234,6 +289,45 @@ export function useOperatingHours(
 
   async function cancelClosure() {
     await clearOverride()
+  }
+
+  // 휴가 예약 저장
+  async function saveVacationDays(days: VacationDay[]) {
+    if (!storeId) return
+    const today = new Date().toISOString().slice(0, 10)
+
+    // 기존 미래 휴가 모두 삭제 후 재삽입 (간단한 전략)
+    await supabase
+      .from('store_vacation_days')
+      .delete()
+      .eq('store_id', storeId)
+      .gte('date', today)
+
+    if (days.length > 0) {
+      const rows = days.map(d => ({
+        store_id:   storeId,
+        date:       d.date,
+        type:       d.type,
+        open_time:  d.openTime  ?? null,
+        close_time: d.closeTime ?? null,
+      }))
+      const { error } = await supabase.from('store_vacation_days').insert(rows)
+      if (error) { showToast(`휴가 저장 실패: ${error.message}`); return }
+    }
+
+    setVacationDays(days)
+    setVacationOpen(false)
+    showToast('휴가 예약이 저장되었습니다')
+  }
+
+  async function deleteVacationDay(date: string) {
+    if (!storeId) return
+    await supabase
+      .from('store_vacation_days')
+      .delete()
+      .eq('store_id', storeId)
+      .eq('date', date)
+    setVacationDays(prev => prev.filter(v => v.date !== date))
   }
 
   return {
@@ -250,11 +344,15 @@ export function useOperatingHours(
     closureTime,      setClosureTime,
     closureActive,
     overrideType,
+    vacationDays,
+    vacationOpen,     setVacationOpen,
     toggleIsOpen,
     toggleAutoOpenEnabled,
     confirmForceOpen,
     saveOperatingHours,
     confirmClosure,
     cancelClosure,
+    saveVacationDays,
+    deleteVacationDay,
   }
 }

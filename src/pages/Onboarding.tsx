@@ -10,12 +10,16 @@ interface Props {
   onComplete: (storeId: string, storeName: string) => void
 }
 
+type PortInfo = { path: string; manufacturer?: string; friendlyName?: string }
 type Api = {
-  listPorts?:      () => Promise<string[]>
+  listPorts?:      () => Promise<PortInfo[]>
   connectPrinter?: () => Promise<{ ok: boolean; error?: string }>
   updateSettings?: (p: unknown) => Promise<{ ok: boolean }>
 }
 const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
+
+const isWindows = navigator.userAgent.includes('Windows')
+const PORT_LABEL = isWindows ? 'COM 포트' : '포트'
 
 const BAUD_RATES = [9600, 19200, 38400, 115200]
 
@@ -26,16 +30,33 @@ export default function Onboarding({ clientId, onComplete }: Props) {
   const [loading,      setLoading]      = useState(false)
   const [error,        setError]        = useState('')
   const [newStoreId,   setNewStoreId]   = useState('')
+  const [qrPrinted,    setQrPrinted]    = useState(false)
   const qrCanvasRef = useRef<HTMLCanvasElement>(null)
 
   // Step 2: 프린터
-  const [ports,       setPorts]       = useState<string[]>([])
+  const [ports,       setPorts]       = useState<PortInfo[]>([])
   const [printerPath, setPrinterPath] = useState('')
   const [baudRate,    setBaudRate]    = useState(9600)
   const [scanning,    setScanning]    = useState(false)
   const [connecting,  setConnecting]  = useState(false)
   const [connected,   setConnected]   = useState(false)
   const [connectErr,  setConnectErr]  = useState('')
+
+  // 마운트 시 이미 저장된 상호명 확인 → 있으면 2단계부터 재개
+  useEffect(() => {
+    supabase
+      .from('clients')
+      .select('business_name')
+      .eq('id', clientId)
+      .single()
+      .then(({ data }) => {
+        if (data?.business_name) {
+          setBusinessName(data.business_name)
+          setStep(2)
+          handleScan()
+        }
+      })
+  }, [clientId])
 
   // Step 1: 상호명 저장
   async function handleStep1(e: React.FormEvent) {
@@ -65,13 +86,13 @@ export default function Onboarding({ clientId, onComplete }: Props) {
     setConnectErr('')
     const found = await api().listPorts?.() ?? []
     setPorts(found)
-    if (found.length > 0) setPrinterPath(found[0])
+    if (found.length > 0) setPrinterPath(found[0].path)
     setScanning(false)
   }
 
   // Step 2: 프린터 연결
   async function handleConnect() {
-    if (!printerPath) { setConnectErr('포트를 선택해 주세요.'); return }
+    if (!printerPath) { setConnectErr(`${PORT_LABEL}를 선택해 주세요.`); return }
     setConnecting(true)
     setConnectErr('')
     await api().updateSettings?.({ printer: { path: printerPath, baudRate, cutMode: 'partial' } })
@@ -177,13 +198,13 @@ export default function Onboarding({ clientId, onComplete }: Props) {
               {/* 포트 선택 */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide">포트</label>
+                  <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide">{PORT_LABEL}</label>
                   <button
                     onClick={handleScan}
                     disabled={scanning}
-                    className="text-[12px] text-green font-semibold hover:opacity-70 transition-opacity"
+                    className="text-[12px] text-green font-semibold bg-green-soft rounded-lg px-3 py-1 hover:opacity-80 disabled:opacity-50 transition-opacity"
                   >
-                    {scanning ? '감지 중…' : '포트 감지'}
+                    {scanning ? '감지 중…' : `${PORT_LABEL} 감지`}
                   </button>
                 </div>
                 {ports.length > 0 ? (
@@ -192,11 +213,11 @@ export default function Onboarding({ clientId, onComplete }: Props) {
                     onChange={e => setPrinterPath(e.target.value)}
                     className="w-full border border-gray-border rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-green bg-white"
                   >
-                    {ports.map(p => <option key={p} value={p}>{p}</option>)}
+                    {ports.map(p => <option key={p.path} value={p.path}>{p.friendlyName ?? p.path}</option>)}
                   </select>
                 ) : (
                   <div className="w-full border border-gray-border rounded-lg px-3 py-2.5 text-[14px] text-gray-text bg-gray-bg">
-                    {scanning ? '포트 감지 중…' : '포트를 찾을 수 없습니다. 프린터 연결 후 다시 감지해 주세요.'}
+                    {scanning ? `${PORT_LABEL} 감지 중…` : '영수증 출력용 프린터 연결 후 다시 감지해 주세요.'}
                   </div>
                 )}
               </div>
@@ -299,12 +320,49 @@ export default function Onboarding({ clientId, onComplete }: Props) {
               고객이 스캔하면 바로 주문 화면이 열립니다.
             </p>
 
-            <div className="flex flex-col items-center gap-3 mb-6">
+            <div className="flex flex-col items-center gap-3 mb-4">
               <canvas ref={qrCanvasRef} className="rounded-xl" />
               <p className="text-[11px] text-gray-text break-all text-center">
                 {`${ORDER_BASE_URL}?store=${newStoreId}`}
               </p>
             </div>
+
+            {/* PDF 출력 버튼 */}
+            <button
+              onClick={() => {
+                const canvas = qrCanvasRef.current
+                if (!canvas) return
+                const dataUrl = canvas.toDataURL('image/png')
+                // window.open 대신 숨김 iframe 사용 — Electron에서 현재 창 리다이렉트 방지
+                const iframe = document.createElement('iframe')
+                iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden'
+                document.body.appendChild(iframe)
+                const doc = iframe.contentDocument
+                if (!doc) { document.body.removeChild(iframe); return }
+                doc.open()
+                doc.write(`
+                  <html><head><title>QR코드 — ${businessName}</title>
+                  <style>
+                    body { margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; }
+                    img { width: 240px; height: 240px; }
+                    p { margin-top: 12px; font-size: 13px; color: #727272; }
+                    h2 { margin: 0 0 8px; font-size: 18px; color: #1E1E1E; }
+                  </style></head>
+                  <body>
+                    <h2>${businessName}</h2>
+                    <img src="${dataUrl}" />
+                    <p>이 QR코드를 스캔하면 선결제 주문 화면이 열립니다.</p>
+                  </body></html>
+                `)
+                doc.close()
+                iframe.contentWindow?.print()
+                setTimeout(() => document.body.removeChild(iframe), 1000)
+                setQrPrinted(true)
+              }}
+              className="w-full py-3 mb-3 bg-green-soft text-green border border-green/30 rounded-xl font-bold text-[14px] hover:opacity-80 transition-opacity"
+            >
+              QR코드 PDF로 출력하기
+            </button>
 
             <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 mb-6">
               <p className="text-[12px] text-gray-text leading-relaxed">
@@ -316,7 +374,8 @@ export default function Onboarding({ clientId, onComplete }: Props) {
 
             <button
               onClick={() => onComplete(newStoreId, businessName.trim())}
-              className="w-full py-3 bg-ink text-white rounded-xl font-bold text-[14px] hover:opacity-90 transition-opacity"
+              disabled={!qrPrinted}
+              className="w-full py-3 bg-ink text-white rounded-xl font-bold text-[14px] hover:opacity-90 disabled:opacity-30 transition-opacity"
             >
               POS 시작하기
             </button>

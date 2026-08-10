@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 배경 -->
+  <rect width="64" height="64" rx="16" fill="#017333"/>
+
+  <!-- 영수증 용지 -->
+  <rect x="16" y="10" width="32" height="40" rx="3.5" fill="white"/>
+
+  <!-- 지그재그 하단 (영수증 밑단) -->
+  <path d="M16 46 L19.5 42 L23 46 L26.5 42 L30 46 L33.5 42 L37 46 L40.5 42 L44 46 L48 46 L48 10 L16 10 Z" fill="white"/>
+
+  <!-- 체크 (녹색) -->
+  <path d="M22 30 L27.5 35.5 L42 22" stroke="#017333" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
