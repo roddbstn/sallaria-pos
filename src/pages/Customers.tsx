@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import QRCode from 'qrcode'
-import logoWithText from '../assets/logo-with-text.png'
+import logoWithText from '../assets/logo-with-text-transparent.png'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
@@ -136,6 +136,7 @@ export default function Customers() {
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      margin-right: 16px;
     }
     .logo-row {
       display: flex;
