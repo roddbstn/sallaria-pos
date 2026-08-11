@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import logoWithText from '../assets/logo-with-text.png'
 
 type AuthTab = 'login' | 'signup'
 
@@ -128,10 +129,8 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
       <div className="bg-white rounded-2xl p-8 w-[360px] shadow-sm">
 
         {/* 로고 */}
-        <div className="text-center mb-8">
-          <div className="text-[28px] mb-1">🏪</div>
-          <h1 className="text-[20px] font-bold text-ink">선포스</h1>
-          <p className="text-[12px] text-gray-text mt-1">선결제도 POS로 관리하세요</p>
+        <div className="flex justify-center mb-8">
+          <img src={logoWithText} alt="sunpos" className="h-10 object-contain" />
         </div>
 
         {/* 탭 */}
