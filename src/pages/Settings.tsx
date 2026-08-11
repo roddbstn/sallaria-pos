@@ -139,7 +139,8 @@ export default function Settings({ onOpenHours }: SettingsProps) {
               <input
                 type="range" min={0} max={100} value={alertVolume}
                 onChange={e => setAlertVolume(Number(e.target.value))}
-                className="flex-1 accent-green h-2 cursor-pointer"
+                className="flex-1 h-2 cursor-pointer volume-slider"
+                style={{ background: `linear-gradient(to right, #16a84c 0%, #16a84c ${alertVolume}%, #E5E7EB ${alertVolume}%, #E5E7EB 100%)` }}
               />
               <span className="text-[13px] text-gray-text">🔊</span>
               <span className="text-[13px] font-bold text-ink w-8 text-right">{alertVolume}</span>

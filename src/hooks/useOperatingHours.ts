@@ -82,8 +82,15 @@ export function useOperatingHours(
           if (t === 'holiday' || t === 'early') setClosureType(t as 'holiday' | 'early')
           if (ov.time) setClosureTime(ov.time)
         } else if (ov) {
-          // 날짜 지난 오버라이드 자동 정리
-          supabase.from('stores').update({ today_override: null }).eq('id', storeId)
+          if (ov.type === 'force_open') {
+            // force_open은 날짜가 지나도 오늘 날짜로 자동 갱신 (매장이 계속 열려있도록)
+            const renewed = { date: today, type: 'force_open' }
+            supabase.from('stores').update({ today_override: renewed }).eq('id', storeId)
+            setOverrideType('force_open')
+          } else {
+            // holiday / early 등 날짜 지난 오버라이드는 삭제
+            supabase.from('stores').update({ today_override: null }).eq('id', storeId)
+          }
         }
       })
 

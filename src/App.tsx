@@ -268,8 +268,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // 탭 변경 시 헤더 슬롯 초기화
-  useEffect(() => { setHeaderRight(null) }, [tab])
 
   async function loadStoreSession(userId: string, userEmail: string) {
     // clients 조회
@@ -1132,11 +1130,11 @@ export default function App() {
                   )}
                   <button
                     onClick={() => { setClosureTime('18:00'); setClosureOpen(true) }}
-                    className="text-[12px] font-semibold text-gray-text bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
+                    className="text-[12px] font-semibold text-ink bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
                   >조기마감</button>
                   <button
                     onClick={openVacationModal}
-                    className="text-[12px] font-semibold text-gray-text bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
+                    className="text-[12px] font-semibold text-ink bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
                   >휴가예약</button>
                 </div>
               </div>
