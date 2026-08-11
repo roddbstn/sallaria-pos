@@ -130,7 +130,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
 
         {/* 로고 */}
         <div className="flex justify-center mb-8">
-          <img src={logoWithText} alt="sunpos" className="h-10 object-contain" />
+          <img src={logoWithText} alt="sunpos" className="h-[72px] object-contain -mt-1" />
         </div>
 
         {/* 탭 */}
@@ -266,7 +266,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-ink text-white rounded-xl font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity mt-1"
+            className="w-full py-3 bg-ink text-white rounded-lg font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity mt-1"
           >
             {loading ? '처리 중...' : tab === 'login' ? '로그인' : '회원가입'}
           </button>
