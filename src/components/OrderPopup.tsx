@@ -293,14 +293,14 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                         <div className="flex gap-3 mt-2">
                           <button
                             onClick={() => setStage('reject')}
-                            className="flex-[1] py-3 rounded-xl bg-ink text-white font-bold text-[15px] hover:bg-ink/80 transition-colors"
+                            className="flex-[1] py-2.5 rounded-xl bg-ink text-white font-bold text-[14px] hover:bg-ink/80 transition-colors"
                           >
                             거부
                           </button>
                           <button
                             onClick={() => setStage('approve')}
                             style={{ backgroundColor: '#16a84c' }}
-                            className="flex-[3] py-3 rounded-xl text-white font-bold text-[15px] hover:opacity-90 transition-opacity"
+                            className="flex-[3] py-2.5 rounded-xl text-white font-bold text-[14px] hover:opacity-90 transition-opacity"
                           >
                             승인
                           </button>
@@ -311,38 +311,41 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                     {/* 2A단계: 소요시간 */}
                     {stage === 'approve' && (
                       <>
-                        <button
-                          onClick={() => setStage('summary')}
-                          className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-text hover:bg-gray-bg hover:text-ink transition-colors mb-1"
-                        >
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="19" y1="12" x2="5" y2="12" />
-                            <polyline points="12 19 5 12 12 5" />
-                          </svg>
-                        </button>
-                        <div className="text-[15px] font-bold mb-5">{order.method === '배달' ? '배달 출발까지 예상 소요시간' : '예상 소요시간'}</div>
-                        <div className="flex items-center justify-center gap-4 mb-5">
+                        {/* 주문 메뉴 요약 (compact) */}
+                        <div className="bg-gray-bg rounded-xl px-3 py-2 mb-3 space-y-1 max-h-[120px] overflow-y-auto">
+                          {order.items.map((item, i) => (
+                            <div key={i} className="text-[12px]">
+                              <span className="font-semibold text-ink">{item.name} · {item.qty}개</span>
+                              {item.options.length > 0 && (
+                                <span className="text-gray-text ml-1">{item.options.join(', ')}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="text-[13px] font-bold mb-3">{order.method === '배달' ? '배달 출발까지 예상 소요시간' : '예상 소요시간'}</div>
+                        <div className="flex items-center justify-center gap-4 mb-3">
                           <button
                             onClick={() => setPrepMins(p => Math.max(1, p - 1))}
-                            className="w-12 h-12 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[22px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
+                            className="w-10 h-10 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[20px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
                             −
                           </button>
-                          <div className="w-28 text-center flex-shrink-0">
-                            <span className="text-[52px] font-extrabold text-green leading-none tabular-nums">{prepMins}</span>
-                            <span className="text-[18px] font-semibold text-gray-text ml-1">분</span>
+                          <div className="w-24 text-center flex-shrink-0">
+                            <span className="text-[42px] font-extrabold text-green leading-none tabular-nums">{prepMins}</span>
+                            <span className="text-[15px] font-semibold text-gray-text ml-1">분</span>
                           </div>
                           <button
                             onClick={() => setPrepMins(p => Math.min(90, p + 1))}
-                            className="w-12 h-12 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[22px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
+                            className="w-10 h-10 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[20px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
                             +
                           </button>
                         </div>
-                        <div className="grid grid-cols-6 gap-1.5 mb-5">
+                        <div className="grid grid-cols-6 gap-1 mb-3">
                           {PREP_PRESETS.map(mins => (
                             <button
                               key={mins}
                               onClick={() => setPrepMins(mins)}
-                              className={`py-2 rounded-xl font-medium text-[13px] transition-colors duration-75 border
+                              className={`py-1.5 rounded-lg font-medium text-[12px] transition-colors duration-75 border
                                 ${prepMins === mins
                                   ? 'bg-ink text-white border-ink'
                                   : 'text-gray-text border-gray-border hover:bg-gray-bg'}`}>
@@ -350,17 +353,26 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                             </button>
                           ))}
                         </div>
-                        <div className="bg-gray-bg rounded-xl px-4 py-3 mb-5 text-[13px] text-gray-text font-semibold leading-relaxed">
+                        <div className="bg-gray-bg rounded-xl px-4 py-2.5 mb-3 text-[12px] text-gray-text font-semibold leading-relaxed">
                           <strong className="text-ink">"약 {prepMins}분 후 {order.method === '배달' ? '배달 출발' : '준비'} 예정"</strong>으로 안내됩니다.
                         </div>
-                        <button
-                          onClick={handleApprove}
-                          disabled={loading}
-                          style={{ backgroundColor: '#16a84c' }}
-                          className="w-full py-3 rounded-xl text-white font-bold text-[15px] hover:opacity-90 transition-opacity disabled:opacity-60"
-                        >
-                          {loading ? '처리 중…' : '접수'}
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleApprove}
+                            disabled={loading}
+                            style={{ backgroundColor: '#16a84c' }}
+                            className="flex-1 py-2.5 rounded-xl text-white font-bold text-[14px] hover:opacity-90 transition-opacity disabled:opacity-60"
+                          >
+                            {loading ? '처리 중…' : '접수'}
+                          </button>
+                          <button
+                            onClick={() => setStage('summary')}
+                            disabled={loading}
+                            className="px-4 py-2.5 rounded-xl bg-gray-100 text-ink font-bold text-[13px] hover:bg-gray-200 transition-colors disabled:opacity-50"
+                          >
+                            뒤로
+                          </button>
+                        </div>
                       </>
                     )}
 
