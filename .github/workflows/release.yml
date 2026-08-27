@@ -1,15 +1,13 @@
 name: Release Windows
 
 on:
-  # 버전 태그 푸시 시 자동 릴리즈 (git tag v0.1.x && git push --tags)
   push:
     tags:
       - 'v*'
-  # 수동 실행 (Actions 탭 → Run workflow)
   workflow_dispatch:
 
 permissions:
-  contents: write   # GitHub Release 생성 및 파일 업로드에 필요
+  contents: write
 
 jobs:
   build:
@@ -27,10 +25,10 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Install dependencies
+      - name: 패키지 설치
         run: pnpm install
 
-      - name: Rebuild native modules for Electron
+      - name: Native 모듈 Electron용 재빌드
         run: npx @electron/rebuild -f -w @serialport/bindings-cpp
 
       - name: .env 파일 생성 (Supabase 키)
@@ -39,20 +37,22 @@ jobs:
           echo "VITE_SUPABASE_URL=https://fcaoakdlbecamoyeqyha.supabase.co" >> .env
           echo "VITE_SUPABASE_ANON=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZjYW9ha2RsYmVjYW1veWVxeWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTY1OTYsImV4cCI6MjA5Njc5MjU5Nn0.FlHwYKyddPR_ufi-vCOBFWzgSKE-_xsgGjypV6JVLpY" >> .env
 
-      - name: Build (electron-vite)
+      - name: 빌드 (electron-vite)
         run: pnpm run build
 
-      - name: Package & Publish to GitHub Release
-        run: pnpm exec electron-builder --win --x64 --publish always
+      - name: dist 폴더 내용 확인
+        shell: bash
+        run: find dist -type f | sort
+
+      - name: Windows 패키징 & GitHub Release 업로드
+        run: pnpm dist --win --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload installer as artifact
+      - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: sallaria-pos-windows-x64
-          path: |
-            dist/*.exe
-            dist/latest.yml
+          path: dist/*.exe
           if-no-files-found: error
           retention-days: 30
