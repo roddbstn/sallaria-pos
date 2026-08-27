@@ -3,7 +3,7 @@ name: Windows 빌드
 on:
   push:
     branches: [main]
-  workflow_dispatch:   # GitHub Actions 탭에서 수동 실행 버튼
+  workflow_dispatch:
 
 jobs:
   build:
@@ -21,7 +21,7 @@ jobs:
       - name: Node.js 설치
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: 패키지 설치
@@ -41,6 +41,10 @@ jobs:
 
       - name: Windows 패키징 — x64
         run: pnpm dist --win --x64 --publish never
+
+      - name: dist 폴더 내용 확인 (디버깅)
+        shell: bash
+        run: find dist -type f | sort
 
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
