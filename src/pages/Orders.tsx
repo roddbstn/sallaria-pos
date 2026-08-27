@@ -15,7 +15,7 @@ function CopyBtn({ text }: { text: string }) {
     <button
       onClick={() => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
       className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold flex-shrink-0 transition-colors"
-      style={copied ? { backgroundColor: '#E6F4EC', color: '#16a84c' } : { backgroundColor: '#F0F0F0', color: '#727272' }}
+      style={copied ? { backgroundColor: 'rgba(0,221,103,0.12)', color: '#008F42' } : { backgroundColor: '#F0F0F0', color: '#727272' }}
     >
       {copied ? '✓ 복사됨' : '복사'}
     </button>
@@ -149,7 +149,7 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
           {Array.from({ length: 12 }, (_, i) => yearBase + i).map(yr => (
             <button key={yr} onClick={() => { setViewYear(yr); setCalView('months') }}
               className={`py-1.5 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none ${viewYear === yr ? 'text-white' : 'text-ink hover:bg-gray-bg'}`}
-              style={viewYear === yr ? { backgroundColor: '#16a84c' } : undefined}>{yr}</button>
+              style={viewYear === yr ? { backgroundColor: '#00DD67' } : undefined}>{yr}</button>
           ))}
         </div>
       )}
@@ -159,7 +159,7 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
           {MONTH_NAMES.map((name, i) => (
             <button key={name} onClick={() => { setViewMonth(i); setCalView('days') }}
               className={`py-2 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none ${viewMonth === i ? 'text-white' : 'text-ink hover:bg-gray-bg'}`}
-              style={viewMonth === i ? { backgroundColor: '#16a84c' } : undefined}>{name}</button>
+              style={viewMonth === i ? { backgroundColor: '#00DD67' } : undefined}>{name}</button>
           ))}
         </div>
       )}
@@ -188,15 +188,15 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
               return (
                 <div key={ymd} className="relative h-8 flex items-center justify-center">
                   {showStrip && (
-                    <div style={{ position: 'absolute', top: '3px', bottom: '3px', left: stripLeft, right: stripRight, backgroundColor: '#E6F4EC', zIndex: 0 }} />
+                    <div style={{ position: 'absolute', top: '3px', bottom: '3px', left: stripLeft, right: stripRight, backgroundColor: 'rgba(0,221,103,0.12)', zIndex: 0 }} />
                   )}
                   <button onClick={() => onSelect(ymd)}
                     className={`relative z-10 w-7 h-7 rounded-full text-[11px] font-medium transition-colors focus:outline-none
-                      ${isSel ? 'text-white' : inRange ? 'text-ink hover:bg-green-soft' : isSun ? 'text-danger hover:bg-gray-bg' : isSat ? 'text-blue-500 hover:bg-gray-bg' : 'text-ink hover:bg-gray-bg'}`}
-                    style={isSel ? { backgroundColor: '#16a84c' } : undefined}>
+                      ${isSel ? 'text-[#1A1A1A] font-bold' : inRange ? 'text-ink hover:bg-green-soft' : isSun ? 'text-danger hover:bg-gray-bg' : isSat ? 'text-blue-500 hover:bg-gray-bg' : 'text-ink hover:bg-gray-bg'}`}
+                    style={isSel ? { backgroundColor: '#00BB55' } : undefined}>
                     {day}
                     {isToday && (
-                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full" style={{ backgroundColor: isSel ? 'white' : '#16a84c' }} />
+                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full" style={{ backgroundColor: isSel ? '#1A1A1A' : '#00DD67' }} />
                     )}
                   </button>
                 </div>
@@ -298,7 +298,7 @@ function DateRangePanel({ startDate, endDate, onRangeChange }: DateRangePanelPro
           </p>
         )}
         {startDate && (
-          <div className="mt-2.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold text-center" style={{ backgroundColor: '#E6F4EC', color: '#16a84c' }}>
+          <div className="mt-2.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold text-center" style={{ backgroundColor: 'rgba(0,221,103,0.12)', color: '#008F42' }}>
             {startDate && endDate && startDate !== endDate
               ? `${formatDisplay(startDate)} ~ ${formatDisplay(endDate)}`
               : startDate ? formatDisplay(startDate) : '날짜를 선택하세요'}
@@ -544,7 +544,7 @@ export default function Orders() {
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold transition-colors
               ${excludedAccounts.size > 0
                 ? 'bg-orange-500 text-white hover:bg-orange-600'
-                : 'bg-[#16a84c] text-white hover:bg-[#128040]'}`}
+                : 'bg-[#00DD67] text-[#1A1A1A] hover:bg-[#00BB55]'}`}
           >
             {excludedAccounts.size > 0 ? `${excludedAccounts.size}명 제외 중` : '거래처 필터'}
           </button>
@@ -578,7 +578,7 @@ export default function Orders() {
                         return next
                       })
                     }}
-                    className="w-4 h-4 accent-[#16a84c] flex-shrink-0"
+                    className="w-4 h-4 accent-[#00DD67] flex-shrink-0"
                   />
                   <span className="flex-1 text-[12px] text-ink truncate">{acc.name}</span>
                   <div className="text-right flex-shrink-0">
@@ -677,18 +677,18 @@ export default function Orders() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* 테이블 헤더 */}
             <div className="grid grid-cols-[60px_1fr_62px_66px_80px_58px] px-4 py-1.5 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
-              <span>주문번호</span>
-              <span>거래처 · 주문자</span>
-              <span>주문일시</span>
+              <span className="whitespace-nowrap overflow-hidden">주문번호</span>
+              <span className="whitespace-nowrap overflow-hidden">거래처 · 주문자</span>
+              <span className="whitespace-nowrap overflow-hidden">주문일시</span>
               <button
                 onClick={cycleMethod}
-                className={`flex items-center gap-0.5 transition-colors ${methodFilter !== 'all' ? 'text-[#16a84c]' : 'hover:text-ink'}`}>
+                className={`flex items-center gap-0.5 transition-colors whitespace-nowrap overflow-hidden ${methodFilter !== 'all' ? 'text-[#008F42]' : 'hover:text-ink'}`}>
                 이용방법{methodFilter !== 'all' && <span className="font-normal ml-0.5">({methodFilter})</span>}
               </button>
-              <span className="text-right">금액</span>
+              <span className="whitespace-nowrap overflow-hidden text-right">금액</span>
               <button
                 onClick={cycleStatus}
-                className={`text-center transition-colors ${statusFilter !== 'all' ? 'text-[#16a84c]' : 'hover:text-ink'}`}>
+                className={`text-center transition-colors whitespace-nowrap overflow-hidden ${statusFilter !== 'all' ? 'text-[#008F42]' : 'hover:text-ink'}`}>
                 상태{statusFilter !== 'all' && <span className="font-normal ml-0.5">({statusFilter})</span>}
               </button>
             </div>
@@ -711,12 +711,12 @@ export default function Orders() {
                       className={`w-full grid grid-cols-[60px_1fr_62px_66px_80px_58px] px-4 py-2.5 text-[12px] transition-colors items-center text-left
                         ${selected?.code === order.code ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}
                       onClick={() => { setSelected(order); setDeleteConfirmCode(null) }}>
-                        <span className="font-mono text-[11px] text-gray-text">#{order.orderNumber ?? order.code.slice(0, 6)}</span>
-                        <span className="font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">
+                        <span className="font-mono text-[11px] text-gray-text whitespace-nowrap overflow-hidden">#{order.orderNumber ?? order.code.slice(0, 6)}</span>
+                        <span className="font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
                           {order.accountName}
                           <span className="text-gray-text font-normal ml-1">· {order.orderer}</span>
                         </span>
-                        <span className="text-[11px] text-gray-text">{formatDate(order.createdAt)}</span>
+                        <span className="text-[11px] text-gray-text whitespace-nowrap overflow-hidden">{formatDate(order.createdAt)}</span>
                         <span>
                           <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${METHOD_BADGE[order.method]}`}>{order.method}</span>
                         </span>
@@ -734,10 +734,10 @@ export default function Orders() {
           /* 메뉴별 매출 탭 */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="grid grid-cols-[1fr_68px_88px_76px] px-4 py-1.5 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
-              <span>메뉴명</span>
-              <span className="text-right">주문수량</span>
-              <span className="text-right">주문액</span>
-              <span className="text-right">평균단가</span>
+              <span className="whitespace-nowrap overflow-hidden">메뉴명</span>
+              <span className="whitespace-nowrap overflow-hidden text-right">주문수량</span>
+              <span className="whitespace-nowrap overflow-hidden text-right">주문액</span>
+              <span className="whitespace-nowrap overflow-hidden text-right">평균단가</span>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
               {menuSales.length === 0 ? (
@@ -749,9 +749,9 @@ export default function Orders() {
                   <button key={ms.name} onClick={() => setSelectedMenuName(ms.name)}
                     className={`w-full grid grid-cols-[1fr_68px_88px_76px] px-4 py-2.5 text-left text-[12px] transition-colors
                       ${selectedMenuName === ms.name ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
-                    <span className="font-semibold text-ink flex items-center gap-1.5">
-                      {idx === 0 && <span>🏆</span>}
-                      {ms.name}
+                    <span className="font-semibold text-ink flex items-center gap-1.5 min-w-0 overflow-hidden">
+                      {idx === 0 && <span className="flex-shrink-0">🏆</span>}
+                      <span className="truncate">{ms.name}</span>
                     </span>
                     <span className="text-right text-gray-text">{ms.qty}개</span>
                     <span className="text-right font-bold text-ink">{won(ms.total)}</span>
@@ -765,10 +765,10 @@ export default function Orders() {
           /* 거래처별 주문액 탭 */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="grid grid-cols-[1fr_72px_72px_120px] px-4 py-1.5 bg-gray-bg text-[11px] font-bold text-gray-text uppercase tracking-wide border-b border-gray-border flex-shrink-0">
-              <span>거래처명</span>
-              <span className="text-right">주문건수</span>
-              <span className="text-right">주문인 수</span>
-              <span className="text-right">주문액</span>
+              <span className="whitespace-nowrap overflow-hidden">거래처명</span>
+              <span className="whitespace-nowrap overflow-hidden text-right">주문건수</span>
+              <span className="whitespace-nowrap overflow-hidden text-right">주문인 수</span>
+              <span className="whitespace-nowrap overflow-hidden text-right">주문액</span>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
               {accountSales.length === 0 ? (
@@ -780,9 +780,9 @@ export default function Orders() {
                   <button key={as.name} onClick={() => setSelectedAccountName(as.name)}
                     className={`w-full grid grid-cols-[1fr_72px_72px_120px] px-4 py-2.5 text-left text-[12px] transition-colors
                       ${selectedAccountName === as.name ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}>
-                    <span className="font-semibold text-ink flex items-center gap-1.5">
-                      {idx === 0 && <span>🏆</span>}
-                      {as.name}
+                    <span className="font-semibold text-ink flex items-center gap-1.5 min-w-0 overflow-hidden">
+                      {idx === 0 && <span className="flex-shrink-0">🏆</span>}
+                      <span className="truncate">{as.name}</span>
                     </span>
                     <span className="text-right text-gray-text">{as.count}건</span>
                     <span className="text-right text-gray-text">{as.ordererCount}명</span>

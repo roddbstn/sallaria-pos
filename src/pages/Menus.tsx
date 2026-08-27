@@ -87,7 +87,7 @@ interface StoreOptionGroup {
 }
 
 export default function Menus() {
-  const { storeId } = useStore()
+  const { storeId, plan } = useStore()
   const { setHeaderRight } = useHeaderSlot()
 
   const [tab,          setTab]          = useState<MenuTab>('menu')
@@ -265,7 +265,7 @@ export default function Menus() {
         </button>
         <button
           onClick={openAddMenu}
-          className="px-3 py-2 bg-[#16a84c] text-white rounded-lg text-[11px] font-bold hover:bg-[#128040] transition-colors"
+          className="px-3 py-2 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[11px] font-bold hover:bg-[#00BB55] transition-colors"
         >
           메뉴 추가
         </button>
@@ -598,13 +598,11 @@ export default function Menus() {
       categoryId = catData.id
     }
 
-    if (!categoryId) { setAddError('카테고리를 선택하거나 새로 만들어주세요.'); return }
-
     setAddLoading(true)
     const maxOrder = menus.reduce((m, mn) => Math.max(m, mn.order), 0)
 
     const inserts = validRows.map((r, i) => ({
-      category_id:   categoryId,
+      category_id:   categoryId || null,
       name:          r.name.trim(),
       base_price:    parseInt(r.price, 10),
       display_order: maxOrder + 1 + i,
@@ -675,8 +673,6 @@ export default function Menus() {
       setCategories(prev => [...prev, { id: catData.id, name: catData.name, displayOrder: catData.display_order }])
       categoryId = catData.id
     }
-    if (!categoryId) { setAddError('카테고리를 선택해주세요.'); return }
-
     setAddLoading(true)
 
     let imageUrl: string | null = null
@@ -694,7 +690,7 @@ export default function Menus() {
     const { data, error } = await supabase
       .from('menus')
       .insert({
-        category_id:   categoryId,
+        category_id:   categoryId || null,
         name:          detailForm.name.trim(),
         description:   detailForm.description.trim() || null,
         base_price:    price,
@@ -1196,7 +1192,7 @@ export default function Menus() {
             <div className="flex gap-1 ml-auto">
               {([
                 { v: 'popular'     as TagFilter, l: '인기',   on: 'bg-[#F97316] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
-                { v: 'recommended' as TagFilter, l: '추천',   on: 'bg-[#16a84c] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
+                { v: 'recommended' as TagFilter, l: '추천',   on: 'bg-[#00DD67] text-[#1A1A1A]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
                 { v: 'new'         as TagFilter, l: '신메뉴', on: 'bg-[#1D6FE8] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
               ]).map(({ v, l, on, off }) => (
                 <button key={String(v)} onClick={() => setTagFilter(tagFilter === v ? null : v)}
@@ -1245,8 +1241,13 @@ export default function Menus() {
           <div className="flex-1 overflow-hidden flex flex-col mx-3 mb-3 mt-2 bg-white rounded-xl shadow-sm overflow-hidden">
           {/* 테이블 헤더 */}
           <div className="grid grid-cols-[36px_48px_2fr_2fr_90px_72px_72px_150px] gap-x-3 px-5 py-2 bg-white text-[11px] font-bold text-gray-text uppercase tracking-wide border-b-2 border-gray-border flex-shrink-0">
-            <span></span><span></span><span>메뉴명</span>
-            <span>카테고리</span><span>가격</span><span>판매상태</span><span>표시</span><span>태그</span>
+            <span></span><span></span>
+            <span className="whitespace-nowrap overflow-hidden">메뉴명</span>
+            <span className="whitespace-nowrap overflow-hidden">카테고리</span>
+            <span className="whitespace-nowrap overflow-hidden">가격</span>
+            <span className="whitespace-nowrap overflow-hidden">판매상태</span>
+            <span className="whitespace-nowrap overflow-hidden">표시</span>
+            <span className="whitespace-nowrap overflow-hidden">태그</span>
           </div>
           {/* 목록 */}
           <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
@@ -1263,13 +1264,13 @@ export default function Menus() {
                   <input type="checkbox" checked={checked.has(menu.code)}
                     onChange={e => { e.stopPropagation(); toggleCheck(menu.code) }}
                     onClick={e => e.stopPropagation()}
-                    className="w-4 h-4 accent-[#16a84c]"
+                    className="w-4 h-4 accent-[#00DD67]"
                   />
                   {menu.imageUrl
                     ? <img src={menu.imageUrl} alt={menu.name} className="w-10 h-9 rounded-lg object-cover flex-shrink-0" />
                     : <span className="text-[22px]">{menu.emoji}</span>
                   }
-                  <span className="font-semibold text-ink">{menu.name}</span>
+                  <span className="font-semibold text-ink truncate min-w-0">{menu.name}</span>
                   <span>
                     {getCategoryName(menu.categoryId)
                       ? <span className="text-[11px] font-medium text-gray-text bg-gray-bg px-2.5 py-0.5 rounded-full">{getCategoryName(menu.categoryId)}</span>
@@ -1301,7 +1302,7 @@ export default function Menus() {
                     </button>
                     <button onClick={e => toggleTag(menu, 'isRecommended', e)}
                       className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${menu.isRecommended ? 'bg-[#16a84c] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${menu.isRecommended ? 'bg-[#00DD67] text-[#1A1A1A]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       추천
                     </button>
                     <button onClick={e => toggleTag(menu, 'isNew', e)}
@@ -1335,7 +1336,7 @@ export default function Menus() {
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
                     <button onClick={() => { setEditMode(false); setEditImageError('') }} className="px-3 py-1.5 text-[11px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
-                    <button onClick={saveEdit} disabled={editSaving} className="px-3 py-1.5 text-[11px] font-bold text-white bg-green rounded-lg hover:bg-[#015c28] disabled:opacity-50">
+                    <button onClick={saveEdit} disabled={editSaving} className="px-3 py-1.5 text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] rounded-lg hover:bg-[#00BB55] disabled:opacity-50">
                       {editSaving ? '저장 중...' : '저장'}
                     </button>
                   </div>
@@ -1355,9 +1356,9 @@ export default function Menus() {
                       return (
                         <div className="flex bg-gray-100 rounded-lg p-0.5 text-[11px] font-bold">
                           {([
-                            { v: 'active',    l: '판매중',   activeStyle: { background: '#16a84c', color: 'white' } },
-                            { v: 'today',     l: '오늘품절', activeStyle: { background: '#D97706', color: 'white' } },
-                            { v: 'permanent', l: '품절',     activeStyle: { background: '#C92A2A', color: 'white' } },
+                            { v: 'active',    l: '판매중',   activeStyle: { background: 'white', color: '#1E1E1E' } },
+                            { v: 'today',     l: '오늘품절', activeStyle: { background: 'white', color: '#1E1E1E' } },
+                            { v: 'permanent', l: '품절',     activeStyle: { background: 'white', color: '#1E1E1E' } },
                           ] as { v: SoldOutState; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
                             <button key={v} onClick={() => setMenuSoldOutState(v)}
                               className="px-2.5 py-1 rounded-md transition-all"
@@ -1371,8 +1372,8 @@ export default function Menus() {
                     {/* 노출 / 숨김 2-segment */}
                     <div className="flex bg-gray-100 rounded-lg p-0.5 text-[11px] font-bold">
                       {([
-                        { v: true,  l: '노출', activeStyle: { background: '#16a84c', color: 'white' } },
-                        { v: false, l: '숨김', activeStyle: { background: '#6B7280', color: 'white' } },
+                        { v: true,  l: '노출', activeStyle: { background: 'white', color: '#1E1E1E' } },
+                        { v: false, l: '숨김', activeStyle: { background: 'white', color: '#1E1E1E' } },
                       ] as { v: boolean; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
                         <button key={String(v)} onClick={() => toggleMenuStatus('active')}
                           className="px-2.5 py-1 rounded-md transition-all"
@@ -1426,9 +1427,11 @@ export default function Menus() {
                             </div>
                           </div>
                         ) : (
-                          <div className="w-[76px] h-[76px] border-2 border-dashed border-gray-border rounded-xl flex flex-col items-center justify-center gap-1 hover:border-green hover:bg-green-soft/20 transition-colors">
-                            <span className="text-[18px]">📷</span>
-                            <span className="text-[10px] text-gray-text leading-tight text-center">사진<br/>추가</span>
+                          <div className="w-[76px] h-[76px] border border-gray-border rounded-xl flex flex-col items-center justify-center gap-1.5 hover:bg-gray-100 transition-colors group">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="stroke-gray-300 group-hover:stroke-gray-500 transition-colors" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            <span className="text-[10px] text-gray-text group-hover:text-gray-500 leading-tight text-center transition-colors">업로드</span>
                           </div>
                         )}
                       </label>
@@ -1440,16 +1443,28 @@ export default function Menus() {
                       </div>
                     </div>
                     {/* 이름 + 가격 */}
-                    <div className="flex-1 flex flex-col gap-2">
-                      <label className="block">
+                    <div className="flex-1 flex gap-2">
+                      <label className="block flex-1">
                         <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴명</span>
                         <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
-                          className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[11px]" />
+                          className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-green focus:outline-none" />
                       </label>
-                      <label className="block">
+                      <label className="block flex-1">
                         <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">기본 가격 (원)</span>
-                        <input type="number" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value }))}
-                          className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[11px]" />
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <input type="text" inputMode="numeric" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value.replace(/[^0-9]/g,'') }))}
+                            className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none" />
+                          <div className="flex flex-col gap-0.5">
+                            <button type="button" onClick={() => setEditForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) + 100) )}))}
+                              className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
+                              <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4.5L4 1.5L7 4.5"/></svg>
+                            </button>
+                            <button type="button" onClick={() => setEditForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) - 100) )}))}
+                              className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
+                              <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1.5L4 4.5L7 1.5"/></svg>
+                            </button>
+                          </div>
+                        </div>
                       </label>
                     </div>
                   </div>
@@ -1476,9 +1491,9 @@ export default function Menus() {
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">판매 상태</span>
                       <div className="flex bg-gray-100 rounded-lg p-0.5">
                         {([
-                          { label: '판매중',   val: 'active'    as SoldOutState, activeStyle: { background: '#16a84c', color: 'white' } },
-                          { label: '오늘품절', val: 'today'     as SoldOutState, activeStyle: { background: '#D97706', color: 'white' } },
-                          { label: '품절',     val: 'permanent' as SoldOutState, activeStyle: { background: '#C92A2A', color: 'white' } },
+                          { label: '판매중',   val: 'active'    as SoldOutState, activeStyle: { background: 'white', color: '#1E1E1E' } },
+                          { label: '오늘품절', val: 'today'     as SoldOutState, activeStyle: { background: 'white', color: '#1E1E1E' } },
+                          { label: '품절',     val: 'permanent' as SoldOutState, activeStyle: { background: 'white', color: '#1E1E1E' } },
                         ] as { label: string; val: SoldOutState; activeStyle: React.CSSProperties }[]).map(({ label, val, activeStyle }) => (
                           <button key={val} type="button" onClick={() => setEditForm(p => ({ ...p, soldOutState: val }))}
                             className="flex-1 py-1.5 rounded-md text-[11px] font-bold transition-all"
@@ -1547,40 +1562,25 @@ export default function Menus() {
                 </div>
               )}
 
-              {/* 옵션 그룹 연결 — 편집 모드에서 체크박스로 연결/해제 */}
+              {/* 옵션 그룹 연결 — 편집 모드에서 태그 버튼으로 연결/해제 */}
               {editMode && (
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-extrabold text-ink">옵션 그룹 연결</span>
-                    <span className="text-[11px] text-gray-text">옵션그룹 탭에서 그룹을 먼저 만드세요</span>
-                  </div>
+                  <span className="text-[11px] font-extrabold text-ink block mb-2">옵션 그룹 연결</span>
                   {storeGroups.length === 0 ? (
-                    <div className="text-[11px] text-gray-text text-center py-8 border border-dashed border-gray-border rounded-xl">
-                      등록된 옵션 그룹 없음 — 상단 '옵션그룹' 탭에서 추가
-                    </div>
+                    <p className="text-[11px] text-gray-text mt-1">옵션그룹 탭에서 옵션그룹을 만들어보세요</p>
                   ) : (
-                    <div className="border border-gray-border rounded-xl divide-y divide-gray-border overflow-hidden">
+                    <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
                       {storeGroups.map(g => {
                         const connected = selected.optionGroups.some(og => og.id === g.id)
                         return (
-                          <label key={g.id}
-                            className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${connected ? 'bg-green-soft/40' : 'hover:bg-gray-bg'}`}>
-                            <input type="checkbox" checked={connected}
-                              onChange={() => connected ? disconnectGroup(g.id) : connectGroup(g.id)}
-                              className="w-4 h-4 accent-[#16a84c] flex-shrink-0"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <span className="text-[11px] font-semibold text-ink">{g.name}</span>
-                              <div className="mt-0.5 flex flex-wrap gap-1">
-                                {g.items.map(it => (
-                                  <span key={it.id} className="text-[11px] text-gray-text bg-gray-100 px-1.5 py-0.5 rounded-full">
-                                    {it.name}{it.extra > 0 ? ` +${it.extra.toLocaleString()}` : ''}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            {connected && <span className="text-[11px] font-bold text-green flex-shrink-0">연결됨</span>}
-                          </label>
+                          <button
+                            key={g.id}
+                            onClick={() => connected ? disconnectGroup(g.id) : connectGroup(g.id)}
+                            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors
+                              ${connected ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                          >
+                            {g.name}
+                          </button>
                         )
                       })}
                     </div>
@@ -1588,8 +1588,8 @@ export default function Menus() {
                 </div>
               )}
 
-              {/* 옵션 그룹 세부내용 — 보기 모드에서 인라인 편집 가능 (가격(필수) 그룹 제외) */}
-              {!editMode && (() => {
+              {/* 옵션 그룹 세부내용 — 항상 표시, 인라인 편집 가능 (가격(필수) 그룹 제외) */}
+              {(() => {
                 const editableGroups = selected.optionGroups
                 return (
                   <div>
@@ -1741,11 +1741,11 @@ export default function Menus() {
             <div className="bg-white rounded-xl shadow-sm overflow-hidden p-4 space-y-4 max-w-[700px]">
               {/* 그룹 생성 폼 */}
               {addingStoreGroup && (
-                <div className="border-2 border-green rounded-xl p-4 space-y-3">
+                <div className="border border-gray-border rounded-xl p-4 space-y-3">
                   <input autoFocus value={newStoreGroup.name}
                     onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
                     placeholder="옵션 그룹명 (예: 드레싱 선택, 사이즈)"
-                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px]"
+                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none"
                     onKeyDown={e => e.key === 'Enter' && createStandaloneGroup()}
                   />
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1828,29 +1828,29 @@ export default function Menus() {
             </div>
             {!addingCat && (
               <button onClick={() => { setAddingCat(true); setNewCatName('') }}
-                className="px-3 py-2 text-[11px] font-bold text-white bg-[#16a84c] rounded-lg hover:bg-[#128040] transition-colors flex-shrink-0">
+                className="px-3 py-2 text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] rounded-lg hover:bg-[#00BB55] transition-colors flex-shrink-0">
                 카테고리 추가
               </button>
             )}
           </div>
 
           {addingCat && (
-            <div className="flex items-center gap-2 mt-4 mb-2 p-3 border-2 border-green rounded-xl bg-green-soft/20">
+            <div className="flex items-center gap-2 mt-4 mb-2 p-3 border border-gray-border rounded-xl bg-gray-bg">
               <input autoFocus value={newCatName} onChange={e => setNewCatName(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) }
                   if (e.key === 'Escape') setAddingCat(false)
                 }}
                 placeholder="카테고리 이름 (예: 리뷰이벤트, 이달의메뉴)"
-                className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px]"
+                className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:outline-none focus:border-gray-400"
               />
               <button onClick={() => { if (newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) } }}
                 disabled={!newCatName.trim()}
-                className="px-3 py-2 text-[11px] font-bold text-white bg-green rounded-lg hover:bg-[#015c28] disabled:opacity-40">
+                className="px-3 py-2 text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] rounded-lg hover:bg-[#00BB55] disabled:opacity-40 focus:outline-none">
                 추가
               </button>
               <button onClick={() => setAddingCat(false)}
-                className="px-3 py-2 text-[11px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">
+                className="px-3 py-2 text-[11px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200 focus:outline-none">
                 취소
               </button>
             </div>
@@ -1858,21 +1858,30 @@ export default function Menus() {
 
           {/* 카테고리 pill 버튼 바 — 클릭 시 해당 카테고리 드롭다운 열기 + 스크롤 */}
           {sortedCategories().length > 0 && (
-            <div className="mt-4 mb-1 flex gap-2 overflow-x-auto scrollbar-none pb-1">
-              {sortedCategories().map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => {
-                    setExpandedCatId(cat.id)
-                    setTimeout(() => {
-                      catRowRefs.current[cat.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }, 50)
-                  }}
-                  className="flex-shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-semibold border border-gray-border bg-white text-gray-text hover:bg-green-soft hover:text-green transition-colors"
-                >
-                  {cat.name}
-                </button>
-              ))}
+            <div className="mt-4 mb-1 flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
+              {sortedCategories().map(cat => {
+                const isActive = expandedCatId === cat.id
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      setExpandedCatId(isActive ? null : cat.id)
+                      if (!isActive) setTimeout(() => {
+                        catRowRefs.current[cat.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }, 50)
+                    }}
+                    className={`flex-shrink-0 whitespace-nowrap pl-3 pr-2 py-1.5 rounded-full text-[11px] font-semibold transition-colors focus:outline-none flex items-center gap-1
+                      ${isActive ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                  >
+                    {cat.name}
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${isActive ? 'bg-white/20' : 'bg-white border border-gray-border'}`}>
+                      <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                        <path d={isActive ? 'M2 7L5 4L8 7' : 'M2 4L5 7L8 4'} stroke={isActive ? 'white' : '#9CA3AF'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -1894,7 +1903,7 @@ export default function Menus() {
                   onDragOver={e => { e.preventDefault(); setDragOverId(cat.id) }}
                   onDrop={e => { e.preventDefault(); handleCatDrop(cat.id); setDragOverId(null) }}
                   onDragEnd={() => { setDragId(null); setDragOverId(null) }}
-                  className={dragOverId === cat.id && dragId !== cat.id ? 'border-t-2 border-[#16a84c]' : ''}
+                  className={dragOverId === cat.id && dragId !== cat.id ? 'border-t-2 border-[#00DD67]' : ''}
                 >
                   {/* ── 카테고리 행 ── */}
                   <div
@@ -2073,7 +2082,7 @@ export default function Menus() {
                                 return next
                               })
                             }}
-                            className="w-4 h-4 accent-[#16a84c] flex-shrink-0"
+                            className="w-4 h-4 accent-[#00DD67] flex-shrink-0"
                           />
                           {/* 썸네일 */}
                           <div className="w-10 h-9 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -2221,9 +2230,9 @@ export default function Menus() {
             </div>
             {/* 탭 */}
             <div className="flex gap-0 px-5 mt-3 border-b border-gray-border flex-shrink-0">
-              {([{ v: 'bulk', l: '일괄 추가' }, { v: 'detail', l: '상세 추가' }] as const).map(({ v, l }) => (
+              {([{ v: 'bulk', l: '일괄' }, { v: 'detail', l: '상세' }] as const).map(({ v, l }) => (
                 <button key={v} onClick={() => { setAddModalTab(v); setAddError('') }}
-                  className={`px-4 py-2 text-[11px] font-bold border-b-2 transition-colors -mb-px
+                  className={`px-4 py-2 text-[13px] font-bold border-b-2 transition-colors -mb-px
                     ${addModalTab === v ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
                   {l}
                 </button>
@@ -2232,14 +2241,15 @@ export default function Menus() {
 
             {/* 카테고리 (공통) */}
             <div className="px-5 pt-4 flex-shrink-0">
-              <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">
+              <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">
                 카테고리 <span className="text-danger">*</span>
               </label>
+              <p className="text-[10px] text-gray-text mb-1.5">*카테고리를 하나씩 지정한 뒤 메뉴를 일괄로 추가해주세요</p>
               {addingNewCat ? (
                 <div className="flex gap-2">
                   <input autoFocus value={newCatInModal} onChange={e => setNewCatInModal(e.target.value)}
                     placeholder="새 카테고리 이름"
-                    className="flex-1 border border-green rounded-lg px-3 py-2 text-[11px]"
+                    className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-gray-border focus:outline-none"
                     onKeyDown={e => e.key === 'Escape' && setAddingNewCat(false)}
                   />
                   <button type="button" onClick={() => setAddingNewCat(false)}
@@ -2250,7 +2260,7 @@ export default function Menus() {
               ) : (
                 <div className="flex gap-2">
                   <select value={addCategoryId} onChange={e => setAddCategoryId(e.target.value)}
-                    className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px] bg-white">
+                    className="flex-1 border border-gray-border rounded-lg px-3 py-2 pr-8 text-[11px] bg-white appearance-auto">
                     <option value="">카테고리 선택</option>
                     {sortedCategories().map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
@@ -2278,7 +2288,7 @@ export default function Menus() {
                     <div key={row.id} className="grid grid-cols-[40px_1fr_120px_28px] gap-2 items-center">
                       {/* 이미지 드롭존 */}
                       <div
-                        className="w-10 h-9 rounded-lg border-2 border-dashed border-gray-border cursor-pointer flex items-center justify-center overflow-hidden relative hover:border-green transition-colors flex-shrink-0"
+                        className="w-10 h-9 rounded-lg border border-gray-border cursor-pointer flex items-center justify-center overflow-hidden relative hover:bg-gray-400 transition-colors flex-shrink-0 group"
                         onDragOver={e => e.preventDefault()}
                         onDrop={e => {
                           e.preventDefault()
@@ -2292,7 +2302,7 @@ export default function Menus() {
                         />
                         {row.imagePreview
                           ? <img src={row.imagePreview} className="w-full h-full object-cover" alt="" />
-                          : <span className="text-[11px] select-none">📷</span>
+                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-gray-400 group-hover:stroke-white transition-colors" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         }
                       </div>
                       <input autoFocus={idx === 0}
@@ -2301,12 +2311,24 @@ export default function Menus() {
                         placeholder={`메뉴명 ${idx + 1}`}
                         className="border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-green focus:outline-none"
                       />
-                      <input type="number" min="0" step="100"
-                        value={row.price} onChange={e => updateRow(row.id, 'price', e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
-                        placeholder="0"
-                        className="border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-green focus:outline-none"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <input type="text" inputMode="numeric"
+                          value={row.price} onChange={e => updateRow(row.id, 'price', e.target.value.replace(/[^0-9]/g,''))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
+                          placeholder="0"
+                          className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none"
+                        />
+                        <div className="flex flex-col gap-0.5">
+                          <button type="button" onClick={() => updateRow(row.id, 'price', String(Math.max(0, (parseInt(row.price) || 0) + 100)))}
+                            className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
+                            <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4.5L4 1.5L7 4.5"/></svg>
+                          </button>
+                          <button type="button" onClick={() => updateRow(row.id, 'price', String(Math.max(0, (parseInt(row.price) || 0) - 100)))}
+                            className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
+                            <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1.5L4 4.5L7 1.5"/></svg>
+                          </button>
+                        </div>
+                      </div>
                       <button type="button" onClick={() => removeRowLine(row.id)}
                         disabled={addRows.length === 1}
                         className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-text hover:text-danger hover:bg-red-50 transition-colors disabled:opacity-20">
@@ -2316,8 +2338,8 @@ export default function Menus() {
                   ))}
                 </div>
                 <button type="button" onClick={addRowLine}
-                  className="w-full py-2 border-2 border-dashed border-gray-border rounded-xl text-[11px] font-bold text-gray-text hover:border-green hover:text-green transition-colors">
-                  + 한 줄 추가 (Enter)
+                  className="w-full py-2 border-2 border-dashed border-gray-border rounded-xl text-[11px] font-bold text-gray-text hover:border-[#00DD67] hover:text-[#008F42] transition-colors">
+                  + (Enter)
                 </button>
                 {addError && <p className="text-[11px] text-danger bg-red-50 rounded-lg px-3 py-2">{addError}</p>}
               </div>
@@ -2354,9 +2376,9 @@ export default function Menus() {
                         </div>
                       </div>
                     ) : (
-                      <div className="w-[96px] h-[96px] border-2 border-dashed border-gray-border rounded-xl flex flex-col items-center justify-center gap-1 hover:border-green hover:bg-green-soft/20 transition-colors">
-                        <span className="text-[22px]">📷</span>
-                        <span className="text-[10px] text-gray-text leading-tight text-center">클릭하거나 사진을 여기에 드롭</span>
+                      <div className="w-[96px] h-[96px] border border-gray-border rounded-xl flex flex-col items-center justify-center gap-1.5 hover:bg-gray-400 transition-colors group">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="stroke-gray-400 group-hover:stroke-white transition-colors" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <span className="text-[10px] text-gray-text group-hover:text-white leading-tight text-center transition-colors">업로드</span>
                       </div>
                     )}
                   </label>
@@ -2378,11 +2400,23 @@ export default function Menus() {
                 {/* 가격 */}
                 <div>
                   <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">기본 가격 (원) *</label>
-                  <input type="number" min="0" step="100" value={detailForm.price}
-                    onChange={e => setDetailForm(p => ({ ...p, price: e.target.value }))}
-                    placeholder="0"
-                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-green focus:outline-none"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <input type="text" inputMode="numeric" value={detailForm.price}
+                      onChange={e => setDetailForm(p => ({ ...p, price: e.target.value.replace(/[^0-9]/g,'') }))}
+                      placeholder="0"
+                      className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <button type="button" onClick={() => setDetailForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) + 100)) }))}
+                        className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
+                        <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4.5L4 1.5L7 4.5"/></svg>
+                      </button>
+                      <button type="button" onClick={() => setDetailForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) - 100)) }))}
+                        className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
+                        <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1.5L4 4.5L7 1.5"/></svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 {/* 설명 */}
                 <div>
@@ -2404,7 +2438,7 @@ export default function Menus() {
                             onChange={e => setSelectedGroupIds(prev =>
                               e.target.checked ? [...prev, g.id] : prev.filter(id => id !== g.id)
                             )}
-                            className="w-4 h-4 accent-[#16a84c] flex-shrink-0"
+                            className="w-4 h-4 accent-[#00DD67] flex-shrink-0"
                           />
                           <span className="text-[11px] font-semibold text-ink flex-1">{g.name}</span>
                           <span className="text-[11px] text-gray-text">{g.items.length}개 항목</span>
@@ -2425,12 +2459,12 @@ export default function Menus() {
               </button>
               {addModalTab === 'bulk' ? (
                 <button onClick={confirmAddMenu} disabled={addLoading}
-                  className="flex-[2] py-2.5 rounded-xl bg-[#16a84c] text-white text-[11px] font-bold hover:bg-[#128040] transition-colors disabled:opacity-50">
+                  className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] text-[11px] font-bold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
                   {addLoading ? '저장 중...' : `${addRows.filter(r => r.name.trim() && r.price.trim()).length}개 추가`}
                 </button>
               ) : (
                 <button onClick={confirmDetailMenu} disabled={addLoading}
-                  className="flex-[2] py-2.5 rounded-xl bg-[#16a84c] text-white text-[11px] font-bold hover:bg-[#128040] transition-colors disabled:opacity-50">
+                  className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] text-[11px] font-bold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
                   {addLoading ? '저장 중...' : '추가'}
                 </button>
               )}
@@ -2688,7 +2722,7 @@ function OptionGroupCard({
             <div className="mb-4">
               <label className="text-[11px] font-bold text-gray-text block mb-1">그룹명</label>
               <input value={settingsName} onChange={e => setSettingsName(e.target.value)}
-                className="w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[11px] focus:outline-none focus:border-b-2 focus:border-[#16a84c] transition-colors" />
+                className="w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[11px] focus:outline-none focus:border-b-2 focus:border-[#00DD67] transition-colors" />
             </div>
             <div className="mb-4">
               <label className="text-[11px] font-bold text-gray-text block mb-2">필수 여부</label>
@@ -2710,7 +2744,7 @@ function OptionGroupCard({
                   return (
                     <button key={opt.label} onClick={() => onUpdateGroup({ isMulti: opt.isMulti, maxSelect: opt.max })}
                       className={`py-2 rounded-xl border-2 text-[11px] font-bold transition-colors focus:outline-none
-                        ${active ? 'border-transparent text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${active ? 'border-transparent text-[#008F42] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {opt.label}
                     </button>
                   )
@@ -2718,7 +2752,7 @@ function OptionGroupCard({
               </div>
             </div>
             <button onClick={() => { if (settingsName.trim()) onUpdateGroup({ name: settingsName.trim() }); setSettingsOpen(false) }}
-              className="w-full py-2.5 rounded-xl bg-[#16a84c] text-white font-bold text-[11px] hover:bg-[#128040] transition-colors focus:outline-none mb-3">
+              className="w-full py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[11px] hover:bg-[#00BB55] transition-colors focus:outline-none mb-3">
               저장
             </button>
             {!deleteGroupConfirm ? (
@@ -2801,9 +2835,9 @@ function OptionGroupCard({
             {/* 행 1: 판매중 / 오늘품절 / 품절 */}
             <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold">
               {([
-                { v: 'active'    as SoldOutState, l: '판매중',   activeStyle: { background: '#E6F4EC', color: '#16a84c' } },
-                { v: 'today'     as SoldOutState, l: '오늘품절', activeStyle: { background: '#D97706', color: 'white'   } },
-                { v: 'permanent' as SoldOutState, l: '품절',     activeStyle: { background: '#C92A2A', color: 'white'   } },
+                { v: 'active'    as SoldOutState, l: '판매중',   activeStyle: { background: 'white', color: '#1E1E1E' } },
+                { v: 'today'     as SoldOutState, l: '오늘품절', activeStyle: { background: 'white', color: '#1E1E1E' } },
+                { v: 'permanent' as SoldOutState, l: '품절',     activeStyle: { background: 'white', color: '#1E1E1E' } },
               ]).map(({ v, l, activeStyle }) => (
                 <button key={v} onClick={() => onSetSoldOutState(v)}
                   className="flex-1 py-1 rounded-md transition-all text-center"
@@ -2815,8 +2849,8 @@ function OptionGroupCard({
             {/* 행 2: 노출 / 숨김 */}
             <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold">
               {([
-                { v: false, l: '노출', activeStyle: { background: '#E6F4EC', color: '#16a84c' } },
-                { v: true,  l: '숨김', activeStyle: { background: '#1E1E1E', color: 'white'   } },
+                { v: false, l: '노출', activeStyle: { background: 'white', color: '#1E1E1E' } },
+                { v: true,  l: '숨김', activeStyle: { background: 'white', color: '#1E1E1E' } },
               ] as { v: boolean; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
                 <button key={l} onClick={() => { if (isHidden !== v) onToggleHidden() }}
                   className="flex-1 py-1 rounded-md transition-all text-center"
@@ -2856,14 +2890,14 @@ function OptionGroupCard({
                 <div key={item.id} className="flex items-center gap-2 px-3 py-2">
                   <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
-                    className="flex-1 min-w-0 border-0 border-b border-[#16a84c] bg-transparent px-0 py-1 text-[11px] focus:outline-none"
+                    className="flex-1 min-w-0 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[11px] focus:outline-none"
                   />
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <span className="text-[11px] text-gray-text">+</span>
                     <input type="text" value={editItemPrice}
                       onChange={e => setEditItemPrice(e.target.value.replace(/[^0-9]/g, ''))}
                       onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
-                      className="w-14 border-0 border-b border-[#16a84c] bg-transparent px-0 py-1 text-[11px] text-right focus:outline-none"
+                      className="w-14 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[11px] text-right focus:outline-none"
                     />
                     <span className="text-[11px] text-gray-text">원</span>
                   </div>
@@ -2874,7 +2908,7 @@ function OptionGroupCard({
                       className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">+500</button>
                   </div>
                   <button onClick={commitEditItem}
-                    className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#16a84c] text-white text-[10px] font-bold hover:bg-[#128040]">완료</button>
+                    className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[10px] font-bold hover:bg-[#00BB55]">완료</button>
                 </div>
               ) : (
                 <div

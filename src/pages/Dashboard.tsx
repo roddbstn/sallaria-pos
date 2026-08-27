@@ -16,7 +16,7 @@ function CopyButton({ text, onDark = false }: { text: string; onDark?: boolean }
     })
   }
   const style = copied
-    ? { backgroundColor: '#E6F4EC', color: '#16a84c' }
+    ? { backgroundColor: 'rgba(0,221,103,0.12)', color: '#008F42' }
     : onDark
       ? { backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)' }
       : { backgroundColor: '#F0F0F0', color: '#727272' }
@@ -80,7 +80,7 @@ function OrderCard({
   const isCancelled = order.status === '취소'
 
   return (
-    <div className={`rounded-2xl overflow-hidden shadow-sm flex flex-col ${isCancelled ? 'bg-red-50 opacity-75' : 'bg-white hover:shadow-md transition-shadow'}`}>
+    <div className={`rounded-[10px] overflow-hidden shadow-sm flex flex-col ${isCancelled ? 'bg-red-50 opacity-75' : 'bg-white hover:shadow-md transition-shadow'}`}>
 
       {/* ── 헤더 ── */}
       <div className={`px-4 pt-3 pb-3 ${isCancelled ? 'bg-[#C92A2A]' : 'bg-ink'}`}>
@@ -104,14 +104,14 @@ function OrderCard({
 
         {/* ── 완료 버튼 or 거부됨 배지 ── */}
         {isCancelled ? (
-          <div className="w-full py-2.5 bg-white/20 text-white font-bold text-[15px] rounded-xl text-center">
+          <div className="w-full py-2.5 bg-white/20 text-white font-bold text-[15px] rounded-[10px] text-center">
             거부됨
           </div>
         ) : (
           <button
             onClick={onComplete}
-            style={{ backgroundColor: '#16a84c' }}
-            className="w-full py-2.5 text-white font-semibold text-[15px] rounded-xl hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: '#00DD67' }}
+            className="w-full py-2.5 text-[#1A1A1A] font-semibold text-[15px] rounded-[10px] hover:opacity-90 transition-opacity"
           >
             {order.method === '배달' ? '🛵 출발 완료' : '완료'}
           </button>
@@ -224,10 +224,24 @@ function getDayLabel(dateStr: string): string {
   return `${parseInt(dateStr.slice(5, 7))}월 ${parseInt(dateStr.slice(8, 10))}일`
 }
 
+const DAYS = ['일', '월', '화', '수', '목', '금', '토']
+function formatKstNow(d: Date): string {
+  const kst  = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  const mm   = String(kst.getUTCMonth() + 1)
+  const dd   = String(kst.getUTCDate())
+  const day  = DAYS[kst.getUTCDay()]
+  const h24  = kst.getUTCHours()
+  const ampm = h24 < 12 ? '오전' : '오후'
+  const h12  = h24 % 12 === 0 ? 12 : h24 % 12
+  const min  = String(kst.getUTCMinutes()).padStart(2, '0')
+  return `${mm}.${dd}(${day}) ${ampm} ${h12}:${min}`
+}
+
 export default function Dashboard() {
   const { storeId } = useStore()   // 현재는 필터링에 미사용. 향후 다점포 지원용.
   const { setHeaderRight } = useHeaderSlot()
 
+  const [now, setNow] = useState(() => new Date())
   const [activeOrders,  setActiveOrders]  = useState<Order[]>([])
   const [todayOrders,   setTodayOrders]   = useState<Order[]>([])
   const [loading,       setLoading]       = useState(true)
@@ -236,6 +250,11 @@ export default function Dashboard() {
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
   const [cancelReason,  setCancelReason]  = useState('')
   const [cancelLoading, setCancelLoading] = useState(false)
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   function showActionError(msg: string) {
     setActionError(msg)
@@ -578,7 +597,7 @@ export default function Dashboard() {
         {/* ── 우측 사이드바: 오늘 처리된 주문 ── */}
         <div className="w-[220px] flex-shrink-0 border-l border-gray-border bg-white flex flex-col overflow-hidden">
           <div className="px-4 py-3 flex-shrink-0">
-            <div className="text-[12px] font-extrabold text-gray-text">주문목록</div>
+            <div className="text-[13px] font-semibold text-ink">{formatKstNow(now)}</div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {todayOrders.length === 0 ? (

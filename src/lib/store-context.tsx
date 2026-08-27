@@ -1,10 +1,12 @@
 import { createContext, useContext } from 'react'
+import type { PlanTier } from './plans'
 
 export interface StoreSession {
   userId:    string
   clientId:  string
   storeId:   string
   storeName: string
+  plan:      PlanTier
 }
 
 export const StoreContext = createContext<StoreSession>({
@@ -12,6 +14,7 @@ export const StoreContext = createContext<StoreSession>({
   clientId:  '',
   storeId:   '',
   storeName: '',
+  plan:      'free',
 })
 
 export const useStore = () => useContext(StoreContext)

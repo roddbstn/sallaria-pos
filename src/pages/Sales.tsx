@@ -1,14 +1,16 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
 import { supabase, type DbAccount } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
 import { useHeaderSlot } from '../lib/header-slot'
+import { PLAN_LIMITS } from '../lib/plans'
+import type { PlanTier } from '../lib/plans'
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 const MONTH_NAMES   = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
 const DAY_NAMES     = ['일','월','화','수','목','금','토']
-const CHART_COLORS  = ['#16a84c','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316','#84CC16','#06B6D4']
+const CHART_COLORS  = ['#00DD67','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316','#84CC16','#06B6D4']
 
 // ── KST 헬퍼 ─────────────────────────────────────────────────────────────────
 function monthRangeUtc(year: number, month: number) {
@@ -168,8 +170,10 @@ interface DailySalesLineChartProps {
 function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showDeposit, showOrder }: DailySalesLineChartProps) {
   const [hoverDay,    setHoverDay]    = useState<number | null>(null)
   const [tooltipSide, setTooltipSide] = useState<'left' | 'right'>('right')
+  const [hoverRelX,   setHoverRelX]   = useState(0)
   const [reveal,     setReveal]     = useState(false)
-  const svgRef = useRef<SVGSVGElement>(null)
+  const svgRef       = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // 마운트 시 하단→상단 reveal 애니메이션
   useEffect(() => {
@@ -281,7 +285,11 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
     const svgX = pt.matrixTransform(svg.getScreenCTM()!.inverse()).x
     const day  = Math.round(((svgX - padLeft) / chartW) * (totalDays - 1)) + 1
     setHoverDay(Math.max(1, Math.min(totalDays, day)))
-    setTooltipSide(svgX > W / 2 ? 'left' : 'right')
+    // 컨테이너 기준 실제 픽셀 X 위치 (툴팁 포지셔닝용)
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    const relX = containerRect ? e.clientX - containerRect.left : 0
+    setHoverRelX(relX)
+    setTooltipSide(relX > (containerRect?.width ?? 0) / 2 ? 'left' : 'right')
   }
 
   const hoverX = hoverDay !== null ? xOf(hoverDay) : null
@@ -289,12 +297,13 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
   const hoverOrdAmt = hoverDay !== null ? (orderByDay[hoverDay] ?? 0) : 0
 
   return (
-    <div className="relative select-none" onMouseLeave={() => setHoverDay(null)}>
+    <div ref={containerRef} className="relative select-none" onMouseLeave={() => setHoverDay(null)}>
       <svg
         ref={svgRef}
         width="100%"
         viewBox={`0 0 ${W} ${H}`}
         className="overflow-visible"
+        style={{ maxHeight: 200, maxWidth: '600px', display: 'block' }}
         onMouseMove={onSvgMouseMove}
       >
         {/* y축 눈금선 (가로 점선) — 애니메이션 없음 */}
@@ -323,10 +332,10 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
             transition: reveal ? 'transform 0.65s cubic-bezier(0.4,0,0.2,1)' : 'none',
           }}
         >
-          {showOrder   && <path d={ordArea} fill="#6B7280" fillOpacity="0.10" />}
-          {showDeposit && <path d={depArea} fill="#16a84c" fillOpacity="0.13" />}
-          {showOrder   && <path d={ordPath} fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
-          {showDeposit && <path d={depPath} fill="none" stroke="#16a84c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+          {showOrder   && <path d={ordArea} fill="#C4CBD4" fillOpacity="0.18" />}
+          {showDeposit && <path d={depArea} fill="#34D060" fillOpacity="0.15" />}
+          {showOrder   && <path d={ordPath} fill="none" stroke="#C4CBD4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
+          {showDeposit && <path d={depPath} fill="none" stroke="#34D060" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
         </g>
 
         {/* x축 레이블 */}
@@ -351,10 +360,10 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
         {hoverDay !== null && (
           <>
             {showOrder   && hoverOrdAmt > 0 && (
-              <circle cx={xOf(hoverDay)} cy={yOf(hoverOrdAmt)} r="4" fill="#6B7280" />
+              <circle cx={xOf(hoverDay)} cy={yOf(hoverOrdAmt)} r="4" fill="#C4CBD4" />
             )}
             {showDeposit && hoverDepAmt > 0 && (
-              <circle cx={xOf(hoverDay)} cy={yOf(hoverDepAmt)} r="4" fill="#16a84c" />
+              <circle cx={xOf(hoverDay)} cy={yOf(hoverDepAmt)} r="4" fill="#34D060" />
             )}
           </>
         )}
@@ -367,22 +376,22 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
           style={{
             top: '12px',
             ...(tooltipSide === 'right'
-              ? { left: `calc(${((hoverX! / W) * 100).toFixed(1)}% + 10px)` }
-              : { right: `calc(${(((W - hoverX!) / W) * 100).toFixed(1)}% + 10px)` }
+              ? { left: hoverRelX + 12 }
+              : { right: `calc(100% - ${hoverRelX}px + 12px)` }
             ),
           }}
         >
           <div className="font-bold text-ink mb-1.5">{month + 1}월 {hoverDay}일</div>
           {showDeposit && (
             <div className="flex items-center gap-1.5 mb-1">
-              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#16a84c' }} />
+              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#34D060' }} />
               <span className="text-gray-text">선결제</span>
               <span className="ml-auto font-bold text-green">{hoverDepAmt > 0 ? `+${hoverDepAmt.toLocaleString()}원` : '—'}</span>
             </div>
           )}
           {showOrder && (
             <div className="flex items-center gap-1.5">
-              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#6B7280' }} />
+              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#C4CBD4' }} />
               <span className="text-gray-text">주문</span>
               <span className="ml-auto font-bold text-ink">{hoverOrdAmt > 0 ? `-${hoverOrdAmt.toLocaleString()}원` : '—'}</span>
             </div>
@@ -393,9 +402,234 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
   )
 }
 
+// ── 플랜 업그레이드 모달 데이터 ────────────────────────────────────────────────
+const UPGRADE_PLANS = [
+  { id: 'free'  as PlanTier, name: '무료',   price: 0,     teamLimit: '1팀',    perday: null,          inherits: null,            extras: ['주문 내역 관리', 'QR 오더', '잔액 차감 자동화', '영수증 출력'] },
+  { id: 'basic' as PlanTier, name: '베이직', price: 14900, teamLimit: '10팀까지', perday: '하루 497원',  inherits: '무료 기능 포함', extras: ['선결제 매출·주문액 정산 시각화'] },
+  { id: 'pro'   as PlanTier, name: '프로',   price: 27900, teamLimit: '20팀까지', perday: '하루 930원',  inherits: '베이직 기능 포함', extras: ['잔액 부족 경고 기준 설정', '문자 자동 발송'] },
+  { id: 'max'   as PlanTier, name: '맥스',   price: 38900, teamLimit: '제한 없음', perday: '하루 1,297원', inherits: '프로 기능 포함', extras: ['여러 매장 등록·통합 관리'] },
+]
+type FVal = boolean | string
+const UPGRADE_FEATURE_TABLE: { label: string; free: FVal; basic: FVal; pro: FVal; max: FVal }[] = [
+  { label: '선결제 고객 팀 수',   free: '1팀', basic: '10팀', pro: '20팀', max: '무제한' },
+  { label: '주문 내역 관리',      free: true,  basic: true,  pro: true,  max: true },
+  { label: 'QR 오더 (모바일 웹)', free: true,  basic: true,  pro: true,  max: true },
+  { label: '잔액 차감 자동화',    free: true,  basic: true,  pro: true,  max: true },
+  { label: '영수증 출력',         free: true,  basic: true,  pro: true,  max: true },
+  { label: '정산 시각화',         free: false, basic: true,  pro: true,  max: true },
+  { label: '잔액 부족 경고 설정', free: false, basic: false, pro: true,  max: true },
+  { label: '문자 자동 발송',      free: false, basic: false, pro: true,  max: true },
+  { label: '여러 매장 통합 관리', free: false, basic: false, pro: false, max: true },
+]
+function UpgradeCheck() {
+  return (
+    <span style={{ display:'inline-flex', width:16, height:16, borderRadius:'50%', background:'#00DD67', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+      <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.2 5.7L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    </span>
+  )
+}
+function UpgradeFCell({ v, isSelected }: { v: FVal; isSelected: boolean }) {
+  if (v === false) return <span style={{ color:'#D1D5DB', fontSize:13 }}>—</span>
+  if (v === true) return (
+    <span style={{ display:'inline-flex', width:18, height:18, borderRadius:'50%', background: isSelected ? '#00DD67' : '#E5E7EB', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+      <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.2 5.7L8 1" stroke={isSelected ? '#fff' : '#9CA3AF'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    </span>
+  )
+  return <span style={{ fontSize:12, fontWeight:700, color: isSelected ? '#1A1A1A' : '#9CA3AF', fontFamily:'"IBM Plex Mono",monospace' }}>{v}</span>
+}
+function getUpgradeMatchedPlan(count: number): PlanTier {
+  if (count === 1) return 'free'
+  if (count <= 10) return 'basic'
+  if (count <= 20) return 'pro'
+  return 'max'
+}
+
+export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { clientId, plan: currentPlan } = useStore()
+  const [teamCount, setTeamCount] = useState(3)
+  const [selectedPlan, setSelectedPlan] = useState<PlanTier>('basic')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const matchedPlan = getUpgradeMatchedPlan(teamCount)
+  const fillPct = ((teamCount - 1) / (25 - 1)) * 100
+  const handleRange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setTeamCount(parseInt(e.target.value, 10))
+  }, [])
+
+  async function handleConfirm() {
+    setLoading(true)
+    setError('')
+    try {
+      const { error: e } = await supabase.from('clients').update({ plan: selectedPlan }).eq('id', clientId)
+      if (e) throw e
+      window.location.reload()
+    } catch (e: any) {
+      setError(e.message ?? '오류가 발생했습니다.')
+      setLoading(false)
+    }
+  }
+
+  if (!open) return null
+
+  return (
+    <div
+      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(4px)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+          <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:700, maxHeight:'calc(100vh - 64px)', display:'flex', flexDirection:'column', padding:'32px 36px', boxShadow:'0 24px 64px rgba(0,0,0,0.2)' }}>
+            {/* 헤더 */}
+            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20 }}>
+              <div>
+                <h2 style={{ fontSize:22, fontWeight:700, color:'#1A1A1A', marginBottom:4 }}>요금제를 선택해주세요</h2>
+                <p style={{ fontSize:13, color:'#727272' }}>선결제 고객 팀 수에 맞게 추천해드려요. 언제든 변경 가능해요.</p>
+              </div>
+              <button onClick={() => setOpen(false)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:20, color:'#9CA3AF', lineHeight:1, padding:'0 0 0 16px' }}>✕</button>
+            </div>
+
+            {/* 슬라이더 */}
+            <div style={{ background:'#F9FBF9', border:'1px solid #E1E7E2', borderRadius:12, padding:'16px 20px', marginBottom:16, flexShrink:0 }}>
+              <div style={{ marginBottom:12 }}>
+                <label htmlFor="upg-teamCount" style={{ fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  나의 선결제 고객은{' '}
+                  <span style={{ fontFamily:'"IBM Plex Mono",monospace', color:'#00AA50' }}>
+                    {teamCount >= 25 ? '25팀 이상' : `${teamCount}팀`}
+                  </span>
+                </label>
+              </div>
+              <style>{`
+                #upg-teamCount { -webkit-appearance:none; appearance:none; width:100%; height:26px; background:transparent; cursor:pointer; outline:none; display:block; }
+                #upg-teamCount::-webkit-slider-runnable-track { height:5px; border-radius:99px; background:linear-gradient(to right,#00DD67 ${fillPct}%,#E1E7E2 ${fillPct}%); }
+                #upg-teamCount::-moz-range-track { height:5px; border-radius:99px; background:linear-gradient(to right,#00DD67 ${fillPct}%,#E1E7E2 ${fillPct}%); }
+                #upg-teamCount::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #00DD67; box-shadow:0 2px 6px rgba(4,64,32,.16); margin-top:-7.5px; }
+                #upg-teamCount::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #00DD67; }
+              `}</style>
+              <input type="range" id="upg-teamCount" min={1} max={25} value={teamCount} step={1} onChange={handleRange} />
+              <div style={{ display:'flex', justifyContent:'space-between', fontFamily:'"IBM Plex Mono",monospace', fontSize:10, color:'#79837C', marginTop:2 }}>
+                {['1','5','10','20','25+'].map(v => <span key={v}>{v}</span>)}
+              </div>
+            </div>
+
+            {/* 스크롤 영역 */}
+            <div style={{ overflowY:'auto', flex:1, marginBottom:14, paddingTop:14 }}>
+              {/* 플랜 카드 4종 */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
+                {UPGRADE_PLANS.map(p => {
+                  const isSelected  = selectedPlan === p.id
+                  const isMatch     = matchedPlan  === p.id
+                  const isCurrent   = currentPlan  === p.id
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPlan(p.id)}
+                      style={{ border:`2px solid ${isSelected ? '#00DD67' : '#E1E7E2'}`, borderRadius:12, padding:'14px 13px', background: isSelected ? '#F0FBF5' : '#fff', textAlign:'left', cursor:'pointer', transition:'border-color 0.15s,background 0.15s', position:'relative', display:'flex', flexDirection:'column' }}
+                    >
+                      {isMatch && !isCurrent && (
+                        <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#00DD67', color:'#03301A', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>추천</span>
+                      )}
+                      {isCurrent && (
+                        <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#1A1A1A', color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>현 요금제</span>
+                      )}
+                      <div style={{ height:22, display:'flex', alignItems:'center', fontWeight:800, fontSize:14, letterSpacing:'-0.025em', color:'#1A1A1A' }}>{p.name}</div>
+                      <div style={{ height:44, display:'flex', flexDirection:'column', justifyContent:'center', margin:'6px 0 0' }}>
+                        <div style={{ fontFamily:'"IBM Plex Mono",monospace', fontSize:17, fontWeight:700, color:'#1A1A1A', lineHeight:1.2 }}>
+                          {p.price === 0 ? '무료' : `₩${p.price.toLocaleString()}`}
+                        </div>
+                        <div style={{ fontSize:10, color:'#79837C', marginTop:2 }}>{p.price === 0 ? '기간 제한 없음' : `/ 월 · ${p.perday}`}</div>
+                      </div>
+                      <div style={{ padding:'5px 8px', borderRadius:7, background: isSelected ? '#D6F5E5' : '#F5F8F6', fontSize:12, fontWeight:700, color:'#1A1A1A', textAlign:'center', marginTop:8 }}>{p.teamLimit}</div>
+                      <ul style={{ listStyle:'none', marginTop:10, display:'flex', flexDirection:'column', gap:5 }}>
+                        {p.inherits && (
+                          <li style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#B0B0B0', fontWeight:400 }}>
+                            <UpgradeCheck /><span>{p.inherits}</span>
+                          </li>
+                        )}
+                        {p.extras.map(f => (
+                          <li key={f} style={{ display:'flex', alignItems:'flex-start', gap:5, fontSize:11, color:'#1A1A1A', lineHeight:1.4 }}>
+                            <UpgradeCheck /><span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* 기능 비교표 */}
+              <div style={{ border:'1px solid #E1E7E2', borderRadius:10, overflow:'hidden' }}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr repeat(4,80px)', background:'#F5F8F6', borderBottom:'1px solid #E1E7E2' }}>
+                  <div style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'#79837C' }}>기능</div>
+                  {UPGRADE_PLANS.map(p => (
+                    <div key={p.id} style={{ padding:'8px 0', fontSize:12, fontWeight:700, color: selectedPlan === p.id ? '#00AA50' : '#9CA3AF', textAlign:'center' }}>{p.name}</div>
+                  ))}
+                </div>
+                {UPGRADE_FEATURE_TABLE.map((row, i) => (
+                  <div key={row.label} style={{ display:'grid', gridTemplateColumns:'1fr repeat(4,80px)', borderBottom: i < UPGRADE_FEATURE_TABLE.length - 1 ? '1px solid #F0F0F0' : 'none', background: i % 2 === 0 ? '#fff' : '#FAFBFA' }}>
+                    <div style={{ padding:'7px 12px', fontSize:12.5, color:'#3D3D3D' }}>{row.label}</div>
+                    {(['free','basic','pro','max'] as PlanTier[]).map(pid => (
+                      <div key={pid} style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'7px 0' }}>
+                        <UpgradeFCell v={row[pid]} isSelected={selectedPlan === pid} />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* CTA */}
+            {error && <p style={{ fontSize:13, color:'#C92A2A', marginBottom:8, textAlign:'right' }}>{error}</p>}
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:10, flexShrink:0 }}>
+              <button onClick={onClose} style={{ padding:'10px 20px', borderRadius:10, border:'1px solid #E1E7E2', background:'#fff', fontSize:13, fontWeight:600, cursor:'pointer', color:'#727272' }}>취소</button>
+              <button
+                onClick={handleConfirm}
+                disabled={loading}
+                style={{ padding:'10px 20px', borderRadius:10, background:'#1A1A1A', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', border:'none', opacity: loading ? 0.5 : 1 }}
+              >
+                {loading ? '저장 중...' : `${UPGRADE_PLANS.find(p => p.id === selectedPlan)?.name} 플랜으로 변경`}
+              </button>
+            </div>
+          </div>
+    </div>
+  )
+}
+
+export function UpgradeGate() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <div className="h-full flex items-center justify-center bg-gray-bg p-6">
+        <div className="bg-white rounded-2xl shadow-sm px-10 py-12 flex flex-col items-center gap-4 text-center max-w-sm w-full">
+          <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <p className="text-[17px] font-bold text-ink mb-1">베이직 플랜부터 이용 가능해요</p>
+            <p className="text-[13px] text-gray-text leading-relaxed">
+              월별 충전·주문 내역, 메뉴별 상세 주문 분석,<br />거래처별 매출 분석을 확인할 수 있어요.
+            </p>
+          </div>
+          <button
+            onClick={() => setOpen(true)}
+            className="mt-2 px-6 py-2.5 bg-[#00DD67] text-[#1A1A1A] rounded-xl font-bold text-[13px] hover:bg-[#00BB55] transition-colors"
+          >
+            플랜 업그레이드
+          </button>
+        </div>
+      </div>
+      <UpgradeModal open={open} onClose={() => setOpen(false)} />
+    </>
+  )
+}
+
 export default function Sales() {
-  const { storeId } = useStore()
+  const { storeId, plan } = useStore()
   const now = new Date()
+
+  // 무료 플랜이면 정산 페이지 전체 잠금
+  if (!PLAN_LIMITS[plan].analytics) {
+    return <UpgradeGate />
+  }
 
   // ── 월 상태 ───────────────────────────────────────────────────────────────
   const [year,  setYear]  = useState(now.getFullYear())
@@ -612,7 +846,7 @@ export default function Sales() {
             >
               <div className={`w-[16px] h-[16px] rounded-[4px] border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                 excludedAccounts.size === 0
-                  ? 'bg-[#16a84c] border-[#16a84c]'
+                  ? 'bg-[#00DD67] border-[#00DD67]'
                   : excludedAccounts.size < accounts.length
                     ? 'bg-white border-gray-border'
                     : 'bg-white border-gray-border'
@@ -642,7 +876,7 @@ export default function Sales() {
                     className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-bg cursor-pointer"
                   >
                     <div className={`w-[16px] h-[16px] rounded-[4px] border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      included ? 'bg-[#16a84c] border-[#16a84c]' : 'bg-white border-gray-border'
+                      included ? 'bg-[#00DD67] border-[#00DD67]' : 'bg-white border-gray-border'
                     }`}>
                       {included && (
                         <svg width="9" height="6" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -845,7 +1079,7 @@ export default function Sales() {
                         </>
                       )}
                     </div>
-                    <div className="text-[28px] font-extrabold text-green">+{won(monthTotalDeposit)}</div>
+                    <div className="text-[28px] font-extrabold text-green break-all">+{won(monthTotalDeposit)}</div>
                     {(() => {
                       if (filterName) return null
                       const visibleAccounts = accounts.filter(a => !excludedAccounts.has(a.account_code))
@@ -896,7 +1130,7 @@ export default function Sales() {
                         </>
                       )}
                     </div>
-                    <div className="text-[28px] font-extrabold text-ink">-{won(monthTotalOrder)}</div>
+                    <div className="text-[28px] font-extrabold text-ink break-all">-{won(monthTotalOrder)}</div>
                     <div className="text-[11px] text-gray-text mt-1">
                       취소 주문 제외
                     </div>
@@ -944,7 +1178,7 @@ export default function Sales() {
                     }}
                     className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition-opacity ${showDeposit ? 'opacity-100' : 'opacity-35'}`}
                   >
-                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#16a84c' }} />
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#34D060' }} />
                     <span className={showDeposit ? 'text-ink font-semibold' : 'text-gray-text'}>선결제</span>
                   </button>
                   <button
@@ -956,7 +1190,7 @@ export default function Sales() {
                     }}
                     className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition-opacity ${showOrder ? 'opacity-100' : 'opacity-35'}`}
                   >
-                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#6B7280' }} />
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#C4CBD4' }} />
                     <span className={showOrder ? 'text-ink font-semibold' : 'text-gray-text'}>주문</span>
                   </button>
                 </div>

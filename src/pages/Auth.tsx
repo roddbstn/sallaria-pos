@@ -218,7 +218,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
                   className={[
                     'w-[18px] h-[18px] rounded-[4px] border-2 flex items-center justify-center transition-colors duration-150 flex-shrink-0',
                     saveId
-                      ? 'bg-[#16a84c] border-[#16a84c]'
+                      ? 'bg-[#00DD67] border-[#00DD67]'
                       : 'bg-white border-gray-border',
                   ].join(' ')}
                 >
@@ -240,7 +240,7 @@ export default function Auth({ onSuccess }: { onSuccess: () => void }) {
                   className={[
                     'w-[18px] h-[18px] rounded-[4px] border-2 flex items-center justify-center transition-colors duration-150 flex-shrink-0',
                     rememberMe
-                      ? 'bg-[#16a84c] border-[#16a84c]'
+                      ? 'bg-[#00DD67] border-[#00DD67]'
                       : 'bg-white border-gray-border',
                   ].join(' ')}
                 >

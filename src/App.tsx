@@ -15,13 +15,13 @@ import Dashboard   from './pages/Dashboard'
 import Orders      from './pages/Orders'
 import Customers   from './pages/Customers'
 import Menus       from './pages/Menus'
-import Sales       from './pages/Sales'
+import Sales, { UpgradeModal } from './pages/Sales'
 import Settings    from './pages/Settings'
 import OrderPopup  from './components/OrderPopup'
 import { type Order } from './lib/mock-data'
 
 // ── 앱 상태 ───────────────────────────────────────────────────────────────────
-type Phase = 'loading' | 'auth' | 'onboarding' | 'main'
+type Phase = 'loading' | 'auth' | 'onboarding' | 'welcome' | 'main'
 type Tab   = 'dashboard' | 'orders' | 'customers' | 'menus' | 'sales' | 'settings'
 
 // ── 사이드바 아이콘 (2D SVG) ──────────────────────────────────────────────────
@@ -33,22 +33,61 @@ function IconSettings() { return <svg width="18" height="18" viewBox="0 0 24 24"
 function IconSales()    { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><polyline points="7 9 10 12 13 9 17 13"/></svg> }
 
 // ── 시 드래그 티커 ────────────────────────────────────────────────────────────
-function HourTicker({ value, onChange }: { value: number; onChange: (h: number) => void }) {
-  const drag = useRef<{ startX: number; startH: number } | null>(null)
+// ── 공통 슬라이드 틱커 (HourTicker / MinuteTicker 공유) ─────────────────────
+// value: 현재 단계값(정수), total: 전체 단계 수, format: 단계→표시 문자열
+function Ticker({
+  value, total, format, onChange,
+}: {
+  value: number
+  total: number
+  format: (v: number) => string
+  onChange: (v: number) => void
+}) {
+  const ITEM_W = 30 // px, 아이템 1개 너비
+  const [pxOffset, setPxOffset] = useState(0)
+  // 드래그 시작 시점의 값과 누적 픽셀을 ref에 보관 (stale closure 방지)
+  const dragRef = useRef<{ startX: number; startV: number; px: number } | null>(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
-  const prev = (value - 1 + 24) % 24
-  const next = (value + 1) % 24
+
+  // 드래그 중이면 startV 기준, 아니면 prop value 기준
+  const baseV = dragRef.current?.startV ?? value
+  const stepOffset = pxOffset / ITEM_W          // 실수 단계 오프셋
+  const roundedStep = Math.round(stepOffset)     // 현재 "선택된" 단계 이동량
+  const fractional = stepOffset - roundedStep    // −0.5 ~ +0.5 사이 소수 부분
+  const centerV = ((baseV + roundedStep) % total + total) % total
+
+  // 5개 아이템(-2 ~ +2) 렌더: overflow-hidden 으로 3개만 보임
+  const items = [-2, -1, 0, 1, 2].map(i => ({
+    i,
+    v: ((centerV + i) % total + total) % total,
+  }))
+  // strip 전체를 fractional 만큼 밀어서 부드럽게 슬라이드
+  const translateX = -(1 + fractional) * ITEM_W
+
+  const startDrag = (startX: number) => {
+    dragRef.current = { startX, startV: value, px: 0 }
+    setPxOffset(0)
+  }
+  const moveDrag = (currentX: number) => {
+    if (!dragRef.current) return
+    const px = dragRef.current.startX - currentX
+    dragRef.current.px = px
+    setPxOffset(px)
+  }
+  const endDrag = () => {
+    if (!dragRef.current) return
+    const steps = Math.round(dragRef.current.px / ITEM_W)
+    onChangeRef.current(((dragRef.current.startV + steps) % total + total) % total)
+    dragRef.current = null
+    setPxOffset(0)
+  }
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    drag.current = { startX: e.clientX, startH: value }
-    const onMove = (ev: MouseEvent) => {
-      if (!drag.current) return
-      const diff = Math.round((drag.current.startX - ev.clientX) / 16)
-      onChangeRef.current(((drag.current.startH + diff) % 24 + 24) % 24)
-    }
+    startDrag(e.clientX)
+    const onMove = (ev: MouseEvent) => moveDrag(ev.clientX)
     const onUp = () => {
-      drag.current = null
+      endDrag()
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
@@ -56,28 +95,62 @@ function HourTicker({ value, onChange }: { value: number; onChange: (h: number) 
     document.addEventListener('mouseup', onUp)
   }
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    drag.current = { startX: e.touches[0].clientX, startH: value }
-  }
-  const handleTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault()
-    if (!drag.current) return
-    const diff = Math.round((drag.current.startX - e.touches[0].clientX) / 16)
-    onChangeRef.current(((drag.current.startH + diff) % 24 + 24) % 24)
-  }
-
   return (
     <div
-      className="flex items-center select-none cursor-ew-resize bg-gray-50 rounded-lg overflow-hidden"
+      className="relative overflow-hidden cursor-ew-resize select-none rounded-lg"
+      style={{ width: ITEM_W * 3, height: 26 }}
       onMouseDown={handleMouseDown}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={() => { drag.current = null }}
+      onTouchStart={e => startDrag(e.touches[0].clientX)}
+      onTouchMove={e => { e.preventDefault(); moveDrag(e.touches[0].clientX) }}
+      onTouchEnd={endDrag}
     >
-      <span className="w-7 text-center text-[11px] text-gray-300 py-1">{String(prev).padStart(2,'0')}</span>
-      <span className="w-8 text-center text-[14px] font-bold text-ink bg-white border-x border-gray-200 py-1">{String(value).padStart(2,'0')}</span>
-      <span className="w-7 text-center text-[11px] text-gray-300 py-1">{String(next).padStart(2,'0')}</span>
+      {/* 고정 배경: 회색 | 흰색(선택) | 회색 */}
+      <div className="absolute inset-0 flex pointer-events-none">
+        <div className="h-full bg-gray-50" style={{ width: ITEM_W }} />
+        <div className="h-full bg-white border-x border-gray-200" style={{ width: ITEM_W }} />
+        <div className="h-full bg-gray-50" style={{ width: ITEM_W }} />
+      </div>
+      {/* 슬라이딩 숫자 strip */}
+      <div
+        className="absolute flex h-full"
+        style={{ transform: `translateX(${translateX}px)`, willChange: 'transform' }}
+      >
+        {items.map(({ i, v }) => (
+          <div
+            key={i}
+            className="flex items-center justify-center h-full flex-shrink-0"
+            style={{ width: ITEM_W }}
+          >
+            <span className={i === 0 ? 'text-[13px] font-bold text-ink' : 'text-[10px] text-gray-300'}>
+              {format(v)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
+  )
+}
+
+function HourTicker({ value, onChange }: { value: number; onChange: (h: number) => void }) {
+  return (
+    <Ticker
+      value={value}
+      total={24}
+      format={v => String(v).padStart(2, '0')}
+      onChange={onChange}
+    />
+  )
+}
+
+function MinuteTicker({ value, onChange }: { value: string; onChange: (m: string) => void }) {
+  const step = Math.round(parseInt(value || '0') / 5) % 12
+  return (
+    <Ticker
+      value={step}
+      total={12}
+      format={s => String(s * 5).padStart(2, '0')}
+      onChange={s => onChange(String(s * 5).padStart(2, '0'))}
+    />
   )
 }
 
@@ -113,7 +186,7 @@ function DayRow({
         <span className="w-5 text-[13px] font-bold text-ink flex-shrink-0">{label}</span>
         <button
           onClick={() => setHoursDraft(prev => ({ ...prev, [dayKey]: { ...day, enabled: !day.enabled } }))}
-          className={`relative w-9 h-5 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#16a84c]' : 'bg-gray-200'}`}
+          className={`relative w-9 h-5 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#00DD67]' : 'bg-gray-200'}`}
         >
           <span className={`absolute top-[3px] left-[3px] w-[14px] h-[14px] bg-white rounded-full shadow transition-transform duration-200 ${day.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
         </button>
@@ -125,14 +198,9 @@ function DayRow({
                 <div key={field} className="flex items-center gap-1">
                   <span className="text-[10px] text-gray-text w-5 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
                   <HourTicker value={h} onChange={newH => setTime(field, newH, m)} />
-                  <span className="text-gray-text text-[12px] mx-0.5">:</span>
-                  {['00','15','30','45'].map(min => (
-                    <button
-                      key={min}
-                      onClick={() => setTime(field, h, min)}
-                      className={`w-7 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-green-soft text-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                    >{min}</button>
-                  ))}
+                  <span className="text-gray-text text-[11px]">시</span>
+                  <MinuteTicker value={m} onChange={min => setTime(field, h, min)} />
+                  <span className="text-gray-text text-[11px]">분</span>
                 </div>
               )
             })}
@@ -160,14 +228,9 @@ function DayRow({
                   <div key={field} className="flex items-center gap-1">
                     <span className="text-[10px] text-gray-text w-5 flex-shrink-0">{field === 'start' ? '시작' : '종료'}</span>
                     <HourTicker value={h} onChange={newH => setBreakField(field, newH, m)} />
-                    <span className="text-gray-text text-[12px] mx-0.5">:</span>
-                    {['00','15','30','45'].map(min => (
-                      <button
-                        key={min}
-                        onClick={() => setBreakField(field, h, min)}
-                        className={`w-7 h-6 rounded text-[11px] font-semibold transition-colors ${m === min ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                      >{min}</button>
-                    ))}
+                    <span className="text-gray-text text-[11px]">시</span>
+                    <MinuteTicker value={m} onChange={min => setBreakField(field, h, min)} />
+                    <span className="text-gray-text text-[11px]">분</span>
                   </div>
                 )
               })}
@@ -190,6 +253,7 @@ const NAV: { id: Tab; Icon: () => JSX.Element; label: string }[] = [
   { id: 'settings',  Icon: IconSettings,  label: '설정' },
 ]
 
+
 const PAGE_TITLES: Record<Tab, string> = {
   dashboard: '홈',
   orders:    '주문관리',
@@ -211,7 +275,19 @@ export default function App() {
   const [toast,      setToast]      = useState('')
   const [toastTimer, setToastTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [updateReady, setUpdateReady] = useState<string | null>(null)
-  const [profileOpen, setProfileOpen] = useState(false)
+  const [profileOpen,  setProfileOpen]  = useState(false)
+  const [upgradeOpen,  setUpgradeOpen]  = useState(false)
+  // 웰컴 화면 페이드 제어 (true = 완전 표시, false = 페이드아웃 중)
+  const [welcomeVisible, setWelcomeVisible] = useState(false)
+
+  // welcome phase: 1.5s 후 페이드아웃 → main
+  useEffect(() => {
+    if (phase !== 'welcome') return
+    setWelcomeVisible(true)
+    const show = setTimeout(() => setWelcomeVisible(false), 1500)
+    const hide = setTimeout(() => setPhase('main'),         1800)
+    return () => { clearTimeout(show); clearTimeout(hide) }
+  }, [phase])
 
   // 프로필 모달 상태
   const [editingName,   setEditingName]   = useState(false)
@@ -273,7 +349,7 @@ export default function App() {
     // clients 조회
     let { data: client } = await supabase
       .from('clients')
-      .select('id, business_name')
+      .select('id, business_name, plan')
       .eq('auth_user_id', userId)
       .single()
 
@@ -282,12 +358,14 @@ export default function App() {
       const { data: created } = await supabase
         .from('clients')
         .insert({ auth_user_id: userId, contact_email: userEmail })
-        .select('id, business_name')
+        .select('id, business_name, plan')
         .single()
       client = created
     }
 
     if (!client) { setPhase('auth'); return }
+
+    const plan = (client as { plan?: string }).plan ?? 'free'
 
     // stores 조회
     const { data: stores } = await supabase
@@ -297,13 +375,13 @@ export default function App() {
       .limit(1)
 
     if (!stores || stores.length === 0) {
-      setSession({ userId, clientId: client.id, storeId: '', storeName: '' })
+      setSession({ userId, clientId: client.id, storeId: '', storeName: '', plan: plan as import('./lib/plans').PlanTier })
       setPhase('onboarding')
       return
     }
 
     const store = stores[0]
-    setSession({ userId, clientId: client.id, storeId: store.id, storeName: store.name })
+    setSession({ userId, clientId: client.id, storeId: store.id, storeName: store.name, plan: plan as import('./lib/plans').PlanTier })
 
     // DB의 is_open 값으로 초기 상태 동기화
     if (store.is_open !== undefined && store.is_open !== null) {
@@ -762,11 +840,45 @@ export default function App() {
     return (
       <Onboarding
         clientId={session.clientId}
-        onComplete={(storeId, storeName) => {
-          setSession(s => s ? { ...s, storeId, storeName } : s)
-          setPhase('main')
+        onComplete={(storeId, storeName, plan) => {
+          setSession(s => s ? { ...s, storeId, storeName, plan } : s)
+          setPhase('welcome')
         }}
       />
+    )
+  }
+
+  if (phase === 'welcome' && session) {
+    return (
+      <div
+        className="flex h-full w-full items-center justify-center bg-gray-bg"
+        style={{
+          opacity:    welcomeVisible ? 1 : 0,
+          transition: 'opacity 0.35s ease',
+        }}
+      >
+        <div className="flex flex-col items-center gap-5">
+          {/* 체크 아이콘 */}
+          <div
+            className="w-20 h-20 rounded-full flex items-center justify-center"
+            style={{ background: 'rgba(0,221,103,0.15)' }}
+          >
+            <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
+              <path d="M8 19.5L15 27L30 12" stroke="#00DD67" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          {/* 환영 텍스트 */}
+          <div className="text-center">
+            <p className="text-[26px] font-bold text-ink leading-snug">
+              {session.storeName} 점주님,
+            </p>
+            <p className="text-[26px] font-bold text-ink leading-snug">
+              환영합니다!
+            </p>
+          </div>
+          <p className="text-[14px] text-gray-text">선포스와 함께 더 편한 매장 운영을 시작해요 🎉</p>
+        </div>
+      </div>
     )
   }
 
@@ -779,7 +891,7 @@ export default function App() {
     customers: <Customers />,
     menus:     <Menus />,
     sales:     <Sales />,
-    settings:  <Settings onOpenHours={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }} />,
+    settings:  <Settings onOpenHours={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }} operatingHours={operatingHours} breakTime={breakTime} />,
   }
 
   return (
@@ -791,12 +903,13 @@ export default function App() {
           <button
             onClick={() => setTab('dashboard')}
             title="홈으로"
-            className="w-[176px] flex-shrink-0 px-5 flex items-center hover:opacity-75 transition-opacity"
+            className="w-[176px] flex-shrink-0 px-5 flex items-center hover:opacity-75 transition-opacity border-r border-gray-border/40"
+            style={{ borderRightWidth: '0.5px' }}
           >
             <img src={logoWithText} alt="sunpos" className="h-[48px] object-contain object-left" />
           </button>
           <div className="flex-1 px-4 flex items-center justify-between">
-            <span className="text-[16px] font-extrabold text-ink">{PAGE_TITLES[tab]}</span>
+            <span className="text-[15px] font-semibold text-ink">{PAGE_TITLES[tab]}</span>
             <div className="flex items-center gap-2">{headerRight}</div>
           </div>
         </header>
@@ -805,7 +918,7 @@ export default function App() {
         <div className="flex flex-1 overflow-hidden">
 
         {/* ── 사이드바 ── */}
-        <aside className="w-[176px] flex-shrink-0 bg-white dark:bg-[#242424] border-r border-gray-border flex flex-col">
+        <aside className="w-[176px] flex-shrink-0 bg-white dark:bg-[#242424] border-r border-gray-border/40 flex flex-col" style={{ borderRightWidth: '0.5px' }}>
 
           {/* 네비게이션 */}
           <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
@@ -815,7 +928,7 @@ export default function App() {
                 onClick={() => setTab(id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors
                   ${tab === id
-                    ? 'bg-green-soft text-[#16a84c] font-bold'
+                    ? 'bg-green-soft text-[#008F42] font-bold'
                     : 'text-gray-text hover:bg-gray-bg hover:text-ink font-medium'}`}
               >
                 <span className="flex-shrink-0"><Icon /></span>
@@ -832,10 +945,10 @@ export default function App() {
               title={isOpen ? '운영중 — 클릭해서 종료' : '운영종료 — 클릭해서 시작'}
               className="flex items-center gap-2.5 w-full group"
             >
-              <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0 ${isOpen ? 'bg-[#16a84c]' : 'bg-gray-300'}`}>
+              <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0 ${isOpen ? 'bg-[#00DD67]' : 'bg-gray-300'}`}>
                 <span className={`absolute top-[3px] left-[3px] w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${isOpen ? 'translate-x-[14px]' : 'translate-x-0'}`} />
               </div>
-              <span className={`text-[12px] font-semibold leading-none ${isOpen ? 'text-[#16a84c]' : 'text-gray-text'}`}>
+              <span className={`text-[12px] font-semibold leading-none ${isOpen ? 'text-[#008F42]' : 'text-gray-text'}`}>
                 {isOpen ? '운영 중' : '종료됨'}
               </span>
             </button>
@@ -902,14 +1015,12 @@ export default function App() {
                   value={parseInt(closureTime.split(':')[0])}
                   onChange={h => setClosureTime(`${String(h).padStart(2,'0')}:${closureTime.split(':')[1]}`)}
                 />
-                <span className="text-gray-text text-[13px]">:</span>
-                {(['00','15','30','45'] as const).map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setClosureTime(`${closureTime.split(':')[0]}:${m}`)}
-                    className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${closureTime.split(':')[1] === m ? 'bg-green-soft text-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                  >{m}</button>
-                ))}
+                <span className="text-gray-text text-[11px]">시</span>
+                <MinuteTicker
+                  value={closureTime.split(':')[1]}
+                  onChange={m => setClosureTime(`${closureTime.split(':')[0]}:${m}`)}
+                />
+                <span className="text-gray-text text-[11px]">분</span>
               </div>
 
               <div className="flex gap-2">
@@ -919,7 +1030,7 @@ export default function App() {
                 >취소</button>
                 <button
                   onClick={() => { setClosureType('early'); confirmClosure() }}
-                  className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold text-[13px] hover:opacity-90 transition-opacity"
+                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
                 >조기마감 확정</button>
               </div>
             </div>
@@ -978,7 +1089,7 @@ export default function App() {
                           onClick={() => toggleVacDate(dateStr)}
                           className={`aspect-square flex items-center justify-center text-[13px] font-semibold rounded-full transition-colors
                             ${isPast ? 'opacity-30 cursor-not-allowed' : ''}
-                            ${isSelected ? 'bg-[#16a84c] text-white' : isPast ? '' : 'hover:bg-gray-100'}
+                            ${isSelected ? 'bg-[#00DD67] text-[#1A1A1A]' : isPast ? '' : 'hover:bg-gray-100'}
                             ${!isSelected && dow === 0 ? 'text-danger' : ''}
                             ${!isSelected && dow === 6 ? 'text-blue-500' : ''}
                             ${!isSelected && dow !== 0 && dow !== 6 ? 'text-ink' : ''}`}
@@ -1043,17 +1154,15 @@ export default function App() {
                                           [dateStr]: { ...cfg, [field === 'open' ? 'openTime' : 'closeTime']: `${String(newH).padStart(2,'0')}:${mStr}` }
                                         }))}
                                       />
-                                      <span className="text-gray-text text-[12px] mx-0.5">:</span>
-                                      {['00','15','30','45'].map(min => (
-                                        <button
-                                          key={min}
-                                          onClick={() => setVacDraft(prev => ({
-                                            ...prev,
-                                            [dateStr]: { ...cfg, [field === 'open' ? 'openTime' : 'closeTime']: `${hStr}:${min}` }
-                                          }))}
-                                          className={`w-8 h-6 rounded text-[11px] font-semibold transition-colors ${mStr === min ? 'bg-green-soft text-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                                        >{min}</button>
-                                      ))}
+                                      <span className="text-gray-text text-[11px]">시</span>
+                                      <MinuteTicker
+                                        value={mStr}
+                                        onChange={min => setVacDraft(prev => ({
+                                          ...prev,
+                                          [dateStr]: { ...cfg, [field === 'open' ? 'openTime' : 'closeTime']: `${hStr}:${min}` }
+                                        }))}
+                                      />
+                                      <span className="text-gray-text text-[11px]">분</span>
                                     </div>
                                   )
                                 })}
@@ -1075,7 +1184,7 @@ export default function App() {
                 >취소</button>
                 <button
                   onClick={handleSaveVacation}
-                  className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold text-[13px] hover:opacity-90 transition-opacity"
+                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
                 >저장 ({Object.keys(vacDraft).length}일)</button>
               </div>
             </div>
@@ -1097,7 +1206,7 @@ export default function App() {
                 >취소</button>
                 <button
                   onClick={confirmForceOpen}
-                  className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold text-[13px] hover:opacity-90 transition-opacity"
+                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
                 >운영 시작</button>
               </div>
             </div>
@@ -1194,7 +1303,7 @@ export default function App() {
                 >취소</button>
                 <button
                   onClick={saveOperatingHours}
-                  className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold text-[13px] hover:opacity-90 transition-opacity"
+                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
                 >저장</button>
               </div>
             </div>
@@ -1208,14 +1317,25 @@ export default function App() {
 
               {/* 헤더 */}
               <div className="px-6 pt-6 pb-5 border-b border-gray-border">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-[#16a84c] text-white flex items-center justify-center text-[20px] font-bold flex-shrink-0">
-                    {(session.storeName || '프')[0]}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[16px] font-extrabold text-ink leading-tight truncate">{session.storeName || '프리POS'}</div>
-                    <div className="text-[12px] text-gray-text mt-0.5 truncate">{authObj?.user.email ?? ''}</div>
-                  </div>
+                <div className="text-[17px] font-extrabold text-ink leading-tight">{session.storeName || 'POS'}</div>
+                <div className="text-[12px] text-gray-text mt-1">{authObj?.user.email ?? ''}</div>
+                <div className="flex items-center justify-between mt-2">
+                  {session.plan === 'free' ? (
+                    <span className="text-[13px] font-normal text-gray-text">무료 플랜</span>
+                  ) : (
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                      session.plan === 'max'   ? 'bg-purple-100 text-purple-700' :
+                      session.plan === 'pro'   ? 'bg-blue-100 text-blue-700' :
+                                                 'bg-green-soft text-green'
+                    }`}>
+                      {{ basic: '베이직', pro: '프로', max: '맥스' }[session.plan]} 플랜
+                    </span>
+                  )}
+                  {session.plan !== 'max' && (
+                    <button onClick={() => setUpgradeOpen(true)} className="px-3 py-1 rounded-full text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] hover:opacity-85 transition-opacity">
+                      업그레이드
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1242,12 +1362,12 @@ export default function App() {
                       value={nameInput}
                       onChange={e => setNameInput(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') handleSaveStoreName(); if (e.key === 'Escape') setEditingName(false) }}
-                      className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[14px] text-ink outline-none focus:border-[#16a84c]"
+                      className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[14px] text-ink outline-none focus:border-[#00DD67]"
                     />
                     <button
                       onClick={handleSaveStoreName}
                       disabled={profileSaving}
-                      className="px-3 py-2 bg-[#16a84c] text-white text-[13px] font-bold rounded-lg hover:opacity-85 disabled:opacity-50"
+                      className="px-3 py-2 bg-[#00DD67] text-[#1A1A1A] text-[13px] font-bold rounded-lg hover:opacity-85 disabled:opacity-50"
                     >저장</button>
                     <button
                       onClick={() => setEditingName(false)}
@@ -1259,7 +1379,7 @@ export default function App() {
                     <span className="text-[14px] font-semibold text-ink">{session.storeName || '—'}</span>
                     <button
                       onClick={() => { setNameInput(session.storeName ?? ''); setEditingName(true) }}
-                      className="text-[12px] font-semibold text-[#16a84c] hover:underline"
+                      className="text-[12px] font-semibold text-gray-text hover:text-ink transition-colors"
                     >수정</button>
                   </div>
                 )}
@@ -1278,13 +1398,13 @@ export default function App() {
                         placeholder="현재 비밀번호"
                         value={pwCurrent}
                         onChange={e => setPwCurrent(e.target.value)}
-                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-10 text-[14px] text-ink outline-none focus:border-[#16a84c]"
+                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-8 text-[13px] text-ink outline-none focus:border-gray-400"
                       />
                       <button type="button" onClick={() => setShowPwCurrent(v => !v)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-text hover:text-ink">
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-400">
                         {showPwCurrent
-                          ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         }
                       </button>
                     </div>
@@ -1295,13 +1415,13 @@ export default function App() {
                         placeholder="새 비밀번호 (6자 이상)"
                         value={pwInput}
                         onChange={e => setPwInput(e.target.value)}
-                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-10 text-[14px] text-ink outline-none focus:border-[#16a84c]"
+                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-8 text-[13px] text-ink outline-none focus:border-gray-400"
                       />
                       <button type="button" onClick={() => setShowPw(v => !v)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-text hover:text-ink">
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-400">
                         {showPw
-                          ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         }
                       </button>
                     </div>
@@ -1313,25 +1433,25 @@ export default function App() {
                         value={pwConfirm}
                         onChange={e => setPwConfirm(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleChangePassword() }}
-                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-10 text-[14px] text-ink outline-none focus:border-[#16a84c]"
+                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-8 text-[13px] text-ink outline-none focus:border-gray-400"
                       />
                       <button type="button" onClick={() => setShowPwConfirm(v => !v)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-text hover:text-ink">
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-400">
                         {showPwConfirm
-                          ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         }
                       </button>
                     </div>
                     <button
                       onClick={handleChangePassword}
                       disabled={profileSaving || !pwCurrent || !pwInput || !pwConfirm}
-                      className="py-2 bg-ink text-white text-[13px] font-bold rounded-lg hover:opacity-85 disabled:opacity-40"
+                      className="py-2 bg-gray-100 text-ink text-[13px] font-normal rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors"
                     >{profileSaving ? '확인 중...' : '변경하기'}</button>
                     <button
                       type="button"
                       onClick={() => { setShowForgotPw(true); setResetEmail(authObj?.user.email ?? '') }}
-                      className="text-[11px] text-gray-text hover:text-ink text-center underline underline-offset-2 transition-colors"
+                      className="text-[11px] text-gray-text hover:text-ink text-center transition-colors"
                     >비밀번호를 잊으셨나요?</button>
                   </div>
                 ) : (
@@ -1343,7 +1463,7 @@ export default function App() {
                       placeholder="이메일 주소"
                       value={resetEmail}
                       onChange={e => setResetEmail(e.target.value)}
-                      className="w-full border border-gray-border rounded-lg px-3 py-2 text-[14px] text-ink outline-none focus:border-[#16a84c]"
+                      className="w-full border border-gray-border rounded-lg px-3 py-2 text-[14px] text-ink outline-none focus:border-[#00DD67]"
                     />
                     <button
                       onClick={handleResetPassword}
@@ -1385,6 +1505,8 @@ export default function App() {
           </div>
         )}
 
+        <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
+
         {/* ── 회원탈퇴 확인 모달 ── */}
         {deleteConfirmOpen && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50">
@@ -1405,7 +1527,7 @@ export default function App() {
               <button
                 onClick={() => setDeleteConfirmOpen(false)}
                 disabled={deleteLoading}
-                className="w-full py-3 rounded-xl bg-[#16a84c] text-white font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity"
+                className="w-full py-3 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 유지하기
               </button>
@@ -1426,7 +1548,7 @@ export default function App() {
                   placeholder="새 비밀번호"
                   value={newPw}
                   onChange={e => setNewPw(e.target.value)}
-                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#16a84c]"
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#00DD67]"
                 />
                 <input
                   type="password"
@@ -1434,7 +1556,7 @@ export default function App() {
                   value={newPwConfirm}
                   onChange={e => setNewPwConfirm(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSaveNewPassword()}
-                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#16a84c]"
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#00DD67]"
                 />
               </div>
               {newPwMsg && (
@@ -1445,7 +1567,7 @@ export default function App() {
               <button
                 onClick={handleSaveNewPassword}
                 disabled={newPwSaving || !newPw || !newPwConfirm}
-                className="w-full py-3 rounded-xl bg-[#16a84c] text-white font-bold text-[14px] hover:opacity-90 disabled:opacity-40 transition-opacity"
+                className="w-full py-3 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 disabled:opacity-40 transition-opacity"
               >
                 {newPwSaving ? '저장 중...' : '비밀번호 변경하기'}
               </button>

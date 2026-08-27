@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 import { useStore } from '../lib/store-context'
+import { PLAN_LIMITS, PLAN_NAMES } from '../lib/plans'
+import { UpgradeModal } from './Sales'
 
 interface PrinterSettings { portName: string }
 interface ReceiptSettings  {
@@ -11,8 +13,13 @@ interface ReceiptSettings  {
 }
 interface ComPort { path: string; manufacturer: string; friendlyName: string }
 
+type DayHours = { enabled: boolean; open: string; close: string }
+type BreakHours = { enabled: boolean; start: string; end: string }
+
 interface SettingsProps {
   onOpenHours: () => void
+  operatingHours: Record<string, DayHours>
+  breakTime: Record<string, BreakHours>
 }
 
 type Api = {
@@ -32,8 +39,12 @@ const PORT_LABEL = isWindows ? 'COM 포트' : '포트'
 
 const SIZE_LABELS: Record<string, string> = { small: '기본', normal: '보통', large: '크게' }
 
-export default function Settings({ onOpenHours }: SettingsProps) {
-  const { storeName } = useStore()
+const DAY_LABELS: Record<string, string> = { mon:'월', tue:'화', wed:'수', thu:'목', fri:'금', sat:'토', sun:'일' }
+const DAY_ORDER = ['mon','tue','wed','thu','fri','sat','sun']
+
+export default function Settings({ onOpenHours, operatingHours, breakTime }: SettingsProps) {
+  const { storeName, plan } = useStore()
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [comPorts,   setComPorts]   = useState<ComPort[]>([])
   const [printer,    setPrinter]    = useState<PrinterSettings>({ portName: '' })
   const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' })
@@ -115,9 +126,63 @@ export default function Settings({ onOpenHours }: SettingsProps) {
   return (
     <div className="h-full overflow-y-auto bg-gray-bg">
       <div className="max-w-[640px] mx-auto px-3 py-3 space-y-3">
+        {/* ── 계정 / 요금제 ── */}
+        <Section title="👤 계정">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[13px] font-semibold text-ink">{storeName || '매장명'}</div>
+                <div className="text-[12px] text-gray-text mt-0.5">현재 구독 플랜</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-[12px] font-bold ${
+                  plan === 'max'  ? 'bg-purple-100 text-purple-700' :
+                  plan === 'pro'  ? 'bg-blue-100 text-blue-700' :
+                  plan === 'basic'? 'bg-green-soft text-green' :
+                                    'bg-gray-100 text-gray-text'
+                }`}>
+                  {PLAN_NAMES[plan]} 플랜
+                </span>
+              </div>
+            </div>
+            <div className="bg-gray-bg rounded-xl p-3 space-y-2">
+              <div className="flex justify-between text-[12px]">
+                <span className="text-gray-text">거래처 한도</span>
+                <span className="font-semibold text-ink">
+                  {PLAN_LIMITS[plan].accounts === Infinity ? '무제한' : `${PLAN_LIMITS[plan].accounts}개`}
+                </span>
+              </div>
+              <div className="flex justify-between text-[12px]">
+                <span className="text-gray-text">매장 한도</span>
+                <span className="font-semibold text-ink">
+                  {PLAN_LIMITS[plan].stores === Infinity ? '무제한' : `${PLAN_LIMITS[plan].stores}개`}
+                </span>
+              </div>
+              <div className="flex justify-between text-[12px]">
+                <span className="text-gray-text">매출 분석</span>
+                <span className={`font-semibold ${PLAN_LIMITS[plan].analytics ? 'text-green' : 'text-gray-text'}`}>
+                  {PLAN_LIMITS[plan].analytics ? '사용 가능' : '미지원'}
+                </span>
+              </div>
+              <div className="flex justify-between text-[12px]">
+                <span className="text-gray-text">SMS 알림</span>
+                <span className={`font-semibold ${PLAN_LIMITS[plan].sms ? 'text-green' : 'text-gray-text'}`}>
+                  {PLAN_LIMITS[plan].sms ? '사용 가능' : '미지원'}
+                </span>
+              </div>
+            </div>
+            {plan !== 'max' && (
+              <button onClick={() => setUpgradeOpen(true)} className="w-full py-2 bg-ink text-white rounded-xl text-[12px] font-bold hover:bg-gray-800 transition-colors">
+                플랜 업그레이드
+              </button>
+            )}
+            <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
+          </div>
+        </Section>
+
         {/* ── 운영시간 설정 ── */}
         <Section title="⏰ 운영시간">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4 mb-3">
             <div>
               <div className="text-[13px] font-semibold text-ink">요일별 운영 스케줄</div>
               <div className="text-[12px] text-gray-text mt-0.5">영업 시작·종료 시간 및 브레이크타임을 설정합니다</div>
@@ -128,6 +193,38 @@ export default function Settings({ onOpenHours }: SettingsProps) {
             >
               <ClockIcon /> 시간 설정
             </button>
+          </div>
+
+          {/* 현재 운영시간 요약 */}
+          <div className="bg-gray-bg rounded-xl px-4 py-3">
+            <div className="grid grid-cols-7 gap-1">
+              {DAY_ORDER.map(day => {
+                const h = operatingHours[day]
+                const b = breakTime[day]
+                const enabled = h?.enabled ?? false
+                return (
+                  <div key={day} className="flex flex-col items-center gap-1">
+                    <span className={`text-[11px] font-bold ${enabled ? 'text-ink' : 'text-gray-text'}`}>
+                      {DAY_LABELS[day]}
+                    </span>
+                    {enabled ? (
+                      <>
+                        <span className="text-[10px] text-ink leading-tight text-center">{h.open}</span>
+                        <span className="text-[9px] text-gray-text leading-none">~</span>
+                        <span className="text-[10px] text-ink leading-tight text-center">{h.close}</span>
+                        {b?.enabled && (
+                          <span className="text-[9px] text-gray-text leading-tight text-center mt-0.5">
+                            {b.start}~{b.end}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-gray-text mt-1">휴무</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </Section>
 
@@ -140,7 +237,7 @@ export default function Settings({ onOpenHours }: SettingsProps) {
                 type="range" min={0} max={100} value={alertVolume}
                 onChange={e => setAlertVolume(Number(e.target.value))}
                 className="flex-1 h-2 cursor-pointer volume-slider"
-                style={{ background: `linear-gradient(to right, #16a84c 0%, #16a84c ${alertVolume}%, #E5E7EB ${alertVolume}%, #E5E7EB 100%)` }}
+                style={{ background: `linear-gradient(to right, #00DD67 0%, #00DD67 ${alertVolume}%, #E5E7EB ${alertVolume}%, #E5E7EB 100%)` }}
               />
               <span className="text-[13px] text-gray-text">🔊</span>
               <span className="text-[13px] font-bold text-ink w-8 text-right">{alertVolume}</span>
@@ -162,14 +259,24 @@ export default function Settings({ onOpenHours }: SettingsProps) {
           {/* 연결 상태 배지 */}
           <div className={[
             'flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] font-bold',
-            connected ? 'bg-[#E6F4EC] text-[#16a84c]' : 'bg-red-50 text-[#C92A2A]',
+            connected ? 'bg-[#E6F4EC] text-[#008F42]' : 'bg-red-50 text-[#C92A2A]',
           ].join(' ')}>
-            <span className={['w-2.5 h-2.5 rounded-full flex-shrink-0', connected ? 'bg-[#16a84c]' : 'bg-[#C92A2A]'].join(' ')} />
+            <span className={['w-2.5 h-2.5 rounded-full flex-shrink-0', connected ? 'bg-[#00DD67]' : 'bg-[#C92A2A]'].join(' ')} />
             {connected
               ? `연결됨 — ${printer.portName}`
               : printer.portName
                 ? `미확인 — ${printer.portName} (연결하기 클릭)`
                 : `${PORT_LABEL}가 선택되지 않았습니다`}
+          </div>
+
+          {/* 호환 기종 안내 */}
+          <div className="bg-gray-bg rounded-xl px-4 py-3 text-[11px] text-gray-text leading-relaxed">
+            <p className="font-bold text-ink mb-1.5">✓ 호환 프린터 조건</p>
+            <p>· <span className="font-semibold text-ink">ESC/POS</span> 지원 58mm 열감지(감열) 프린터</p>
+            <p>· USB 연결 후 PC에서 <span className="font-semibold text-ink">가상 COM 포트</span>로 잡히는 제품</p>
+            <p className="mt-1.5 font-semibold text-ink">대표 호환 기종</p>
+            <p>Epson TM 시리즈 · Bixolon SRP-270/280/320 · Samsung SRP 시리즈</p>
+            <p className="mt-1.5 text-[10px]">WiFi·LAN·Bluetooth 연결 프린터나 80mm 프린터는 지원되지 않을 수 있어요.</p>
           </div>
 
           {/* STEP 1 — COM 포트 목록 */}
@@ -269,7 +376,7 @@ export default function Settings({ onOpenHours }: SettingsProps) {
             {testMsg && (
               <div className={[
                 'mt-2 text-[12px] px-3 py-2 rounded-lg',
-                testMsg.includes('정상') ? 'bg-[#E6F4EC] text-[#16a84c]' : 'bg-red-50 text-[#C92A2A]',
+                testMsg.includes('정상') ? 'bg-[#E6F4EC] text-[#008F42]' : 'bg-red-50 text-[#C92A2A]',
               ].join(' ')}>{testMsg}</div>
             )}
           </StepCard>
@@ -482,7 +589,7 @@ export default function Settings({ onOpenHours }: SettingsProps) {
           onClick={handleSave}
           className={[
             'w-full py-3.5 rounded-xl font-bold text-[15px] transition-colors',
-            saved ? 'bg-green-soft text-green' : 'bg-[#16a84c] text-white hover:bg-[#128040]',
+            saved ? 'bg-green-soft text-green' : 'bg-[#00DD67] text-[#1A1A1A] hover:bg-[#00BB55]',
           ].join(' ')}
         >
           {saved ? '✓ 저장됨' : '설정 저장'}

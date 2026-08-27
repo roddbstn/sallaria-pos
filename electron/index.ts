@@ -53,9 +53,8 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width:          1024,
     height:         768,
-    minWidth:       800,
-    minHeight:      600,
-    aspectRatio:    4 / 3,
+    minWidth:       1024,
+    minHeight:      768,
     title:          'sunpos',
     backgroundColor: '#ffffff',
     webPreferences: {

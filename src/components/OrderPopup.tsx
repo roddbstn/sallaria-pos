@@ -15,7 +15,7 @@ function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray'
     })
   }
   const style = copied
-    ? { backgroundColor: '#E6F4EC', color: '#16a84c' }
+    ? { backgroundColor: 'rgba(0,221,103,0.12)', color: '#008F42' }
     : variant === 'black'
       ? { backgroundColor: '#1E1E1E', color: '#FFFFFF' }
       : { backgroundColor: '#F0F0F0', color: '#727272' }
@@ -290,17 +290,17 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                             </div>
                           )
                         })()}
-                        <div className="flex gap-3 mt-2">
+                        <div className="flex gap-[10px] mt-2">
                           <button
                             onClick={() => setStage('reject')}
-                            className="flex-[1] py-2.5 rounded-xl bg-ink text-white font-bold text-[14px] hover:bg-ink/80 transition-colors"
+                            className="flex-[1] py-2.5 rounded-[10px] bg-ink text-white font-bold text-[14px] hover:bg-ink/80 transition-colors"
                           >
                             거부
                           </button>
                           <button
                             onClick={() => setStage('approve')}
-                            style={{ backgroundColor: '#16a84c' }}
-                            className="flex-[3] py-2.5 rounded-xl text-white font-bold text-[14px] hover:opacity-90 transition-opacity"
+                            style={{ backgroundColor: '#00DD67' }}
+                            className="flex-[3] py-2.5 rounded-[10px] text-white font-bold text-[14px] hover:opacity-90 transition-opacity"
                           >
                             승인
                           </button>
@@ -356,21 +356,21 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                         <div className="bg-gray-bg rounded-xl px-4 py-2.5 mb-3 text-[12px] text-gray-text font-semibold leading-relaxed">
                           <strong className="text-ink">"약 {prepMins}분 후 {order.method === '배달' ? '배달 출발' : '준비'} 예정"</strong>으로 안내됩니다.
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleApprove}
-                            disabled={loading}
-                            style={{ backgroundColor: '#16a84c' }}
-                            className="flex-1 py-2.5 rounded-xl text-white font-bold text-[14px] hover:opacity-90 transition-opacity disabled:opacity-60"
-                          >
-                            {loading ? '처리 중…' : '접수'}
-                          </button>
+                        <div className="flex gap-[10px]">
                           <button
                             onClick={() => setStage('summary')}
                             disabled={loading}
-                            className="px-4 py-2.5 rounded-xl bg-gray-100 text-ink font-bold text-[13px] hover:bg-gray-200 transition-colors disabled:opacity-50"
+                            className="flex-[1] py-2.5 rounded-[10px] bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors disabled:opacity-50"
                           >
                             뒤로
+                          </button>
+                          <button
+                            onClick={handleApprove}
+                            disabled={loading}
+                            style={{ backgroundColor: '#00DD67' }}
+                            className="flex-[3] py-2.5 rounded-[10px] text-white font-bold text-[14px] hover:opacity-90 transition-opacity disabled:opacity-60"
+                          >
+                            {loading ? '처리 중…' : '접수'}
                           </button>
                         </div>
                       </>

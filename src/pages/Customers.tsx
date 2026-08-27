@@ -8,6 +8,7 @@ import { track } from '../lib/firebase'
 import type { Order } from '../lib/mock-data'
 import { mapOrderRow } from '../lib/mappers'
 import { useHeaderSlot } from '../lib/header-slot'
+import { PLAN_LIMITS, PLAN_NAMES } from '../lib/plans'
 
 const BASE_URL = 'https://sallaria.web.app'
 
@@ -30,7 +31,7 @@ const TYPE_BADGE: Record<string, string> = {
 }
 
 
-const INPUT_CLS = 'w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[11px] focus:outline-none focus:border-b-2 focus:border-[#16a84c] transition-colors'
+const INPUT_CLS = 'w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[11px] focus:outline-none focus:border-b-2 focus:border-[#00DD67] transition-colors'
 
 function formatPhone(raw: string): string {
   const d = raw.replace(/\D/g, '').slice(0, 11)
@@ -40,7 +41,7 @@ function formatPhone(raw: string): string {
 }
 
 export default function Customers() {
-  const { storeId, storeName } = useStore()
+  const { storeId, storeName, plan } = useStore()
   const { setHeaderRight } = useHeaderSlot()
   const [accounts,     setAccounts]     = useState<DbAccount[]>([])
   const [selected,     setSelected]     = useState<DbAccount | null>(null)
@@ -494,7 +495,7 @@ export default function Customers() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="거래처명, 담당자 검색"
-            className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-[#16a84c] focus:bg-green-soft transition-colors"
+            className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-[#00DD67] focus:bg-green-soft transition-colors"
           />
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="13" height="13" viewBox="0 0 16 16" fill="none">
             <circle cx="6.5" cy="6.5" r="4.5" stroke="#727272" strokeWidth="1.5"/>
@@ -507,14 +508,31 @@ export default function Customers() {
         >
           🖨 매장 공용 QR
         </button>
-        {!showInactive && (
-          <button
-            onClick={() => setAddOpen(true)}
-            className="px-3 py-2 bg-[#16a84c] text-white rounded-lg text-[11px] font-bold hover:bg-[#128040] transition-colors"
-          >
-            거래처 추가
-          </button>
-        )}
+        {!showInactive && (() => {
+          const limit = PLAN_LIMITS[plan].accounts
+          const activeCount = accounts.filter(a => a.is_active !== false).length
+          const atLimit = activeCount >= limit
+          return (
+            <div className="relative group">
+              <button
+                onClick={() => !atLimit && setAddOpen(true)}
+                className={`px-3 py-2 rounded-lg text-[11px] font-bold transition-colors ${
+                  atLimit
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-[#00DD67] text-[#1A1A1A] hover:bg-[#00BB55]'
+                }`}
+              >
+                거래처 추가
+              </button>
+              {atLimit && (
+                <div className="absolute right-0 top-full mt-1.5 w-56 bg-ink text-white text-[11px] rounded-lg px-3 py-2 shadow-lg z-50 hidden group-hover:block pointer-events-none">
+                  <p className="font-bold mb-0.5">{PLAN_NAMES[plan]} 플랜 한도 도달</p>
+                  <p className="text-white/70">거래처 최대 {limit === Infinity ? '무제한' : `${limit}개`}까지 등록 가능해요. 플랜을 업그레이드하면 더 추가할 수 있어요.</p>
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
     )
     return () => setHeaderRight(null)
@@ -849,10 +867,10 @@ export default function Customers() {
 
         {/* 테이블 헤더 */}
         <div ref={filterDropRef} className="grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-5 py-2 bg-white text-[11px] font-bold text-gray-text uppercase tracking-wide border-b-2 border-gray-border flex-shrink-0">
-          <span>#</span>
+          <span className="whitespace-nowrap">#</span>
 
           {/* 거래처명 필터 */}
-          <span className="relative flex items-center gap-0.5">
+          <span className="relative flex items-center gap-0.5 whitespace-nowrap overflow-hidden">
             거래처명
             <button
               onClick={() => setOpenFilterCol(v => v === 'name' ? null : 'name')}
@@ -924,12 +942,12 @@ export default function Customers() {
             )}
           </span>
 
-          <span>담당자</span>
-          <span>연락처</span>
-          <span>PIN</span>
+          <span className="whitespace-nowrap overflow-hidden">담당자</span>
+          <span className="whitespace-nowrap overflow-hidden">연락처</span>
+          <span className="whitespace-nowrap overflow-hidden">PIN</span>
 
           {/* 현재잔액 필터 */}
-          <span className="relative flex items-center gap-0.5">
+          <span className="relative flex items-center gap-0.5 whitespace-nowrap overflow-hidden">
             현재잔액
             <button
               onClick={() => setOpenFilterCol(v => v === 'balance' ? null : 'balance')}
@@ -991,15 +1009,15 @@ export default function Customers() {
                 onClick={() => setSelected(acc)}
                 className="w-full grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-5 py-2.5 text-left hover:bg-gray-bg transition-colors text-[11px]"
               >
-                <span className="text-gray-text text-[11px]">{seqMap[acc.account_code]}</span>
-                <span className="font-semibold text-ink">{acc.account_name}</span>
-                <span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[acc.account_type]}`}>
+                <span className="text-gray-text text-[11px] whitespace-nowrap overflow-hidden">{seqMap[acc.account_code]}</span>
+                <span className="font-semibold text-ink truncate min-w-0">{acc.account_name}</span>
+                <span className="overflow-hidden">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${TYPE_BADGE[acc.account_type]}`}>
                     {acc.account_type}
                   </span>
                 </span>
-                <span className="text-gray-text">{acc.contact_person ?? '—'}</span>
-                <span className="text-gray-text font-mono text-[11px]">{acc.contact_phone ?? '—'}</span>
+                <span className="text-gray-text whitespace-nowrap overflow-hidden">{acc.contact_person ?? '—'}</span>
+                <span className="text-gray-text font-mono text-[11px] whitespace-nowrap overflow-hidden">{acc.contact_phone ?? '—'}</span>
                 <span
                   className="flex items-center gap-1 group"
                   onClick={e => { e.stopPropagation(); setPinVisible(v => v === acc.account_code ? null : acc.account_code) }}
@@ -1053,7 +1071,7 @@ export default function Customers() {
                     setChargeMethod('신용카드')
                     setChargeError('')
                     setChargeOpen(true)
-                  }} className="px-3 py-1.5 rounded-lg bg-[#16a84c] text-white text-[11px] font-bold hover:bg-[#128040] transition-colors">
+                  }} className="px-3 py-1.5 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[11px] font-bold hover:bg-[#00BB55] transition-colors">
                     💳 충전
                   </button>
                 )}
@@ -1148,7 +1166,7 @@ export default function Customers() {
                 {(['orders', 'charges', 'members', 'statement'] as const).map(t => (
                   <button key={t} onClick={() => { setDetailTab(t); setOrderPage(0); setChargePage(0) }}
                     className={`px-3 py-2 text-[11px] font-bold border-b-2 transition-colors
-                      ${detailTab === t ? 'border-[#16a84c] text-[#16a84c]' : 'border-transparent text-gray-text hover:text-ink'}`}>
+                      ${detailTab === t ? 'border-[#00DD67] text-[#008F42]' : 'border-transparent text-gray-text hover:text-ink'}`}>
                     {t === 'orders'    ? '주문 내역'
                       : t === 'charges'   ? '충전 이력'
                       : t === 'members'   ? `누적 주문자${members.length > 0 ? ` (${members.length})` : ''}`
@@ -1716,7 +1734,7 @@ export default function Customers() {
               <div className="pt-5 mt-5 border-t border-gray-border">
                 {showInactive ? (
                   <div className="space-y-2">
-                    <button onClick={handleRestoreAccount} className="w-full py-2 rounded-xl text-[11px] font-bold text-[#16a84c] hover:bg-green-soft transition-colors border border-[#16a84c]/30 focus:outline-none">
+                    <button onClick={handleRestoreAccount} className="w-full py-2 rounded-xl text-[11px] font-bold text-[#008F42] hover:bg-green-soft transition-colors border border-[#00DD67]/30 focus:outline-none">
                       거래처 복구
                     </button>
                     {!hardDeleteConfirm ? (
@@ -1786,7 +1804,7 @@ export default function Customers() {
                   {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
                     <button key={t} onClick={() => setNewForm(f => ({ ...f, type: t }))}
                       className={`flex-1 py-1.5 rounded-full border text-[11px] font-bold transition-colors focus:outline-none
-                        ${newForm.type === t ? 'border-[#16a84c] text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${newForm.type === t ? 'border-[#00DD67] text-[#008F42] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {t}
                     </button>
                   ))}
@@ -1841,7 +1859,7 @@ export default function Customers() {
                       }}
                       placeholder="예: 300000 또는 -15000"
                       inputMode="numeric"
-                      className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-1.5 text-[16px] font-bold focus:outline-none focus:border-[#16a84c] transition-colors"
+                      className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-1.5 text-[16px] font-bold focus:outline-none focus:border-[#00DD67] transition-colors"
                     />
                     <span className="text-[11px] font-semibold text-gray-text flex-shrink-0">원</span>
                   </div>
@@ -1875,7 +1893,7 @@ export default function Customers() {
               <button
                 onClick={handleAddAccount}
                 disabled={!newForm.name.trim() || !newForm.manager.trim() || newForm.pin.length !== 4}
-                className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
+                className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold hover:bg-[#00BB55] transition-colors focus:outline-none disabled:opacity-50">
                 등록
               </button>
             </div>
@@ -1908,7 +1926,7 @@ export default function Customers() {
                   {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
                     <button key={t} onClick={() => setEditForm(f => ({ ...f, type: t }))}
                       className={`flex-1 py-1.5 rounded-full border text-[11px] font-bold transition-colors focus:outline-none
-                        ${editForm.type === t ? 'border-[#16a84c] text-[#16a84c] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                        ${editForm.type === t ? 'border-[#00DD67] text-[#008F42] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {t}
                     </button>
                   ))}
@@ -1989,7 +2007,7 @@ export default function Customers() {
                   if (delta !== 0 && !editForm.adjustReason.trim()) return true
                   return false
                 })()}
-                className="flex-1 py-2.5 rounded-xl bg-[#16a84c] text-white font-bold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
+                className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold hover:bg-[#00BB55] transition-colors focus:outline-none disabled:opacity-50">
                 저장
               </button>
             </div>
@@ -2126,7 +2144,7 @@ export default function Customers() {
                   <button
                     onClick={handleCharge}
                     disabled={chargeLoading}
-                    className="px-4 py-1.5 rounded-lg bg-[#16a84c] text-white text-[11px] font-semibold hover:bg-[#128040] transition-colors focus:outline-none disabled:opacity-50">
+                    className="px-4 py-1.5 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[11px] font-semibold hover:bg-[#00BB55] transition-colors focus:outline-none disabled:opacity-50">
                     {chargeLoading ? '처리 중...' : '충전 확정'}
                   </button>
                 </div>
