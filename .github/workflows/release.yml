@@ -40,14 +40,14 @@ jobs:
       - name: 빌드 (electron-vite)
         run: pnpm run build
 
-      - name: dist 폴더 내용 확인
-        shell: bash
-        run: find dist -type f | sort
-
       - name: Windows 패키징 & GitHub Release 업로드
         run: pnpm dist --win --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: dist 폴더 내용 확인
+        shell: bash
+        run: find dist -type f | sort
 
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
