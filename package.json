@@ -1,6 +1,6 @@
 {
   "name": "sunpos",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "선포스 앱",
   "main": "out/main/index.js",
   "scripts": {
