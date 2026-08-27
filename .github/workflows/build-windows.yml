@@ -45,9 +45,7 @@ jobs:
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: 샐러리아-POS-Windows-x64
-          path: |
-            dist/**/*.exe
-            dist/*.exe
+          name: sallaria-pos-windows-x64
+          path: dist/*.exe
           if-no-files-found: error
           retention-days: 30
