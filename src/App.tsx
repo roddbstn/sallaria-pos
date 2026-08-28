@@ -365,7 +365,41 @@ export default function App() {
 
     if (!client) { setPhase('auth'); return }
 
-    const plan = (client as { plan?: string }).plan ?? 'free'
+    let plan = (client as { plan?: string }).plan ?? 'free'
+
+    // ── 구독 조회 및 자동 다운그레이드 처리 ─────────────────────────────────────
+    const { data: sub } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('client_id', client.id)
+      .single()
+
+    if (!sub) {
+      // 구독 행이 없으면 생성 (신규 가입)
+      await supabase.from('subscriptions').insert({
+        client_id:            client.id,
+        plan:                 plan,
+        billing_anchor_date:  new Date().toISOString().slice(0, 10),
+        current_period_start: new Date().toISOString().slice(0, 10),
+        current_period_end:   new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10),
+      })
+    } else if (sub.pending_plan && sub.current_period_end <= new Date().toISOString().slice(0, 10)) {
+      // 다음 결제일이 지났고 예약된 다운그레이드가 있으면 적용
+      const today = new Date().toISOString().slice(0, 10)
+      const nextEnd = new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10)
+      await Promise.all([
+        supabase.from('clients').update({ plan: sub.pending_plan }).eq('id', client.id),
+        supabase.from('subscriptions').update({
+          plan:                 sub.pending_plan,
+          pending_plan:         null,
+          pending_plan_at:      null,
+          current_period_start: today,
+          current_period_end:   nextEnd,
+        }).eq('client_id', client.id),
+      ])
+      plan = sub.pending_plan
+      showToast(`플랜이 ${({ free:'무료', basic:'베이직', pro:'프로', max:'맥스' } as Record<string,string>)[sub.pending_plan]}으로 변경됐어요`)
+    }
 
     // stores 조회
     const { data: stores } = await supabase

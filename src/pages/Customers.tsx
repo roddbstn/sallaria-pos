@@ -40,8 +40,29 @@ function formatPhone(raw: string): string {
   return `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}`
 }
 
+// ── 플랜 다운그레이드 순서 ────────────────────────────────────────────────────
+const PLAN_ORDER = ['free', 'basic', 'pro', 'max'] as const
+const PLAN_MAX_ACCOUNTS: Record<string, number> = { free: 1, basic: 10, pro: 20, max: Infinity }
+
+/** 활성 팀 수에 맞는 최적 플랜 반환 */
+function getRecommendedPlan(activeCount: number): import('../lib/plans').PlanTier {
+  if (activeCount <= 1)  return 'free'
+  if (activeCount <= 10) return 'basic'
+  if (activeCount <= 20) return 'pro'
+  return 'max'
+}
+
+/** billing_anchor_date 기준 다음 결제일 계산 */
+function getNextBillingDate(anchorDate: string): Date {
+  const day = new Date(anchorDate).getDate()
+  const today = new Date()
+  let next = new Date(today.getFullYear(), today.getMonth(), day)
+  if (next <= today) next = new Date(today.getFullYear(), today.getMonth() + 1, day)
+  return next
+}
+
 export default function Customers() {
-  const { storeId, storeName, plan } = useStore()
+  const { storeId, storeName, plan, clientId } = useStore()
   const { setHeaderRight } = useHeaderSlot()
   const [accounts,     setAccounts]     = useState<DbAccount[]>([])
   const [selected,     setSelected]     = useState<DbAccount | null>(null)
@@ -50,6 +71,11 @@ export default function Customers() {
   const [monthlyUsage, setMonthlyUsage] = useState<Record<string, number>>({})
   const [loading,      setLoading]      = useState(true)
   const [fetchError,   setFetchError]   = useState(false)
+  const [downgradeModal, setDowngradeModal] = useState<{
+    targetPlan: import('../lib/plans').PlanTier
+    nextBillingDate: Date
+    immediate?: boolean
+  } | null>(null)
   const [retryCount,   setRetryCount]   = useState(0)
   const [pinVisible,   setPinVisible]   = useState<string | null>(null)
   const [chargeOpen,   setChargeOpen]   = useState(false)
@@ -767,6 +793,60 @@ export default function Customers() {
     setEditOpen(false)
   }
 
+  // ── 삭제 후 다운그레이드 필요 여부 확인 ──────────────────────────────────────
+  async function checkDowngrade() {
+    const currentPlanIdx = PLAN_ORDER.indexOf(plan as typeof PLAN_ORDER[number])
+    if (currentPlanIdx <= 0) return // 무료 플랜은 다운그레이드 없음
+
+    // 삭제 후 최신 활성 팀 수를 DB에서 직접 조회
+    const { count } = await supabase
+      .from('accounts')
+      .select('*', { count: 'exact', head: true })
+      .eq('store_id', storeId)
+      .eq('is_active', true)
+
+    const activeCount = count ?? 0
+    const recommended = getRecommendedPlan(activeCount)
+    const recommendedIdx = PLAN_ORDER.indexOf(recommended)
+
+    if (recommendedIdx >= currentPlanIdx) return // 다운그레이드 불필요
+
+    // 구독 정보에서 다음 결제일 가져오기
+    const { data: sub } = await supabase
+      .from('subscriptions')
+      .select('billing_anchor_date')
+      .eq('client_id', clientId)
+      .single()
+
+    const anchorDate = sub?.billing_anchor_date ?? new Date().toISOString().slice(0, 10)
+    setDowngradeModal({ targetPlan: recommended, nextBillingDate: getNextBillingDate(anchorDate) })
+  }
+
+  // ── 다운그레이드 예약 ─────────────────────────────────────────────────────────
+  async function scheduleDowngrade(targetPlan: import('../lib/plans').PlanTier) {
+    await supabase.from('subscriptions').update({
+      pending_plan:    targetPlan,
+      pending_plan_at: new Date().toISOString(),
+    }).eq('client_id', clientId)
+    setDowngradeModal(null)
+  }
+
+  // ── 즉시 다운그레이드 ─────────────────────────────────────────────────────────
+  async function applyDowngradeNow(targetPlan: import('../lib/plans').PlanTier) {
+    const today = new Date().toISOString().slice(0, 10)
+    const nextEnd = new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10)
+    await Promise.all([
+      supabase.from('clients').update({ plan: targetPlan }).eq('id', clientId),
+      supabase.from('subscriptions').update({
+        plan: targetPlan, pending_plan: null, pending_plan_at: null,
+        current_period_start: today, current_period_end: nextEnd,
+      }).eq('client_id', clientId),
+    ])
+    setDowngradeModal(null)
+    // 페이지 리로드로 세션 플랜 갱신
+    window.location.reload()
+  }
+
   // ── 거래처 삭제 (소프트) ─────────────────────────────────────────────────────
   async function handleDeleteAccount() {
     if (!selected) return
@@ -778,6 +858,7 @@ export default function Customers() {
     await fetchAccounts(showInactive).catch(() => {})
     setSelected(null)
     setDeleteConfirm(false)
+    await checkDowngrade()
   }
 
   // ── 충전 이력 수정 ────────────────────────────────────────────────────────────
@@ -816,6 +897,7 @@ export default function Customers() {
     await fetchAccounts(showInactive).catch(() => {})
     setSelected(null)
     setHardDeleteConfirm(false)
+    await checkDowngrade()
   }
 
   // ── 거래처 복구 ───────────────────────────────────────────────────────────────
@@ -2153,6 +2235,44 @@ export default function Customers() {
           </div>
         </div>
       )}
+
+      {/* ── 다운그레이드 안내 모달 ── */}
+      {downgradeModal && (() => {
+        const { targetPlan, nextBillingDate } = downgradeModal
+        const targetName = ({ free:'무료', basic:'베이직', pro:'프로', max:'맥스' } as Record<string,string>)[targetPlan]
+        const dateStr = `${nextBillingDate.getMonth() + 1}월 ${nextBillingDate.getDate()}일`
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDowngradeModal(null)}>
+            <div className="bg-white rounded-2xl p-6 w-[340px] shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="text-[18px] font-extrabold text-ink mb-2">플랜 변경 안내</div>
+              <p className="text-[13px] text-gray-text leading-relaxed mb-5">
+                활성 고객 수가 줄어서 <strong className="text-ink">{targetName} 플랜</strong>으로 변경할 수 있어요.<br />
+                다음 결제일 <strong className="text-ink">{dateStr}</strong>부터 적용되며, 그 전까지는 현재 플랜이 유지됩니다.
+              </p>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => scheduleDowngrade(targetPlan)}
+                  className="w-full py-3 rounded-xl bg-ink text-white font-bold text-[13px] hover:bg-ink/90 transition-colors"
+                >
+                  {dateStr}부터 {targetName}으로 변경
+                </button>
+                <button
+                  onClick={() => applyDowngradeNow(targetPlan)}
+                  className="w-full py-3 rounded-xl border border-gray-border text-ink font-semibold text-[13px] hover:bg-gray-bg transition-colors"
+                >
+                  지금 즉시 변경
+                </button>
+                <button
+                  onClick={() => setDowngradeModal(null)}
+                  className="w-full py-2.5 text-gray-text text-[12px] hover:text-ink transition-colors"
+                >
+                  현재 플랜 유지
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
