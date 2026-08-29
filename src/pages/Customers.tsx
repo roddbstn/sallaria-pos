@@ -16,7 +16,7 @@ function useQrDataUrl(url: string) {
   const [dataUrl, setDataUrl] = useState('')
   useEffect(() => {
     if (!url) { setDataUrl(''); return }
-    QRCode.toDataURL(url, { width: 200, margin: 1, color: { dark: '#1E1E1E', light: '#FFFFFF' } })
+    QRCode.toDataURL(url, { width: 400, margin: 0, color: { dark: '#1E1E1E', light: '#FFFFFF' } })
       .then(setDataUrl)
       .catch(() => setDataUrl(''))
   }, [url])
@@ -66,6 +66,7 @@ export default function Customers() {
   const { setHeaderRight } = useHeaderSlot()
   const [accounts,     setAccounts]     = useState<DbAccount[]>([])
   const [selected,     setSelected]     = useState<DbAccount | null>(null)
+  const [printerToast, setPrinterToast] = useState('')
   const [accountOrders, setAccountOrders] = useState<Order[]>([])
   const [deposits,     setDeposits]     = useState<DbDeposit[]>([])
   const [monthlyUsage, setMonthlyUsage] = useState<Record<string, number>>({})
@@ -202,6 +203,24 @@ export default function Customers() {
       setTimeout(() => { document.body.removeChild(iframe) }, 1000)
     }, 400)
   }, [selected, selectedQrDataUrl])
+
+  const handlePrintQrReceipt = useCallback(async () => {
+    if (!selected) return
+    try {
+      await window.api.printQrReceipt({
+        accountName: selected.account_name,
+        manager:     selected.contact_person ?? '',
+        phone:       selected.contact_phone  ?? '',
+        pin:         selected.pin_code,
+        qrUrl:       selectedQrUrl,
+        storeName,
+      })
+    } catch (err) {
+      const msg = (err as Error).message ?? '영수증 출력에 실패했어요'
+      setPrinterToast(msg)
+      setTimeout(() => setPrinterToast(''), 3500)
+    }
+  }, [selected, selectedQrUrl, storeName])
 
   const [addOpen,      setAddOpen]      = useState(false)
   const [newForm,      setNewForm]      = useState({
@@ -1175,9 +1194,9 @@ export default function Customers() {
                 {/* 왼쪽: 인라인 QR */}
                 <div className="flex flex-col items-center gap-2 flex-shrink-0">
                   {selectedQrDataUrl ? (
-                    <img src={selectedQrDataUrl} alt="QR" className="w-[120px] h-[120px] rounded-xl border border-gray-border" />
+                    <img src={selectedQrDataUrl} alt="QR" className="w-[200px] h-[200px] rounded-xl" />
                   ) : (
-                    <div className="w-[120px] h-[120px] rounded-xl border border-gray-border flex items-center justify-center text-[11px] text-gray-text">
+                    <div className="w-[200px] h-[200px] rounded-xl border border-gray-border flex items-center justify-center text-[11px] text-gray-text">
                       QR 생성 중…
                     </div>
                   )}
@@ -1187,7 +1206,7 @@ export default function Customers() {
                     <span className="text-gray-text"> '{selected.account_name}' 선결제 QR</span>
                   </p>
                   {/* URL + 복사 */}
-                  <div className="flex items-center gap-1 w-[120px] border border-gray-border rounded-lg px-2 py-1 bg-gray-bg">
+                  <div className="flex items-center gap-1 w-[200px] border border-gray-border rounded-lg px-2 py-1 bg-gray-bg">
                     <span className="flex-1 text-[10px] text-gray-text truncate text-left min-w-0" style={{ direction: 'rtl', unicodeBidi: 'plaintext' }}>
                       {selectedQrUrl}
                     </span>
@@ -1207,15 +1226,8 @@ export default function Customers() {
                       )}
                     </button>
                   </div>
-                  {/* PDF 출력 / 이미지 저장 */}
-                  <div className="flex gap-1 w-[120px]">
-                    <button
-                      disabled={!selectedQrDataUrl}
-                      onClick={handlePrintQr}
-                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg bg-ink text-white hover:bg-ink/90 disabled:opacity-40 transition-colors"
-                    >
-                      PDF 출력
-                    </button>
+                  {/* 버튼 3개 */}
+                  <div className="flex gap-1 w-[200px]">
                     <button
                       disabled={!selectedQrDataUrl}
                       onClick={() => {
@@ -1228,6 +1240,20 @@ export default function Customers() {
                       className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-gray-border text-ink hover:bg-gray-bg disabled:opacity-40 transition-colors"
                     >
                       이미지 저장
+                    </button>
+                    <button
+                      disabled={!selectedQrDataUrl}
+                      onClick={handlePrintQr}
+                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-gray-border text-ink hover:bg-gray-bg disabled:opacity-40 transition-colors"
+                    >
+                      PDF 출력
+                    </button>
+                    <button
+                      disabled={!selectedQrDataUrl}
+                      onClick={handlePrintQrReceipt}
+                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg bg-ink text-white hover:bg-ink/90 disabled:opacity-40 transition-colors"
+                    >
+                      영수증에 출력
                     </button>
                   </div>
                 </div>
@@ -2094,6 +2120,13 @@ export default function Customers() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── 프린터 오류 토스트 ── */}
+      {printerToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-ink text-white text-[13px] font-semibold px-5 py-3 rounded-xl shadow-lg pointer-events-none">
+          {printerToast}
         </div>
       )}
 

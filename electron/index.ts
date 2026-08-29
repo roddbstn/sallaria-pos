@@ -20,6 +20,7 @@ import {
   buildKitchenReceiptEscPos,
   buildCustomerReceiptEscPos,
   buildTestReceiptEscPos,
+  buildQrReceiptEscPos,
 } from './escpos'
 
 // ── electron-store 스키마 ─────────────────────────────────────────────────────
@@ -351,6 +352,20 @@ ipcMain.handle('printer:connect', async () => {
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
+  }
+})
+
+/** 거래처 QR 영수증 출력 */
+ipcMain.handle('printer:qr-receipt', async (_e, payload: {
+  accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string
+}) => {
+  const portName = getPortName()
+  if (!portName) throw new Error('프린터기가 연결되어 있지 않아요')
+  try {
+    await printEscPos(buildQrReceiptEscPos(payload))
+    return { ok: true }
+  } catch (err) {
+    throw new Error((err as Error).message)
   }
 })
 

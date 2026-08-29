@@ -30,6 +30,8 @@ const api = {
   listPorts:      ()           => ipcRenderer.invoke('printer:list-ports') as Promise<{ path: string; manufacturer: string; friendlyName: string }[]>,
   connectPrinter: ()           => ipcRenderer.invoke('printer:connect'),
   testPrint:      ()           => ipcRenderer.invoke('printer:test'),
+  printQrReceipt: (p: { accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string }) =>
+    ipcRenderer.invoke('printer:qr-receipt', p),
 
   onPrinterStatus:  (cb: (s: { connected: boolean; queueLength: number }) => void) =>
     ipcRenderer.on('printer:status', (_e, v) => cb(v)),

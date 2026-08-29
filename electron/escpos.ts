@@ -318,6 +318,70 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
 }
 
 /** ③ 테스트 출력 */
+export interface QrReceiptPayload {
+  accountName: string
+  manager:     string
+  phone:       string
+  pin:         string
+  qrUrl:       string   // QR에 인코딩할 URL
+  storeName:   string
+}
+
+/** ③ 거래처 QR 영수증 — ESC/POS GS(k 명령어로 QR 직접 렌더링 */
+export function buildQrReceiptEscPos(p: QrReceiptPayload): Buffer {
+  const chunks: Buffer[] = []
+  const push = (...bufs: Buffer[]) => chunks.push(...bufs)
+
+  push(CMD.INIT)
+
+  // ── 헤더 ──
+  push(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_SMALL)
+  push(enc(`[${p.accountName} 선결제 QR오더]`), nl())
+  push(CMD.BOLD_OFF, CMD.SIZE_NORMAL)
+  push(hrBuf(), nl())
+
+  // ── QR 코드 (GS ( k) ──
+  push(CMD.ALIGN_CENTER)
+  const urlBytes = Buffer.from(p.qrUrl, 'utf8')
+  const dataLen  = urlBytes.length + 3  // cn + fn(0x50) + m(0x30)
+  const pL = dataLen & 0xFF
+  const pH = (dataLen >> 8) & 0xFF
+  // Model 2 선택
+  push(Buffer.from([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]))
+  // 모듈 사이즈 8 (58mm 기준 적당한 크기)
+  push(Buffer.from([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x08]))
+  // 오류 정정 레벨 M
+  push(Buffer.from([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]))
+  // 데이터 저장
+  push(Buffer.from([0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30]))
+  push(urlBytes)
+  // 출력
+  push(Buffer.from([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]))
+  push(nl(), nl())
+
+  // ── 정보 ──
+  push(CMD.ALIGN_LEFT, hrBuf(), nl())
+  push(CMD.SIZE_SMALL)
+
+  const row = (label: string, value: string) => {
+    const L = 6  // 라벨 인쇄폭
+    push(enc(padL(label, L) + '  ' + value), nl())
+  }
+  row('고객명', p.accountName)
+  if (p.manager) row('담당자', p.manager)
+  if (p.phone)   row('연락처', p.phone)
+  row('PIN',     p.pin)
+
+  push(CMD.SIZE_NORMAL, hrBuf(), nl())
+
+  // ── 푸터 ──
+  push(CMD.ALIGN_CENTER, CMD.SIZE_SMALL)
+  push(enc(p.storeName), nl())
+  push(CMD.SIZE_NORMAL, CMD.FEED_CUT)
+
+  return Buffer.concat(chunks)
+}
+
 export function buildTestReceiptEscPos(): Buffer {
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
