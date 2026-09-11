@@ -30,7 +30,7 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     qrOrder:    true,
   },
   basic: {
-    accounts:   10,
+    accounts:   5,
     stores:     1,
     sms:        false,
     analytics:  true,
@@ -56,10 +56,10 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
 };
 
 export const PLAN_NAMES: Record<PlanTier, string> = {
-  free:  '무료',
-  basic: '베이직',
-  pro:   '프로',
-  max:   '맥스',
+  free:  'Free',
+  basic: 'Basic',
+  pro:   'Pro',
+  max:   'Max',
 };
 
 /** 현재 플랜에서 특정 기능이 잠겨있는지 확인 */

@@ -1146,12 +1146,12 @@ export default function Customers() {
       {/* ── 거래처 상세 모달 ── */}
       {selected && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40" onClick={() => { setSelected(null); setDeleteConfirm(false) }}>
-          <div className="bg-white rounded-2xl shadow-xl w-[720px] max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="modal-in bg-white rounded-2xl shadow-xl w-[720px] max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
             {/* 모달 헤더 */}
-            <div className="flex items-center justify-between px-5 pt-6 pb-4 flex-shrink-0">
+            <div className="flex items-center justify-between px-8 pt-7 pb-0 flex-shrink-0">
               <div className="flex items-center gap-2">
-                <div className="text-[18px] font-extrabold text-ink">{selected.account_name}</div>
+                <div className="text-[18px] font-semibold text-ink">{selected.account_name}</div>
                 <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${TYPE_BADGE[selected.account_type]}`}>
                   {selected.account_type}
                 </span>
@@ -1186,7 +1186,7 @@ export default function Customers() {
             </div>
 
             {/* 스크롤 영역 */}
-            <div className="overflow-y-auto px-5 pb-6 flex-1">
+            <div className="overflow-y-auto px-8 pt-6 pb-9 flex-1">
 
               {/* QR (좌) + 6가지 정보 (우) */}
               <div className="flex gap-5 mb-5 items-start">
@@ -1253,13 +1253,13 @@ export default function Customers() {
                       onClick={handlePrintQrReceipt}
                       className="flex-1 py-1.5 text-[11px] font-bold rounded-lg bg-ink text-white hover:bg-ink/90 disabled:opacity-40 transition-colors"
                     >
-                      영수증에 출력
+                      영수증 출력
                     </button>
                   </div>
                 </div>
 
                 {/* 오른쪽: 6가지 정보 */}
-                <div className="flex-1 space-y-2 text-[11px] pt-1">
+                <div className="flex-1 space-y-4 text-[13px] pt-1">
                   <InfoRow label="담당자"        value={selected.contact_person ?? '—'} />
                   <InfoRow label="연락처"        value={selected.contact_phone ?? '—'} />
                   <InfoRow label="기관명"        value={selected.organization_name ?? '—'} />
@@ -1457,11 +1457,11 @@ export default function Customers() {
                             onClick={() => setMonthPickerOpen(false)}
                           >
                             <div
-                              className="bg-white rounded-2xl shadow-2xl w-[280px] max-h-[420px] flex flex-col overflow-hidden"
+                              className="modal-in bg-white rounded-2xl shadow-2xl w-[280px] max-h-[420px] flex flex-col overflow-hidden"
                               onClick={e => e.stopPropagation()}
                             >
                               {/* 모달 헤더 */}
-                              <div className="flex items-center justify-between px-3 pt-4 pb-3 border-b border-gray-border flex-shrink-0">
+                              <div className="flex items-center justify-between px-4 pt-4 pb-0 flex-shrink-0">
                                 <span className="text-[11px] font-bold text-ink">월 선택</span>
                                 <div className="flex items-center gap-2.5">
                                   <div className="text-right">
@@ -1842,11 +1842,11 @@ export default function Customers() {
               <div className="pt-5 mt-5 border-t border-gray-border">
                 {showInactive ? (
                   <div className="space-y-2">
-                    <button onClick={handleRestoreAccount} className="w-full py-2 rounded-xl text-[11px] font-bold text-[#008F42] hover:bg-green-soft transition-colors border border-[#00DD67]/30 focus:outline-none">
+                    <button onClick={handleRestoreAccount} className="w-full py-3 rounded-xl text-[11px] font-bold text-[#008F42] hover:bg-green-soft transition-colors border border-[#00DD67]/30 focus:outline-none">
                       거래처 복구
                     </button>
                     {!hardDeleteConfirm ? (
-                      <button onClick={() => setHardDeleteConfirm(true)} className="w-full py-2 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
+                      <button onClick={() => setHardDeleteConfirm(true)} className="w-full py-3 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
                         영구 삭제
                       </button>
                     ) : (
@@ -1856,14 +1856,14 @@ export default function Customers() {
                           <p className="text-[11px] text-center text-danger leading-tight mt-0.5">복구할 수 없습니다.</p>
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={() => setHardDeleteConfirm(false)} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
-                          <button onClick={handleHardDeleteAccount} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">영구 삭제 확인</button>
+                          <button onClick={() => setHardDeleteConfirm(false)} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
+                          <button onClick={handleHardDeleteAccount} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">영구 삭제 확인</button>
                         </div>
                       </div>
                     )}
                   </div>
                 ) : !deleteConfirm ? (
-                  <button onClick={() => setDeleteConfirm(true)} className="w-full py-2 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
+                  <button onClick={() => setDeleteConfirm(true)} className="w-full py-3 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
                     거래처 삭제
                   </button>
                 ) : (
@@ -1873,8 +1873,8 @@ export default function Customers() {
                       <p className="text-[11px] text-center text-gray-text leading-tight mt-0.5">추후 복구할 수 있어요.</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
-                      <button onClick={handleDeleteAccount} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">삭제 확인</button>
+                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
+                      <button onClick={handleDeleteAccount} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">삭제 확인</button>
                     </div>
                   </div>
                 )}
@@ -1888,15 +1888,15 @@ export default function Customers() {
       {/* ── 거래처 추가 모달 ── */}
       {addOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-[420px] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <div className="text-[17px] font-extrabold">거래처 추가</div>
+          <div className="modal-in bg-white rounded-2xl shadow-xl px-8 py-10 w-[480px] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-7">
+              <div className="text-[17px] font-semibold">거래처 추가</div>
               <button onClick={() => setAddOpen(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
             </div>
 
             <div className="space-y-5">
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">거래처명 <span className="text-danger">*</span></label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">거래처명 <span className="text-danger">*</span></label>
                 <div className="relative">
                   <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value.slice(0, 25) }))}
                     maxLength={25} placeholder="예: 북구청 공원녹지과" className={INPUT_CLS} />
@@ -1911,8 +1911,8 @@ export default function Customers() {
                 <div className="flex gap-2">
                   {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
                     <button key={t} onClick={() => setNewForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 py-1.5 rounded-full border text-[11px] font-bold transition-colors focus:outline-none
-                        ${newForm.type === t ? 'border-[#00DD67] text-[#008F42] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none
+                        ${newForm.type === t ? 'bg-green-soft text-green' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {t}
                     </button>
                   ))}
@@ -1920,32 +1920,32 @@ export default function Customers() {
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">기관명</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">기관명</label>
                 <input value={newForm.org} onChange={e => setNewForm(f => ({ ...f, org: e.target.value }))}
                   placeholder="예: 북구청" className={INPUT_CLS} />
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">담당자 <span className="text-danger">*</span></label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">담당자 <span className="text-danger">*</span></label>
                 <input value={newForm.manager} onChange={e => setNewForm(f => ({ ...f, manager: e.target.value }))}
                   placeholder="예: 김민준" className={INPUT_CLS} />
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">연락처</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">연락처</label>
                 <input value={newForm.phone} onChange={e => setNewForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
                   placeholder="010-0000-0000" inputMode="numeric" className={INPUT_CLS} />
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">PIN <span className="text-danger">*</span> (4자리)</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">PIN <span className="text-danger">*</span> (4자리)</label>
                 <input value={newForm.pin} onChange={e => { setNewForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })); setAddPinError('') }}
                   placeholder="0000" maxLength={4} inputMode="numeric" className={INPUT_CLS + ' font-mono'} />
                 {addPinError && <p className="text-[11px] text-danger font-semibold mt-1">{addPinError}</p>}
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">잔액 경고 기준</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">잔액 경고 기준</label>
                 <input value={newForm.warnThreshold} onChange={e => setNewForm(f => ({ ...f, warnThreshold: e.target.value }))}
                   placeholder="30000" className={INPUT_CLS} />
               </div>
@@ -1955,7 +1955,7 @@ export default function Customers() {
             <div className="mt-6 pt-5">
               <div className="space-y-3">
                 <div>
-                  <label className="text-[11px] font-bold text-gray-text block mb-1">초기 잔액 (선택)</label>
+                  <label className="text-[13px] font-semibold text-gray-text block mb-1.5">초기 잔액 (선택)</label>
                   <div className="flex items-baseline gap-2">
                     <input
                       value={newForm.initialDeposit}
@@ -1982,7 +1982,7 @@ export default function Customers() {
                   })()}
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-gray-text block mb-1">비고</label>
+                  <label className="text-[13px] font-semibold text-gray-text block mb-1.5">비고</label>
                   <input
                     value={newForm.initialDepositMemo}
                     onChange={e => setNewForm(f => ({ ...f, initialDepositMemo: e.target.value }))}
@@ -2012,14 +2012,14 @@ export default function Customers() {
       {/* ── 정보 수정 모달 ── */}
       {editOpen && selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-[420px] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <div className="text-[17px] font-extrabold">정보 수정</div>
+          <div className="modal-in bg-white rounded-2xl shadow-xl px-8 py-10 w-[480px] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-7">
+              <div className="text-[17px] font-semibold">정보 수정</div>
               <button onClick={() => setEditOpen(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
             </div>
             <div className="space-y-5">
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">거래처명 <span className="text-danger">*</span></label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">거래처명 <span className="text-danger">*</span></label>
                 <div className="relative">
                   <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value.slice(0, 25) }))}
                     maxLength={25} className={INPUT_CLS} />
@@ -2033,37 +2033,37 @@ export default function Customers() {
                 <div className="flex gap-2">
                   {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
                     <button key={t} onClick={() => setEditForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 py-1.5 rounded-full border text-[11px] font-bold transition-colors focus:outline-none
-                        ${editForm.type === t ? 'border-[#00DD67] text-[#008F42] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none
+                        ${editForm.type === t ? 'bg-green-soft text-green' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
                       {t}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">기관명</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">기관명</label>
                 <input value={editForm.org} onChange={e => setEditForm(f => ({ ...f, org: e.target.value }))} className={INPUT_CLS} />
               </div>
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">담당자 <span className="text-danger">*</span></label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">담당자 <span className="text-danger">*</span></label>
                 <input value={editForm.manager} onChange={e => setEditForm(f => ({ ...f, manager: e.target.value }))} className={INPUT_CLS} />
               </div>
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">연락처</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">연락처</label>
                 <input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: formatPhone(e.target.value) }))} inputMode="numeric" placeholder="010-0000-0000" className={INPUT_CLS} />
               </div>
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">PIN <span className="text-danger">*</span> (4자리)</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">PIN <span className="text-danger">*</span> (4자리)</label>
                 <input value={editForm.pin} onChange={e => { setEditForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })); setEditPinError('') }}
                   maxLength={4} inputMode="numeric" className={INPUT_CLS + ' font-mono'} />
                 {editPinError && <p className="text-[11px] text-danger font-semibold mt-1">{editPinError}</p>}
               </div>
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">잔액 경고 기준</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">잔액 경고 기준</label>
                 <input value={editForm.warnThreshold} onChange={e => setEditForm(f => ({ ...f, warnThreshold: e.target.value }))} className={INPUT_CLS} />
               </div>
               <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-1">선결제 잔액</label>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">선결제 잔액</label>
                 <div className="flex items-baseline gap-2">
                   <input
                     value={editForm.balance}
@@ -2093,7 +2093,7 @@ export default function Customers() {
                   if (isNaN(v) || delta === 0) return null
                   return (
                     <div className="mt-2">
-                      <label className="text-[11px] font-bold text-gray-text block mb-1">수정 사유 <span className="text-gray-400 text-[10px] font-normal">(필수)</span></label>
+                      <label className="text-[13px] font-semibold text-gray-text block mb-1.5">수정 사유 <span className="text-gray-400 text-[10px] font-normal">(필수)</span></label>
                       <input
                         value={editForm.adjustReason}
                         onChange={e => setEditForm(f => ({ ...f, adjustReason: e.target.value }))}
@@ -2106,7 +2106,7 @@ export default function Customers() {
               </div>
             </div>
             <div className="flex gap-2.5 mt-6">
-              <button onClick={() => { setEditOpen(false); setEditPinError('') }} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">취소</button>
+              <button onClick={() => { setEditOpen(false); setEditPinError('') }} className="flex-1 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">취소</button>
               <button onClick={handleEditAccount}
                 disabled={(() => {
                   if (!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4) return true
@@ -2115,7 +2115,7 @@ export default function Customers() {
                   if (delta !== 0 && !editForm.adjustReason.trim()) return true
                   return false
                 })()}
-                className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold hover:bg-[#00BB55] transition-colors focus:outline-none disabled:opacity-50">
+                className="flex-1 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
                 저장
               </button>
             </div>
@@ -2146,17 +2146,17 @@ export default function Customers() {
       {/* ── 충전 등록 모달 ── */}
       {chargeOpen && selected && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-[380px]">
+          <div className="modal-in bg-white rounded-2xl shadow-xl px-8 py-10 w-[560px]">
 
             {!chargeConfirm ? (
               /* ── 1단계: 입력 ── */
               <>
-                <div className="text-[17px] font-extrabold mb-1">충전 등록</div>
+                <div className="text-[17px] font-semibold mb-1">충전 등록</div>
                 <div className="text-[11px] text-gray-text mb-5">{selected.account_name}</div>
 
                 {/* 금액 */}
                 <div className="mb-4">
-                  <label className="text-[11px] font-bold text-gray-text mb-1.5 block">충전 금액</label>
+                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">충전 금액</label>
                   <div className="relative">
                     <input
                       value={chargeAmt ? Number(chargeAmt).toLocaleString('ko-KR') : ''}
@@ -2169,7 +2169,7 @@ export default function Customers() {
 
                 {/* 결제수단 */}
                 <div className="mb-4">
-                  <label className="text-[11px] font-bold text-gray-text mb-2 block">결제수단</label>
+                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">결제수단</label>
                   <div className="flex flex-wrap gap-1.5">
                     {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
                       <button key={m} onClick={() => setChargeMethod(m)}
@@ -2183,7 +2183,7 @@ export default function Customers() {
 
                 {/* 선결제 일시 */}
                 <div className="mb-4">
-                  <label className="text-[11px] font-bold text-gray-text mb-1 block">선결제 일시 <span className="font-normal text-gray-text">(실제 결제한 날짜·시간)</span></label>
+                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">선결제 일시 <span className="font-normal text-gray-text">(실제 결제한 날짜·시간)</span></label>
                   <div className="flex gap-2">
                     <input type="date" value={chargeDate} onChange={e => setChargeDate(e.target.value)}
                       max={new Date().toLocaleDateString('en-CA')}
@@ -2195,7 +2195,7 @@ export default function Customers() {
 
                 {/* 비고 */}
                 <div className="mb-5">
-                  <label className="text-[11px] font-bold text-gray-text mb-1 block">비고 (선택)</label>
+                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">비고 (선택)</label>
                   <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
                     placeholder="예: 7월 법인카드" className={INPUT_CLS} />
                 </div>
@@ -2216,7 +2216,7 @@ export default function Customers() {
             ) : (
               /* ── 2단계: 최종 확인 ── */
               <>
-                <div className="text-[17px] font-extrabold mb-1">충전 내용 확인</div>
+                <div className="text-[17px] font-semibold mb-1">충전 내용 확인</div>
                 <div className="text-[11px] text-gray-text mb-5">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</div>
 
                 <div className="bg-gray-bg rounded-xl p-4 space-y-3 mb-5">
@@ -2276,8 +2276,8 @@ export default function Customers() {
         const dateStr = `${nextBillingDate.getMonth() + 1}월 ${nextBillingDate.getDate()}일`
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDowngradeModal(null)}>
-            <div className="bg-white rounded-2xl p-6 w-[340px] shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="text-[18px] font-extrabold text-ink mb-2">플랜 변경 안내</div>
+            <div className="modal-in bg-white rounded-2xl p-8 w-[460px] shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="text-[18px] font-semibold text-ink mb-2">플랜 변경 안내</div>
               <p className="text-[13px] text-gray-text leading-relaxed mb-5">
                 활성 고객 수가 줄어서 <strong className="text-ink">{targetName} 플랜</strong>으로 변경할 수 있어요.<br />
                 다음 결제일 <strong className="text-ink">{dateStr}</strong>부터 적용되며, 그 전까지는 현재 플랜이 유지됩니다.
@@ -2354,9 +2354,9 @@ function AccountQrModal({ accountCode, accountName, storeId, onClose }: { accoun
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-[340px]">
+      <div className="modal-in bg-white rounded-2xl shadow-xl p-7 w-[460px]">
         <div className="flex items-center justify-between mb-1">
-          <div className="text-[17px] font-extrabold">거래처 전용 QR</div>
+          <div className="text-[17px] font-semibold">거래처 전용 QR</div>
           <button onClick={onClose} className="text-gray-text hover:text-ink text-[18px]">✕</button>
         </div>
         <div className="text-[11px] text-gray-text mb-4">
@@ -2408,9 +2408,9 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-[340px]">
+      <div className="modal-in bg-white rounded-2xl shadow-xl p-7 w-[460px]">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-[17px] font-extrabold">키오스크 공용 QR</div>
+          <div className="text-[17px] font-semibold">키오스크 공용 QR</div>
           <button onClick={onClose} className="text-gray-text hover:text-ink text-[18px]">✕</button>
         </div>
         <div className="text-[11px] text-gray-text mb-4">

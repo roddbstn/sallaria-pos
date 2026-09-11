@@ -9,8 +9,8 @@
   --ink:         #1E1E1E;
   --gray-text:   #6B7280;
   --gray-border: #EBEBEB;
-  --gray-bg:     #F4F5F7;
-  --danger:      #C92A2A;
+  --gray-bg:     #F8F9FB;
+  --danger:      #E53935;
   --surface:     #ffffff;
   --page-bg:     #F4F5F7;
 }
@@ -105,6 +105,36 @@ input[type="checkbox"]:checked::after {
 
 input[type="checkbox"]:focus {
   outline: none;
+}
+
+/* 모달 등장 애니메이션 */
+@keyframes modal-in {
+  from { transform: scale(0.8); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+.modal-in {
+  animation: modal-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.modal-footer {
+  box-shadow: 0 -6px 16px -4px rgba(0, 0, 0, 0.08);
+}
+
+/* 숫자 입력 필드 화살표 제거 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* 텍스트필드 호버/포커스 테두리 색상 */
+input:not([type="checkbox"]):not([type="range"]):not([type="radio"]):hover,
+input:not([type="checkbox"]):not([type="range"]):not([type="radio"]):focus,
+textarea:hover,
+textarea:focus {
+  border-color: #6B7280 !important;
 }
 
 /* 볼륨 슬라이더 */

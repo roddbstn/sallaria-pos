@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { SegmentedControl } from '../components/SegmentedControl'
 import { type MenuDetail, type Category, type OptionGroup, type OptionItem } from '../lib/mock-data'
 import { won } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
@@ -116,6 +117,11 @@ export default function Menus() {
 
   const [addingStoreGroup, setAddingStoreGroup] = useState(false)
   const [newStoreGroup,    setNewStoreGroup]    = useState({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
+  const [addOptStep,       setAddOptStep]       = useState<1|2|3>(1)
+  const [newGroupItems,    setNewGroupItems]    = useState<{ id: string; name: string; price: string }[]>([{ id: crypto.randomUUID(), name: '', price: '' }])
+  const [step3CatId,       setStep3CatId]       = useState('')
+  const [step3MenuIds,     setStep3MenuIds]     = useState<Set<string>>(new Set())
+  const [addOptLoading,    setAddOptLoading]    = useState(false)
 
   const [addingCat,          setAddingCat]          = useState(false)
   const [newCatName,         setNewCatName]         = useState('')
@@ -148,19 +154,13 @@ export default function Menus() {
   const [addError,   setAddError]   = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
-  // ── 옵션 탭 스크롤 스파이 ──────────────────────────────────────────────────
-  const [activeOptionGroup,    setActiveOptionGroup]    = useState<string>('')
-  const optionScrollRef        = useRef<HTMLDivElement>(null)
-  const optionGroupRefs        = useRef<Record<string, HTMLDivElement | null>>({})
-  const optionTabButtonRefs    = useRef<Record<string, HTMLButtonElement | null>>({})
-  const optionTabsBarRef       = useRef<HTMLDivElement>(null)
-  const isOptionScrollingRef   = useRef(false)
+  // ── 옵션 탭 선택 상태 ─────────────────────────────────────────────────────
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
 
   const [optionSearch, setOptionSearch] = useState('')
   const [optionFilter, setOptionFilter] = useState<'all' | 'active' | 'soldOut' | 'hidden'>('all')
 
-  const [catJumpOpen,      setCatJumpOpen]      = useState(false)
-  const [optGroupJumpOpen, setOptGroupJumpOpen] = useState(false)
+  const [catJumpOpen, setCatJumpOpen] = useState(false)
 
   const filteredStoreGroups = useMemo(() => storeGroups.filter(g => {
     if (optionFilter === 'active')  return !g.isSoldOut && !g.isHidden && g.items.every(it => !it.soldOut && !it.hidden)
@@ -258,7 +258,7 @@ export default function Menus() {
     setHeaderRight(
       <div className="flex gap-2">
         <button
-          onClick={() => { setAddingStoreGroup(true); setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' }); setTab('option') }}
+          onClick={() => { setAddingStoreGroup(true); setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' }) }}
           className="px-3 py-2 bg-gray-100 text-ink rounded-lg text-[11px] font-bold hover:bg-gray-200 transition-colors"
         >
           옵션 추가
@@ -287,80 +287,6 @@ export default function Menus() {
     }
     if (storeId) load()
   }, [storeId])
-
-  // ── 옵션 그룹 스크롤 스파이 ───────────────────────────────────────────────
-  useEffect(() => {
-    if (storeGroups.length > 0 && !activeOptionGroup) {
-      setActiveOptionGroup(storeGroups[0].id)
-    }
-  }, [storeGroups])
-
-  useEffect(() => {
-    const container = optionScrollRef.current
-    if (!container || storeGroups.length === 0) return
-
-    const intersecting = new Set<string>()
-    const HEADER_H = 104
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (isOptionScrollingRef.current) return
-        entries.forEach(entry => {
-          const gId = (entry.target as HTMLElement).dataset.groupId
-          if (!gId) return
-          if (entry.isIntersecting) intersecting.add(gId)
-          else intersecting.delete(gId)
-        })
-        if (intersecting.size === 0) return
-        for (const g of storeGroups) {
-          if (intersecting.has(g.id)) {
-            setActiveOptionGroup(g.id)
-            break
-          }
-        }
-      },
-      {
-        root: container,
-        rootMargin: `-${HEADER_H}px 0px 0px 0px`,
-        threshold: 0,
-      }
-    )
-
-    for (const g of storeGroups) {
-      const el = optionGroupRefs.current[g.id]
-      if (el) observer.observe(el)
-    }
-
-    return () => observer.disconnect()
-  }, [storeGroups])
-
-  useEffect(() => {
-    const btn = optionTabButtonRefs.current[activeOptionGroup]
-    const bar = optionTabsBarRef.current
-    if (!btn || !bar) return
-    const btnLeft  = btn.offsetLeft
-    const btnRight = btnLeft + btn.offsetWidth
-    const barLeft  = bar.scrollLeft
-    const barRight = barLeft + bar.offsetWidth
-    if (btnLeft < barLeft + 12) {
-      bar.scrollTo({ left: btnLeft - 12, behavior: 'smooth' })
-    } else if (btnRight > barRight - 12) {
-      bar.scrollTo({ left: btnRight - bar.offsetWidth + 12, behavior: 'smooth' })
-    }
-  }, [activeOptionGroup])
-
-  function scrollToOptionGroup(groupId: string) {
-    const container = optionScrollRef.current
-    const el = optionGroupRefs.current[groupId]
-    if (!container || !el) return
-    isOptionScrollingRef.current = true
-    setActiveOptionGroup(groupId)
-    const HEADER_OFFSET = 104
-    const containerTop = container.getBoundingClientRect().top
-    const elTop = el.getBoundingClientRect().top
-    container.scrollBy({ top: elTop - containerTop - HEADER_OFFSET, behavior: 'smooth' })
-    setTimeout(() => { isOptionScrollingRef.current = false }, 600)
-  }
 
   // ── 카테고리 헬퍼 ──────────────────────────────────────────────────────────
   function getCategoryName(id: string | null): string {
@@ -391,6 +317,12 @@ export default function Menus() {
       : tagFilter === 'recommended' ? m.isRecommended
       : m.isNew
     return matchSearch && matchStatus && matchCat && matchTag
+  }).sort((a, b) => {
+    // QR오더와 동일하게: 카테고리 display_order 순 → 카테고리 내 메뉴 display_order 순
+    const catOrderA = categories.find(c => c.id === a.categoryId)?.displayOrder ?? Infinity
+    const catOrderB = categories.find(c => c.id === b.categoryId)?.displayOrder ?? Infinity
+    if (catOrderA !== catOrderB) return catOrderA - catOrderB
+    return (a.order ?? 0) - (b.order ?? 0)
   })
 
   // ── 메뉴 태그 토글 ─────────────────────────────────────────────────────────
@@ -900,6 +832,76 @@ export default function Menus() {
     setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
   }
 
+  function closeOptGroupModal() {
+    setAddingStoreGroup(false)
+    setAddOptStep(1)
+    setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
+    setNewGroupItems([{ id: crypto.randomUUID(), name: '', price: '' }])
+    setStep3CatId('')
+    setStep3MenuIds(new Set())
+  }
+
+  async function confirmOptGroupCreate() {
+    if (!newStoreGroup.name.trim() || !storeId) return
+    setAddOptLoading(true)
+    try {
+      const { data: gd, error: ge } = await supabase
+        .from('option_groups')
+        .insert({
+          store_id:      storeId,
+          name:          newStoreGroup.name.trim(),
+          is_required:   newStoreGroup.isRequired,
+          is_multi:      newStoreGroup.isMulti,
+          max_select:    newStoreGroup.isMulti && newStoreGroup.maxSelect ? parseInt(newStoreGroup.maxSelect) : null,
+          display_order: storeGroups.length,
+        })
+        .select('id, name, is_required, is_multi, max_select')
+        .single()
+      if (ge || !gd) { console.error(ge); return }
+
+      const validItems = newGroupItems.filter(i => i.name.trim())
+      const itemResults = await Promise.all(
+        validItems.map((item, idx) =>
+          supabase.from('option_items')
+            .insert({ option_group_id: gd.id, name: item.name.trim(), extra_price: parseInt(item.price) || 0, display_order: idx })
+            .select('id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order')
+            .single()
+        )
+      )
+      const createdItems: OptionItem[] = itemResults
+        .filter(r => r.data && !r.error)
+        .map(r => ({ id: r.data!.id, name: r.data!.name, extra: r.data!.extra_price, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false }))
+
+      const menuIds = Array.from(step3MenuIds)
+      if (menuIds.length > 0) {
+        await Promise.all(menuIds.map((menuId, i) =>
+          supabase.from('menu_option_groups').insert({ menu_id: menuId, option_group_id: gd.id, display_order: i })
+        ))
+      }
+
+      const newGroup: any = {
+        id: gd.id, name: gd.name,
+        isRequired: gd.is_required ?? false,
+        isMulti:    gd.is_multi    ?? false,
+        maxSelect:  gd.max_select  ?? null,
+        isSoldOut: false, soldOutUntil: null, isHidden: false,
+        usedBy:     menuIds.map(id => menus.find(m => m.code === id)?.name ?? '').filter(Boolean),
+        usedByMenus: menuIds.map(id => {
+          const m = menus.find(m2 => m2.code === id)
+          return m ? { name: m.name, soldOut: false, hidden: false } : null
+        }).filter(Boolean),
+        items: createdItems,
+      }
+      setStoreGroups(prev => [...prev, newGroup])
+      if (selected && step3MenuIds.has(selected.code)) {
+        applyLocalUpdate({ ...selected, optionGroups: [...selected.optionGroups, newGroup] })
+      }
+    } finally {
+      setAddOptLoading(false)
+      closeOptGroupModal()
+    }
+  }
+
   async function updateStoreGroup(groupId: string, updates: Partial<OptionGroup>) {
     const dbUpdates: Record<string, any> = {}
     if (updates.name       !== undefined) dbUpdates.name        = updates.name
@@ -1136,18 +1138,20 @@ export default function Menus() {
       <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-xl shadow-sm relative">
 
       {/* 탭 */}
-      <div className="px-4 border-b border-gray-border flex-shrink-0 flex gap-0">
-        {([
-          { v: 'menu',     l: '메뉴'     },
-          { v: 'option',   l: '옵션그룹'  },
-          { v: 'category', l: '카테고리' },
-        ] as { v: MenuTab; l: string }[]).map(({ v, l }) => (
-          <button key={v} onClick={() => setTab(v)}
-            className={`px-5 py-2.5 text-[11px] font-bold border-b-2 transition-colors
-              ${tab === v ? 'border-green text-green' : 'border-transparent text-gray-text hover:text-ink'}`}>
-            {l}
-          </button>
-        ))}
+      <div className="px-4 pt-2.5 pb-0 flex-shrink-0 border-b border-gray-border">
+        <div className="flex gap-1">
+          {([
+            { v: 'menu',     l: '메뉴'    },
+            { v: 'option',   l: '옵션그룹' },
+            { v: 'category', l: '카테고리' },
+          ] as { v: MenuTab; l: string }[]).map(({ v, l }) => (
+            <button key={v} onClick={() => setTab(v)}
+              className={`px-3 py-1.5 text-[12px] font-semibold border-b-2 transition-colors -mb-px
+                ${tab === v ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 로딩 */}
@@ -1322,10 +1326,10 @@ export default function Menus() {
       {/* ── 메뉴 상세 모달 ── */}
       {selected && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-2.5 bg-black/40" onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }}>
-          <div className="bg-white rounded-2xl shadow-xl w-[680px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="modal-in bg-white rounded-2xl shadow-xl w-[680px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
 
             {/* 모달 헤더 */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-border flex-shrink-0">
+            <div className="flex items-center justify-between px-8 pt-7 pb-0 flex-shrink-0">
               {editMode ? (
                 <>
                   <div className="flex flex-col min-w-0">
@@ -1345,45 +1349,12 @@ export default function Menus() {
                 <>
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="min-w-0">
-                      <div className="text-[17px] font-extrabold text-ink">{selected.name}</div>
-                      <span className="text-[11px] text-gray-text">{getCategoryName(selected.categoryId) || '카테고리 없음'}</span>
+                      <div className="text-[17px] font-semibold text-ink">{selected.name}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {/* 판매중 / 오늘품절 / 품절 3-segment */}
-                    {(() => {
-                      const state = getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null)
-                      return (
-                        <div className="flex bg-gray-100 rounded-lg p-0.5 text-[11px] font-bold">
-                          {([
-                            { v: 'active',    l: '판매중',   activeStyle: { background: 'white', color: '#1E1E1E' } },
-                            { v: 'today',     l: '오늘품절', activeStyle: { background: 'white', color: '#1E1E1E' } },
-                            { v: 'permanent', l: '품절',     activeStyle: { background: 'white', color: '#1E1E1E' } },
-                          ] as { v: SoldOutState; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
-                            <button key={v} onClick={() => setMenuSoldOutState(v)}
-                              className="px-2.5 py-1 rounded-md transition-all"
-                              style={state === v ? activeStyle : { color: '#727272' }}>
-                              {l}
-                            </button>
-                          ))}
-                        </div>
-                      )
-                    })()}
-                    {/* 노출 / 숨김 2-segment */}
-                    <div className="flex bg-gray-100 rounded-lg p-0.5 text-[11px] font-bold">
-                      {([
-                        { v: true,  l: '노출', activeStyle: { background: 'white', color: '#1E1E1E' } },
-                        { v: false, l: '숨김', activeStyle: { background: 'white', color: '#1E1E1E' } },
-                      ] as { v: boolean; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
-                        <button key={String(v)} onClick={() => toggleMenuStatus('active')}
-                          className="px-2.5 py-1 rounded-md transition-all"
-                          style={selected.active === v ? activeStyle : { color: '#727272' }}>
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                    <button onClick={startEdit} className="px-3 py-1.5 text-[11px] font-medium text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">상세 수정</button>
-                    <button onClick={() => setDeleteConfirm('single')} className="px-3 py-1.5 text-[11px] font-medium text-danger bg-red-50 rounded-lg hover:bg-red-100">삭제</button>
+                    <button onClick={() => setDeleteConfirm('single')} className="px-3 py-2 text-[11px] font-bold text-danger bg-red-50 rounded-lg hover:bg-red-100">삭제</button>
+                    <button onClick={startEdit} className="px-3 py-2 text-[11px] font-bold text-ink bg-gray-100 rounded-lg hover:bg-gray-200">상세 수정</button>
                     <button onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-text hover:bg-gray-100 text-[18px]">✕</button>
                   </div>
                 </>
@@ -1391,7 +1362,7 @@ export default function Menus() {
             </div>
 
             {/* 모달 바디 */}
-            <div className="overflow-y-auto flex-1 p-6 space-y-5">
+            <div className="overflow-y-auto flex-1 px-8 py-9 space-y-5">
 
               {/* 기본 정보 편집 폼 */}
               {editMode && (
@@ -1453,7 +1424,7 @@ export default function Menus() {
                         <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">기본 가격 (원)</span>
                         <div className="mt-1 flex items-center gap-1.5">
                           <input type="text" inputMode="numeric" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value.replace(/[^0-9]/g,'') }))}
-                            className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none" />
+                            className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none" />
                           <div className="flex flex-col gap-0.5">
                             <button type="button" onClick={() => setEditForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) + 100) )}))}
                               className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
@@ -1489,31 +1460,28 @@ export default function Menus() {
                   <div className="grid grid-cols-2 gap-2.5">
                     <div>
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">판매 상태</span>
-                      <div className="flex bg-gray-100 rounded-lg p-0.5">
-                        {([
-                          { label: '판매중',   val: 'active'    as SoldOutState, activeStyle: { background: 'white', color: '#1E1E1E' } },
-                          { label: '오늘품절', val: 'today'     as SoldOutState, activeStyle: { background: 'white', color: '#1E1E1E' } },
-                          { label: '품절',     val: 'permanent' as SoldOutState, activeStyle: { background: 'white', color: '#1E1E1E' } },
-                        ] as { label: string; val: SoldOutState; activeStyle: React.CSSProperties }[]).map(({ label, val, activeStyle }) => (
-                          <button key={val} type="button" onClick={() => setEditForm(p => ({ ...p, soldOutState: val }))}
-                            className="flex-1 py-1.5 rounded-md text-[11px] font-bold transition-all"
-                            style={editForm.soldOutState === val ? activeStyle : { color: '#727272' }}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
+                      <SegmentedControl
+                        options={[
+                          { label: '판매중',   value: 'active'    as SoldOutState },
+                          { label: '오늘품절', value: 'today'     as SoldOutState },
+                          { label: '계속품절', value: 'permanent' as SoldOutState },
+                        ]}
+                        value={editForm.soldOutState}
+                        onChange={(v) => setEditForm(p => ({ ...p, soldOutState: v }))}
+                        size="xs"
+                      />
                     </div>
                     <div>
                       <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">표시 상태</span>
-                      <div className="flex bg-gray-100 rounded-lg p-0.5">
-                        {[{ label: '노출', val: true }, { label: '숨김', val: false }].map(({ label, val }) => (
-                          <button key={label} type="button" onClick={() => setEditForm(p => ({ ...p, active: val }))}
-                            className={`flex-1 py-1.5 rounded-md text-[11px] font-bold transition-all
-                              ${editForm.active === val ? 'bg-white shadow-sm text-ink' : 'text-gray-text'}`}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
+                      <SegmentedControl
+                        options={[
+                          { label: '노출', value: true },
+                          { label: '숨김', value: false },
+                        ]}
+                        value={editForm.active}
+                        onChange={(v) => setEditForm(p => ({ ...p, active: v }))}
+                        size="xs"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1521,15 +1489,20 @@ export default function Menus() {
 
               {/* 보기 모드 */}
               {!editMode && (
+                <>
                 <div className="flex gap-2.5">
                   {/* 썸네일 */}
                   {selected.imageUrl && (
-                    <div className="w-[88px] h-[88px] flex-shrink-0 rounded-xl overflow-hidden border border-gray-border">
+                    <div className="w-[88px] flex-shrink-0 rounded-xl overflow-hidden border border-gray-border self-stretch">
                       <img src={selected.imageUrl} alt={selected.name} className="w-full h-full object-cover" />
                     </div>
                   )}
                   {/* 정보 */}
                   <div className="flex-1 bg-gray-bg rounded-xl px-3 py-2.5 space-y-2">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-gray-text">메뉴명</span>
+                      <span className="font-semibold text-ink">{selected.name}</span>
+                    </div>
                     <div className="flex justify-between text-[11px]">
                       <span className="text-gray-text">기본 가격</span>
                       <span className="font-bold">{won(selected.price)}</span>
@@ -1538,28 +1511,31 @@ export default function Menus() {
                       <span className="text-gray-text">카테고리</span>
                       <span className="font-semibold text-ink">{getCategoryName(selected.categoryId) || <span className="text-gray-border italic text-[11px]">미지정</span>}</span>
                     </div>
-                    <div className="flex justify-between items-center text-[11px]">
-                      <span className="text-gray-text">판매 상태</span>
-                      {(() => {
-                        const state = getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null)
-                        return state === 'today'
-                          ? <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">오늘품절</span>
-                          : state === 'permanent'
-                          ? <span className="text-[11px] font-semibold text-danger bg-red-50 px-2 py-0.5 rounded-full">품절</span>
-                          : <span className="text-[11px] font-semibold text-green bg-green-soft px-2 py-0.5 rounded-full">판매중</span>
-                      })()}
-                    </div>
-                    <div className="flex justify-between items-center text-[11px]">
-                      <span className="text-gray-text">표시 상태</span>
-                      {selected.active
-                        ? <span className="text-[11px] font-semibold text-ink bg-gray-bg px-2 py-0.5 rounded-full">노출</span>
-                        : <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">숨김</span>}
-                    </div>
-                    {selected.description && (
-                      <div className="pt-1 border-t border-gray-border text-[11px] text-gray-text">{selected.description}</div>
-                    )}
                   </div>
                 </div>
+                {/* 판매중/오늘품절/품절 + 노출/숨김 — 우측 정렬 */}
+                <div className="flex justify-end gap-2 mt-3">
+                  <SegmentedControl
+                    options={[
+                      { label: '판매중',   value: 'active'    as SoldOutState },
+                      { label: '오늘품절', value: 'today'     as SoldOutState },
+                      { label: '계속품절', value: 'permanent' as SoldOutState },
+                    ]}
+                    value={getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null)}
+                    onChange={setMenuSoldOutState}
+                    size="xs"
+                  />
+                  <SegmentedControl
+                    options={[
+                      { label: '노출', value: true },
+                      { label: '숨김', value: false },
+                    ]}
+                    value={selected.active}
+                    onChange={(v) => { if (selected.active !== v) toggleMenuStatus('active') }}
+                    size="xs"
+                  />
+                </div>
+                </>
               )}
 
               {/* 옵션 그룹 연결 — 편집 모드에서 태그 버튼으로 연결/해제 */}
@@ -1593,29 +1569,27 @@ export default function Menus() {
                 const editableGroups = selected.optionGroups
                 return (
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-extrabold text-ink">옵션 그룹</span>
-                      {editableGroups.length > 0 && (
-                        <span className="text-[11px] text-gray-text">{editableGroups.length}개 연결됨</span>
-                      )}
+                    <div className="flex items-center mb-2">
+                      <span className="text-[13px] font-semibold text-gray-text">옵션 그룹</span>
                     </div>
                     {editableGroups.length === 0 ? (
                       <div className="text-[11px] text-gray-text text-center py-8 border border-dashed border-gray-border rounded-xl">
                         연결된 옵션 그룹이 없습니다
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="flex gap-3 overflow-x-auto pb-2">
                         {editableGroups.map(g => {
                           const sg = storeGroups.find(s => s.id === g.id)
                           // g(selected.optionGroups)에 값이 있으면 우선 사용 — 가격(필수) 등 storeGroups에 없는 그룹 대응
                           const gAny = g as any
                           return (
-                            <OptionGroupCard
-                              key={g.id}
+                            <div key={g.id} className="min-w-[300px] flex-shrink-0">
+                            <OptionGroupPanel
                               group={g}
                               isSoldOut={gAny.isSoldOut ?? sg?.isSoldOut ?? false}
                               soldOutUntil={gAny.soldOutUntil ?? sg?.soldOutUntil ?? null}
                               isHidden={gAny.isHidden ?? sg?.isHidden ?? false}
+                              readOnly
                               onSetSoldOutState={state => setGroupSoldOutState(g.id, state)}
                               onToggleHidden={() => toggleGroupHidden(g.id)}
                               onUpdateGroup={updates => modalUpdateGroup(g.id, updates)}
@@ -1625,6 +1599,7 @@ export default function Menus() {
                               onAddItem={(name, extra) => modalAddItem(g.id, name, extra)}
                               onReorderItem={(fromIdx, toIdx) => reorderStoreItem(g.id, fromIdx, toIdx)}
                             />
+                            </div>
                           )
                         })}
                       </div>
@@ -1657,160 +1632,91 @@ export default function Menus() {
 
       {/* ── 옵션 탭 ── */}
       {!loading && tab === 'option' && (() => {
+        // 현재 선택된 그룹 (selectedGroupId 없으면 첫 번째 그룹 자동 선택)
+        const activeGroup = filteredStoreGroups.find(g => g.id === selectedGroupId)
+          ?? filteredStoreGroups[0]
+          ?? null
         return (
-          <div ref={optionScrollRef} className="flex-1 overflow-y-auto">
-            {/* 옵션 탭 헤더 (메뉴 탭과 동일 구조) */}
-            <div className="sticky top-0 z-10 bg-white">
-              {/* 검색 + 상태 필터 */}
-              <div className="px-4 pt-3 pb-2 flex items-center gap-2.5 flex-shrink-0">
-                <div className="relative w-52 flex-shrink-0">
-                  <input
-                    value={optionSearch}
-                    onChange={e => setOptionSearch(e.target.value)}
-                    placeholder="그룹명 · 옵션명 검색"
-                    className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-ink"
-                  />
-                  <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="13" height="13" viewBox="0 0 16 16" fill="none">
-                    <circle cx="6.5" cy="6.5" r="4.5" stroke="#727272" strokeWidth="1.5"/>
-                    <path d="M10.5 10.5L14 14" stroke="#727272" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                </div>
-                <div className="flex gap-1">
-                  {([
-                    { v: 'all',     l: '전체'   },
-                    { v: 'active',  l: '판매중' },
-                    { v: 'soldOut', l: '품절'   },
-                    { v: 'hidden',  l: '숨김'   },
-                  ] as { v: typeof optionFilter; l: string }[]).map(({ v, l }) => (
-                    <button key={v} onClick={() => setOptionFilter(v)}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${optionFilter === v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      {l}
-                    </button>
-                  ))}
-                </div>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* 검색 + 상태 필터 */}
+            <div className="px-4 pt-3 pb-3 flex items-center gap-2.5 flex-shrink-0 border-b border-gray-border bg-white">
+              <div className="relative flex-shrink-0" style={{ width: 200 }}>
+                <input
+                  value={optionSearch}
+                  onChange={e => setOptionSearch(e.target.value)}
+                  placeholder="그룹명 · 옵션명 검색"
+                  className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-ink"
+                />
+                <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <circle cx="6.5" cy="6.5" r="4.5" stroke="#727272" strokeWidth="1.5"/>
+                  <path d="M10.5 10.5L14 14" stroke="#727272" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
               </div>
-              {/* 옵션 그룹 네비게이션 바 */}
-              <div className="px-4 pb-2 border-b border-gray-border flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div ref={optionTabsBarRef} className="flex-1 flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-                    {filteredStoreGroups.map(g => (
-                      <button
-                        key={g.id}
-                        ref={el => { optionTabButtonRefs.current[g.id] = el }}
-                        onClick={() => scrollToOptionGroup(g.id)}
-                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors
-                          ${activeOptionGroup === g.id
-                            ? 'bg-ink text-white'
-                            : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                      >
-                        {g.name}
-                        {g.isSoldOut && (() => {
-                          const gs = getSoldOutState(g.isSoldOut, g.soldOutUntil)
-                          const isActive = activeOptionGroup === g.id
-                          return gs === 'today'
-                            ? <span style={isActive ? { background: 'rgba(255,255,255,0.2)', color: 'white' } : { background: 'rgba(217,119,6,0.12)', color: '#D97706' }}
-                                className="text-[9px] font-bold px-1 py-0.5 rounded">오늘품절</span>
-                            : <span style={isActive ? { background: 'rgba(255,255,255,0.2)', color: 'white' } : { background: 'rgba(201,42,42,0.1)', color: '#C92A2A' }}
-                                className="text-[9px] font-bold px-1 py-0.5 rounded">품절</span>
-                        })()}
-                        {g.isHidden && (
-                          <span style={activeOptionGroup === g.id
-                            ? { background: 'rgba(255,255,255,0.2)', color: 'white' }
-                            : { background: '#E5E5E5', color: '#727272' }}
-                            className="text-[9px] font-bold px-1 py-0.5 rounded">숨김</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={() => setOptGroupJumpOpen(true)}
-                    className="flex-shrink-0 w-8 h-8 bg-white border border-gray-border rounded-full flex items-center justify-center text-gray-text hover:bg-gray-50 transition-colors"
-                    style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-                    aria-label="옵션 그룹 바로가기"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
+              <div className="flex gap-1">
+                {([
+                  { v: 'all',     l: '전체'   },
+                  { v: 'active',  l: '판매중' },
+                  { v: 'soldOut', l: '품절'   },
+                  { v: 'hidden',  l: '숨김'   },
+                ] as { v: typeof optionFilter; l: string }[]).map(({ v, l }) => (
+                  <button key={v} onClick={() => setOptionFilter(v)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors
+                      ${optionFilter === v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                    {l}
                   </button>
-                </div>
+                ))}
               </div>
             </div>
 
-            <div className="px-4 py-4">
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden p-4 space-y-4 max-w-[700px]">
-              {/* 그룹 생성 폼 */}
-              {addingStoreGroup && (
-                <div className="border border-gray-border rounded-xl p-4 space-y-3">
-                  <input autoFocus value={newStoreGroup.name}
-                    onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
-                    placeholder="옵션 그룹명 (예: 드레싱 선택, 사이즈)"
-                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none"
-                    onKeyDown={e => e.key === 'Enter' && createStandaloneGroup()}
-                  />
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => setNewStoreGroup(p => ({ ...p, isRequired: !p.isRequired }))}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
-                        ${newStoreGroup.isRequired ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      {newStoreGroup.isRequired ? '필수' : '선택 (필수로 변경)'}
-                    </button>
-                    <button onClick={() => setNewStoreGroup(p => ({ ...p, isMulti: !p.isMulti, maxSelect: '' }))}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
-                        ${newStoreGroup.isMulti ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      {newStoreGroup.isMulti ? '복수 선택' : '단일 선택 (복수로 변경)'}
-                    </button>
-                    {newStoreGroup.isMulti && (
-                      <input type="number" min="1" value={newStoreGroup.maxSelect}
-                        onChange={e => setNewStoreGroup(p => ({ ...p, maxSelect: e.target.value }))}
-                        placeholder="최대 N개"
-                        className="w-20 border border-gray-border rounded-lg px-2 py-1 text-[11px]"
-                      />
-                    )}
+            {/* 2단 레이아웃: 왼쪽 목록 + 오른쪽 상세 */}
+            <div className="flex flex-1 overflow-hidden">
+              {/* ── 왼쪽: 그룹 목록 ── */}
+              <div className="w-[260px] flex-shrink-0 border-r border-gray-border overflow-y-auto bg-white">
+                {storeGroups.length === 0 && (
+                  <div className="text-center py-16 text-gray-text text-[11px] px-4">
+                    등록된 옵션 그룹이 없습니다.<br/>위 버튼으로 추가하세요.
                   </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setAddingStoreGroup(false)}
-                      className="px-3 py-1.5 text-[11px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
-                    <button onClick={createStandaloneGroup} disabled={!newStoreGroup.name.trim()}
-                      className="px-3 py-1.5 text-[11px] font-bold text-white bg-green rounded-lg hover:bg-[#015c28] disabled:opacity-40">
-                      그룹 추가
-                    </button>
+                )}
+                {filteredStoreGroups.length === 0 && storeGroups.length > 0 && (
+                  <div className="text-center py-16 text-gray-text text-[11px]">
+                    검색 결과가 없습니다.
                   </div>
-                </div>
-              )}
-
-              {storeGroups.length === 0 && !addingStoreGroup && (
-                <div className="text-center py-16 text-gray-text text-[11px]">
-                  등록된 옵션 그룹이 없습니다. 위 버튼으로 추가하세요.
-                </div>
-              )}
-
-              {filteredStoreGroups.length === 0 && storeGroups.length > 0 && (
-                <div className="text-center py-16 text-gray-text text-[11px]">
-                  검색 결과가 없습니다.
-                </div>
-              )}
-
-              {filteredStoreGroups.map(group => (
-                <div key={group.id} ref={el => { optionGroupRefs.current[group.id] = el }} data-group-id={group.id}>
-                  <OptionGroupCard
+                )}
+                {filteredStoreGroups.map(group => (
+                  <OptionGroupRow
+                    key={group.id}
                     group={group}
-                    isSoldOut={group.isSoldOut}
-                    soldOutUntil={group.soldOutUntil}
-                    isHidden={group.isHidden}
-                    usedByMenus={group.usedByMenus}
-                    searchQuery={optionSearch}
-                    onSetSoldOutState={state => setGroupSoldOutState(group.id, state)}
-                    onToggleHidden={() => toggleGroupHidden(group.id)}
-                    onUpdateGroup={updates => updateStoreGroup(group.id, updates)}
-                    onDeleteGroup={() => deleteStoreGroup(group.id)}
-                    onUpdateItem={(itemId, updates) => updateStoreItem(group.id, itemId, updates)}
-                    onDeleteItem={itemId => deleteStoreItem(group.id, itemId)}
-                    onAddItem={(name, extra) => addStoreItem(group.id, name, extra)}
-                    onReorderItem={(fromIdx, toIdx) => reorderStoreItem(group.id, fromIdx, toIdx)}
+                    isSelected={activeGroup?.id === group.id}
+                    onClick={() => setSelectedGroupId(group.id)}
                   />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+
+              {/* ── 오른쪽: 그룹 상세 패널 ── */}
+              <div className="flex-1 overflow-y-auto bg-gray-bg">
+                {activeGroup ? (
+                  <OptionGroupPanel
+                    group={activeGroup}
+                    isSoldOut={activeGroup.isSoldOut}
+                    soldOutUntil={activeGroup.soldOutUntil}
+                    isHidden={activeGroup.isHidden}
+                    usedByMenus={activeGroup.usedByMenus}
+                    searchQuery={optionSearch}
+                    onSetSoldOutState={state => setGroupSoldOutState(activeGroup.id, state)}
+                    onToggleHidden={() => toggleGroupHidden(activeGroup.id)}
+                    onUpdateGroup={updates => updateStoreGroup(activeGroup.id, updates)}
+                    onDeleteGroup={() => { deleteStoreGroup(activeGroup.id); setSelectedGroupId(null) }}
+                    onUpdateItem={(itemId, updates) => updateStoreItem(activeGroup.id, itemId, updates)}
+                    onDeleteItem={itemId => deleteStoreItem(activeGroup.id, itemId)}
+                    onAddItem={(name, extra) => addStoreItem(activeGroup.id, name, extra)}
+                    onReorderItem={(fromIdx, toIdx) => reorderStoreItem(activeGroup.id, fromIdx, toIdx)}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-text text-[12px]">
+                    왼쪽에서 옵션 그룹을 선택하세요.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )
@@ -1821,40 +1727,16 @@ export default function Menus() {
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <div className="flex items-center justify-between mb-1">
             <div>
-              <div className="text-[16px] font-extrabold">카테고리 관리</div>
+              <div className="text-[16px] font-semibold">카테고리 관리</div>
               <div className="text-[11px] text-gray-text mt-0.5">
                 웹 주문 페이지에서 거래처명 바로 아래에 표시되는 탭 목록입니다. 순서대로 노출됩니다.
               </div>
             </div>
-            {!addingCat && (
-              <button onClick={() => { setAddingCat(true); setNewCatName('') }}
-                className="px-3 py-2 text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] rounded-lg hover:bg-[#00BB55] transition-colors flex-shrink-0">
-                카테고리 추가
-              </button>
-            )}
+            <button onClick={() => { setAddingCat(true); setNewCatName('') }}
+              className="px-3 py-2 text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] rounded-lg hover:bg-[#00BB55] transition-colors flex-shrink-0">
+              카테고리 추가
+            </button>
           </div>
-
-          {addingCat && (
-            <div className="flex items-center gap-2 mt-4 mb-2 p-3 border border-gray-border rounded-xl bg-gray-bg">
-              <input autoFocus value={newCatName} onChange={e => setNewCatName(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) }
-                  if (e.key === 'Escape') setAddingCat(false)
-                }}
-                placeholder="카테고리 이름 (예: 리뷰이벤트, 이달의메뉴)"
-                className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:outline-none focus:border-gray-400"
-              />
-              <button onClick={() => { if (newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) } }}
-                disabled={!newCatName.trim()}
-                className="px-3 py-2 text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] rounded-lg hover:bg-[#00BB55] disabled:opacity-40 focus:outline-none">
-                추가
-              </button>
-              <button onClick={() => setAddingCat(false)}
-                className="px-3 py-2 text-[11px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200 focus:outline-none">
-                취소
-              </button>
-            </div>
-          )}
 
           {/* 카테고리 pill 버튼 바 — 클릭 시 해당 카테고리 드롭다운 열기 + 스크롤 */}
           {sortedCategories().length > 0 && (
@@ -1963,29 +1845,29 @@ export default function Menus() {
                       {catMenus.length === 0 ? (
                         <p className="text-[11px] text-gray-text py-1">이 카테고리에 메뉴가 없습니다.</p>
                       ) : (
-                        <div className="grid grid-cols-3 gap-2.5">
+                        <div className="grid grid-cols-10 gap-1.5">
                           {catMenus
                             .slice()
                             .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
                             .map(m => (
-                              <div key={m.code} className="bg-white rounded-xl overflow-hidden border border-gray-border shadow-sm">
+                              <div key={m.code} className="bg-white rounded-lg overflow-hidden border border-gray-border shadow-sm">
                                 {/* 썸네일 */}
-                                <div className="w-full aspect-[4/3] bg-gray-100 flex items-center justify-center overflow-hidden">
+                                <div className="w-full aspect-square bg-gray-100 flex items-center justify-center overflow-hidden">
                                   {m.imageUrl
                                     ? <img src={m.imageUrl} alt={m.name} className="w-full h-full object-cover" />
-                                    : <span className="text-[32px]">{m.emoji}</span>
+                                    : <span className="text-[20px]">{m.emoji}</span>
                                   }
                                 </div>
                                 {/* 정보 */}
-                                <div className="px-3 py-2">
-                                  <div className="flex items-start justify-between gap-1 mb-1">
-                                    <span className="text-[11px] font-semibold text-ink leading-snug">{m.name}</span>
+                                <div className="px-2 py-1.5">
+                                  <div className="flex items-start justify-between gap-1 mb-0.5">
+                                    <span className="text-[10px] font-semibold text-ink leading-snug">{m.name}</span>
                                     <div className="flex flex-col gap-0.5 items-end flex-shrink-0">
-                                      {m.soldOut  && <span className="text-[10px] font-bold text-white bg-gray-400 rounded px-1.5 py-0.5 leading-none">품절</span>}
-                                      {!m.active  && <span className="text-[10px] font-bold text-gray-text bg-gray-200 rounded px-1.5 py-0.5 leading-none">숨김</span>}
+                                      {m.soldOut  && <span className="text-[9px] font-bold text-white bg-gray-400 rounded px-1 py-0.5 leading-none">품절</span>}
+                                      {!m.active  && <span className="text-[9px] font-bold text-gray-text bg-gray-200 rounded px-1 py-0.5 leading-none">숨김</span>}
                                     </div>
                                   </div>
-                                  <span className="text-[11px] font-bold text-gray-text">{won(m.price)}</span>
+                                  <span className="text-[10px] font-bold text-gray-text">{won(m.price)}</span>
                                 </div>
                               </div>
                             ))}
@@ -2025,14 +1907,14 @@ export default function Menus() {
         if (!cat) return null
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setCatEditModalId(null)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[520px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[520px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
               {/* 헤더 */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-border flex-shrink-0">
-                <div className="text-[16px] font-extrabold">카테고리 수정</div>
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between px-8 pt-7 pb-0 flex-shrink-0">
+                <div className="text-[17px] font-semibold">카테고리 수정</div>
+                <div className="flex items-center gap-4">
                   <button
                     onClick={() => { setCatDeleteRemap({}); setCatDeleteModalId(catEditModalId); setCatEditModalId(null) }}
-                    className="text-[11px] font-semibold text-danger border border-danger/30 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                    className="px-3 py-1.5 text-[11px] font-medium text-danger bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
                   >
                     삭제
                   </button>
@@ -2041,8 +1923,8 @@ export default function Menus() {
               </div>
 
               {/* 이름 */}
-              <div className="px-5 pt-5 pb-4 flex-shrink-0">
-                <label className="text-[11px] font-bold text-gray-text block mb-1.5">카테고리 이름</label>
+              <div className="px-8 pt-6 pb-5 flex-shrink-0">
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">카테고리 이름</label>
                 <input
                   value={catEditNameDraft}
                   onChange={e => setCatEditNameDraft(e.target.value)}
@@ -2051,8 +1933,8 @@ export default function Menus() {
               </div>
 
               {/* 메뉴 선택 */}
-              <div className="px-5 pb-2 pt-1 flex-shrink-0 space-y-2">
-                <div className="text-[11px] font-bold text-gray-text">메뉴 선택 <span className="font-normal text-gray-text/70">(체크된 메뉴가 이 카테고리에 속합니다)</span></div>
+              <div className="px-8 pb-3 pt-2 flex-shrink-0 space-y-2">
+                <div className="text-[13px] font-semibold text-gray-text mb-1.5">메뉴 선택</div>
                 <input
                   value={catEditSearch}
                   onChange={e => setCatEditSearch(e.target.value)}
@@ -2060,13 +1942,19 @@ export default function Menus() {
                   className="w-full border border-gray-border rounded-xl px-3 py-2 text-[11px] focus:outline-none focus:border-green"
                 />
               </div>
-              <div className="flex-1 overflow-y-auto px-5 pb-4">
+              <div className="flex-1 overflow-y-auto px-8 pb-6">
                 {menus.length === 0 ? (
                   <div className="text-[11px] text-gray-text py-3 text-center">등록된 메뉴가 없습니다</div>
                 ) : (
                   <div className="space-y-1.5">
-                    {menus.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                    {menus.slice()
                     .filter(m => !catEditSearch.trim() || m.name.includes(catEditSearch.trim()))
+                    .sort((a, b) => {
+                      const aChecked = catEditChecked.has(a.code) ? 0 : 1
+                      const bChecked = catEditChecked.has(b.code) ? 0 : 1
+                      if (aChecked !== bChecked) return aChecked - bChecked
+                      return (a.order ?? 0) - (b.order ?? 0)
+                    })
                     .map(m => {
                       const checked = catEditChecked.has(m.code)
                       return (
@@ -2108,15 +1996,15 @@ export default function Menus() {
               </div>
 
               {/* 푸터 */}
-              <div className="flex gap-2.5 px-5 py-3 border-t border-gray-border flex-shrink-0">
+              <div className="flex gap-2 px-8 py-4 border-t border-gray-border flex-shrink-0 modal-footer">
                 <button onClick={() => setCatEditModalId(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
+                  className="flex-1 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">
                   취소
                 </button>
                 <button
                   onClick={() => saveCategoryEdit(catEditModalId, catEditNameDraft, catEditChecked)}
                   disabled={!catEditNameDraft.trim() || catEditSaving}
-                  className="flex-[2] py-2.5 rounded-xl bg-green text-white font-bold hover:opacity-90 transition-opacity disabled:opacity-40"
+                  className="flex-1 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-40"
                 >
                   {catEditSaving ? '저장 중…' : '저장'}
                 </button>
@@ -2133,10 +2021,10 @@ export default function Menus() {
         const catMenus = menus.filter(m => m.categoryId === catDeleteModalId).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setCatDeleteModalId(null)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[440px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[560px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
               {/* 헤더 */}
-              <div className="px-5 py-5 flex-shrink-0">
-                <div className="text-[17px] font-extrabold mb-1">
+              <div className="px-6 py-6 flex-shrink-0">
+                <div className="text-[17px] font-semibold mb-1">
                   <span className="text-danger">'{cat.name}'</span> 카테고리 삭제
                 </div>
                 <div className="text-[11px] text-gray-text">
@@ -2198,7 +2086,7 @@ export default function Menus() {
                 const allMapped = catMenus.every(m => !!catDeleteRemap[m.code])
                 const canDelete = catMenus.length === 0 || allMapped
                 return (
-                  <div className="flex gap-2.5 px-5 py-3 border-t border-gray-border flex-shrink-0">
+                  <div className="flex gap-2.5 px-5 py-3 border-t border-gray-border flex-shrink-0 modal-footer">
                     <button onClick={() => setCatDeleteModalId(null)}
                       className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
                       취소
@@ -2221,15 +2109,15 @@ export default function Menus() {
       {/* ── 메뉴 추가 모달 ── */}
       {addMenuOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAddMenuOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-[500px] max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="modal-in bg-white rounded-2xl shadow-xl w-[560px] max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
 
             {/* 헤더 */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-0 flex-shrink-0">
-              <span className="text-[16px] font-extrabold">메뉴 추가</span>
+            <div className="flex items-center justify-between px-8 pt-7 pb-0 flex-shrink-0">
+              <span className="text-[17px] font-semibold">메뉴 추가</span>
               <button onClick={() => setAddMenuOpen(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
             </div>
             {/* 탭 */}
-            <div className="flex gap-0 px-5 mt-3 border-b border-gray-border flex-shrink-0">
+            <div className="flex gap-0 px-8 mt-4 border-b border-gray-border flex-shrink-0">
               {([{ v: 'bulk', l: '일괄' }, { v: 'detail', l: '상세' }] as const).map(({ v, l }) => (
                 <button key={v} onClick={() => { setAddModalTab(v); setAddError('') }}
                   className={`px-4 py-2 text-[13px] font-bold border-b-2 transition-colors -mb-px
@@ -2240,7 +2128,7 @@ export default function Menus() {
             </div>
 
             {/* 카테고리 (공통) */}
-            <div className="px-5 pt-4 flex-shrink-0">
+            <div className="px-8 pt-6 flex-shrink-0">
               <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">
                 카테고리 <span className="text-danger">*</span>
               </label>
@@ -2259,15 +2147,20 @@ export default function Menus() {
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <select value={addCategoryId} onChange={e => setAddCategoryId(e.target.value)}
-                    className="flex-1 border border-gray-border rounded-lg px-3 py-2 pr-8 text-[11px] bg-white appearance-auto">
-                    <option value="">카테고리 선택</option>
-                    {sortedCategories().map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <div className="relative flex-1">
+                    <select value={addCategoryId} onChange={e => setAddCategoryId(e.target.value)}
+                      className="w-full border border-gray-border rounded-lg px-3 py-2 pr-7 text-[11px] bg-white appearance-none focus:outline-none">
+                      <option value="">카테고리 선택</option>
+                      {sortedCategories().map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 3.5L5 6.5L8 3.5"/>
+                    </svg>
+                  </div>
                   <button type="button" onClick={() => { setAddingNewCat(true); setNewCatInModal('') }}
-                    className="px-3 py-2 border border-gray-border rounded-lg text-[11px] font-bold text-gray-text hover:border-green hover:text-green transition-colors flex-shrink-0">
+                    className="px-3 py-2 border border-gray-border rounded-lg text-[11px] font-medium text-gray-text hover:bg-gray-100 transition-colors flex-shrink-0">
                     + 새로 만들기
                   </button>
                 </div>
@@ -2276,8 +2169,8 @@ export default function Menus() {
 
             {/* ── 일괄 추가 탭 ── */}
             {addModalTab === 'bulk' && (
-              <div className="px-5 py-3 space-y-3 overflow-y-auto flex-1">
-                <div className="grid grid-cols-[40px_1fr_120px_28px] gap-2">
+              <div className="px-6 py-4 space-y-3 overflow-y-auto flex-1">
+                <div className="grid grid-cols-[40px_1fr_90px_28px] gap-2">
                   <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">사진</span>
                   <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴명</span>
                   <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">가격 (원)</span>
@@ -2285,7 +2178,7 @@ export default function Menus() {
                 </div>
                 <div className="space-y-2">
                   {addRows.map((row, idx) => (
-                    <div key={row.id} className="grid grid-cols-[40px_1fr_120px_28px] gap-2 items-center">
+                    <div key={row.id} className="grid grid-cols-[40px_1fr_90px_28px] gap-2 items-center">
                       {/* 이미지 드롭존 */}
                       <div
                         className="w-10 h-9 rounded-lg border border-gray-border cursor-pointer flex items-center justify-center overflow-hidden relative hover:bg-gray-400 transition-colors flex-shrink-0 group"
@@ -2309,26 +2202,14 @@ export default function Menus() {
                         value={row.name} onChange={e => updateRow(row.id, 'name', e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
                         placeholder={`메뉴명 ${idx + 1}`}
-                        className="border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-green focus:outline-none"
+                        className="border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none"
                       />
-                      <div className="flex items-center gap-1.5">
-                        <input type="text" inputMode="numeric"
-                          value={row.price} onChange={e => updateRow(row.id, 'price', e.target.value.replace(/[^0-9]/g,''))}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
-                          placeholder="0"
-                          className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none"
-                        />
-                        <div className="flex flex-col gap-0.5">
-                          <button type="button" onClick={() => updateRow(row.id, 'price', String(Math.max(0, (parseInt(row.price) || 0) + 100)))}
-                            className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
-                            <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4.5L4 1.5L7 4.5"/></svg>
-                          </button>
-                          <button type="button" onClick={() => updateRow(row.id, 'price', String(Math.max(0, (parseInt(row.price) || 0) - 100)))}
-                            className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
-                            <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1.5L4 4.5L7 1.5"/></svg>
-                          </button>
-                        </div>
-                      </div>
+                      <input type="text" inputMode="numeric"
+                        value={row.price} onChange={e => updateRow(row.id, 'price', e.target.value.replace(/[^0-9]/g,''))}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
+                        placeholder="0"
+                        className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none"
+                      />
                       <button type="button" onClick={() => removeRowLine(row.id)}
                         disabled={addRows.length === 1}
                         className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-text hover:text-danger hover:bg-red-50 transition-colors disabled:opacity-20">
@@ -2337,17 +2218,19 @@ export default function Menus() {
                     </div>
                   ))}
                 </div>
-                <button type="button" onClick={addRowLine}
-                  className="w-full py-2 border-2 border-dashed border-gray-border rounded-xl text-[11px] font-bold text-gray-text hover:border-[#00DD67] hover:text-[#008F42] transition-colors">
-                  + (Enter)
-                </button>
+                <div className="flex justify-end">
+                  <button type="button" onClick={addRowLine}
+                    className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
+                    + 항목 추가
+                  </button>
+                </div>
                 {addError && <p className="text-[11px] text-danger bg-red-50 rounded-lg px-3 py-2">{addError}</p>}
               </div>
             )}
 
             {/* ── 상세 추가 탭 ── */}
             {addModalTab === 'detail' && (
-              <div className="px-5 py-3 space-y-4 overflow-y-auto flex-1">
+              <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
                 {/* 사진 */}
                 <div>
                   <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">사진</label>
@@ -2394,7 +2277,7 @@ export default function Menus() {
                   <input autoFocus value={detailForm.name}
                     onChange={e => setDetailForm(p => ({ ...p, name: e.target.value }))}
                     placeholder="예: 클래식 포케"
-                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-green focus:outline-none"
+                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none"
                   />
                 </div>
                 {/* 가격 */}
@@ -2452,7 +2335,7 @@ export default function Menus() {
             )}
 
             {/* 푸터 */}
-            <div className="flex gap-2.5 px-5 py-3 border-t border-gray-border flex-shrink-0">
+            <div className="flex gap-2.5 px-5 py-3 border-t border-gray-border flex-shrink-0 modal-footer">
               <button onClick={() => setAddMenuOpen(false)}
                 className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[11px] font-bold text-gray-text hover:bg-gray-200 transition-colors">
                 취소
@@ -2536,7 +2419,7 @@ export default function Menus() {
       {/* 삭제 확인 다이얼로그 */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-          <div className="bg-white rounded-2xl shadow-2xl w-[320px] p-6">
+          <div className="modal-in bg-white rounded-2xl shadow-2xl w-[320px] p-6">
             <h3 className="text-[11px] font-bold text-ink mb-2">
               {deleteConfirm === 'bulk'
                 ? `${checked.size}개 메뉴를 삭제할까요?`
@@ -2568,7 +2451,7 @@ export default function Menus() {
           onClick={() => setCatJumpOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl w-[520px] px-4 py-5 max-h-[80vh] flex flex-col"
+            className="modal-in bg-white rounded-2xl w-[520px] px-4 py-5 max-h-[80vh] flex flex-col"
             onClick={e => e.stopPropagation()}
           >
             <p className="text-[16px] font-extrabold text-ink mb-3 flex-shrink-0">카테고리</p>
@@ -2595,31 +2478,229 @@ export default function Menus() {
         </div>
       )}
 
-      {/* 옵션 그룹 바로가기 모달 (옵션 탭) */}
-      {optGroupJumpOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          onClick={() => setOptGroupJumpOpen(false)}
-        >
-          <div
-            className="bg-white rounded-2xl w-[520px] px-4 py-5 max-h-[80vh] flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
-            <p className="text-[16px] font-extrabold text-ink mb-3 flex-shrink-0">옵션그룹</p>
-            <div className="flex flex-wrap gap-2 overflow-y-auto">
-              {filteredStoreGroups.map(g => (
-                <button
-                  key={g.id}
-                  onClick={() => { scrollToOptionGroup(g.id); setOptGroupJumpOpen(false) }}
-                  className={`whitespace-nowrap py-2 px-3 text-[11px] font-semibold rounded-xl transition-colors
-                    ${activeOptionGroup === g.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                >{g.name}</button>
-              ))}
+
+
+      {/* ── 카테고리 추가 모달 ── */}
+      {addingCat && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAddingCat(false)}>
+          <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-0">
+              <span className="text-[17px] font-semibold">카테고리 추가</span>
+              <button onClick={() => setAddingCat(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
             </div>
-            <button
-              onClick={() => setOptGroupJumpOpen(false)}
-              className="mt-4 w-full py-2 text-[11px] font-bold text-gray-text bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors flex-shrink-0"
-            >닫기</button>
+            <div className="px-6 py-8">
+              <input
+                autoFocus
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) }
+                  if (e.key === 'Escape') setAddingCat(false)
+                }}
+                placeholder="카테고리 이름 (예: 리뷰이벤트, 이달의메뉴)"
+                className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] focus:outline-none focus:border-ink"
+              />
+            </div>
+            <div className="flex gap-2.5 px-5 pb-5">
+              <button onClick={() => setAddingCat(false)}
+                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[13px] font-bold text-gray-text hover:bg-gray-200 transition-colors">
+                취소
+              </button>
+              <button
+                onClick={() => { if (newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) } }}
+                disabled={!newCatName.trim()}
+                className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] text-[13px] font-bold hover:bg-[#00BB55] transition-colors disabled:opacity-40">
+                추가
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 옵션 그룹 추가 모달 (3단계) ── */}
+      {addingStoreGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeOptGroupModal}>
+          <div className="modal-in bg-white rounded-2xl shadow-xl w-[560px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+
+            {/* 헤더 + 단계 표시 */}
+            <div className="px-6 pt-6 pb-0 flex-shrink-0">
+              <div className="flex items-center justify-between mb-5">
+                <span className="text-[17px] font-semibold">옵션그룹 추가</span>
+                <button onClick={closeOptGroupModal} className="text-gray-text hover:text-ink text-[18px]">✕</button>
+              </div>
+              <div className="flex gap-1">
+                {([1,2,3] as const).map(s => (
+                  <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= addOptStep ? 'bg-gray-500' : 'bg-gray-200'}`} />
+                ))}
+              </div>
+            </div>
+
+            {/* ── Step 1: 그룹 기본 설정 ── */}
+            {addOptStep === 1 && (
+              <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-4 overflow-y-auto">
+                <div>
+                  <div className="text-[13px] font-semibold text-gray-text mb-1.5">이름</div>
+                  <input
+                    autoFocus
+                    value={newStoreGroup.name}
+                    onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && newStoreGroup.name.trim() && setAddOptStep(2)}
+                    placeholder="옵션 그룹명 (예: 드레싱 선택, 사이즈)"
+                    className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] focus:outline-none focus:border-gray-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <div className="text-[13px] font-semibold text-gray-text mb-1.5">선택 여부<sup className="text-danger text-[8px]">*</sup></div>
+                    <SegmentedControl
+                      options={[{ label: '선택', value: false }, { label: '필수', value: true }]}
+                      value={newStoreGroup.isRequired}
+                      onChange={(v) => setNewStoreGroup(p => ({ ...p, isRequired: v }))}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[13px] font-semibold text-gray-text mb-1.5">복수 여부<sup className="text-danger text-[8px]">*</sup></div>
+                    <SegmentedControl
+                      options={[{ label: '단일', value: false }, { label: '복수', value: true }]}
+                      value={newStoreGroup.isMulti}
+                      onChange={(v) => setNewStoreGroup(p => ({ ...p, isMulti: v, maxSelect: '' }))}
+                    />
+                  </div>
+                </div>
+                {newStoreGroup.isMulti && (
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[2, 3, 4, 5].map(n => {
+                      const cur = Number(newStoreGroup.maxSelect)
+                      const active = cur === n
+                      return (
+                        <button key={n} type="button"
+                          onClick={() => setNewStoreGroup(p => ({ ...p, maxSelect: active ? '' : String(n) }))}
+                          className={`py-2 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none
+                            ${active ? 'bg-green-soft text-green' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                          최대 {n}개
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Step 2: 세부 옵션 항목 ── */}
+            {addOptStep === 2 && (
+              <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-2 overflow-y-auto">
+                {newGroupItems.map((item, idx) => (
+                  <div key={item.id} className="flex items-center gap-2">
+                    <input
+                      autoFocus={idx === 0}
+                      value={item.name}
+                      onChange={e => setNewGroupItems(prev => prev.map(i => i.id === item.id ? { ...i, name: e.target.value } : i))}
+                      placeholder={`옵션명 (예: 아보카도 추가)`}
+                      className="flex-1 border border-gray-border rounded-xl px-3 py-2 text-[12px] focus:outline-none focus:border-[#008F42]"
+                    />
+                    <div className="flex items-center border border-gray-border rounded-xl overflow-hidden">
+                      <input
+                        type="number" min="0" value={item.price}
+                        onChange={e => setNewGroupItems(prev => prev.map(i => i.id === item.id ? { ...i, price: e.target.value } : i))}
+                        placeholder="0"
+                        className="w-16 px-2 py-2 text-[12px] focus:outline-none text-right"
+                      />
+                      <span className="pr-2 text-[12px] text-gray-text">원</span>
+                    </div>
+                    <button
+                      onClick={() => setNewGroupItems(prev => prev.length > 1 ? prev.filter(i => i.id !== item.id) : prev)}
+                      className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-text text-[14px]">
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div className="flex justify-end mt-1">
+                  <button
+                    onClick={() => setNewGroupItems(prev => [...prev, { id: crypto.randomUUID(), name: '', price: '' }])}
+                    className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
+                    + 항목 추가
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 3: 메뉴 연결 ── */}
+            {addOptStep === 3 && (
+              <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-3 overflow-y-auto">
+                <div className="text-[12px] text-gray-text">이 옵션 그룹을 적용할 메뉴를 선택하세요. (선택 사항)</div>
+                {/* 카테고리 탭 */}
+                <div className="flex flex-wrap gap-1.5">
+                  {sortedCategories().map(cat => (
+                    <button key={cat.id} onClick={() => setStep3CatId(cat.id)}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
+                        ${step3CatId === cat.id ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
+                {/* 메뉴 목록 */}
+                {step3CatId ? (
+                  <div className="flex flex-col gap-0.5 max-h-[240px] overflow-y-auto border border-gray-border rounded-xl p-2">
+                    {menus.filter(m => m.categoryId === step3CatId).length === 0 ? (
+                      <div className="text-center py-6 text-[12px] text-gray-text">이 카테고리에 메뉴가 없습니다.</div>
+                    ) : menus.filter(m => m.categoryId === step3CatId).map(menu => (
+                      <label key={menu.code} className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="checkbox" checked={step3MenuIds.has(menu.code)}
+                          onChange={() => setStep3MenuIds(prev => {
+                            const next = new Set(prev)
+                            if (next.has(menu.code)) next.delete(menu.code); else next.add(menu.code)
+                            return next
+                          })}
+                        />
+                        <span className="text-[13px] text-ink">{menu.name}</span>
+                        {menu.soldOut && <span className="text-[10px] text-danger font-bold">품절</span>}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-[12px] text-gray-text border border-gray-border rounded-xl">카테고리를 선택하세요.</div>
+                )}
+                {step3MenuIds.size > 0 && (
+                  <div className="text-[11px] text-green font-bold">{step3MenuIds.size}개 메뉴 선택됨</div>
+                )}
+              </div>
+            )}
+
+            {/* 푸터 버튼 */}
+            <div className="flex items-center justify-between px-5 py-4 border-t border-gray-border flex-shrink-0 mt-auto modal-footer">
+              {addOptStep === 1 ? (
+                <button onClick={closeOptGroupModal}
+                  className="px-4 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">
+                  취소
+                </button>
+              ) : (
+                <button onClick={() => setAddOptStep(s => (s - 1) as 1|2|3)}
+                  className="px-4 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">
+                  이전
+                </button>
+              )}
+              {addOptStep < 3 ? (
+                <button
+                  onClick={() => {
+                    if (addOptStep === 1 && !newStoreGroup.name.trim()) return
+                    if (addOptStep === 2) {
+                      const firstCat = sortedCategories()[0]
+                      setStep3CatId(firstCat?.id ?? '')
+                      setStep3MenuIds(new Set())
+                    }
+                    setAddOptStep(s => (s + 1) as 1|2|3)
+                  }}
+                  disabled={addOptStep === 1 && !newStoreGroup.name.trim()}
+                  className="px-6 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-40">
+                  {addOptStep === 2 && newGroupItems.every(i => !i.name.trim()) ? '건너뛰기' : '다음'}
+                </button>
+              ) : (
+                <button onClick={confirmOptGroupCreate} disabled={addOptLoading}
+                  className="px-6 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
+                  {addOptLoading ? '저장 중...' : '완료'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2629,9 +2710,75 @@ export default function Menus() {
   )
 }
 
-// ── OptionGroupCard ────────────────────────────────────────────────────────────
-function OptionGroupCard({
-  group, isSoldOut, soldOutUntil = null, isHidden, usedByMenus, searchQuery,
+// ── OptionGroupRow (왼쪽 목록 행) ─────────────────────────────────────────────
+function OptionGroupRow({
+  group, isSelected, onClick,
+}: {
+  group:      OptionGroup & { isSoldOut: boolean; soldOutUntil: string | null; isHidden: boolean }
+  isSelected: boolean
+  onClick:    () => void
+}) {
+  const soldOutState = getSoldOutState(group.isSoldOut, group.soldOutUntil)
+  const selectLabel  = !group.isMulti ? '단일' : group.maxSelect ? `최대 ${group.maxSelect}개` : '복수'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full text-left px-4 py-3 border-b border-gray-border transition-colors flex flex-col gap-1.5
+        ${isSelected
+          ? 'bg-gray-50'
+          : 'hover:bg-gray-50'}
+        ${group.isHidden ? 'opacity-60' : ''}`}
+    >
+      {/* 그룹명 + 상태 배지 */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className={`font-semibold text-[13px] flex-1 truncate ${isSelected ? 'text-green' : 'text-ink'}`}>
+          {group.name}
+        </span>
+        {soldOutState === 'today' && (
+          <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
+            style={{ backgroundColor: 'rgba(217,119,6,0.12)', color: '#D97706' }}>오늘품절</span>
+        )}
+        {soldOutState === 'permanent' && (
+          <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
+            style={{ backgroundColor: 'rgba(201,42,42,0.1)', color: '#C92A2A' }}>품절</span>
+        )}
+        {group.isHidden && (
+          <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-gray-200 text-gray-text">숨김</span>
+        )}
+      </div>
+      {/* 속성 배지 */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">
+          {group.isRequired ? '필수' : '선택'}
+        </span>
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">
+          {selectLabel}
+        </span>
+        <span className="text-[10px] text-gray-text ml-auto">
+          {group.items.length}개 항목
+        </span>
+      </div>
+    </button>
+  )
+}
+
+// ── Toggle 미니 컴포넌트 (홈화면 스타일) ────────────────────────────────────────
+function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
+  return (
+    <button
+      onClick={onChange}
+      className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0 ${on ? 'bg-[#00DD67]' : 'bg-gray-300'}`}
+    >
+      <span className={`absolute top-[3px] left-[3px] w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${on ? 'translate-x-[14px]' : 'translate-x-0'}`} />
+    </button>
+  )
+}
+
+// ── OptionGroupPanel (오른쪽 상세 패널) ────────────────────────────────────────
+function OptionGroupPanel({
+  group, isSoldOut, soldOutUntil = null, isHidden, usedByMenus, searchQuery, readOnly = false,
   onSetSoldOutState, onToggleHidden,
   onUpdateGroup, onDeleteGroup, onUpdateItem, onDeleteItem, onAddItem, onReorderItem,
 }: {
@@ -2641,17 +2788,16 @@ function OptionGroupCard({
   isHidden:            boolean
   usedByMenus?:        { name: string; soldOut: boolean; hidden: boolean }[]
   searchQuery?:        string
+  readOnly?:           boolean
   onSetSoldOutState:   (state: SoldOutState) => void
   onToggleHidden:      () => void
-  onUpdateGroup:    (updates: Partial<OptionGroup>) => void
-  onDeleteGroup:    () => void
-  onUpdateItem:     (itemId: string, updates: Partial<OptionItem>) => void
-  onDeleteItem:     (itemId: string) => void
-  onAddItem:        (name: string, extra: number) => void
-  onReorderItem:    (fromIdx: number, toIdx: number) => void
+  onUpdateGroup:       (updates: Partial<OptionGroup>) => void
+  onDeleteGroup:       () => void
+  onUpdateItem:        (itemId: string, updates: Partial<OptionItem>) => void
+  onDeleteItem:        (itemId: string) => void
+  onAddItem:           (name: string, extra: number) => void
+  onReorderItem:       (fromIdx: number, toIdx: number) => void
 }) {
-  const [editingName,      setEditingName]      = useState(false)
-  const [nameDraft,        setNameDraft]        = useState(group.name)
   const [editingItemId,    setEditingItemId]    = useState<string | null>(null)
   const [editItemName,     setEditItemName]     = useState('')
   const [editItemPrice,    setEditItemPrice]    = useState('')
@@ -2665,22 +2811,15 @@ function OptionGroupCard({
   const [dragItemIdx,      setDragItemIdx]      = useState<number | null>(null)
   const [dragOverItemIdx,  setDragOverItemIdx]  = useState<number | null>(null)
 
-  const SELECT_OPTIONS = [
-    { label: '단일 선택',    isMulti: false, max: null },
-    { label: '복수 (무제한)', isMulti: true,  max: null },
-    { label: '최대 2개',     isMulti: true,  max: 2    },
-    { label: '최대 3개',     isMulti: true,  max: 3    },
-    { label: '최대 4개',     isMulti: true,  max: 4    },
-    { label: '최대 5개',     isMulti: true,  max: 5    },
-  ]
-
-  const currentLabel = !group.isMulti ? '단일' : group.maxSelect ? `최대 ${group.maxSelect}개` : '복수'
-
-  function commitGroupName() {
-    if (nameDraft.trim()) onUpdateGroup({ name: nameDraft.trim() })
-    else setNameDraft(group.name)
-    setEditingName(false)
-  }
+  // 그룹이 바뀌면 편집 상태 초기화
+  useEffect(() => {
+    setEditingItemId(null)
+    setShowAddItem(false)
+    setNewItemName('')
+    setNewItemPrice('0')
+    setSettingsName(group.name)
+    setDeleteGroupConfirm(false)
+  }, [group.id])
 
   function startEditItem(item: OptionItem) {
     setEditingItemId(item.id)
@@ -2703,237 +2842,280 @@ function OptionGroupCard({
   }
 
   const sq = searchQuery?.trim() ?? ''
-
   const groupSoldOutState = getSoldOutState(isSoldOut, soldOutUntil)
 
+  // ── readOnly 전용 렌더링 ──────────────────────────────────────────────────────
+  if (readOnly) {
+    return (
+      <div className="border border-gray-border rounded-xl overflow-hidden">
+        {/* 그룹 헤더 */}
+        <div className="px-3 py-2.5 flex items-center justify-between bg-gray-50 border-b border-gray-border">
+          <span className="text-[13px] font-semibold text-ink">{group.name}</span>
+          <div className="flex items-center gap-1.5">
+            {groupSoldOutState !== 'active' && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                style={groupSoldOutState === 'today'
+                  ? { backgroundColor: '#FEF3C7', color: '#D97706' }
+                  : { backgroundColor: '#FEE2E2', color: '#C92A2A' }}>
+                {groupSoldOutState === 'today' ? '오늘품절' : '품절'}
+              </span>
+            )}
+            {isHidden && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>}
+          </div>
+        </div>
+        {/* 항목 목록 */}
+        <div className="flex flex-col px-3 py-1">
+          {group.items.map((item: OptionItem) => {
+            const itemState = getSoldOutState(item.soldOut, item.soldOutUntil ?? null)
+            return (
+              <div key={item.id} className={`flex items-center gap-2 px-3 py-1.5 text-[12px] ${item.hidden ? 'opacity-50' : ''}`}>
+                <span className="flex-1 font-medium text-ink truncate">{item.name}</span>
+                {item.extra > 0 && <span className="text-[11px] text-gray-text">+{won(item.extra)}</span>}
+                {itemState !== 'active' && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
+                    style={itemState === 'today'
+                      ? { backgroundColor: '#FEF3C7', color: '#D97706' }
+                      : { backgroundColor: '#FEE2E2', color: '#C92A2A' }}>
+                    {itemState === 'today' ? '오늘품절' : '품절'}
+                  </span>
+                )}
+                {item.hidden && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-text flex-shrink-0">숨김</span>}
+              </div>
+            )
+          })}
+          {group.items.length === 0 && (
+            <div className="text-center py-3 text-[11px] text-gray-text">항목 없음</div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`border rounded-xl overflow-hidden`} style={{
-      borderColor: groupSoldOutState === 'today' ? 'rgba(217,119,6,0.4)' : groupSoldOutState === 'permanent' ? 'rgba(201,42,42,0.4)' : isHidden ? '#D7D7D7' : '#D7D7D7',
-      opacity: isHidden ? 0.6 : 1,
-    }}>
-      {/* 옵션 그룹 삭제 확인 모달 */}
+    <div className="flex flex-col h-full">
+      {/* 설정 모달 */}
       {settingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-[380px]">
-            <div className="flex items-center justify-between mb-5">
-              <div className="text-[16px] font-extrabold">옵션 그룹 설정</div>
+          <div className="modal-in bg-white rounded-2xl shadow-xl w-[560px]">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-6 pt-6 pb-0">
+              <div className="text-[17px] font-semibold">옵션 그룹 설정</div>
               <button onClick={() => setSettingsOpen(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
             </div>
-            <div className="mb-4">
-              <label className="text-[11px] font-bold text-gray-text block mb-1">그룹명</label>
-              <input value={settingsName} onChange={e => setSettingsName(e.target.value)}
-                className="w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[11px] focus:outline-none focus:border-b-2 focus:border-[#00DD67] transition-colors" />
-            </div>
-            <div className="mb-4">
-              <label className="text-[11px] font-bold text-gray-text block mb-2">필수 여부</label>
-              <div className="flex bg-gray-100 rounded-xl p-0.5">
-                {[{ label: '필수', val: true }, { label: '선택', val: false }].map(({ label, val }) => (
-                  <button key={label} onClick={() => onUpdateGroup({ isRequired: val })}
-                    className={`flex-1 py-2 rounded-[10px] text-[11px] font-bold transition-all focus:outline-none
-                      ${group.isRequired === val ? 'bg-white shadow-sm text-ink' : 'text-gray-text'}`}>
-                    {label}
-                  </button>
-                ))}
+            {/* 바디 */}
+            <div className="px-5 py-[30px] flex flex-col gap-4">
+              <div>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">그룹명</label>
+                <input value={settingsName} onChange={e => setSettingsName(e.target.value)}
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] focus:outline-none focus:border-ink transition-colors" />
+              </div>
+              <div>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">필수 여부</label>
+                <SegmentedControl
+                  options={[{ label: '필수', value: true }, { label: '선택', value: false }]}
+                  value={group.isRequired}
+                  onChange={(v) => onUpdateGroup({ isRequired: v })}
+                  rounded="xl"
+                />
+              </div>
+              <div>
+                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">복수 여부</label>
+                <SegmentedControl
+                  options={[{ label: '단일', value: false }, { label: '복수', value: true }]}
+                  value={group.isMulti}
+                  onChange={(v) => onUpdateGroup({ isMulti: v, maxSelect: null })}
+                  rounded="xl"
+                />
+                {group.isMulti && (
+                  <div className="grid grid-cols-4 gap-1.5 mt-2">
+                    {[2, 3, 4, 5].map(n => {
+                      const active = group.maxSelect === n
+                      return (
+                        <button key={n} type="button"
+                          onClick={() => onUpdateGroup({ maxSelect: active ? null : n })}
+                          className={`py-2 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none
+                            ${active ? 'bg-green-soft text-green' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                          최대 {n}개
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
-            <div className="mb-6">
-              <label className="text-[11px] font-bold text-gray-text block mb-2">선택 방식</label>
-              <div className="grid grid-cols-3 gap-2">
-                {SELECT_OPTIONS.map(opt => {
-                  const active = group.isMulti === opt.isMulti && group.maxSelect === opt.max
-                  return (
-                    <button key={opt.label} onClick={() => onUpdateGroup({ isMulti: opt.isMulti, maxSelect: opt.max })}
-                      className={`py-2 rounded-xl border-2 text-[11px] font-bold transition-colors focus:outline-none
-                        ${active ? 'border-transparent text-[#008F42] bg-green-soft' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      {opt.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-            <button onClick={() => { if (settingsName.trim()) onUpdateGroup({ name: settingsName.trim() }); setSettingsOpen(false) }}
-              className="w-full py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[11px] hover:bg-[#00BB55] transition-colors focus:outline-none mb-3">
-              저장
-            </button>
-            {!deleteGroupConfirm ? (
-              <button onClick={() => setDeleteGroupConfirm(true)}
-                className="w-full py-2 rounded-xl border-2 border-danger/40 text-danger font-bold text-[11px] hover:bg-red-50 transition-colors focus:outline-none">
-                삭제
+            {/* 푸터 */}
+            <div className="modal-footer flex gap-2.5 px-6 pt-5 pb-6">
+              {!deleteGroupConfirm ? (
+                <button onClick={() => setDeleteGroupConfirm(true)}
+                  className="flex-1 py-2.5 rounded-xl bg-red-50 text-danger font-bold text-[13px] hover:bg-red-100 transition-colors focus:outline-none">
+                  삭제
+                </button>
+              ) : (
+                <button onClick={() => { onDeleteGroup(); setSettingsOpen(false) }}
+                  className="flex-1 py-2.5 rounded-xl bg-danger text-white font-bold text-[13px] hover:bg-danger/90 transition-colors focus:outline-none">
+                  삭제 확정
+                </button>
+              )}
+              <button onClick={() => { if (settingsName.trim()) onUpdateGroup({ name: settingsName.trim() }); setSettingsOpen(false) }}
+                className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:bg-[#00BB55] transition-colors focus:outline-none">
+                저장
               </button>
-            ) : (
-              <div className="bg-red-50 rounded-xl p-3">
-                <div className="text-[11px] text-danger font-semibold text-center mb-2">정말 삭제하시겠어요?</div>
-                <div className="flex gap-2">
-                  <button onClick={() => setDeleteGroupConfirm(false)}
-                    className="flex-1 py-2 rounded-lg bg-gray-100 text-gray-text text-[11px] font-bold hover:bg-gray-200 focus:outline-none">취소</button>
-                  <button onClick={() => { onDeleteGroup(); setSettingsOpen(false) }}
-                    className="flex-1 py-2 rounded-lg bg-danger text-white text-[11px] font-bold hover:bg-danger/90 focus:outline-none">삭제 확정</button>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* 옵션 항목 삭제 확인 모달 */}
+      {/* 항목 삭제 확인 모달 */}
       {deleteItemConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteItemConfirm(null)}>
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-[300px]" onClick={e => e.stopPropagation()}>
-            <div className="text-[11px] font-bold text-ink mb-1">옵션 삭제</div>
-            <div className="text-[11px] text-gray-text mb-5">
+          <div className="modal-in bg-white rounded-2xl shadow-xl p-6 w-[300px]" onClick={e => e.stopPropagation()}>
+            <div className="text-[13px] font-semibold text-ink mb-1">옵션 삭제</div>
+            <div className="text-[12px] text-gray-text mb-5">
               <span className="font-semibold text-ink">'{deleteItemConfirm.name}'</span>을(를) 삭제할까요?
             </div>
             <div className="flex gap-2">
               <button onClick={() => setDeleteItemConfirm(null)}
-                className="flex-1 py-2 border border-gray-border rounded-xl text-[11px] font-semibold text-gray-text hover:bg-gray-bg">
-                취소
-              </button>
+                className="flex-1 py-2 border border-gray-border rounded-xl text-[11px] font-semibold text-gray-text hover:bg-gray-bg">취소</button>
               <button onClick={() => { onDeleteItem(deleteItemConfirm.id); setDeleteItemConfirm(null) }}
-                className="flex-1 py-2 bg-danger text-white rounded-xl text-[11px] font-bold hover:bg-danger/90">
-                삭제
-              </button>
+                className="flex-1 py-2 bg-danger text-white rounded-xl text-[11px] font-bold hover:bg-danger/90">삭제</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 좌우 분할 레이아웃 */}
-      <div className="flex">
-        {/* ── 왼쪽: 그룹 정보 ── */}
-        <div className="w-52 flex-shrink-0 border-r border-gray-border px-3 py-2.5 flex flex-col gap-2"
-          style={{ backgroundColor: groupSoldOutState === 'today' ? 'rgba(254,243,199,0.5)' : groupSoldOutState === 'permanent' ? 'rgba(254,226,226,0.5)' : isHidden ? '#F9FAFB' : '#FAFAFA' }}>
-          {/* 그룹명 + ⚙ */}
-          <div className="flex items-center justify-between gap-2">
-            {editingName ? (
-              <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-                onBlur={commitGroupName}
-                onKeyDown={e => { if (e.key === 'Enter') commitGroupName(); if (e.key === 'Escape') { setNameDraft(group.name); setEditingName(false) } }}
-                className="flex-1 border border-green rounded-md px-2 py-0.5 text-[11px] font-bold bg-white"
-              />
-            ) : (
-              <button onClick={() => setEditingName(true)}
-                className="font-bold text-[11px] text-ink hover:text-green transition-colors text-left flex-1 min-w-0 truncate">
-                {group.name}
-              </button>
-            )}
-            <button
-              onClick={() => { setSettingsName(group.name); setDeleteGroupConfirm(false); setSettingsOpen(true) }}
-              className="flex-shrink-0 text-[20px] text-gray-text hover:text-ink transition-colors leading-none"
-            >
-              ⚙
-            </button>
+      {/* ── 패널 헤더: 그룹명 + 상태 토글 + ⚙ ── */}
+      <div className="bg-white border-b border-gray-border px-5 py-4 flex-shrink-0"
+        style={{ opacity: isHidden ? 0.75 : 1 }}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-[16px] font-semibold text-ink break-words">{group.name}</div>
           </div>
 
-          {/* 배지 */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{group.isRequired ? '필수' : '선택'}</span>
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">{currentLabel}</span>
-          </div>
-
-          {/* 그룹 품절 / 숨김 토글 */}
-          <div className="flex flex-col gap-1.5">
-            {/* 행 1: 판매중 / 오늘품절 / 품절 */}
-            <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold">
-              {([
-                { v: 'active'    as SoldOutState, l: '판매중',   activeStyle: { background: 'white', color: '#1E1E1E' } },
-                { v: 'today'     as SoldOutState, l: '오늘품절', activeStyle: { background: 'white', color: '#1E1E1E' } },
-                { v: 'permanent' as SoldOutState, l: '품절',     activeStyle: { background: 'white', color: '#1E1E1E' } },
-              ]).map(({ v, l, activeStyle }) => (
-                <button key={v} onClick={() => onSetSoldOutState(v)}
-                  className="flex-1 py-1 rounded-md transition-all text-center"
-                  style={groupSoldOutState === v ? activeStyle : { color: '#727272' }}>
-                  {l}
-                </button>
-              ))}
+          {readOnly && (
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                groupSoldOutState === 'today'     ? 'bg-amber-100 text-amber-700' :
+                groupSoldOutState === 'permanent' ? 'bg-red-100 text-danger' :
+                                                    'bg-gray-100 text-gray-text'}`}>
+                {groupSoldOutState === 'today' ? '오늘품절' : groupSoldOutState === 'permanent' ? '품절' : '판매중'}
+              </span>
+              {isHidden && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>}
             </div>
-            {/* 행 2: 노출 / 숨김 */}
-            <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold">
-              {([
-                { v: false, l: '노출', activeStyle: { background: 'white', color: '#1E1E1E' } },
-                { v: true,  l: '숨김', activeStyle: { background: 'white', color: '#1E1E1E' } },
-              ] as { v: boolean; l: string; activeStyle: React.CSSProperties }[]).map(({ v, l, activeStyle }) => (
-                <button key={l} onClick={() => { if (isHidden !== v) onToggleHidden() }}
-                  className="flex-1 py-1 rounded-md transition-all text-center"
-                  style={isHidden === v ? activeStyle : { color: '#727272' }}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
-          {/* 연결 메뉴 태그 — 품절/숨김 배지 포함 */}
-          {usedByMenus !== undefined && usedByMenus.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {usedByMenus.map(m => (
-                <div key={m.name} className="flex items-center gap-1 flex-wrap">
-                  <span className="text-[11px] font-medium text-ink bg-white border border-gray-border px-2 py-0.5 rounded-md">
-                    {m.name}
+          {!readOnly && (
+            <div className="flex items-start gap-2 flex-shrink-0">
+              {/* 판매중 + 오늘품절 (세로 스택) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-ink w-[46px] text-right inline-block whitespace-nowrap">
+                    {groupSoldOutState === 'active' ? '판매중' : '품절'}
                   </span>
-                  {m.soldOut && (
-                    <span className="text-[9px] font-bold text-white bg-danger rounded px-1 py-0.5 leading-none">품절</span>
-                  )}
-                  {m.hidden && (
-                    <span className="text-[9px] font-bold text-gray-text bg-gray-200 rounded px-1 py-0.5 leading-none">숨김</span>
-                  )}
+                  <Toggle
+                    on={groupSoldOutState === 'active'}
+                    onChange={() => onSetSoldOutState(groupSoldOutState === 'active' ? 'today' : 'active')}
+                  />
                 </div>
-              ))}
+                {/* 오늘품절 — 판매중 바로 아래, 항상 공간 예약 */}
+                <div className={`flex items-center gap-1.5 ${groupSoldOutState === 'active' ? 'invisible' : ''}`}>
+                  <span className="text-[11px] font-semibold text-ink w-[46px] text-right inline-block whitespace-nowrap">
+                    {groupSoldOutState === 'today' ? '오늘품절' : '계속품절'}
+                  </span>
+                  <Toggle
+                    on={groupSoldOutState === 'today'}
+                    onChange={() => onSetSoldOutState(groupSoldOutState === 'today' ? 'permanent' : 'today')}
+                  />
+                </div>
+              </div>
+              <div className="w-px bg-gray-border flex-shrink-0 self-stretch" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-ink">
+                  {isHidden ? '숨김중' : '노출중'}
+                </span>
+                <Toggle on={!isHidden} onChange={onToggleHidden} />
+              </div>
+              <button
+                onClick={() => { setSettingsName(group.name); setDeleteGroupConfirm(false); setSettingsOpen(true) }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-border text-[11px] font-medium text-gray-text hover:bg-gray-50 transition-colors"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                그룹 설정
+              </button>
             </div>
           )}
         </div>
+        {/* 연결 메뉴 태그 — 전체 너비 */}
+        {usedByMenus !== undefined && usedByMenus.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {usedByMenus.map(m => (
+              <span key={m.name} className="inline-flex items-center gap-1">
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${m.hidden ? 'text-gray-text bg-gray-100 opacity-35' : 'text-gray-text bg-gray-100'}`}>
+                  {m.name}{m.hidden ? ' (숨김)' : ''}
+                </span>
+                {m.soldOut && <span className="text-[9px] font-bold text-white bg-danger rounded px-1 leading-none">품절</span>}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
-        {/* ── 오른쪽: 항목 목록 ── */}
-        <div className="flex-1 min-w-0 bg-white flex flex-col">
-          <div className="divide-y divide-gray-border">
-            {group.items.map((item: OptionItem, itemIdx: number) => {
-              const isMatch = sq && (item.name.includes(sq))
-              return editingItemId === item.id ? (
-                <div key={item.id} className="flex items-center gap-2 px-3 py-2">
-                  <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
+      {/* ── 항목 목록 ── */}
+      <div className="flex-1 bg-white overflow-y-auto">
+        <div
+          className={readOnly ? 'flex flex-wrap gap-1.5 px-3 py-2' : 'flex flex-wrap gap-2 px-3 py-2'}
+        >
+          {group.items.map((item: OptionItem, itemIdx: number) => {
+            const isMatch = sq && (item.name.includes(sq))
+            return editingItemId === item.id && !readOnly ? (
+              <div key={item.id} className="flex items-center gap-2 px-4 py-2.5 w-full border border-green rounded-lg bg-green-soft/20">
+                <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
+                  className="flex-1 min-w-0 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[12px] focus:outline-none"
+                />
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="text-[11px] text-gray-text">+</span>
+                  <input type="text" value={editItemPrice}
+                    onChange={e => setEditItemPrice(e.target.value.replace(/[^0-9]/g, ''))}
                     onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
-                    className="flex-1 min-w-0 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[11px] focus:outline-none"
+                    className="w-14 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[11px] text-right focus:outline-none"
                   />
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <span className="text-[11px] text-gray-text">+</span>
-                    <input type="text" value={editItemPrice}
-                      onChange={e => setEditItemPrice(e.target.value.replace(/[^0-9]/g, ''))}
-                      onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
-                      className="w-14 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[11px] text-right focus:outline-none"
-                    />
-                    <span className="text-[11px] text-gray-text">원</span>
-                  </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => setEditItemPrice(String(Math.max(0, (parseInt(editItemPrice) || 0) - 500)))}
-                      className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">-500</button>
-                    <button onClick={() => setEditItemPrice(String((parseInt(editItemPrice) || 0) + 500))}
-                      className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">+500</button>
-                  </div>
-                  <button onClick={commitEditItem}
-                    className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[10px] font-bold hover:bg-[#00BB55]">완료</button>
+                  <span className="text-[11px] text-gray-text">원</span>
                 </div>
-              ) : (
-                <div
-                  key={item.id}
-                  draggable
-                  onDragStart={() => setDragItemIdx(itemIdx)}
-                  onDragOver={e => { e.preventDefault(); setDragOverItemIdx(itemIdx) }}
-                  onDrop={e => {
-                    e.preventDefault()
-                    if (dragItemIdx !== null && dragItemIdx !== itemIdx) {
-                      onReorderItem(dragItemIdx, itemIdx)
-                    }
-                    setDragItemIdx(null)
-                    setDragOverItemIdx(null)
-                  }}
-                  onDragEnd={() => { setDragItemIdx(null); setDragOverItemIdx(null) }}
-                  className={`flex items-center gap-2 px-3 py-2 text-[11px] group/row transition-colors border-l-[3px]
-                    ${item.soldOut && !isMatch ? 'bg-red-50' : ''}
-                    ${item.hidden ? 'opacity-50' : ''}
-                    ${dragOverItemIdx === itemIdx && dragItemIdx !== itemIdx ? 'border-t-2 border-green' : ''}
-                    ${dragItemIdx === itemIdx ? 'opacity-40' : ''}
-                    ${isMatch ? 'border-l-green' : 'border-l-transparent'}`}
-                  style={isMatch ? { backgroundColor: 'var(--green-soft)' } : undefined}
-                >
-                  {/* 드래그 핸들 */}
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => setEditItemPrice(String(Math.max(0, (parseInt(editItemPrice) || 0) - 500)))}
+                    className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">-500</button>
+                  <button onClick={() => setEditItemPrice(String((parseInt(editItemPrice) || 0) + 500))}
+                    className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">+500</button>
+                </div>
+                <button onClick={commitEditItem}
+                  className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[10px] font-bold hover:bg-[#00BB55]">완료</button>
+              </div>
+            ) : (
+              <div
+                key={item.id}
+                draggable={!readOnly}
+                onDragStart={!readOnly ? () => setDragItemIdx(itemIdx) : undefined}
+                onDragOver={!readOnly ? (e => { e.preventDefault(); setDragOverItemIdx(itemIdx) }) : undefined}
+                onDrop={!readOnly ? (e => {
+                  e.preventDefault()
+                  if (dragItemIdx !== null && dragItemIdx !== itemIdx) {
+                    onReorderItem(dragItemIdx, itemIdx)
+                  }
+                  setDragItemIdx(null)
+                  setDragOverItemIdx(null)
+                }) : undefined}
+                onDragEnd={!readOnly ? (() => { setDragItemIdx(null); setDragOverItemIdx(null) }) : undefined}
+                className={`flex items-center gap-2.5 text-[12px] group/row transition-colors
+                  ${readOnly ? 'px-3 py-2 rounded-lg bg-gray-50 flex-auto min-w-[140px]' : 'px-3 py-2 rounded-lg border border-gray-border bg-white flex-auto min-w-[200px]'}
+                  ${item.soldOut && !isMatch ? (readOnly ? '!bg-red-50' : '!bg-red-50 !border-red-200') : ''}
+                  ${item.hidden ? 'opacity-50' : ''}
+                  ${!readOnly && dragOverItemIdx === itemIdx && dragItemIdx !== itemIdx ? '!border-green !border-2' : ''}
+                  ${!readOnly && dragItemIdx === itemIdx ? 'opacity-40' : ''}`}
+                style={isMatch ? { backgroundColor: 'var(--green-soft)' } : undefined}
+              >
+                {!readOnly && (
                   <span className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-border hover:text-gray-text transition-colors"
                     onMouseDown={e => e.stopPropagation()}>
                     <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
@@ -2942,76 +3124,95 @@ function OptionGroupCard({
                       <circle cx="2" cy="10" r="1.5"/><circle cx="6" cy="10" r="1.5"/>
                     </svg>
                   </span>
-                  <button onClick={() => startEditItem(item)}
-                    className="flex items-center gap-1 min-w-0 flex-1 text-left hover:text-green transition-colors">
-                    <span className={`font-medium text-ink truncate ${isMatch && sq ? 'text-green font-bold' : ''}`}>{item.name}</span>
-                    {item.isPopular && <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
-                    {item.extra > 0 && <span className="text-gray-text flex-shrink-0">+{won(item.extra)}</span>}
-                  </button>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {(() => {
-                      const itemState = getSoldOutState(item.soldOut, item.soldOutUntil ?? null)
-                      // 순환: 판매중 → 오늘품절 → 품절 → 판매중
-                      const nextState: SoldOutState = itemState === 'active' ? 'today' : itemState === 'today' ? 'permanent' : 'active'
-                      const nextUpdates =
-                        nextState === 'active'  ? { soldOut: false, soldOutUntil: null             }
-                        : nextState === 'today' ? { soldOut: true,  soldOutUntil: getKSTEndOfDay() }
-                        :                         { soldOut: true,  soldOutUntil: null             }
-                      return (
-                        <button onClick={() => onUpdateItem(item.id, nextUpdates)}
-                          className="px-1.5 py-0.5 rounded-full text-[10px] font-bold border-0 transition-colors"
-                          style={
-                            itemState === 'today'
-                              ? { backgroundColor: '#FEF3C7', color: '#D97706' }
-                              : itemState === 'permanent'
-                              ? { backgroundColor: '#FEE2E2', color: '#C92A2A' }
-                              : { backgroundColor: '#FAFAFA', color: '#727272' }
-                          }>
-                          {itemState === 'today' ? '오늘품절' : itemState === 'permanent' ? '품절' : '판매중'}
-                        </button>
-                      )
-                    })()}
-                    <div className="w-px h-3 bg-gray-200 flex-shrink-0" />
-                    <button onClick={() => onUpdateItem(item.id, { hidden: !item.hidden })}
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border-0 transition-colors
-                        ${item.hidden ? 'bg-ink text-white' : 'bg-gray-50 text-gray-text hover:bg-gray-100'}`}>숨김</button>
-                    <div className="w-px h-3 bg-gray-200 flex-shrink-0 opacity-0 group-hover/row:opacity-100" />
-                    <button onClick={() => setDeleteItemConfirm({ id: item.id, name: item.name })}
-                      className="text-[11px] text-gray-text hover:text-danger transition-colors opacity-0 group-hover/row:opacity-100">×</button>
-                  </div>
+                )}
+                <div className="flex items-center gap-1.5 min-w-0 flex-1" onClick={!readOnly ? () => startEditItem(item) : undefined}
+                  style={!readOnly ? { cursor: 'pointer' } : undefined}>
+                  <span className={`font-medium text-ink truncate ${!readOnly ? 'hover:text-green transition-colors' : ''} ${isMatch && sq ? 'text-green font-bold' : ''}`}>{item.name}</span>
+                  {item.isPopular && <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
+                  {item.extra > 0 && <span className="text-[11px] text-gray-text flex-shrink-0">+{won(item.extra)}</span>}
                 </div>
-              )
-            })}
-          </div>
-
-          {/* 항목 추가 */}
-          {showAddItem ? (
-            <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-border bg-green-soft/40">
-              <input autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
-                placeholder="옵션명" className="flex-1 min-w-0 border border-green rounded-md px-2 py-1 text-[11px]"
-              />
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <span className="text-[11px] text-gray-text">+₩</span>
-                <input type="number" min="0" step="500" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
-                  className="w-16 border border-green rounded-md px-2 py-1 text-[11px]"
-                />
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {(() => {
+                    const itemState = getSoldOutState(item.soldOut, item.soldOutUntil ?? null)
+                    const nextState: SoldOutState = itemState === 'active' ? 'today' : itemState === 'today' ? 'permanent' : 'active'
+                    const nextUpdates =
+                      nextState === 'active'  ? { soldOut: false, soldOutUntil: null             }
+                      : nextState === 'today' ? { soldOut: true,  soldOutUntil: getKSTEndOfDay() }
+                      :                         { soldOut: true,  soldOutUntil: null             }
+                    return readOnly ? (
+                      itemState !== 'active' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                          style={itemState === 'today' ? { backgroundColor: '#FEF3C7', color: '#D97706' } : { backgroundColor: '#FEE2E2', color: '#C92A2A' }}>
+                          {itemState === 'today' ? '오늘품절' : '품절'}
+                        </span>
+                      )
+                    ) : (
+                      <button onClick={() => onUpdateItem(item.id, nextUpdates)}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border-0 transition-colors"
+                        style={
+                          itemState === 'today'
+                            ? { backgroundColor: '#FEF3C7', color: '#D97706' }
+                            : itemState === 'permanent'
+                            ? { backgroundColor: '#FEE2E2', color: '#C92A2A' }
+                            : { backgroundColor: '#F3F4F6', color: '#727272' }
+                        }>
+                        {itemState === 'today' ? '오늘품절' : itemState === 'permanent' ? '품절' : '판매중'}
+                      </button>
+                    )
+                  })()}
+                  {!readOnly && (
+                    <>
+                      <div className="w-px h-3 bg-gray-200 flex-shrink-0" />
+                      <button onClick={() => onUpdateItem(item.id, { hidden: !item.hidden })}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border-0 transition-colors
+                          ${item.hidden ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>숨김</button>
+                      <button onClick={() => setDeleteItemConfirm({ id: item.id, name: item.name })}
+                        className="w-6 h-6 flex items-center justify-center rounded-full text-[13px] text-gray-text hover:bg-red-100 hover:text-danger transition-colors opacity-0 group-hover/row:opacity-100">×</button>
+                    </>
+                  )}
+                  {readOnly && item.hidden && (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>
+                  )}
+                </div>
               </div>
-              <button onClick={confirmAddItem} disabled={!newItemName.trim()}
-                className="flex-shrink-0 text-[11px] font-bold text-white bg-green px-2.5 py-1 rounded-lg hover:bg-[#015c28] disabled:opacity-40">추가</button>
-              <button onClick={() => { setShowAddItem(false); setNewItemName(''); setNewItemPrice('0') }}
-                className="flex-shrink-0 text-gray-text hover:text-ink text-[11px]">✗</button>
+            )
+          })}
+        </div>
+
+        {/* 항목 추가 */}
+        {!readOnly && showAddItem ? (
+          <div className="flex items-center gap-2 px-4 py-2.5 border-t border-gray-border bg-green-soft/40">
+            <input autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
+              placeholder="옵션명" className="flex-1 min-w-0 border border-green rounded-md px-2 py-1 text-[12px]"
+            />
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <span className="text-[11px] text-gray-text">+₩</span>
+              <input type="number" min="0" step="500" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
+                className="w-16 border border-green rounded-md px-2 py-1 text-[12px]"
+              />
             </div>
-          ) : (
+            <button onClick={confirmAddItem} disabled={!newItemName.trim()}
+              className="flex-shrink-0 text-[11px] font-bold text-white bg-green px-2.5 py-1 rounded-lg hover:bg-[#015c28] disabled:opacity-40">추가</button>
+            <button onClick={() => { setShowAddItem(false); setNewItemName(''); setNewItemPrice('0') }}
+              className="flex-shrink-0 text-gray-text hover:text-ink text-[13px]">✗</button>
+          </div>
+        ) : !readOnly ? (
+          <div className="flex justify-end px-4 py-2.5 border-t border-gray-border">
             <button onClick={() => setShowAddItem(true)}
-              className="py-2 text-[11px] font-bold text-gray-text hover:text-green hover:bg-green-soft/30 transition-colors border-t border-gray-border">
+              className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
               + 항목 추가
             </button>
-          )}
-        </div>
-      </div>
+          </div>
+        ) : null}
 
+        {group.items.length === 0 && !showAddItem && (
+          <div className="text-center py-10 text-gray-text text-[12px]">
+            아직 항목이 없습니다. 아래에서 추가하세요.
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -404,14 +404,14 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
 
 // ── 플랜 업그레이드 모달 데이터 ────────────────────────────────────────────────
 const UPGRADE_PLANS = [
-  { id: 'free'  as PlanTier, name: '무료',   price: 0,     teamLimit: '1팀',    perday: null,          inherits: null,            extras: ['주문 내역 관리', 'QR 오더', '잔액 차감 자동화', '영수증 출력'] },
-  { id: 'basic' as PlanTier, name: '베이직', price: 14900, teamLimit: '10팀까지', perday: '하루 497원',  inherits: '무료 기능 포함', extras: ['선결제 매출·주문액 정산 시각화'] },
-  { id: 'pro'   as PlanTier, name: '프로',   price: 27900, teamLimit: '20팀까지', perday: '하루 930원',  inherits: '베이직 기능 포함', extras: ['잔액 부족 경고 기준 설정', '문자 자동 발송'] },
-  { id: 'max'   as PlanTier, name: '맥스',   price: 38900, teamLimit: '제한 없음', perday: '하루 1,297원', inherits: '프로 기능 포함', extras: ['여러 매장 등록·통합 관리'] },
+  { id: 'free'  as PlanTier, name: 'Free',  price: 0,     teamLimit: '1팀',    perday: null,          inherits: null,            extras: ['주문 내역 관리', 'QR 오더', '잔액 차감 자동화', '영수증 출력'] },
+  { id: 'basic' as PlanTier, name: 'Basic', price: 5900,  teamLimit: '5팀까지',  perday: '하루 197원',   inherits: 'Free 기능 포함',  extras: ['선결제 매출·주문액 정산 시각화'] },
+  { id: 'pro'   as PlanTier, name: 'Pro',   price: 19000, teamLimit: '20팀까지', perday: '하루 633원',   inherits: 'Basic 기능 포함', extras: ['잔액 부족 경고 기준 설정', '문자 자동 발송'] },
+  { id: 'max'   as PlanTier, name: 'Max',   price: 49000, teamLimit: '제한 없음', perday: '하루 1,633원', inherits: 'Pro 기능 포함',   extras: ['여러 매장 등록·통합 관리'] },
 ]
 type FVal = boolean | string
 const UPGRADE_FEATURE_TABLE: { label: string; free: FVal; basic: FVal; pro: FVal; max: FVal }[] = [
-  { label: '선결제 고객 팀 수',   free: '1팀', basic: '10팀', pro: '20팀', max: '무제한' },
+  { label: '선결제 고객 팀 수',   free: '1팀', basic: '5팀', pro: '20팀', max: '무제한' },
   { label: '주문 내역 관리',      free: true,  basic: true,  pro: true,  max: true },
   { label: 'QR 오더 (모바일 웹)', free: true,  basic: true,  pro: true,  max: true },
   { label: '잔액 차감 자동화',    free: true,  basic: true,  pro: true,  max: true },
@@ -534,7 +534,7 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
                         <div style={{ fontFamily:'"IBM Plex Mono",monospace', fontSize:17, fontWeight:700, color:'#1A1A1A', lineHeight:1.2 }}>
                           {p.price === 0 ? '무료' : `₩${p.price.toLocaleString()}`}
                         </div>
-                        <div style={{ fontSize:10, color:'#79837C', marginTop:2 }}>{p.price === 0 ? '기간 제한 없음' : `/ 월 · ${p.perday}`}</div>
+                        <div style={{ fontSize:10, color:'#79837C', marginTop:2 }}>{p.price === 0 ? '기간 제한 없음' : '/ 월'}</div>
                       </div>
                       <div style={{ padding:'5px 8px', borderRadius:7, background: isSelected ? '#D6F5E5' : '#F5F8F6', fontSize:12, fontWeight:700, color:'#1A1A1A', textAlign:'center', marginTop:8 }}>{p.teamLimit}</div>
                       <ul style={{ listStyle:'none', marginTop:10, display:'flex', flexDirection:'column', gap:5 }}>
@@ -1403,7 +1403,10 @@ export default function Sales() {
                           className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-gray-bg transition-colors text-left"
                         >
                           <div className="flex items-center gap-2">
-                            <span className={`text-[11px] transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                              className={`text-gray-text transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
+                              <polyline points="9 18 15 12 9 6"/>
+                            </svg>
                             <span className="text-[12px] font-bold text-ink">{hmLabel}</span>
                           </div>
                           <div className="text-right flex-shrink-0 ml-2">

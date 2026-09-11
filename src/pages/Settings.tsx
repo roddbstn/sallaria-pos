@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { SegmentedControl } from '../components/SegmentedControl'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 import { useStore } from '../lib/store-context'
 import { PLAN_LIMITS, PLAN_NAMES } from '../lib/plans'
@@ -18,6 +19,7 @@ type BreakHours = { enabled: boolean; start: string; end: string }
 
 interface SettingsProps {
   onOpenHours: () => void
+  onOpenProfile: () => void
   operatingHours: Record<string, DayHours>
   breakTime: Record<string, BreakHours>
 }
@@ -42,17 +44,16 @@ const SIZE_LABELS: Record<string, string> = { small: '기본', normal: '보통',
 const DAY_LABELS: Record<string, string> = { mon:'월', tue:'화', wed:'수', thu:'목', fri:'금', sat:'토', sun:'일' }
 const DAY_ORDER = ['mon','tue','wed','thu','fri','sat','sun']
 
-export default function Settings({ onOpenHours, operatingHours, breakTime }: SettingsProps) {
+export default function Settings({ onOpenHours, onOpenProfile, operatingHours, breakTime }: SettingsProps) {
   const { storeName, plan } = useStore()
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [comPorts,   setComPorts]   = useState<ComPort[]>([])
   const [printer,    setPrinter]    = useState<PrinterSettings>({ portName: '' })
-  const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' })
+  const [receipt,    setReceipt]    = useState<ReceiptSettings>({ menuSize: 'normal', optionSize: 'normal', customerMenuSize: 'normal', customerOptionSize: 'normal' })
   const [connected,  setConnected]  = useState(false)
   const [loading,    setLoading]    = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [testing,    setTesting]    = useState(false)
-  const [saved,      setSaved]      = useState(false)
   const [connectErr, setConnectErr] = useState('')
   const [testMsg,    setTestMsg]    = useState('')
   const [alertVolume,  setAlertVolume]  = useState(getSavedVolume)
@@ -102,49 +103,43 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
     setTimeout(() => setTestMsg(''), 4000)
   }
 
-  async function handleSave() {
-    saveVolume(alertVolume)
-    await api().updateSettings?.({ printer, receipt })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
+  // receipt 변경 시 자동저장 (500ms 디바운스)
+  useEffect(() => {
+    const t = setTimeout(() => { api().updateSettings?.({ printer, receipt }) }, 500)
+    return () => clearTimeout(t)
+  }, [receipt])
 
   const sizeOpts: ('small' | 'normal' | 'large')[] = ['small', 'normal', 'large']
 
   const previewWrap: React.CSSProperties = {
-    width: 192,
+    width: 200,
     backgroundColor: '#fff',
     boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
     fontFamily: "'Courier New', Courier, monospace",
-    fontSize: 8,
-    lineHeight: 1.35,
+    fontSize: 11,
+    lineHeight: 1.3,
+    letterSpacing: '0px',
     color: '#111',
-    padding: '10px 16px',
-    overflowX: 'hidden',
+    padding: '8px 10px',
+    overflow: 'hidden',
+  }
+  const scaleWrap: React.CSSProperties = {
+    width: '134%',
+    transform: 'scaleX(0.75)',
+    transformOrigin: 'left top',
   }
 
   return (
     <div className="h-full overflow-y-auto bg-gray-bg">
       <div className="max-w-[640px] mx-auto px-3 py-3 space-y-3">
         {/* ── 계정 / 요금제 ── */}
-        <Section title="👤 계정">
+        <Section title={storeName || '매장명'} noBorder action={
+          <button onClick={onOpenProfile}
+            className="px-3 py-1.5 rounded-lg text-[12px] font-bold text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
+            프로필 보기
+          </button>
+        }>
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[13px] font-semibold text-ink">{storeName || '매장명'}</div>
-                <div className="text-[12px] text-gray-text mt-0.5">현재 구독 플랜</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`px-3 py-1 rounded-full text-[12px] font-bold ${
-                  plan === 'max'  ? 'bg-purple-100 text-purple-700' :
-                  plan === 'pro'  ? 'bg-blue-100 text-blue-700' :
-                  plan === 'basic'? 'bg-green-soft text-green' :
-                                    'bg-gray-100 text-gray-text'
-                }`}>
-                  {PLAN_NAMES[plan]} 플랜
-                </span>
-              </div>
-            </div>
             <div className="bg-gray-bg rounded-xl p-3 space-y-2">
               <div className="flex justify-between text-[12px]">
                 <span className="text-gray-text">거래처 한도</span>
@@ -171,17 +166,21 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                 </span>
               </div>
             </div>
-            {plan !== 'max' && (
-              <button onClick={() => setUpgradeOpen(true)} className="w-full py-2 bg-ink text-white rounded-xl text-[12px] font-bold hover:bg-gray-800 transition-colors">
-                플랜 업그레이드
+            <div className="flex items-center justify-between">
+              <div className="text-[13px] text-gray-text">
+                <span className="font-semibold text-ink">{PLAN_NAMES[plan]}</span> <span className="text-[#C8C8C8]">구독중</span>
+              </div>
+              <button onClick={() => setUpgradeOpen(true)}
+                className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
+                요금제 변경
               </button>
-            )}
+            </div>
             <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
           </div>
         </Section>
 
         {/* ── 운영시간 설정 ── */}
-        <Section title="⏰ 운영시간">
+        <Section title="운영시간">
           <div className="flex items-center justify-between gap-4 mb-3">
             <div>
               <div className="text-[13px] font-semibold text-ink">요일별 운영 스케줄</div>
@@ -209,9 +208,9 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                     </span>
                     {enabled ? (
                       <>
-                        <span className="text-[10px] text-ink leading-tight text-center">{h.open}</span>
+                        <span className="text-[10px] font-semibold text-green leading-tight text-center bg-green-soft rounded px-1.5 py-0.5">{h.open}</span>
                         <span className="text-[9px] text-gray-text leading-none">~</span>
-                        <span className="text-[10px] text-ink leading-tight text-center">{h.close}</span>
+                        <span className="text-[10px] font-semibold text-white leading-tight text-center bg-[#6B7280] rounded px-1.5 py-0.5">{h.close}</span>
                         {b?.enabled && (
                           <span className="text-[9px] text-gray-text leading-tight text-center mt-0.5">
                             {b.start}~{b.end}
@@ -229,13 +228,15 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
         </Section>
 
         {/* ── 주문 알림음 ── */}
-        <Section title="🔔 주문 알림음">
+        <Section title="주문 알림음">
           <Field label="볼륨">
             <div className="flex items-center gap-3">
               <span className="text-[13px] text-gray-text w-4">🔇</span>
               <input
                 type="range" min={0} max={100} value={alertVolume}
                 onChange={e => setAlertVolume(Number(e.target.value))}
+                onMouseUp={e => saveVolume(Number((e.target as HTMLInputElement).value))}
+                onTouchEnd={e => saveVolume(Number((e.target as HTMLInputElement).value))}
                 className="flex-1 h-2 cursor-pointer volume-slider"
                 style={{ background: `linear-gradient(to right, #00DD67 0%, #00DD67 ${alertVolume}%, #E5E7EB ${alertVolume}%, #E5E7EB 100%)` }}
               />
@@ -384,23 +385,17 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
 
         {/* ── 영수증 설정 (탭) ── */}
         <Section title="영수증 설정">
-          <div className="flex bg-gray-100 rounded-xl p-1 mb-5">
-            {([
-              { id: 'kitchen',  label: '매장용 (주방)' },
-              { id: 'customer', label: '고객용' },
-            ] as const).map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setReceiptTab(tab.id)}
-                className={[
-                  'flex-1 py-2 rounded-lg text-[13px] font-bold transition-colors',
-                  receiptTab === tab.id ? 'bg-white text-ink shadow-sm' : 'text-gray-text',
-                ].join(' ')}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            options={[
+              { label: '매장용 (주방)', value: 'kitchen'  as const },
+              { label: '고객용',        value: 'customer' as const },
+            ]}
+            value={receiptTab}
+            onChange={setReceiptTab}
+            size="md"
+            rounded="xl"
+            className="mb-5"
+          />
 
           {receiptTab === 'kitchen' ? (
             <>
@@ -412,8 +407,8 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                   <div className="flex gap-2">
                     {sizeOpts.map(s => (
                       <button key={s} onClick={() => setReceipt(r => ({ ...r, [key]: s }))}
-                        className={['px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
-                          receipt[key] === s ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'].join(' ')}>
+                        className={['px-3 py-1 rounded-lg text-[11px] font-bold border transition-colors',
+                          receipt[key] === s ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text border-gray-border hover:bg-gray-200'].join(' ')}>
                         {SIZE_LABELS[s]}
                       </button>
                     ))}
@@ -421,7 +416,7 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                 </Field>
               ))}
               <div className="mt-3">
-                <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
+                <div className="text-[13px] font-semibold text-gray-text mb-1.5">출력 미리보기 (58mm 실제 비율)</div>
                 {/* 예시 유형 탭 */}
                 <div className="flex gap-1.5 mb-3">
                   {(['개인', '과', '기업'] as const).map(t => (
@@ -438,16 +433,16 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                       const menuPx = receipt.menuSize   === 'large' ? 16 : receipt.menuSize   === 'normal' ? 12 : 8
                       const optPx  = receipt.optionSize === 'large' ? 16 : receipt.optionSize === 'normal' ? 12 : 8
                       const ex = previewType === '개인'
-                        ? { orderer: '홍길동', phone: '010-****-1234', method: '포장', account: '홍길동', type: '개인', delivery: false }
+                        ? { orderer: '홍길동', phone: '010-****-1234', method: '포장', account: '홍길동', type: '개인', delivery: false, subtotal: 16500, total: 16500 }
                         : previewType === '과'
-                        ? { orderer: '김민준', phone: '010-****-5678', method: '매장 식사', account: '중구청 OO과', type: '과', delivery: false }
-                        : { orderer: '이서연', phone: '010-****-9012', method: '배달', account: 'OO기업', type: '기업', delivery: true }
+                        ? { orderer: '김민준', phone: '010-****-5678', method: '매장 식사', account: '중구청 OO과', type: '과', delivery: false, subtotal: 16500, total: 16500 }
+                        : { orderer: '이서연', phone: '010-****-9012', method: '배달', account: 'OO기업', type: '기업', delivery: true, subtotal: 16500, total: 20000 }
                       const options = [
                         { name: '생연어 포케 100g', price: 5500 },
                         { name: '현미밥', price: 0 },
                         { name: '아보카도 추가', price: 1500 },
                       ]
-                      return <>
+                      return <div style={scaleWrap}>
                         <div style={{ textAlign:'center', fontWeight:'bold' }}>[주방용]</div>
                         <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
@@ -459,27 +454,42 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                         <div>전화번호 : {ex.phone}</div>
                         <div>거래처   : {ex.account}</div>
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                        {ex.delivery && <>
+                        {ex.delivery ? <>
                           <div>배달주소 : 대구 북구 침산로21길 23</div>
                           <div>배달상세 : 103동 907호</div>
                           <div>가게요청 : 없음</div>
                           <div>배달요청 : 문 앞에 두고 초인종 눌러주세요.</div>
                           <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        </> : <>
+                          <div>가게요청 : 없음</div>
+                          <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
                         </>}
-                        <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}>
-                          <span>메뉴명</span><span>수량</span>
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:4 }}>
+                          <span style={{ fontWeight:'bold' }}>메뉴명</span>
+                          <span style={{ fontWeight:'bold', textAlign:'right' }}>수량</span>
+                          <span style={{ fontWeight:'bold', textAlign:'right' }}>가격</span>
+                          <div style={{ gridColumn:'1/-1', borderTop:'1px dotted #000', margin:'2px 0' }} />
+                          <span style={{ fontWeight:'bold', fontSize:menuPx }}>포케+음료세트</span>
+                          <span style={{ fontWeight:'bold', fontSize:menuPx, textAlign:'right' }}>1</span>
+                          <span style={{ fontWeight:'bold', fontSize:menuPx, textAlign:'right' }}>14,400원</span>
+                          {options.map((o, i) => (
+                            <React.Fragment key={i}>
+                              <div style={{ fontSize:optPx, color:'#555', gridColumn:'1/3', paddingLeft:6 }}>{`> ${o.name}`}</div>
+                              <div style={{ fontSize:optPx, color:'#555', textAlign:'right', whiteSpace:'nowrap' }}>
+                                {o.price > 0 ? `+${o.price.toLocaleString('ko-KR')}원` : ''}
+                              </div>
+                            </React.Fragment>
+                          ))}
                         </div>
-                        <div style={{ borderTop:'1px dotted #000', margin:'2px 0' }} />
-                        <div style={{ fontWeight:'bold', fontSize:menuPx, display:'flex', justifyContent:'space-between' }}>
-                          <span>포케+음료세트</span><span>1</span>
-                        </div>
-                        {options.map((o, i) => (
-                          <div key={i} style={{ fontSize:optPx, color:'#555', paddingLeft:6 }}>
-                            {`> ${o.name}${o.price > 0 ? ` +${o.price.toLocaleString('ko-KR')}원` : ''}`}
-                          </div>
-                        ))}
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                      </>
+                        <div>메뉴 소계 : {ex.subtotal.toLocaleString('ko-KR')}원</div>
+                        {ex.delivery && <div>배달료   : 3,500원</div>}
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div style={{ fontWeight:'bold' }}>합    계 : {ex.total.toLocaleString('ko-KR')}원</div>
+                        <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        <div>주문전 잔액 : 864,800원</div>
+                        <div style={{ fontWeight:'bold' }}>주문후 잔액 : {(864800 - ex.total).toLocaleString('ko-KR')}원</div>
+                      </div>
                     })()}
                   </div>
                 </div>
@@ -495,8 +505,8 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                   <div className="flex gap-2">
                     {sizeOpts.map(s => (
                       <button key={s} onClick={() => setReceipt(r => ({ ...r, [key]: s }))}
-                        className={['px-4 py-2 rounded-lg text-[12px] font-bold border transition-colors',
-                          receipt[key] === s ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'].join(' ')}>
+                        className={['px-3 py-1 rounded-lg text-[11px] font-bold border transition-colors',
+                          receipt[key] === s ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text border-gray-border hover:bg-gray-200'].join(' ')}>
                         {SIZE_LABELS[s]}
                       </button>
                     ))}
@@ -504,7 +514,7 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                 </Field>
               ))}
               <div className="mt-3">
-                <div className="text-[11px] font-bold text-gray-text mb-2">출력 미리보기 (58mm 실제 비율)</div>
+                <div className="text-[13px] font-semibold text-gray-text mb-1.5">출력 미리보기 (58mm 실제 비율)</div>
                 {/* 예시 유형 탭 (kitchen과 공유) */}
                 <div className="flex gap-1.5 mb-3">
                   {(['개인', '과', '기업'] as const).map(t => (
@@ -530,7 +540,7 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                         { name: '현미밥', price: 0 },
                         { name: '아보카도 추가', price: 1500 },
                       ]
-                      return <>
+                      return <div style={scaleWrap}>
                         <div style={{ textAlign:'center', fontWeight:'bold' }}>[고객용]</div>
                         <div style={{ textAlign:'center' }}>{storeName || '매장명'} - 선결제 영수증</div>
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
@@ -542,11 +552,14 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                         <div>전화번호 : {ex.phone}</div>
                         <div>거래처   : {ex.account}</div>
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                        {ex.delivery && <>
+                        {ex.delivery ? <>
                           <div>배달주소 : 대구 북구 침산로21길 23</div>
                           <div>배달상세 : 103동 907호</div>
                           <div>가게요청 : 없음</div>
                           <div>배달요청 : 문 앞에 두고 초인종 눌러주세요.</div>
+                          <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
+                        </> : <>
+                          <div>가게요청 : 없음</div>
                           <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
                         </>}
                         {/* 메뉴 3열 테이블 */}
@@ -568,14 +581,14 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
                           ))}
                         </div>
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                        <div style={{ display:'flex', justifyContent:'space-between' }}><span>메뉴 소계</span><span>{ex.subtotal.toLocaleString('ko-KR')}원</span></div>
-                        {ex.delivery && <div style={{ display:'flex', justifyContent:'space-between' }}><span>배달료</span><span>3,500원</span></div>}
+                        <div>메뉴 소계 : {ex.subtotal.toLocaleString('ko-KR')}원</div>
+                        {ex.delivery && <div>배달료   : 3,500원</div>}
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                        <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>합  계</span><span>{ex.total.toLocaleString('ko-KR')}원</span></div>
+                        <div style={{ fontWeight:'bold' }}>합    계 : {ex.total.toLocaleString('ko-KR')}원</div>
                         <div style={{ borderTop:'1px dashed #999', margin:'3px 0' }} />
-                        <div style={{ display:'flex', justifyContent:'space-between' }}><span>주문전 잔액</span><span>864,800원</span></div>
-                        <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}><span>주문후 잔액</span><span>{(864800 - ex.total).toLocaleString('ko-KR')}원</span></div>
-                      </>
+                        <div>주문전 잔액 : 864,800원</div>
+                        <div style={{ fontWeight:'bold' }}>주문후 잔액 : {(864800 - ex.total).toLocaleString('ko-KR')}원</div>
+                      </div>
                     })()}
                   </div>
                 </div>
@@ -583,17 +596,6 @@ export default function Settings({ onOpenHours, operatingHours, breakTime }: Set
             </>
           )}
         </Section>
-
-        {/* 저장 버튼 */}
-        <button
-          onClick={handleSave}
-          className={[
-            'w-full py-3.5 rounded-xl font-bold text-[15px] transition-colors',
-            saved ? 'bg-green-soft text-green' : 'bg-[#00DD67] text-[#1A1A1A] hover:bg-[#00BB55]',
-          ].join(' ')}
-        >
-          {saved ? '✓ 저장됨' : '설정 저장'}
-        </button>
 
         <div className="text-center text-[12px] text-gray-text pb-4">
           <div className="font-bold">프리POS v0.1.0</div>
@@ -616,11 +618,12 @@ function StepCard({ step, title, children }: { step: string; title: string; chil
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children, noBorder }: { title: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; noBorder?: boolean }) {
   return (
     <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-border">
+      <div className={`px-4 py-3 flex items-center justify-between ${noBorder ? '' : 'border-b border-gray-border'}`}>
         <span className="text-[14px] font-bold text-ink">{title}</span>
+        {action}
       </div>
       <div className="px-4 py-4 space-y-4">{children}</div>
     </div>
@@ -630,7 +633,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="text-[12px] font-bold text-gray-text mb-1.5 block">{label}</label>
+      <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">{label}</label>
       {children}
     </div>
   )

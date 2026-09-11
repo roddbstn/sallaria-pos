@@ -193,10 +193,10 @@ function Calendar({ startDate, endDate, onSelect }: CalendarProps) {
                   <button onClick={() => onSelect(ymd)}
                     className={`relative z-10 w-7 h-7 rounded-full text-[11px] font-medium transition-colors focus:outline-none
                       ${isSel ? 'text-[#1A1A1A] font-bold' : inRange ? 'text-ink hover:bg-green-soft' : isSun ? 'text-danger hover:bg-gray-bg' : isSat ? 'text-blue-500 hover:bg-gray-bg' : 'text-ink hover:bg-gray-bg'}`}
-                    style={isSel ? { backgroundColor: '#00BB55' } : undefined}>
+                    style={isSel ? { backgroundColor: '#00DD67' } : undefined}>
                     {day}
                     {isToday && (
-                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full" style={{ backgroundColor: isSel ? '#1A1A1A' : '#00DD67' }} />
+                      <span className="absolute left-1/2 -translate-x-1/2 rounded-full" style={{ width: 2, height: 2, backgroundColor: isSel ? '#1A1A1A' : '#00DD67', top: 4 }} />
                     )}
                   </button>
                 </div>
@@ -383,9 +383,9 @@ function dayCount(start: string | null, end: string | null): number {
 
 function Row({ label, value, mono, bold }: { label: string; value: string; mono?: boolean; bold?: boolean }) {
   return (
-    <div className="flex justify-between text-[12px]">
-      <span className="text-gray-text">{label}</span>
-      <span className={`${mono ? 'font-mono' : ''} ${bold ? 'font-bold text-ink' : 'text-ink'}`}>{value}</span>
+    <div className="flex justify-between text-[12px] gap-3">
+      <span className="text-gray-text flex-shrink-0">{label}</span>
+      <span className={`max-w-[50%] text-right break-words ${mono ? 'font-mono' : ''} ${bold ? 'font-bold text-ink' : 'text-ink'}`}>{value}</span>
     </div>
   )
 }
@@ -588,7 +588,7 @@ export default function Orders() {
                 </label>
               ))}
             </div>
-            <div className="border-t border-gray-border px-3 py-2 bg-gray-bg">
+            <div className="border-t border-gray-border px-3 py-2 bg-gray-bg modal-footer">
               <button
                 onClick={() => setShowAccountFilter(false)}
                 className="w-full py-1.5 rounded-lg bg-ink text-white text-[12px] font-bold hover:bg-ink/80 transition-colors"
@@ -802,12 +802,15 @@ export default function Orders() {
       {/* 주문 상세 모달 */}
       {selected && (
         <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelected(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-[400px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="p-5">
+          <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-8">
               <div className="flex items-center justify-between mb-4">
-                <div className="text-[15px] font-extrabold text-ink">주문 상세</div>
+                <div className="text-[17px] font-semibold text-ink">주문 상세</div>
                 <button onClick={() => setSelected(null)}
                   className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
+              </div>
+              <div className="flex items-center justify-end mb-3">
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[selected.status]}`}>{selected.status}</span>
               </div>
               <div className="space-y-2 mb-4">
                 <Row label="주문번호"  value={selected.orderNumber ? `#${selected.orderNumber}` : selected.code} mono />
@@ -879,14 +882,10 @@ export default function Orders() {
                   </div>
                 ))}
               </div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[12px] text-gray-text font-semibold">현재 상태</span>
-                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[selected.status]}`}>{selected.status}</span>
-              </div>
               {selected.isDeleted ? (
                 <button
                   onClick={() => handleRestoreOrder(selected.code)}
-                  className="w-full py-2 rounded-xl text-[12px] font-bold text-green hover:bg-green-soft transition-colors border border-green/30">
+                  className="w-full py-3 rounded-xl text-[12px] font-bold text-green hover:bg-green-soft transition-colors border border-green/30">
                   주문 복구
                 </button>
               ) : (
@@ -895,7 +894,7 @@ export default function Orders() {
                     <div className="flex items-center gap-2 mb-2">
                       <span className="flex-1 text-[12px] text-danger font-semibold">정말 삭제할까요?</span>
                       <button onClick={() => handleDeleteOrder(selected.code)}
-                        className="px-3 py-1.5 rounded-lg text-[12px] font-bold bg-danger text-white hover:bg-red-700 transition-colors">
+                        className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-danger text-white hover:bg-red-700 transition-colors">
                         삭제
                       </button>
                       <button onClick={() => setDeleteConfirmCode(null)}
@@ -904,26 +903,30 @@ export default function Orders() {
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => setDeleteConfirmCode(selected.code)}
-                      className="w-full py-2 rounded-xl text-[12px] font-bold bg-[#FFCDD2] text-[#C62828] hover:bg-red-200 transition-colors mb-2">
-                      주문 삭제
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => setDeleteConfirmCode(selected.code)}
+                        className="flex-1 py-3 rounded-xl text-[13px] font-semibold transition-colors"
+                        style={{ backgroundColor: '#FFEBEE', color: '#E53935' }}>
+                        삭제
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setReprintMsg(null)
+                          const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
+                          const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected, storeName) })
+                          if (!res) return
+                          setReprintMsg(res.ok
+                            ? { ok: true,  text: '영수증을 출력합니다' }
+                            : { ok: false, text: res.error ?? '출력 실패' }
+                          )
+                          setTimeout(() => setReprintMsg(null), 3000)
+                        }}
+                        className="flex-1 py-3 rounded-xl text-[13px] font-semibold transition-colors"
+                        style={{ backgroundColor: '#F0F0F0', color: '#727272' }}>
+                        영수증 재출력
+                      </button>
+                    </div>
                   )}
-                  <button
-                    onClick={async () => {
-                      setReprintMsg(null)
-                      const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
-                      const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected, storeName) })
-                      if (!res) return
-                      setReprintMsg(res.ok
-                        ? { ok: true,  text: '영수증을 출력합니다' }
-                        : { ok: false, text: res.error ?? '출력 실패' }
-                      )
-                      setTimeout(() => setReprintMsg(null), 3000)
-                    }}
-                    className="w-full py-2 rounded-xl border-2 border-gray-border text-[12px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
-                    🖨 영수증 재출력
-                  </button>
                   {reprintMsg && (
                     <div className={`mt-2 text-center text-[11px] font-semibold ${reprintMsg.ok ? 'text-green' : 'text-danger'}`}>
                       {reprintMsg.ok ? '✅' : '⚠️'} {reprintMsg.text}
@@ -944,8 +947,8 @@ export default function Orders() {
         )
         return (
           <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelectedAccountName(null)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[400px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              <div className="p-5">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-6">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="text-[14px] font-extrabold text-ink">{selectedAccountName}</div>
@@ -992,8 +995,8 @@ export default function Orders() {
         )
         return (
           <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelectedMenuName(null)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[400px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              <div className="p-5">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-6">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="text-[14px] font-extrabold text-ink">{selectedMenuName}</div>

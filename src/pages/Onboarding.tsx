@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { SegmentedControl } from '../components/SegmentedControl'
 import { supabase } from '../lib/supabase'
 import { track } from '../lib/firebase'
 import type { PlanTier } from '../lib/plans'
@@ -30,27 +31,27 @@ const ALL_PLANS = [
   {
     id:        'basic' as PlanTier,
     name:      '베이직',
-    price:     14900,
-    teamLimit: '10팀까지',
-    perday:    '하루 497원',
+    price:     9900,
+    teamLimit: '5팀까지',
+    perday:    '하루 330원',
     inherits:  '무료 기능 포함',
     extras:    ['선결제 매출·주문액 정산 시각화'],
   },
   {
     id:        'pro' as PlanTier,
     name:      '프로',
-    price:     27900,
+    price:     23900,
     teamLimit: '20팀까지',
-    perday:    '하루 930원',
+    perday:    '하루 797원',
     inherits:  '베이직 기능 포함',
     extras:    ['잔액 부족 경고 기준 설정', '문자 자동 발송'],
   },
   {
     id:        'max' as PlanTier,
     name:      '맥스',
-    price:     38900,
+    price:     43900,
     teamLimit: '제한 없음',
-    perday:    '하루 1,297원',
+    perday:    '하루 1,463원',
     inherits:  '프로 기능 포함',
     extras:    ['여러 매장 등록·통합 관리'],
   },
@@ -59,7 +60,7 @@ const ALL_PLANS = [
 /* ── 기능 비교표 데이터 ── */
 type FVal = boolean | string
 const FEATURE_TABLE: { label: string; free: FVal; basic: FVal; pro: FVal; max: FVal }[] = [
-  { label: '선결제 고객 팀 수',                    free: '1팀',  basic: '10팀', pro: '20팀', max: '무제한' },
+  { label: '선결제 고객 팀 수',                    free: '1팀',  basic: '5팀', pro: '20팀', max: '무제한' },
   { label: '주문 내역 관리',                       free: true,  basic: true,  pro: true,  max: true    },
   { label: '선결제 고객 전용 QR 오더 (모바일 웹)', free: true,  basic: true,  pro: true,  max: true    },
   { label: '잔액 차감 자동화',                     free: true,  basic: true,  pro: true,  max: true    },
@@ -939,16 +940,11 @@ export default function Onboarding({ clientId, onComplete }: Props) {
               {/* 보드레이트 */}
               <div>
                 <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">통신 속도</label>
-                <div className="flex bg-gray-100 rounded-lg p-0.5">
-                  {BAUD_RATES.map(b => (
-                    <button
-                      key={b}
-                      onClick={() => setBaudRate(b)}
-                      className={`flex-1 py-1.5 rounded-md text-[12px] font-bold transition-all
-                        ${baudRate === b ? 'bg-white shadow-sm text-ink' : 'text-gray-text'}`}
-                    >{b}</button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  options={BAUD_RATES.map(b => ({ label: String(b), value: b }))}
+                  value={baudRate}
+                  onChange={setBaudRate}
+                />
               </div>
 
               {connectErr && <p className="text-[13px] text-danger">{connectErr}</p>}

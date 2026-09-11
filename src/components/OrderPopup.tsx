@@ -300,7 +300,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                           <button
                             onClick={() => setStage('approve')}
                             style={{ backgroundColor: '#00DD67' }}
-                            className="flex-[3] py-2.5 rounded-[10px] text-white font-bold text-[14px] hover:opacity-90 transition-opacity"
+                            className="flex-[3] py-2.5 rounded-[10px] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 transition-opacity"
                           >
                             승인
                           </button>
@@ -368,7 +368,7 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
                             onClick={handleApprove}
                             disabled={loading}
                             style={{ backgroundColor: '#00DD67' }}
-                            className="flex-[3] py-2.5 rounded-[10px] text-white font-bold text-[14px] hover:opacity-90 transition-opacity disabled:opacity-60"
+                            className="flex-[3] py-2.5 rounded-[10px] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 transition-opacity disabled:opacity-60"
                           >
                             {loading ? '처리 중…' : '접수'}
                           </button>

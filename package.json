@@ -1,6 +1,6 @@
 {
   "name": "sunpos",
-  "version": "0.1.5",
+  "version": "1.0.0",
   "description": "선포스 앱",
   "main": "out/main/index.js",
   "scripts": {
@@ -12,12 +12,13 @@
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",
+    "@electron/notarize": "^3.1.1",
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.0",
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.19",
-    "electron": "^36.0.0",
+    "electron": "36.9.5",
     "electron-builder": "^24.13.3",
     "electron-rebuild": "^3.2.9",
     "electron-vite": "^2.3.0",
@@ -55,7 +56,7 @@
   "build": {
     "appId": "kr.sunpos.app",
     "productName": "sunpos",
-    "npmRebuild": false,
+    "npmRebuild": true,
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"
     ],
@@ -68,6 +69,14 @@
       "allowElevation": true,
       "guid": "sallaria-pos-0110"
     },
+    "mac": {
+      "target": "dmg",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "afterSign": "scripts/notarize.js",
     "publish": {
       "provider": "github",
       "owner": "roddbstn",

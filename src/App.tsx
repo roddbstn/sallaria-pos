@@ -925,7 +925,7 @@ export default function App() {
     customers: <Customers />,
     menus:     <Menus />,
     sales:     <Sales />,
-    settings:  <Settings onOpenHours={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }} operatingHours={operatingHours} breakTime={breakTime} />,
+    settings:  <Settings onOpenHours={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }} onOpenProfile={openProfile} operatingHours={operatingHours} breakTime={breakTime} />,
   }
 
   return (
@@ -937,14 +937,15 @@ export default function App() {
           <button
             onClick={() => setTab('dashboard')}
             title="홈으로"
-            className="w-[176px] flex-shrink-0 px-5 flex items-center hover:opacity-75 transition-opacity border-r border-gray-border/40"
-            style={{ borderRightWidth: '0.5px' }}
+            className="w-[176px] flex-shrink-0 px-5 flex items-center hover:opacity-75 transition-opacity"
           >
             <img src={logoWithText} alt="sunpos" className="h-[48px] object-contain object-left" />
           </button>
           <div className="flex-1 px-4 flex items-center justify-between">
             <span className="text-[15px] font-semibold text-ink">{PAGE_TITLES[tab]}</span>
-            <div className="flex items-center gap-2">{headerRight}</div>
+            <div className="flex items-center gap-4">
+              {headerRight}
+            </div>
           </div>
         </header>
 
@@ -971,9 +972,8 @@ export default function App() {
             ))}
           </nav>
 
-          {/* 하단: 운영 토글 + 프로필 */}
-          <div className="px-4 py-4 border-t border-gray-border flex-shrink-0 space-y-3">
-            {/* 운영 상태 토글 */}
+          {/* 하단: 운영중 토글 */}
+          <div className="px-4 py-4 border-t border-gray-border flex-shrink-0">
             <button
               onClick={toggleIsOpen}
               title={isOpen ? '운영중 — 클릭해서 종료' : '운영종료 — 클릭해서 시작'}
@@ -985,18 +985,6 @@ export default function App() {
               <span className={`text-[12px] font-semibold leading-none ${isOpen ? 'text-[#008F42]' : 'text-gray-text'}`}>
                 {isOpen ? '운영 중' : '종료됨'}
               </span>
-            </button>
-
-            {/* 프로필 버튼 */}
-            <button
-              onClick={openProfile}
-              title={session.storeName || '프로필'}
-              className="flex items-center gap-2.5 w-full px-0 hover:opacity-70 transition-opacity"
-            >
-              <div className="w-7 h-7 rounded-full bg-gray-200 text-gray-text flex items-center justify-center text-[11px] font-bold flex-shrink-0">
-                {(session.storeName || '프')[0]}
-              </div>
-              <span className="text-[12px] font-medium text-ink truncate">{session.storeName || '프로필'}</span>
             </button>
           </div>
         </aside>
@@ -1037,9 +1025,9 @@ export default function App() {
         {/* ── 조기마감 모달 ── */}
         {closureOpen && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-2xl shadow-xl w-[420px] px-6 py-6 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[480px] px-9 py-9 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
               <div>
-                <div className="text-[15px] font-extrabold text-ink">조기마감</div>
+                <div className="text-[17px] font-semibold text-ink">조기마감</div>
                 <div className="text-[12px] text-gray-text mt-0.5">오늘 지정한 시간부터 자동으로 영업이 종료됩니다</div>
               </div>
 
@@ -1074,10 +1062,10 @@ export default function App() {
         {/* ── 휴가예약 모달 ── */}
         {vacationOpen && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={() => setVacationOpen(false)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[680px] max-h-[88vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[680px] max-h-[88vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
               {/* 헤더 */}
-              <div className="px-6 pt-5 pb-4 border-b border-gray-border flex-shrink-0">
-                <div className="text-[16px] font-extrabold text-ink">휴가 예약</div>
+              <div className="px-8 pt-7 pb-0 flex-shrink-0">
+                <div className="text-[17px] font-semibold text-ink">휴가 예약</div>
                 <div className="text-[12px] text-gray-text mt-0.5">날짜를 선택하고 하루 휴점 또는 단축 운영을 설정하세요</div>
               </div>
 
@@ -1135,7 +1123,7 @@ export default function App() {
                 </div>
 
                 {/* 선택된 날짜 설정 패널 */}
-                <div className="flex-1 overflow-y-auto p-4">
+                <div className="flex-1 overflow-y-auto px-4 py-[30px]">
                   {Object.keys(vacDraft).length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center">
                       <div className="text-[32px] mb-2">📅</div>
@@ -1211,7 +1199,7 @@ export default function App() {
               </div>
 
               {/* 하단 버튼 */}
-              <div className="px-6 py-4 border-t border-gray-border flex-shrink-0 flex gap-2">
+              <div className="px-6 py-4 border-t border-gray-border flex-shrink-0 flex gap-2 modal-footer">
                 <button
                   onClick={() => setVacationOpen(false)}
                   className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
@@ -1228,9 +1216,9 @@ export default function App() {
         {/* ── 운영시간 외 강제 ON 확인 다이얼로그 ── */}
         {offHoursConfirm && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-2xl shadow-xl w-[320px] px-6 py-6 flex flex-col gap-4">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[320px] px-9 py-9 flex flex-col gap-4">
               <div>
-                <div className="text-[15px] font-extrabold text-ink mb-1">운영시간이 아닙니다</div>
+                <div className="text-[17px] font-semibold text-ink mb-1">운영시간이 아닙니다</div>
                 <div className="text-[13px] text-gray-text leading-relaxed">현재는 설정한 운영시간이 아니에요.<br/>그래도 운영 상태로 바꿀까요?</div>
               </div>
               <div className="flex gap-2">
@@ -1257,11 +1245,11 @@ export default function App() {
         {/* ── 운영시간 설정 모달 ── */}
         {hoursOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50" onClick={() => setHoursOpen(false)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[820px] overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[820px] overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
               {/* 헤더 */}
-              <div className="px-6 pt-5 pb-4 border-b border-gray-border flex items-center justify-between">
+              <div className="px-8 pt-7 pb-0 flex items-center justify-between">
                 <div>
-                  <div className="text-[16px] font-extrabold text-ink">운영시간 설정</div>
+                  <div className="text-[17px] font-semibold text-ink">운영시간 설정</div>
                   <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1347,11 +1335,11 @@ export default function App() {
         {/* ── 프로필 모달 ── */}
         {profileOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50" onClick={() => setProfileOpen(false)}>
-            <div className="bg-white rounded-2xl shadow-xl w-[340px] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] overflow-hidden" onClick={e => e.stopPropagation()}>
 
               {/* 헤더 */}
-              <div className="px-6 pt-6 pb-5 border-b border-gray-border">
-                <div className="text-[17px] font-extrabold text-ink leading-tight">{session.storeName || 'POS'}</div>
+              <div className="px-8 pt-7 pb-0">
+                <div className="text-[17px] font-semibold text-ink leading-tight">{session.storeName || 'POS'}</div>
                 <div className="text-[12px] text-gray-text mt-1">{authObj?.user.email ?? ''}</div>
                 <div className="flex items-center justify-between mt-2">
                   {session.plan === 'free' ? (
@@ -1367,14 +1355,14 @@ export default function App() {
                   )}
                   {session.plan !== 'max' && (
                     <button onClick={() => setUpgradeOpen(true)} className="px-3 py-1 rounded-full text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] hover:opacity-85 transition-opacity">
-                      업그레이드
+                      요금제 변경
                     </button>
                   )}
                 </div>
               </div>
 
               {/* 가게 현황 */}
-              <div className="px-6 py-4 border-b border-gray-border flex gap-3">
+              <div className="px-8 py-5 border-b border-gray-border flex gap-3">
                 {[
                   { label: '등록 고객', value: customerCount !== null ? `${customerCount}명` : '—' },
                   { label: '등록 메뉴', value: menuCount     !== null ? `${menuCount}개`     : '—' },
@@ -1387,8 +1375,8 @@ export default function App() {
               </div>
 
               {/* 가게 이름 수정 */}
-              <div className="px-6 py-4 border-b border-gray-border">
-                <div className="text-[11px] font-bold text-gray-text mb-2">가게 이름</div>
+              <div className="px-8 py-5 border-b border-gray-border">
+                <div className="text-[13px] font-semibold text-gray-text mb-1.5">가게 이름</div>
                 {editingName ? (
                   <div className="flex gap-2">
                     <input
@@ -1420,8 +1408,8 @@ export default function App() {
               </div>
 
               {/* 비밀번호 변경 */}
-              <div className="px-6 py-4">
-                <div className="text-[11px] font-bold text-gray-text mb-2">비밀번호 변경</div>
+              <div className="px-8 py-5">
+                <div className="text-[13px] font-semibold text-gray-text mb-1.5">비밀번호 변경</div>
 
                 {!showForgotPw ? (
                   <div className="flex flex-col gap-2">
@@ -1544,9 +1532,9 @@ export default function App() {
         {/* ── 회원탈퇴 확인 모달 ── */}
         {deleteConfirmOpen && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-2xl shadow-xl w-[320px] px-6 py-6 flex flex-col gap-4">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[320px] px-9 py-9 flex flex-col gap-4">
               <div>
-                <div className="text-[16px] font-extrabold text-ink mb-1">정말 탈퇴하시겠습니까?</div>
+                <div className="text-[17px] font-semibold text-ink mb-1">정말 탈퇴하시겠습니까?</div>
                 <div className="text-[13px] text-gray-text leading-relaxed">
                   계정과 매장의 모든 데이터가 삭제되며<br />복구할 수 없습니다.
                 </div>
@@ -1571,9 +1559,9 @@ export default function App() {
         {/* 새 비밀번호 입력 모달 — 재설정 이메일 링크 클릭 후 */}
         {showNewPwModal && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-2xl shadow-xl w-[340px] px-6 py-6 flex flex-col gap-4">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] px-9 py-9 flex flex-col gap-4">
               <div>
-                <div className="text-[16px] font-extrabold text-ink mb-1">새 비밀번호 설정</div>
+                <div className="text-[17px] font-semibold text-ink mb-1">새 비밀번호 설정</div>
                 <div className="text-[13px] text-gray-text">6자 이상의 새 비밀번호를 입력해주세요.</div>
               </div>
               <div className="flex flex-col gap-2">

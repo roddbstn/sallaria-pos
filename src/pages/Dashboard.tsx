@@ -85,7 +85,7 @@ function OrderCard({
       {/* ── 헤더 ── */}
       <div className={`px-4 pt-3 pb-3 ${isCancelled ? 'bg-[#C92A2A]' : 'bg-ink'}`}>
         <div className="flex items-center justify-between mb-3">
-          <span className="text-white font-extrabold text-[15px]">#{order.orderNumber ?? String(idx + 1)}</span>
+          <span className="text-white font-semibold text-[15px]">#{order.orderNumber ?? String(idx + 1)}</span>
           <div className="flex items-center gap-2">
             <span className="text-white/60 text-[12px] font-medium">{timeStr} 접수</span>
             {!isCancelled && <ElapsedBadge createdAt={order.createdAt} />}
@@ -99,7 +99,7 @@ function OrderCard({
             </span>
             {order.phone && <CopyButton text={order.phone} onDark />}
           </div>
-          <span className="text-white font-semibold text-[16px] flex-shrink-0">{METHOD_LABEL[order.method]}</span>
+          <span className="text-white font-bold text-[17px] flex-shrink-0">{METHOD_LABEL[order.method]}</span>
         </div>
 
         {/* ── 완료 버튼 or 거부됨 배지 ── */}
@@ -235,6 +235,21 @@ function formatKstNow(d: Date): string {
   const h12  = h24 % 12 === 0 ? 12 : h24 % 12
   const min  = String(kst.getUTCMinutes()).padStart(2, '0')
   return `${mm}.${dd}(${day}) ${ampm} ${h12}:${min}`
+}
+function formatKstDate(d: Date): string {
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  const mm  = String(kst.getUTCMonth() + 1).padStart(2, '0')
+  const dd  = String(kst.getUTCDate()).padStart(2, '0')
+  const day = DAYS[kst.getUTCDay()]
+  return `${mm}.${dd}. (${day})`
+}
+function formatKstTime(d: Date): string {
+  const kst  = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  const h24  = kst.getUTCHours()
+  const ampm = h24 < 12 ? '오전' : '오후'
+  const h12  = h24 % 12 === 0 ? 12 : h24 % 12
+  const min  = String(kst.getUTCMinutes()).padStart(2, '0')
+  return `${ampm} ${h12}:${min}`
 }
 
 export default function Dashboard() {
@@ -477,27 +492,16 @@ export default function Dashboard() {
     .filter(o => o.status !== '취소')
     .reduce((s, o) => s + o.total, 0)
 
-  // 헤더에 오늘 주문 통계 박스 주입
+  // 헤더에 날짜/시간 주입
   useEffect(() => {
-    const stats = [
-      { label: '오늘 주문', num: String(todayOrders.length), unit: '건', accent: false },
-      { label: '준비 중',   num: String(activeOrders.filter(o => o.status !== '취소').length), unit: '건', accent: true },
-      { label: '오늘 주문액', num: todayTotal.toLocaleString('ko-KR'), unit: '원', accent: false },
-    ]
     setHeaderRight(
-      <div className="flex gap-2">
-        {stats.map(({ label, num, unit, accent }) => (
-          <div key={label} className="bg-gray-bg rounded-lg px-3 py-1 flex items-center gap-1.5 whitespace-nowrap">
-            <span className="text-[10px] text-gray-text font-medium">{label}</span>
-            <span className={`text-[14px] font-extrabold ${accent ? 'text-green' : 'text-ink'}`}>
-              {num}<span className="text-[11px] font-light ml-px">{unit}</span>
-            </span>
-          </div>
-        ))}
+      <div className="flex flex-col items-center leading-tight pr-3">
+        <span className="text-[11px] font-semibold text-gray-text">{formatKstDate(now)}</span>
+        <span className="text-[11px] font-semibold text-gray-text">{formatKstTime(now)}</span>
       </div>
     )
     return () => setHeaderRight(null)
-  }, [todayOrders.length, activeOrders, todayTotal])
+  }, [now])
 
   return (
     <div className="h-full flex flex-col bg-gray-bg overflow-hidden">
@@ -534,8 +538,8 @@ export default function Dashboard() {
           ) : activeOrders.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center">
               <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg" className="mb-3">
-                <circle cx="26" cy="26" r="26" fill="#16a84c"/>
-                <path d="M15 26.5L22.5 34L37 18" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="26" cy="26" r="26" fill="#00DD67"/>
+                <path d="M15 26.5L22.5 34L37 18" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
               <div className="text-[15px] font-normal text-[#AAAAAA] tracking-tight">대기 중인 주문이 없습니다</div>
             </div>
@@ -596,9 +600,6 @@ export default function Dashboard() {
 
         {/* ── 우측 사이드바: 오늘 처리된 주문 ── */}
         <div className="w-[220px] flex-shrink-0 border-l border-gray-border bg-white flex flex-col overflow-hidden">
-          <div className="px-4 py-3 flex-shrink-0">
-            <div className="text-[13px] font-semibold text-ink">{formatKstNow(now)}</div>
-          </div>
           <div className="flex-1 overflow-y-auto">
             {todayOrders.length === 0 ? (
               <div className="h-full flex items-center justify-center"></div>
@@ -611,10 +612,10 @@ export default function Dashboard() {
                       <div key={o.code} className="px-4 py-2.5">
                         {/* 주문번호 + 상태 */}
                         <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-[12px] font-bold text-ink">
+                          <span className="text-[12px] font-normal text-gray-text">
                             #{o.orderNumber ?? o.code.slice(0, 6)}
                           </span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                          <span className={`text-[12px] font-bold px-2 py-1 rounded-full ${
                             o.status === '완료' ? 'bg-green-soft text-green' : 'bg-red-50 text-danger'
                           }`}>
                             {o.status}
@@ -651,7 +652,7 @@ export default function Dashboard() {
                               {METHOD_LABEL[o.method]}
                             </span>
                           </div>
-                          <span className="text-[11px] font-semibold text-ink">{won(o.total)}</span>
+                          <span className="text-[13px] font-semibold text-ink">{won(o.total)}</span>
                         </div>
                       </div>
                     )
@@ -665,7 +666,7 @@ export default function Dashboard() {
       {/* ── 취소 확인 다이얼로그 ── */}
       {confirmCancel && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-[340px]">
+          <div className="modal-in bg-white rounded-2xl shadow-xl p-6 w-[340px]">
             <div className="text-[17px] font-extrabold mb-1">주문을 취소하시겠어요?</div>
             <div className="text-[13px] text-gray-text mb-4 leading-relaxed">
               취소 시 선결제 잔액이 자동으로 환원됩니다.
