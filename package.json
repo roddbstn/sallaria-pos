@@ -56,7 +56,7 @@
   "build": {
     "appId": "kr.sunpos.app",
     "productName": "sunpos",
-    "npmRebuild": true,
+    "npmRebuild": false,
     "asarUnpack": [
       "**/node_modules/@serialport/bindings-cpp/**"
     ],
