@@ -75,7 +75,9 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": false
+      "notarize": {
+        "teamId": "383KB7VD7L"
+      }
     },
     "publish": {
       "provider": "github",
