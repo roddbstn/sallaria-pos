@@ -99,8 +99,11 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
           security import /tmp/cert.p12 -k "$KEYCHAIN_PATH" -P "$CERT_PWD" -T /usr/bin/codesign
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          # 기존 키체인 목록을 덮어쓰지 않고 앞에 추가 (login.keychain-db 유지)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | tr -d ' ' | tr '\n' ' ')
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          # 서명 ID 확인 (디버그)
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: 빌드 (electron-vite)
         run: pnpm run build
@@ -112,6 +115,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DEBUG: electron-builder
 
       - name: 설치파일 업로드 (Artifacts)
         uses: actions/upload-artifact@v4
