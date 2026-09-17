@@ -18,7 +18,22 @@ import Menus       from './pages/Menus'
 import Sales, { UpgradeModal } from './pages/Sales'
 import Settings    from './pages/Settings'
 import OrderPopup  from './components/OrderPopup'
+import ProfileModal from './components/ProfileModal'
 import { type Order } from './lib/mock-data'
+import { mapOrderRow } from './lib/mappers'
+
+// ── 주문 SELECT 쿼리 (Realtime / 폴링 / IPC 공용) ────────────────────────────
+const ORDER_SELECT = `
+  order_number, order_code, orderer_name, orderer_phone,
+  ordered_at, total_amount, balance_before, balance_after,
+  method, status, note,
+  accounts ( account_name ),
+  order_items (
+    order_item_id, menu_name, quantity, unit_price,
+    menus ( image_url ),
+    order_item_options ( id, option_name, extra_price, option_items ( option_groups ( name ) ) )
+  )
+` as const
 
 // ── 앱 상태 ───────────────────────────────────────────────────────────────────
 type Phase = 'loading' | 'auth' | 'onboarding' | 'welcome' | 'main'
@@ -265,6 +280,7 @@ const PAGE_TITLES: Record<Tab, string> = {
 
 export default function App() {
   const [phase,      setPhase]      = useState<Phase>('loading')
+  const phaseRef = useRef<Phase>('loading')
   const [session,    setSession]    = useState<StoreSession | null>(null)
   const [authObj,    setAuthObj]    = useState<Session | null>(null)
   const [tab,        setTab]        = useState<Tab>('dashboard')
@@ -280,6 +296,9 @@ export default function App() {
   // 웰컴 화면 페이드 제어 (true = 완전 표시, false = 페이드아웃 중)
   const [welcomeVisible, setWelcomeVisible] = useState(false)
 
+  // phaseRef: onAuthStateChange 클로저에서 현재 phase 읽기 위해 동기화
+  useEffect(() => { phaseRef.current = phase }, [phase])
+
   // welcome phase: 1.5s 후 페이드아웃 → main
   useEffect(() => {
     if (phase !== 'welcome') return
@@ -289,22 +308,6 @@ export default function App() {
     return () => { clearTimeout(show); clearTimeout(hide) }
   }, [phase])
 
-  // 프로필 모달 상태
-  const [editingName,   setEditingName]   = useState(false)
-  const [nameInput,     setNameInput]     = useState('')
-  const [pwCurrent,     setPwCurrent]     = useState('')
-  const [pwInput,       setPwInput]       = useState('')
-  const [pwConfirm,     setPwConfirm]     = useState('')
-  const [profileSaving, setProfileSaving] = useState(false)
-  const [profileMsg,    setProfileMsg]    = useState<{ text: string; ok: boolean } | null>(null)
-  const [customerCount, setCustomerCount] = useState<number | null>(null)
-  const [menuCount,     setMenuCount]     = useState<number | null>(null)
-  const [showPwCurrent, setShowPwCurrent] = useState(false)
-  const [showPw,        setShowPw]        = useState(false)
-  const [showPwConfirm, setShowPwConfirm] = useState(false)
-  const [showForgotPw,  setShowForgotPw]  = useState(false)
-  const [resetEmail,    setResetEmail]    = useState('')
-  const [resetSending,  setResetSending]  = useState(false)
   // 비밀번호 재설정 딥링크 수신 후 새 비밀번호 입력 모달
   const [showNewPwModal,  setShowNewPwModal]  = useState(false)
   const [newPw,           setNewPw]           = useState('')
@@ -339,6 +342,8 @@ export default function App() {
       setAuthObj(s)
       // TOKEN_REFRESHED: 세션 갱신만, 스토어 재로딩하면 onboarding 중 홈으로 튕김
       if (event === 'TOKEN_REFRESHED') return
+      // SIGNED_IN은 창 전환 복귀 시에도 발생함 — onboarding 중이면 무시
+      if (event === 'SIGNED_IN' && phaseRef.current === 'onboarding') return
       loadStoreSession(s.user.id, s.user.email ?? '')
     })
     return () => subscription.unsubscribe()
@@ -404,11 +409,14 @@ export default function App() {
     // stores 조회
     const { data: stores } = await supabase
       .from('stores')
-      .select('id, name, is_open')
+      .select('id, name, is_open, onboarding_completed')
       .eq('client_id', client.id)
+      .order('onboarding_completed', { ascending: false })  // onboarding 완료된 매장 우선
+      .order('created_at', { ascending: true })
       .limit(1)
 
     if (!stores || stores.length === 0) {
+      // stores 행이 없으면 온보딩 시작
       setSession({ userId, clientId: client.id, storeId: '', storeName: '', plan: plan as import('./lib/plans').PlanTier })
       setPhase('onboarding')
       return
@@ -416,6 +424,12 @@ export default function App() {
 
     const store = stores[0]
     setSession({ userId, clientId: client.id, storeId: store.id, storeName: store.name, plan: plan as import('./lib/plans').PlanTier })
+
+    // stores 행이 있어도 onboarding_completed가 false면 온보딩 미완
+    if (!store.onboarding_completed) {
+      setPhase('onboarding')
+      return
+    }
 
     // DB의 is_open 값으로 초기 상태 동기화
     if (store.is_open !== undefined && store.is_open !== null) {
@@ -460,25 +474,15 @@ export default function App() {
     if (!w.api?.onOrderNew) return
 
     // 신규 주문 수신 (main process가 Supabase Realtime 구독 후 IPC로 전달)
-    w.api.onOrderNew(async (rawRow: any) => {
+    w.api.onOrderNew(async (rawRow: { order_code: string }) => {
       const { data } = await supabase
         .from('orders')
-        .select(`
-          order_number, order_code, orderer_name, orderer_phone,
-          ordered_at, total_amount, balance_before, balance_after,
-          method, status, note,
-          accounts ( account_name ),
-          order_items (
-            order_item_id, menu_name, quantity, unit_price,
-            menus ( image_url ),
-            order_item_options ( id, option_name, extra_price, option_items ( option_groups ( name ) ) )
-          )
-        `)
+        .select(ORDER_SELECT)
         .eq('order_code', rawRow.order_code)
         .single()
 
       if (!data) return
-      const order = dbOrderToMock(data)
+      const order = mapOrderRow(data)
       setQueue(q => {
         // 중복 방지 (이미 queue에 있으면 추가 안 함)
         if (q.some(o => o.code === order.code)) return q
@@ -496,18 +500,6 @@ export default function App() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let channel: ReturnType<typeof supabase.channel> | null = null
 
-    const ORDER_SELECT = `
-      order_number, order_code, orderer_name, orderer_phone,
-      ordered_at, total_amount, balance_before, balance_after,
-      method, status, note,
-      accounts ( account_name ),
-      order_items (
-        order_item_id, menu_name, quantity, unit_price,
-        menus ( image_url ),
-        order_item_options ( id, option_name, extra_price, option_items ( option_groups ( name ) ) )
-      )
-    `
-
     async function fetchAndQueue(orderCode: string) {
       const { data } = await supabase
         .from('orders')
@@ -516,7 +508,7 @@ export default function App() {
         .single()
 
       if (!data) return
-      const order = dbOrderToMock(data)
+      const order = mapOrderRow(data)
       setQueue(q => {
         if (q.some(o => o.code === order.code)) return q
         return [...q, order]
@@ -533,14 +525,14 @@ export default function App() {
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'orders' },
-          (payload: any) => {
+          (payload: { new: { order_code: string } }) => {
             fetchAndQueue(payload.new.order_code)
           }
         )
         .on(
           'postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'stores' },
-          (payload: any) => {
+          (payload: { new?: { is_open?: boolean } }) => {
             const newIsOpen = payload.new?.is_open
             if (typeof newIsOpen === 'boolean') {
               setIsOpen(newIsOpen)
@@ -581,29 +573,17 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'main') return
 
-    const ORDER_SELECT_POLL = `
-      order_number, order_code, orderer_name, orderer_phone,
-      ordered_at, total_amount, balance_before, balance_after,
-      method, status, note,
-      accounts ( account_name ),
-      order_items (
-        order_item_id, menu_name, quantity, unit_price,
-        menus ( image_url ),
-        order_item_options ( id, option_name, extra_price, option_items ( option_groups ( name ) ) )
-      )
-    `
-
     async function poll() {
       const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString()
       const { data } = await supabase
         .from('orders')
-        .select(ORDER_SELECT_POLL)
+        .select(ORDER_SELECT)
         .eq('status', '주문완료')
         .eq('store_id', session?.storeId ?? '')
         .gte('ordered_at', cutoff)
 
       for (const row of data ?? []) {
-        const order = dbOrderToMock(row as any)
+        const order = mapOrderRow(row)
         setQueue(q => {
           if (q.some(o => o.code === order.code)) return q
           return [...q, order]
@@ -718,101 +698,13 @@ export default function App() {
     await supabase.auth.signOut()
   }
 
-  async function openProfile() {
-    setNameInput(session?.storeName ?? '')
-    setPwCurrent('')
-    setPwInput('')
-    setPwConfirm('')
-    setEditingName(false)
-    setProfileMsg(null)
-    setShowPwCurrent(false)
-    setShowPw(false)
-    setShowPwConfirm(false)
-    setShowForgotPw(false)
-    setResetEmail('')
+  function openProfile() {
     setProfileOpen(true)
-
-    // 내 매장 카테고리 ID 먼저 조회 → 메뉴 카운트 필터용
-    const { data: myCats } = await supabase
-      .from('categories').select('id').eq('store_id', session!.storeId)
-    const catIds = myCats?.map(c => c.id) ?? []
-
-    const [{ count: cc }, { count: mc }] = await Promise.all([
-      supabase.from('accounts').select('*', { count: 'exact', head: true })
-        .eq('is_active', true).eq('store_id', session!.storeId),
-      catIds.length > 0
-        ? supabase.from('menus').select('*', { count: 'exact', head: true })
-            .eq('is_hidden', false).in('category_id', catIds)
-        : Promise.resolve({ count: 0 }),
-    ])
-    setCustomerCount(cc ?? 0)
-    setMenuCount(mc ?? 0)
-  }
-
-  async function handleSaveStoreName() {
-    if (!nameInput.trim() || !session) return
-    setProfileSaving(true)
-    const { error } = await supabase
-      .from('stores')
-      .update({ name: nameInput.trim() })
-      .eq('id', session.storeId)
-    if (error) {
-      setProfileMsg({ text: '저장 실패: ' + error.message, ok: false })
-    } else {
-      setSession(s => s ? { ...s, storeName: nameInput.trim() } : s)
-      setEditingName(false)
-      setProfileMsg({ text: '가게 이름이 변경됐습니다.', ok: true })
-    }
-    setProfileSaving(false)
-  }
-
-  async function handleChangePassword() {
-    if (!pwCurrent) { setProfileMsg({ text: '현재 비밀번호를 입력해주세요.', ok: false }); return }
-    if (pwInput.length < 6) { setProfileMsg({ text: '새 비밀번호는 6자 이상이어야 합니다.', ok: false }); return }
-    if (pwInput !== pwConfirm) { setProfileMsg({ text: '새 비밀번호가 일치하지 않습니다.', ok: false }); return }
-    setProfileSaving(true)
-    // 현재 비밀번호 검증 (재로그인으로 확인)
-    const { error: verifyErr } = await supabase.auth.signInWithPassword({
-      email: authObj?.user.email ?? '',
-      password: pwCurrent,
-    })
-    if (verifyErr) {
-      setProfileMsg({ text: '현재 비밀번호가 올바르지 않습니다.', ok: false })
-      setProfileSaving(false)
-      return
-    }
-    const { error } = await supabase.auth.updateUser({ password: pwInput })
-    if (error) {
-      setProfileMsg({ text: '변경 실패: ' + error.message, ok: false })
-    } else {
-      setPwCurrent('')
-      setPwInput('')
-      setPwConfirm('')
-      setProfileMsg({ text: '비밀번호가 변경됐습니다.', ok: true })
-    }
-    setProfileSaving(false)
-  }
-
-  async function handleResetPassword() {
-    const email = resetEmail.trim() || authObj?.user.email || ''
-    if (!email) { setProfileMsg({ text: '이메일을 입력해주세요.', ok: false }); return }
-    setResetSending(true)
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'sunpos://reset-password',
-    })
-    if (error) {
-      setProfileMsg({ text: '전송 실패: ' + error.message, ok: false })
-    } else {
-      setProfileMsg({ text: `${email}으로 재설정 링크를 보냈습니다. 이메일을 확인해주세요.`, ok: true })
-      setShowForgotPw(false)
-      setResetEmail('')
-    }
-    setResetSending(false)
   }
 
   // ── 딥링크 수신 — 비밀번호 재설정 이메일 링크 클릭 시 ──────────────────────
   useEffect(() => {
-    const api = (window as any).api
+    const api = (window as unknown as { api?: { onAuthDeeplink?: (cb: (url: string) => void) => void; offAuthDeeplink?: () => void } }).api
     if (!api?.onAuthDeeplink) return
 
     const handler = async (url: string) => {
@@ -1332,200 +1224,14 @@ export default function App() {
           </div>
         )}
 
-        {/* ── 프로필 모달 ── */}
-        {profileOpen && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50" onClick={() => setProfileOpen(false)}>
-            <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] overflow-hidden" onClick={e => e.stopPropagation()}>
-
-              {/* 헤더 */}
-              <div className="px-8 pt-7 pb-0">
-                <div className="text-[17px] font-semibold text-ink leading-tight">{session.storeName || 'POS'}</div>
-                <div className="text-[12px] text-gray-text mt-1">{authObj?.user.email ?? ''}</div>
-                <div className="flex items-center justify-between mt-2">
-                  {session.plan === 'free' ? (
-                    <span className="text-[13px] font-normal text-gray-text">무료 플랜</span>
-                  ) : (
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                      session.plan === 'max'   ? 'bg-purple-100 text-purple-700' :
-                      session.plan === 'pro'   ? 'bg-blue-100 text-blue-700' :
-                                                 'bg-green-soft text-green'
-                    }`}>
-                      {{ basic: '베이직', pro: '프로', max: '맥스' }[session.plan]} 플랜
-                    </span>
-                  )}
-                  {session.plan !== 'max' && (
-                    <button onClick={() => setUpgradeOpen(true)} className="px-3 py-1 rounded-full text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] hover:opacity-85 transition-opacity">
-                      요금제 변경
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* 가게 현황 */}
-              <div className="px-8 py-5 border-b border-gray-border flex gap-3">
-                {[
-                  { label: '등록 고객', value: customerCount !== null ? `${customerCount}명` : '—' },
-                  { label: '등록 메뉴', value: menuCount     !== null ? `${menuCount}개`     : '—' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex-1 bg-gray-bg rounded-xl py-3 text-center">
-                    <div className="text-[11px] text-gray-text font-semibold">{label}</div>
-                    <div className="text-[18px] font-extrabold text-ink mt-0.5">{value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* 가게 이름 수정 */}
-              <div className="px-8 py-5 border-b border-gray-border">
-                <div className="text-[13px] font-semibold text-gray-text mb-1.5">가게 이름</div>
-                {editingName ? (
-                  <div className="flex gap-2">
-                    <input
-                      autoFocus
-                      value={nameInput}
-                      onChange={e => setNameInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleSaveStoreName(); if (e.key === 'Escape') setEditingName(false) }}
-                      className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[14px] text-ink outline-none focus:border-[#00DD67]"
-                    />
-                    <button
-                      onClick={handleSaveStoreName}
-                      disabled={profileSaving}
-                      className="px-3 py-2 bg-[#00DD67] text-[#1A1A1A] text-[13px] font-bold rounded-lg hover:opacity-85 disabled:opacity-50"
-                    >저장</button>
-                    <button
-                      onClick={() => setEditingName(false)}
-                      className="px-3 py-2 bg-gray-100 text-gray-text text-[13px] font-bold rounded-lg hover:bg-gray-200"
-                    >취소</button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[14px] font-semibold text-ink">{session.storeName || '—'}</span>
-                    <button
-                      onClick={() => { setNameInput(session.storeName ?? ''); setEditingName(true) }}
-                      className="text-[12px] font-semibold text-gray-text hover:text-ink transition-colors"
-                    >수정</button>
-                  </div>
-                )}
-              </div>
-
-              {/* 비밀번호 변경 */}
-              <div className="px-8 py-5">
-                <div className="text-[13px] font-semibold text-gray-text mb-1.5">비밀번호 변경</div>
-
-                {!showForgotPw ? (
-                  <div className="flex flex-col gap-2">
-                    {/* 현재 비밀번호 */}
-                    <div className="relative">
-                      <input
-                        type={showPwCurrent ? 'text' : 'password'}
-                        placeholder="현재 비밀번호"
-                        value={pwCurrent}
-                        onChange={e => setPwCurrent(e.target.value)}
-                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-8 text-[13px] text-ink outline-none focus:border-gray-400"
-                      />
-                      <button type="button" onClick={() => setShowPwCurrent(v => !v)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-400">
-                        {showPwCurrent
-                          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        }
-                      </button>
-                    </div>
-                    {/* 새 비밀번호 */}
-                    <div className="relative">
-                      <input
-                        type={showPw ? 'text' : 'password'}
-                        placeholder="새 비밀번호 (6자 이상)"
-                        value={pwInput}
-                        onChange={e => setPwInput(e.target.value)}
-                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-8 text-[13px] text-ink outline-none focus:border-gray-400"
-                      />
-                      <button type="button" onClick={() => setShowPw(v => !v)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-400">
-                        {showPw
-                          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        }
-                      </button>
-                    </div>
-                    {/* 새 비밀번호 확인 */}
-                    <div className="relative">
-                      <input
-                        type={showPwConfirm ? 'text' : 'password'}
-                        placeholder="새 비밀번호 확인"
-                        value={pwConfirm}
-                        onChange={e => setPwConfirm(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleChangePassword() }}
-                        className="w-full border border-gray-border rounded-lg px-3 py-2 pr-8 text-[13px] text-ink outline-none focus:border-gray-400"
-                      />
-                      <button type="button" onClick={() => setShowPwConfirm(v => !v)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-400">
-                        {showPwConfirm
-                          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        }
-                      </button>
-                    </div>
-                    <button
-                      onClick={handleChangePassword}
-                      disabled={profileSaving || !pwCurrent || !pwInput || !pwConfirm}
-                      className="py-2 bg-gray-100 text-ink text-[13px] font-normal rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors"
-                    >{profileSaving ? '확인 중...' : '변경하기'}</button>
-                    <button
-                      type="button"
-                      onClick={() => { setShowForgotPw(true); setResetEmail(authObj?.user.email ?? '') }}
-                      className="text-[11px] text-gray-text hover:text-ink text-center transition-colors"
-                    >비밀번호를 잊으셨나요?</button>
-                  </div>
-                ) : (
-                  /* 비밀번호 찾기 (이메일 재설정 링크) */
-                  <div className="flex flex-col gap-2">
-                    <p className="text-[12px] text-gray-text">가입한 이메일로 재설정 링크를 보냅니다.</p>
-                    <input
-                      type="email"
-                      placeholder="이메일 주소"
-                      value={resetEmail}
-                      onChange={e => setResetEmail(e.target.value)}
-                      className="w-full border border-gray-border rounded-lg px-3 py-2 text-[14px] text-ink outline-none focus:border-[#00DD67]"
-                    />
-                    <button
-                      onClick={handleResetPassword}
-                      disabled={resetSending || !resetEmail.trim()}
-                      className="py-2 bg-ink text-white text-[13px] font-bold rounded-lg hover:opacity-85 disabled:opacity-40"
-                    >{resetSending ? '전송 중...' : '재설정 링크 보내기'}</button>
-                    <button
-                      type="button"
-                      onClick={() => setShowForgotPw(false)}
-                      className="text-[11px] text-gray-text hover:text-ink text-center transition-colors"
-                    >← 비밀번호 직접 변경</button>
-                  </div>
-                )}
-              </div>
-
-              {/* 피드백 메시지 */}
-              {profileMsg && (
-                <div className={`mx-6 mt-3 px-3 py-2 rounded-lg text-[12px] font-semibold ${profileMsg.ok ? 'bg-green-soft text-green' : 'bg-red-50 text-danger'}`}>
-                  {profileMsg.text}
-                </div>
-              )}
-
-              {/* 로그아웃 + 회원탈퇴 */}
-              <div className="px-6 pb-5 pt-1 flex items-center justify-between">
-                <button
-                  onClick={() => setDeleteConfirmOpen(true)}
-                  className="text-[12px] text-gray-300 font-normal hover:text-gray-400 transition-colors"
-                >
-                  회원탈퇴
-                </button>
-                <button
-                  onClick={handleSignOut}
-                  className="text-[12px] text-ink font-semibold hover:text-gray-text transition-colors"
-                >
-                  로그아웃
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <ProfileModal
+          open={profileOpen}
+          onClose={() => setProfileOpen(false)}
+          session={session}
+          setSession={setSession}
+          authObj={authObj}
+          onDeleteRequest={() => setDeleteConfirmOpen(true)}
+        />
 
         <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
 
@@ -1601,37 +1307,4 @@ export default function App() {
       </div>
     </StoreContext.Provider>
   )
-}
-
-
-// ── DB 주문 → 기존 Order 타입 변환 ───────────────────────────────────────────
-function dbOrderToMock(row: any): Order {
-  const methodMap: Record<string, string> = { '내점': '매장 식사', '포장': '포장', '배달': '배달' }
-  return {
-    code:         row.order_code,
-    orderNumber:  row.order_number ?? undefined,
-    accountName:  row.accounts?.account_name ?? '',
-    orderer:      row.orderer_name,
-    phone:        row.orderer_phone ?? undefined,
-    method:       (methodMap[row.method] ?? row.method) as any,
-    status:       row.status,
-    prepMins:     0,
-    total:        row.total_amount,
-    createdAt:    row.ordered_at,
-    remarks:      row.note ?? '',
-    balanceBefore: row.balance_before,
-    balanceAfter:  row.balance_after,
-    items: (row.order_items ?? []).map((item: any) => ({
-      name:     item.menu_name,
-      qty:      item.quantity,
-      price:    item.unit_price,
-      options:  (item.order_item_options ?? []).map((o: any) => o.option_name),
-      optionDetails: (item.order_item_options ?? []).map((o: any) => ({
-        name:       o.option_name,
-        extraPrice: o.extra_price ?? 0,
-        groupName:  o.option_items?.option_groups?.name ?? undefined,
-      })),
-      imageUrl: item.menus?.image_url ?? undefined,
-    })),
-  }
 }

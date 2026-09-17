@@ -133,9 +133,12 @@ export default function Onboarding({ clientId, onComplete }: Props) {
   }, [])
 
   /* Step 1: 매장 정보 */
-  const [storeName, setStoreName] = useState('')
-  const [address,   setAddress]   = useState('')
-  const [storeId,   setStoreId]   = useState('')
+  const [storeName,          setStoreName]          = useState('')
+  const [representativeName, setRepresentativeName] = useState('')
+  const [address,            setAddress]             = useState('')
+  const [storeId,            setStoreId]             = useState('')
+  const [coverFile,          setCoverFile]          = useState<File | null>(null)
+  const [coverPreview,       setCoverPreview]       = useState<string | null>(null)
 
   /* Step 2: 카테고리 + 메뉴 */
   const [cats,        setCats]        = useState<ObCat[]>([])
@@ -198,24 +201,66 @@ export default function Onboarding({ clientId, onComplete }: Props) {
   /* ── Step 1: 매장 생성 (뒤로 왔다가 재제출 시 UPDATE) ── */
   async function handleStep1(e: React.FormEvent) {
     e.preventDefault()
-    if (!storeName.trim()) return
+    if (!storeName.trim() || !representativeName.trim() || !address.trim() || !coverFile) return
     setLoading(true); setError('')
     try {
       await supabase.from('clients').update({ business_name: storeName.trim() }).eq('id', clientId)
-      if (storeId) {
+
+      let sid = storeId
+      if (sid) {
         // 뒤로가기 후 재제출 → UPDATE
-        await supabase.from('stores').update({ name: storeName.trim(), address: address.trim() || null }).eq('id', storeId)
+        await supabase.from('stores').update({
+          name: storeName.trim(),
+          representative_name: representativeName.trim(),
+          address: address.trim(),
+        }).eq('id', sid)
       } else {
-        // 최초 제출 → INSERT
-        const { data, error: se } = await supabase
+        // 기존 매장이 있는지 먼저 확인 (중복 생성 방지)
+        const { data: existing } = await supabase
           .from('stores')
-          .insert({ client_id: clientId, name: storeName.trim(), address: address.trim() || null })
           .select('id')
-          .single()
-        if (se) throw se
-        setStoreId(data.id)
-        track('pos_store_registered', { store_id: data.id, store_name: storeName.trim(), plan: selectedPlan })
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+        if (existing) {
+          // 이미 매장 있음 → UPDATE만
+          sid = existing.id
+          setStoreId(sid)
+          await supabase.from('stores').update({
+            name: storeName.trim(),
+            representative_name: representativeName.trim(),
+            address: address.trim(),
+          }).eq('id', sid)
+        } else {
+          // 신규 → INSERT
+          const { data, error: se } = await supabase
+            .from('stores')
+            .insert({
+              client_id: clientId,
+              name: storeName.trim(),
+              representative_name: representativeName.trim(),
+              address: address.trim(),
+            })
+            .select('id')
+            .single()
+          if (se) throw se
+          sid = data.id
+          setStoreId(sid)
+          track('pos_store_registered', { store_id: sid, store_name: storeName.trim(), plan: selectedPlan })
+        }
       }
+
+      // 대표 사진 업로드
+      const ext = coverFile.name.split('.').pop() ?? 'jpg'
+      const storagePath = `${sid}/cover.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from('store-covers')
+        .upload(storagePath, coverFile, { upsert: true, contentType: coverFile.type })
+      if (upErr) throw upErr
+      await supabase.from('stores').update({ cover_image_path: storagePath }).eq('id', sid)
+
       setStep(2)
     } catch (e: any) {
       setError(e.message ?? '오류가 발생했습니다.')
@@ -254,7 +299,6 @@ export default function Onboarding({ clientId, onComplete }: Props) {
         const { data: md, error: me } = await supabase
           .from('menus')
           .insert({
-            store_id:      storeId,
             category_id:   m.catLocalId ? (catIdMap[m.catLocalId] ?? null) : null,
             name:          m.name.trim(),
             base_price:    parseInt(m.price.replace(/,/g, ''), 10) || 0,
@@ -595,21 +639,66 @@ export default function Onboarding({ clientId, onComplete }: Props) {
                 />
               </div>
               <div>
-                <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">
-                  주소 <span className="normal-case font-normal text-gray-text">(선택)</span>
-                </label>
+                <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">대표자명 *</label>
+                <input
+                  type="text"
+                  value={representativeName}
+                  onChange={e => setRepresentativeName(e.target.value.slice(0, 10))}
+                  placeholder="예: 홍길동"
+                  required
+                  maxLength={10}
+                  className="w-full border border-gray-border rounded-lg px-3 py-2.5 text-[14px] focus:border-green focus:outline-none transition-colors"
+                />
+                <p className="text-[11px] text-gray-text mt-1 text-right">{representativeName.length}/10</p>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">주소 *</label>
                 <input
                   type="text"
                   value={address}
                   onChange={e => setAddress(e.target.value)}
                   placeholder="예: 대구 북구 침산동 123-45"
+                  required
                   className="w-full border border-gray-border rounded-lg px-3 py-2.5 text-[14px] focus:border-green focus:outline-none transition-colors"
                 />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">대표 사진 *</label>
+                <label className={`flex flex-col items-center justify-center w-full border rounded-lg cursor-pointer transition-colors overflow-hidden
+                  ${coverFile ? 'border-green' : 'border-gray-border hover:border-gray-400'}`}
+                  style={{ height: 120 }}
+                >
+                  {coverPreview ? (
+                    <img src={coverPreview} alt="대표 사진 미리보기" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5 text-gray-text">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                      <span className="text-[12px]">클릭하여 사진 선택</span>
+                      <span className="text-[11px] text-gray-300">JPG·PNG·WebP, 최대 2MB</span>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      if (!f) return
+                      if (f.size > 2 * 1024 * 1024) { setError('사진 파일은 2MB 이하여야 합니다.'); return }
+                      setCoverFile(f)
+                      setCoverPreview(URL.createObjectURL(f))
+                      setError('')
+                    }}
+                  />
+                </label>
               </div>
               {error && <p className="text-[13px] text-danger">{error}</p>}
               <button
                 type="submit"
-                disabled={!storeName.trim() || loading}
+                disabled={!storeName.trim() || !representativeName.trim() || !address.trim() || !coverFile || loading}
                 className="w-full py-3 bg-ink text-white rounded-xl font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {loading ? '생성 중...' : '다음'}
@@ -766,10 +855,13 @@ export default function Onboarding({ clientId, onComplete }: Props) {
               </button>
               <button
                 onClick={handleStep2Save}
-                disabled={loading}
-                className="py-2.5 px-6 bg-ink text-white rounded-xl font-bold text-[13px] hover:opacity-90 disabled:opacity-50 transition-opacity"
+                disabled={loading || !menuItems.some(m => m.name.trim())}
+                className={`py-2.5 px-6 rounded-xl font-bold text-[13px] transition-opacity
+                  ${menuItems.some(m => m.name.trim())
+                    ? 'bg-ink text-white hover:opacity-90 disabled:opacity-50'
+                    : 'bg-[#9CA3AF] text-white cursor-not-allowed'}`}
               >
-                {loading ? '저장 중...' : menuItems.some(m => m.name.trim()) ? '저장하고 다음' : '건너뛰기'}
+                {loading ? '저장 중...' : '다음'}
               </button>
             </div>
           </>
@@ -860,10 +952,13 @@ export default function Onboarding({ clientId, onComplete }: Props) {
               </button>
               <button
                 onClick={handleStep3Save}
-                disabled={loading}
-                className="flex-[2] py-3 bg-ink text-white rounded-xl font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity"
+                disabled={loading || !accRows.some(r => r.name.trim() && r.manager.trim() && r.pin.trim().length === 4)}
+                className={`flex-[2] py-3 rounded-xl font-bold text-[14px] transition-opacity
+                  ${accRows.some(r => r.name.trim() && r.manager.trim() && r.pin.trim().length === 4)
+                    ? 'bg-ink text-white hover:opacity-90 disabled:opacity-50'
+                    : 'bg-[#9CA3AF] text-white cursor-not-allowed'}`}
               >
-                {loading ? '저장 중...' : accRows.some(r => r.name.trim() && r.manager.trim() && r.pin.trim().length === 4) ? '저장하고 다음' : '건너뛰기'}
+                {loading ? '저장 중...' : '다음'}
               </button>
             </div>
           </>
@@ -967,7 +1062,11 @@ export default function Onboarding({ clientId, onComplete }: Props) {
 
             {/* 시작하기 버튼 */}
             <button
-              onClick={() => onComplete(storeId, storeName.trim(), selectedPlan)}
+              onClick={async () => {
+                // 온보딩 완료 표시 — 창 전환 후 SIGNED_IN 이벤트로 인한 온보딩 우회 방지
+                await supabase.from('stores').update({ onboarding_completed: true }).eq('id', storeId)
+                onComplete(storeId, storeName.trim(), selectedPlan)
+              }}
               className="w-full mt-5 py-3.5 bg-[#00DD67] text-[#1A1A1A] rounded-xl font-bold text-[15px] hover:bg-[#00BB55] transition-colors"
             >
               시작하기
