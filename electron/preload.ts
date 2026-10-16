@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import '@sentry/electron/preload' // contextIsolation: true일 때 renderer ↔ main IPC 브릿지 필요
 
 // Renderer에서 window.api.XXX 로 접근
 const api = {

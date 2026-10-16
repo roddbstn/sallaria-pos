@@ -4,3 +4,6 @@ out/
 *.log
 .DS_Store
 .env
+.vercel
+*.tsbuildinfo
+supabase/.temp/

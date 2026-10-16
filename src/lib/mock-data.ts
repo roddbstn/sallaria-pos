@@ -29,8 +29,22 @@ export interface Order {
   method:        Method
   status:        OrderStatus
   items:         OrderItem[]
+  /** orders.menu_subtotal — 메뉴 소계. 총액에서 역산하지 말고 이 값을 쓸 것 */
+  menuSubtotal?: number
+  /** orders.delivery_fee — 주문 시점에 확정된 배달료(매장별 거리요금제라 상수가 아님) */
+  deliveryFee?:  number
   total:         number
-  prepMins:      number   // 승인 시 설정한 소요시간
+  /** 승인 시 점주가 정한 조리 소요시간(분). orders.prep_minutes */
+  prepMins:      number
+  /** 점주가 승인한 시각. 남은 시간은 이 시각 + prepMins 기준 — 주문 시각이 아니다 */
+  acceptedAt?:   string
+  /**
+   * 고객이 주문할 때 고른 예상 수령시간 (주문시각 기준 분). 0 = 지금, undefined = 미선택.
+   * 점주가 승인 화면에서 정하는 prepMins 와는 다른 값이다 —
+   * 이건 "손님이 언제 오겠다고 했는지"이고 prepMins 는 "주방이 언제까지 만들 수 있는지".
+   * 한가하면 손님 시간에 맞추고, 바쁘면 점주가 덮어쓴다.
+   */
+  requestedPickupMinutes?: number
   createdAt:     string
   remarks:       string
   balanceBefore?: number  // 주문 전 잔액
@@ -91,6 +105,8 @@ export interface OptionItem {
   soldOutUntil: string | null  // null = 영구 품절, ISO string = 오늘 품절
   hidden:       boolean
   isPopular:    boolean
+  /** 수량 버튼 최대 개수 — 없으면 수량 버튼 없이 한 번만 선택 (option_items.max_quantity) */
+  maxQty?:      number | null
 }
 
 export interface OptionGroup {

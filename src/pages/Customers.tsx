@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 import logoWithText from '../assets/logo-with-text-transparent.png'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
@@ -7,10 +7,23 @@ import { useStore } from '../lib/store-context'
 import { track } from '../lib/firebase'
 import type { Order } from '../lib/mock-data'
 import { mapOrderRow } from '../lib/mappers'
-import { useHeaderSlot } from '../lib/header-slot'
 import { PLAN_LIMITS, PLAN_NAMES } from '../lib/plans'
+import DonutChart from '../components/DonutChart'
+import EyeIcon from '../components/ui/EyeIcon'
+import { maskName, maskPhone } from '../lib/mask'
+import { buildPinColumns } from '../lib/pin-crypto'
+import {
+  PREPAY_VALIDITY_OPTIONS, PREPAY_VALIDITY_LABEL,
+  prepayValidityDisplay, isPrepayExpired,
+} from '../lib/prepay-validity'
+// 이 파일엔 주문 상태용 StatusTag 가 따로 있어 이름이 겹친다 — 별칭으로 구분
+import { StatusTag as PillTag } from '../components/ui/DataTable'
+import ScrollHint from '../components/ui/ScrollHint'
+import RevealText from '../components/ui/RevealText'
+import StatCard from '../components/StatCard'
 
 const BASE_URL = 'https://sallaria.web.app'
+const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
 
 function useQrDataUrl(url: string) {
   const [dataUrl, setDataUrl] = useState('')
@@ -23,15 +36,133 @@ function useQrDataUrl(url: string) {
   return dataUrl
 }
 
-const TYPE_BADGE: Record<string, string> = {
-  '과':  'bg-blue-100 text-blue-700',
-  '기업': 'bg-purple-100 text-purple-700',
-  '개인': 'bg-green-soft text-green',
-  '기타': 'bg-gray-100 text-gray-text',
+const TYPE_LABEL: Record<string, string> = {
+  '부서': '부서',
+  '기업': '기업',
+  '개인': '개인',
 }
 
+// 계정유형 도넛 색상 — 매장이 유형을 커스텀 추가해도(최대 6개) 색이 모자라지 않도록 6색 팔레트
+const TYPE_DONUT_COLORS = ['#FF676F', '#3374FF', '#ADADAD', '#F5A623', '#7ED321', '#9B59B6']
 
-const INPUT_CLS = 'w-full border-0 border-b border-gray-border bg-transparent px-0 py-2 text-[11px] focus:outline-none focus:border-b-2 focus:border-[#00DD67] transition-colors'
+
+
+// #root에 zoom이 걸려 있어서(index.css) fixed 자식의 left/bottom도 같은 비율로 확대된다 —
+// getBoundingClientRect()가 돌려주는 실제 뷰포트 좌표를 그대로 쓰면 그만큼 어긋나므로 되돌려 준다.
+function rootZoom(): number {
+  const el = document.getElementById('root')
+  if (!el) return 1
+  const z = parseFloat((getComputedStyle(el) as unknown as { zoom?: string }).zoom ?? '1')
+  return Number.isFinite(z) && z > 0 ? z : 1
+}
+
+// 우측 고객 상세 패널 — 관리자 이름 가운데 마스킹 (예: "김민준" → "김*준")
+
+/** 010-1234-5678 → 010-****-5678. 가운데 덩어리만 가린다 */
+
+/**
+ * 가린 채로 보여주다가 눈 아이콘을 눌러야 고칠 수 있는 입력.
+ * 수정 모달은 "편집"이 목적이라 값을 영영 가리면 안 되고, 그렇다고 화면에 이름·번호를
+ * 그대로 띄워두면 손님이 지나가다 본다. 그래서 기본은 마스킹 + 읽기전용, 열어야 편집.
+ */
+function MaskedField({ value, masked, onChange, placeholder, inputMode }: {
+  value: string
+  masked: string
+  onChange: (v: string) => void
+  placeholder?: string
+  inputMode?: 'numeric'
+}) {
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <div className="relative">
+      <input
+        value={revealed ? value : (value ? masked : '')}
+        onChange={e => onChange(e.target.value)}
+        readOnly={!revealed}
+        placeholder={placeholder}
+        inputMode={inputMode}
+        onClick={() => { if (!revealed) setRevealed(true) }}
+        className={CUST_INPUT_CLS + ' pr-[44px]' + (revealed ? '' : ' cursor-pointer')}
+      />
+      <button
+        type="button"
+        onClick={() => setRevealed(v => !v)}
+        title={revealed ? '가리기' : '보기 · 수정하려면 눌러주세요'}
+        className="absolute right-[12px] top-1/2 -translate-y-1/2"
+      >
+        <EyeIcon off={revealed} size={15} />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * PIN 입력 — 방금 친 한 글자만 보이고 앞은 * 로 가린다 ("0" → "*0" → "**0" → "***0").
+ * 포커스를 떠나면 전부 * 가 된다. 눈 아이콘으로 통째로 열어볼 수 있다.
+ *
+ * type="password" 를 안 쓰는 이유: 브라우저가 전부 점으로 덮어버려서 "마지막 글자만 보이기"가
+ * 불가능하고, 비밀번호 관리자가 저장하겠다고 끼어든다. PIN 은 계정 비밀번호가 아니다.
+ */
+function PinField({ value, onChange, placeholder, className = '' }: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  className?: string
+}) {
+  const [focused,  setFocused]  = useState(false)
+  const [revealed, setRevealed] = useState(false)
+
+  const display = revealed || value.length === 0
+    ? value
+    : focused
+      ? '*'.repeat(value.length - 1) + value[value.length - 1]
+      : '*'.repeat(value.length)
+
+  return (
+    <div className="relative">
+      <input
+        value={display}
+        onChange={e => {
+          // 표시값에 * 가 섞여 있어도 길이 변화만 보고 실제 값을 고친다
+          const next = e.target.value.replace(/[^0-9]/g, '')
+          if (e.target.value.length < display.length) onChange(value.slice(0, e.target.value.length))
+          else if (next) onChange((value + next.slice(-1)).slice(0, 4))
+        }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        maxLength={4}
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder={placeholder}
+        // 값이 비어 플레이스홀더만 보일 땐 mono 를 빼서 프리텐다드로 나오게 한다.
+        // mono 가 걸리면 한글 플레이스홀더가 폴백 글꼴로 떨어져 어색해진다.
+        className={(value ? className : className.replace(/\bfont-mono\b/, '').replace(/\btracking-\[4px\]/, '')) + ' pr-[44px]'}
+      />
+      <button
+        type="button"
+        onClick={() => setRevealed(v => !v)}
+        title={revealed ? '가리기' : '보기'}
+        className="absolute right-[12px] top-1/2 -translate-y-1/2"
+      >
+        <EyeIcon off={revealed} size={15} />
+      </button>
+    </div>
+  )
+}
+
+// 계정 추가 모달(Figma node 532:3039) 큰 사이즈 폼 — 라벨 28px + 테두리 rounded-15 인풋
+// px는 Figma 원본 × FIGMA_SCALE — src/lib/figma-scale.ts 참고
+const CUST_INPUT_CLS = 'field-soft w-full border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] text-ink outline-none focus:border-ink bg-transparent'
+function CustFormField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="mb-[22px]">
+      <div className="text-[14px] font-medium text-ink mb-[8px]">{label}</div>
+      {children}
+    </div>
+  )
+}
+
+// 선결제 유효기간 표시·만료 판정은 lib/prepay-validity.ts 가 단일 출처 (계정 상세 모달과 공용)
 
 function formatPhone(raw: string): string {
   const d = raw.replace(/\D/g, '').slice(0, 11)
@@ -42,7 +173,6 @@ function formatPhone(raw: string): string {
 
 // ── 플랜 다운그레이드 순서 ────────────────────────────────────────────────────
 const PLAN_ORDER = ['free', 'basic', 'pro', 'max'] as const
-const PLAN_MAX_ACCOUNTS: Record<string, number> = { free: 1, basic: 10, pro: 20, max: Infinity }
 
 /** 활성 팀 수에 맞는 최적 플랜 반환 */
 function getRecommendedPlan(activeCount: number): import('../lib/plans').PlanTier {
@@ -61,15 +191,79 @@ function getNextBillingDate(anchorDate: string): Date {
   return next
 }
 
-export default function Customers() {
+export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void }) {
   const { storeId, storeName, plan, clientId } = useStore()
-  const { setHeaderRight } = useHeaderSlot()
+  const tableScrollRef = useRef<HTMLDivElement | null>(null)
   const [accounts,     setAccounts]     = useState<DbAccount[]>([])
   const [selected,     setSelected]     = useState<DbAccount | null>(null)
   const [printerToast, setPrinterToast] = useState('')
   const [accountOrders, setAccountOrders] = useState<Order[]>([])
   const [deposits,     setDeposits]     = useState<DbDeposit[]>([])
-  const [monthlyUsage, setMonthlyUsage] = useState<Record<string, number>>({})
+  const [, setMonthlyUsage] = useState<Record<string, number>>({})   // 값은 안 쓰고 집계만 채운다
+  const [memberCounts, setMemberCounts] = useState<Record<string, number>>({})      // 고객현황 사이드바 — 계정별 이용자(account_members) 수
+  const [monthlyDeposits, setMonthlyDeposits] = useState<Record<string, number>>({}) // 이번달 선결제(충전) 합계
+  const [orderTrend, setOrderTrend] = useState<Record<string, number>>({})          // 추이 = 이번달 주문건수 - 저번달 주문건수
+  const [monthlyOrderCount, setMonthlyOrderCount] = useState<Record<string, number>>({}) // 이번달 주문건수 (가장 많이 주문한 고객 랭킹용)
+  const [active30dCount, setActive30dCount] = useState(0)                           // 최근 30일 내 주문 1건 이상인 계정 수
+  const [yearlyDeposits, setYearlyDeposits] = useState<number[]>(Array(12).fill(0))  // 선결제 추이 — 올해 1~12월 합계
+  const [phoneRevealed, setPhoneRevealed] = useState(false) // 우측 패널 — 관리자 연락처 중간 4자리 공개 토글
+  const [yearlyDepositRows, setYearlyDepositRows] = useState<{ account_code: string; amount: number; created_at: string }[]>([]) // 바 차트 호버 툴팁용 — 월별 합계의 원본 행
+  const [barTooltip, setBarTooltip] = useState<{ monthIdx: number; x: number; y: number } | null>(null)
+  const [donutTooltip, setDonutTooltip] = useState<{ type: DbAccount['account_type']; x: number; y: number } | null>(null)
+  const [trendInfoTooltip, setTrendInfoTooltip] = useState<{ x: number; y: number } | null>(null)
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+
+  // 고객 유형(부서/기업/개인) 커스텀 관리 — Figma node 503:786.
+  // stores.customer_types(최대 6개)가 이 매장에서 쓸 수 있는 유형 목록의 원본.
+  const [customerTypes,  setCustomerTypes]  = useState<string[]>(['부서', '기업', '개인'])
+  const [typeEditMode,   setTypeEditMode]   = useState(false)
+  const [typeDraft,      setTypeDraft]      = useState<string[]>([])
+  const [editingTypeIdx, setEditingTypeIdx] = useState<number | null>(null)
+  const [typeSaving,     setTypeSaving]     = useState(false)
+
+  useEffect(() => {
+    if (!storeId) return
+    supabase.from('stores').select('customer_types').eq('id', storeId).maybeSingle()
+      .then(({ data }) => { if (data?.customer_types?.length) setCustomerTypes(data.customer_types) })
+  }, [storeId])
+
+  function startTypeEdit() {
+    setTypeDraft([...customerTypes])
+    setEditingTypeIdx(null)
+    setTypeEditMode(true)
+  }
+  function cancelTypeEdit() {
+    setTypeEditMode(false)
+    setEditingTypeIdx(null)
+  }
+  function addTypeDraft() {
+    if (typeDraft.length >= 6) return
+    setTypeDraft(prev => [...prev, '새 유형'])
+    setEditingTypeIdx(typeDraft.length)
+  }
+  async function confirmTypeEdit() {
+    const next = typeDraft.map(t => t.trim()).filter(Boolean)
+    const deduped = Array.from(new Set(next))
+    if (!storeId || deduped.length === 0) { cancelTypeEdit(); return }
+    setTypeSaving(true)
+    // 같은 자리(index)의 이름이 바뀐 유형은, 이미 그 유형을 쓰고 있는 거래처들의 account_type도 같이 갱신
+    const renames = customerTypes
+      .map((old, i) => ({ old, next: deduped[i] }))
+      .filter(r => r.next && r.next !== r.old)
+    await Promise.all([
+      supabase.from('stores').update({ customer_types: deduped }).eq('id', storeId),
+      ...renames.map(r => supabase.rpc('rename_account_type', { p_store_id: storeId, p_old_name: r.old, p_new_name: r.next })),
+    ])
+    if (renames.length > 0) {
+      const renameMap = new Map(renames.map(r => [r.old, r.next]))
+      setAccounts(prev => prev.map(a => renameMap.has(a.account_type) ? { ...a, account_type: renameMap.get(a.account_type)! } : a))
+      setTypeFilter(f => renameMap.get(f) ?? f)
+    }
+    setCustomerTypes(deduped)
+    setTypeSaving(false)
+    setTypeEditMode(false)
+    setEditingTypeIdx(null)
+  }
   const [loading,      setLoading]      = useState(true)
   const [fetchError,   setFetchError]   = useState(false)
   const [downgradeModal, setDowngradeModal] = useState<{
@@ -78,34 +272,33 @@ export default function Customers() {
     immediate?: boolean
   } | null>(null)
   const [retryCount,   setRetryCount]   = useState(0)
-  const [pinVisible,   setPinVisible]   = useState<string | null>(null)
   const [chargeOpen,   setChargeOpen]   = useState(false)
   const [chargeAmt,    setChargeAmt]    = useState('')
   const [chargeMemo,   setChargeMemo]   = useState('')
   const [chargeError,  setChargeError]  = useState('')
   const [search,       setSearch]       = useState('')
-  const [colFilters,   setColFilters]   = useState<{ name: Set<string>; type: Set<string>; balance: Set<string> }>({ name: new Set(), type: new Set(), balance: new Set() })
-  const [nameFilterSearch, setNameFilterSearch] = useState('')
-  const [openFilterCol, setOpenFilterCol] = useState<string | null>(null)
-  const filterDropRef  = useRef<HTMLDivElement>(null)
   const [kioskQr,      setKioskQr]      = useState(false)
   const [accountQr,    setAccountQr]    = useState<string | null>(null) // account_code
-  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members' | 'statement'>('orders')
+  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members' | 'statement' | 'people'>('orders')
   const [members,      setMembers]      = useState<{ id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]>([])
-  const [orderPage,    setOrderPage]    = useState(0)
-  const [chargePage,   setChargePage]   = useState(0)
-  const [calMonth,     setCalMonth]     = useState(() => {
-    const d = new Date()
-    return { year: d.getFullYear(), month: d.getMonth() }
-  })
-  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
+  const [adminUsers,   setAdminUsers]   = useState<{ role: string; status: string; name: string | null; phone: string | null; approved_at: string | null; created_at: string }[]>([])
+  const [registeredAdmins, setRegisteredAdmins] = useState<Set<string>>(new Set())
+  const [resendLoading, setResendLoading] = useState(false)
+  const [, setOrderPage]  = useState(0)   // 값은 안 쓰고 초기화 용도로만 호출
+  const [, setChargePage] = useState(0)   // 값은 안 쓰고 초기화 용도로만 호출
 
-  const PAGE_SIZE = 5
   // 인라인 QR (selected 변경 시 자동 생성)
-  const selectedQrUrl        = selected ? `${BASE_URL}?store=${storeId}&account=${selected.account_code}` : ''
+  // qr_system='kakao' 거래처는 sunpos-kakao(신규 카카오 흐름), 'legacy'는 기존 sallaria.web.app 그대로
+  const selectedQrUrl        = selected
+    ? (selected.qr_system === 'kakao'
+        ? `${SUNPOS_KAKAO_URL}/qr/${selected.account_code}`
+        : `${BASE_URL}?store=${storeId}&account=${selected.account_code}`)
+    : ''
   const selectedQrDataUrl    = useQrDataUrl(selectedQrUrl)
-  const [qrCopied,     setQrCopied]     = useState(false)
 
+  // ⚠️ handlePrintQr / handlePrintQrReceipt 는 지금 화면에서 호출되지 않는다.
+  // 고객 > QR오더 화면(기획 완료, 미구현)이 이 둘을 그대로 재사용할 예정이라 남겨둔다.
+  // 그 화면을 붙일 때 여기서 훅으로 빼서 공용으로 쓸 것.
   const handlePrintQr = useCallback(() => {
     if (!selected || !selectedQrDataUrl) return
 
@@ -207,7 +400,7 @@ export default function Customers() {
   const handlePrintQrReceipt = useCallback(async () => {
     if (!selected) return
     try {
-      await window.api.printQrReceipt({
+      await window.api?.printQrReceipt({
         accountName: selected.account_name,
         manager:     selected.contact_person ?? '',
         phone:       selected.contact_phone  ?? '',
@@ -224,29 +417,28 @@ export default function Customers() {
 
   const [addOpen,      setAddOpen]      = useState(false)
   const [newForm,      setNewForm]      = useState({
-    name: '', type: '과' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '', warnThreshold: '30000',
-    initialDeposit: '', initialDepositMemo: '',
+    name: '', type: '부서' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '',
+    initialDeposit: '', initialDepositMemo: '', prepayValidity: 'none' as DbAccount['prepay_validity'],
   })
+  const [addPinError, setAddPinError] = useState('')
   const [editOpen,     setEditOpen]     = useState(false)
   const [editForm,     setEditForm]     = useState({
-    name: '', type: '과' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '', warnThreshold: '30000',
-    balance: '', adjustReason: '',
+    name: '', type: '부서' as DbAccount['account_type'], org: '', manager: '', phone: '', pin: '',
+    prepayValidity: 'none' as DbAccount['prepay_validity'],
   })
-  const [deleteConfirm,     setDeleteConfirm]     = useState(false)
-  const [hardDeleteConfirm, setHardDeleteConfirm] = useState(false)
-  const [addPinError,  setAddPinError]  = useState('')
+  const [addPhoneError, setAddPhoneError] = useState('')
+  const [addDupAccount, setAddDupAccount] = useState<{ account_code: string; account_name: string } | null>(null)
+  const [addConfirm,    setAddConfirm]    = useState(false)
+  const [addSubmitting, setAddSubmitting] = useState(false)
   const [editPinError, setEditPinError] = useState('')
+  const [editDeactivateConfirm, setEditDeactivateConfirm] = useState(false)
   const [showInactive, setShowInactive] = useState(false)
-  const [editingDepositId,  setEditingDepositId]  = useState<string | null>(null)
-  const [editDepositAmt,    setEditDepositAmt]    = useState('')
-  const [editDepositNote,   setEditDepositNote]   = useState('')
-  const [editDepositMethod, setEditDepositMethod] = useState('신용카드')
   const [chargeMethod,      setChargeMethod]      = useState('신용카드')
   const [chargeDate,        setChargeDate]        = useState('')   // "YYYY-MM-DD"
   const [chargeTime,        setChargeTime]        = useState('')   // "HH:MM"
   const [chargeConfirm,     setChargeConfirm]     = useState(false)
   const [chargeLoading,     setChargeLoading]     = useState(false)
-  const [discTooltip, setDiscTooltip] = useState<{ x: number; y: number; amount: number } | null>(null)
+  const [statementOpen,     setStatementOpen]     = useState(false)
   const [stmtMonth,         setStmtMonth]         = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -267,6 +459,17 @@ export default function Customers() {
       .order('created_at', { ascending: true })
     if (error) throw error
     if (data) setAccounts(data as DbAccount[])
+    return (data ?? []) as DbAccount[]
+  }
+
+  // ── 관리자 등록완료 여부 (qr_system='kakao' 거래처의 "등록대기" 배지 판정용) ──
+  async function fetchRegisteredAdmins() {
+    const { data } = await supabase
+      .from('user_account_links')
+      .select('account_code')
+      .eq('role', '관리자')
+      .eq('status', 'approved')
+    setRegisteredAdmins(new Set((data ?? []).map((r: { account_code: string }) => r.account_code)))
   }
 
   // ── 이번달 거래처별 사용액 계산 ───────────────────────────────────────────────
@@ -285,6 +488,59 @@ export default function Customers() {
       }
     }
     setMonthlyUsage(map)
+  }
+
+  // ── 고객현황 사이드바 통계 (Figma node 494:1051) ─────────────────────────────
+  async function fetchCustomerStats(accountCodes: string[]) {
+    if (accountCodes.length === 0) {
+      setMemberCounts({}); setMonthlyDeposits({}); setOrderTrend({})
+      setMonthlyOrderCount({}); setActive30dCount(0); setYearlyDeposits(Array(12).fill(0)); setYearlyDepositRows([])
+      return
+    }
+    const now = new Date()
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const yearStart = new Date(now.getFullYear(), 0, 1)
+    const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+    const [membersRes, depositsRes, ordersRes] = await Promise.all([
+      supabase.from('account_members').select('account_code').in('account_code', accountCodes),
+      supabase.from('deposits').select('account_code, amount, created_at').in('account_code', accountCodes).gte('created_at', yearStart.toISOString()),
+      supabase.from('orders').select('account_code, ordered_at, status').in('account_code', accountCodes).gte('ordered_at', lastMonthStart.toISOString()),
+    ])
+
+    const mCounts: Record<string, number> = {}
+    for (const row of (membersRes.data ?? [])) mCounts[row.account_code] = (mCounts[row.account_code] ?? 0) + 1
+    setMemberCounts(mCounts)
+
+    const mDeposits: Record<string, number> = {}
+    const yDeposits = Array(12).fill(0)
+    for (const row of (depositsRes.data ?? [])) {
+      const d = new Date(row.created_at)
+      if (d >= thisMonthStart) mDeposits[row.account_code] = (mDeposits[row.account_code] ?? 0) + row.amount
+      yDeposits[d.getMonth()] += row.amount
+    }
+    setMonthlyDeposits(mDeposits)
+    setYearlyDeposits(yDeposits)
+    setYearlyDepositRows(depositsRes.data ?? [])
+
+    const thisCount: Record<string, number> = {}
+    const lastCount: Record<string, number> = {}
+    const active30d = new Set<string>()
+    for (const row of (ordersRes.data ?? [])) {
+      if (row.status === '취소') continue
+      const d = new Date(row.ordered_at)
+      if (d >= thisMonthStart) thisCount[row.account_code] = (thisCount[row.account_code] ?? 0) + 1
+      else lastCount[row.account_code] = (lastCount[row.account_code] ?? 0) + 1
+      if (d >= d30) active30d.add(row.account_code)
+    }
+    setMonthlyOrderCount(thisCount)
+    setActive30dCount(active30d.size)
+    const trend: Record<string, number> = {}
+    for (const code of new Set([...Object.keys(thisCount), ...Object.keys(lastCount)])) {
+      trend[code] = (thisCount[code] ?? 0) - (lastCount[code] ?? 0)
+    }
+    setOrderTrend(trend)
   }
 
   // ── 선택 거래처 주문 내역 조회 ────────────────────────────────────────────────
@@ -317,6 +573,12 @@ export default function Customers() {
     setMembers((data ?? []) as typeof members)
   }
 
+  // ── 선택 거래처 관리자/이용자 조회 (qr_system='kakao'인 거래처만 의미 있음) ────
+  async function fetchAdminUsers(accountCode: string) {
+    const { data } = await supabase.rpc('get_account_admin_users', { p_account_code: accountCode })
+    setAdminUsers((data ?? []) as typeof adminUsers)
+  }
+
   // ── 선택 거래처 충전 이력 조회 ────────────────────────────────────────────────
   async function fetchDeposits(accountCode: string) {
     const { data } = await supabase
@@ -337,6 +599,8 @@ export default function Customers() {
           .select('order_code, ordered_at, total_amount, delivery_fee, method, orderer_name, balance_after, order_items ( menu_name, quantity )')
           .eq('account_code', accountCode)
           .neq('status', '취소')
+          // 삭제된 주문은 잔액이 환불된 건이라 사용내역에 charge로 남으면 안 된다
+          .eq('is_deleted', false)
           .order('ordered_at', { ascending: true }),
         supabase
           .from('deposits')
@@ -370,6 +634,7 @@ export default function Customers() {
         date:          d.created_at,
         amount:        d.amount,
         paymentMethod: d.payment_method ?? '신용카드',
+        balanceAfter:  d.balance_after,
       })),
       ...stmtAdjustments.map((a: any) => ({
         type:          'adjustment' as const,
@@ -385,7 +650,7 @@ export default function Customers() {
         date:         o.ordered_at,
         amount:       o.total_amount,
         summary:      (o.order_items ?? []).map((i: any) => `${i.menu_name}${i.quantity}`).join(', '),
-        note:         o.method === '배달' ? `배달료 포함(${(o.delivery_fee ?? 3500).toLocaleString()}원)` : o.method,
+        note:         o.method === '배달' && o.delivery_fee ? `배달료 포함(${o.delivery_fee.toLocaleString()}원)` : o.method,
         orderer:      o.orderer_name ?? '',
         balanceAfter: o.balance_after ?? 0,
       })),
@@ -439,7 +704,7 @@ export default function Customers() {
 
     const lines: string[][] = [
       ['선결제 이용내역서','','','','','','','',''],
-      ['회사명', acc.account_name, '', '담당자', acc.contact_person ?? '', '', '', '', ''],
+      ['회사명', acc.account_name, '', '관리자', acc.contact_person ?? '', '', '', '', ''],
       ['사업자등록번호', acc.business_number ?? '', '', '전화번호', acc.contact_phone ?? '', '', '', '', ''],
       ['','','','','','','','',''],
       ['선결제내역','','','사용내역','','','','','잔액'],
@@ -468,12 +733,34 @@ export default function Customers() {
     URL.revokeObjectURL(url)
   }
 
+  // 우측 상세 패널 "이용내역서" 버튼 — 월별 표 모달을 띄움 (CSV 다운로드는 모달 안에서)
+  async function handleOpenStatement() {
+    if (!selected) return
+    setStatementOpen(true)
+    await fetchStatement(selected.account_code)
+  }
+
+  function prevStmtMonth() {
+    if (stmtAllTime) { setStmtAllTime(false); return }
+    const [y, m] = stmtMonth.split('-').map(Number)
+    const d = new Date(y, m - 2, 1)
+    setStmtMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  function nextStmtMonth() {
+    if (stmtAllTime) return
+    const [y, m] = stmtMonth.split('-').map(Number)
+    const d = new Date(y, m, 1)
+    setStmtMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
   // ── selected 변경 시 충전 모달 초기화 ──────────────────────────────────────────
   useEffect(() => {
     setChargeOpen(false)
     setChargeConfirm(false)
     setChargeAmt('')
     setChargeError('')
+    setPhoneRevealed(false)
+    setDetailTab('orders')
   }, [selected?.account_code])
 
   // ── 마운트 / showInactive 변경 시 목록 재조회 ────────────────────────────────
@@ -482,9 +769,9 @@ export default function Customers() {
       setLoading(true)
       setFetchError(false)
       setSelected(null)
-      setDeleteConfirm(false)
       try {
-        await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages()])
+        const [fetchedAccounts] = await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages(), fetchRegisteredAdmins()])
+        fetchCustomerStats(fetchedAccounts.map(a => a.account_code)).catch(() => {})
       } catch {
         setFetchError(true)
       } finally {
@@ -494,23 +781,13 @@ export default function Customers() {
     load()
   }, [showInactive, retryCount])
 
-  // ── 컬럼 필터 드롭다운 외부 클릭 닫기 ────────────────────────────────────────
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (filterDropRef.current && !filterDropRef.current.contains(e.target as Node)) {
-        setOpenFilterCol(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
-
   // ── 선택 거래처 변경 시 이력 로딩 ─────────────────────────────────────────────
   useEffect(() => {
     if (!selected) return
     fetchAccountOrders(selected.account_code)
     fetchDeposits(selected.account_code)
     fetchMembers(selected.account_code)
+    fetchAdminUsers(selected.account_code)
     setOrderPage(0)
     setChargePage(0)
   }, [selected?.account_code])
@@ -521,121 +798,67 @@ export default function Customers() {
     fetchStatement(selected.account_code)
   }, [detailTab, selected?.account_code])
 
-  // ── 공유 헤더 슬롯: 비활성 보기 · 검색 · 매장 QR · 거래처 추가 ──────────────
-  useEffect(() => {
-    setHeaderRight(
-      <div className="flex items-center gap-2.5">
-        <button
-          onClick={() => setShowInactive(v => !v)}
-          className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors ${
-            showInactive
-              ? 'border-danger text-danger bg-red-50'
-              : 'border-gray-border text-gray-text hover:bg-gray-bg'
-          }`}
-        >
-          {showInactive ? '비활성 거래처' : '비활성 보기'}
-        </button>
-        <div className="relative w-52 flex-shrink-0">
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="거래처명, 담당자 검색"
-            className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-[#00DD67] focus:bg-green-soft transition-colors"
-          />
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="13" height="13" viewBox="0 0 16 16" fill="none">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke="#727272" strokeWidth="1.5"/>
-            <path d="M10.5 10.5L14 14" stroke="#727272" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <button
-          onClick={() => setKioskQr(true)}
-          className="px-3 py-2 bg-gray-100 rounded-lg text-[11px] font-bold hover:bg-gray-100 transition-colors"
-        >
-          🖨 매장 공용 QR
-        </button>
-        {!showInactive && (() => {
-          const limit = PLAN_LIMITS[plan].accounts
-          const activeCount = accounts.filter(a => a.is_active !== false).length
-          const atLimit = activeCount >= limit
-          return (
-            <div className="relative group">
-              <button
-                onClick={() => !atLimit && setAddOpen(true)}
-                className={`px-3 py-2 rounded-lg text-[11px] font-bold transition-colors ${
-                  atLimit
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-[#00DD67] text-[#1A1A1A] hover:bg-[#00BB55]'
-                }`}
-              >
-                거래처 추가
-              </button>
-              {atLimit && (
-                <div className="absolute right-0 top-full mt-1.5 w-56 bg-ink text-white text-[11px] rounded-lg px-3 py-2 shadow-lg z-50 hidden group-hover:block pointer-events-none">
-                  <p className="font-bold mb-0.5">{PLAN_NAMES[plan]} 플랜 한도 도달</p>
-                  <p className="text-white/70">거래처 최대 {limit === Infinity ? '무제한' : `${limit}개`}까지 등록 가능해요. 플랜을 업그레이드하면 더 추가할 수 있어요.</p>
-                </div>
-              )}
-            </div>
-          )
-        })()}
-      </div>
-    )
-    return () => setHeaderRight(null)
-  }, [showInactive, search, setHeaderRight])
-
-  const seqMap: Record<string, number> = {}
-  accounts.forEach((a, i) => { seqMap[a.account_code] = i + 1 })
-
   const filtered = accounts.filter(a => {
+    if (typeFilter !== 'all' && a.account_type !== typeFilter) return false
     if (search && !a.account_name.includes(search) && !(a.organization_name ?? '').includes(search) && !(a.contact_person ?? '').includes(search)) return false
-    if (colFilters.name.size > 0 && !colFilters.name.has(a.account_code)) return false
-    if (colFilters.type.size > 0 && !colFilters.type.has(a.account_type)) return false
-    if (colFilters.balance.size > 0) {
-      const status = a.current_balance < 0 ? '음수' : a.current_balance < a.warning_threshold ? '경고' : '정상'
-      if (!colFilters.balance.has(status)) return false
-    }
     return true
   })
-  const hasColFilter = colFilters.name.size > 0 || colFilters.type.size > 0 || colFilters.balance.size > 0
-  const typeValues   = [...new Set(accounts.map(a => a.account_type))].sort()
-  const balanceValues = ['정상', '경고', '음수']
-
-  function toggleColFilter(col: 'name' | 'type' | 'balance', val: string) {
-    setColFilters(prev => {
-      const next = new Set(prev[col])
-      next.has(val) ? next.delete(val) : next.add(val)
-      return { ...prev, [col]: next }
-    })
-  }
-  const filteredNameOptions = accounts.filter(a =>
-    !nameFilterSearch || a.account_name.includes(nameFilterSearch)
-  )
-
-  function copyLink(url: string, key: string) {
-    navigator.clipboard.writeText(url)
-  }
 
   // ── 거래처 추가 ───────────────────────────────────────────────────────────────
-  async function handleAddAccount() {
-    if (!newForm.name.trim() || !newForm.manager.trim() || !newForm.pin.trim()) return
-    if (newForm.pin.trim().length !== 4) return
+  // PIN은 점주가 계정 생성 시점에 매장에서 바로 정함 (고객에게 구두로 물어보고 입력) —
+  // 온라인 관리자 등록 흐름에선 더 이상 PIN을 안 받음.
+  function isValidManagerPhone(phone: string): boolean {
+    return /^010-\d{4}-\d{4}$/.test(phone)
+  }
 
-    // PIN 중복 확인
+  function isWeakPin(pin: string): boolean {
+    if (/^(\d)\1{3}$/.test(pin)) return true
+    if ('0123456789'.includes(pin) || '9876543210'.includes(pin)) return true
+    return false
+  }
+
+  // "등록" 클릭 → 검증 + 중복확인만 하고, 실제 생성은 확인 다이얼로그의 [확인]에서
+  async function openAddConfirm() {
+    const phone = newForm.phone.trim()
+    if (!newForm.name.trim() || !newForm.manager.trim() || !isValidManagerPhone(phone)) return
+    if (newForm.pin.length !== 4) return
+    if (isWeakPin(newForm.pin)) { setAddPinError('다른 번호로 설정해 주세요'); return }
+    setAddPinError('')
+    const initialBalance = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
+    if (isNaN(initialBalance) || initialBalance === 0) return
+
     const { data: dup } = await supabase
       .from('accounts')
-      .select('account_code')
-      .eq('pin_code', newForm.pin.trim())
+      .select('account_code, account_name')
+      .eq('contact_phone', phone)
       .eq('is_active', true)
       .eq('store_id', storeId)
       .maybeSingle()
     if (dup) {
-      setAddPinError('이미 존재하는 PIN번호입니다.')
+      setAddDupAccount(dup)
       return
     }
-    setAddPinError('')
+    setAddDupAccount(null)
+    setAddPhoneError('')
+    setAddConfirm(true)
+  }
 
+  async function handleAddAccount() {
+    const phone = newForm.phone.trim()
     const initialBalance = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
-    const hasInitial = !isNaN(initialBalance) && initialBalance !== 0
+    setAddSubmitting(true)
+
+    // PIN — 평문(레거시 웹)과 암호화(카카오) 두 컬럼을 같이 만든다. lib/pin-crypto.ts 주석 참고
+    let pinCols
+    try {
+      pinCols = await buildPinColumns(newForm.pin)
+    } catch (e) {
+      console.error('PIN 설정 실패:', e)
+      setAddSubmitting(false)
+      setPrinterToast('PIN 설정에 실패했어요. 다시 시도해 주세요')
+      setTimeout(() => setPrinterToast(''), 3500)
+      return
+    }
 
     const { data: newAccount, error } = await supabase
       .from('accounts')
@@ -644,24 +867,26 @@ export default function Customers() {
         account_type:      newForm.type,
         organization_name: newForm.org.trim() || null,
         contact_person:    newForm.manager.trim(),
-        contact_phone:     newForm.phone.trim() || null,
-        pin_code:          newForm.pin.trim(),
-        warning_threshold: parseInt(newForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
+        contact_phone:     phone,
+        prepay_validity:   newForm.prepayValidity,
         is_active:         true,
         store_id:          storeId,
+        pin_code:          pinCols.pin_code,
+        pin_encrypted:     pinCols.pin_encrypted,
         // 양수/음수 모두 초기값으로 직접 설정 (add_deposit은 양수 전용이라 직접 INSERT)
-        current_balance:   hasInitial ? initialBalance : 0,
+        current_balance:   initialBalance,
       })
       .select('account_code')
       .single()
 
     if (error) {
       console.error('거래처 추가 실패:', error)
+      setAddSubmitting(false)
       return
     }
 
-    // 초기 잔액이 있으면 deposits에 이력 기록 (양수·음수 모두)
-    if (newAccount && hasInitial) {
+    // 초기 잔액 이력 기록 (양수·음수 모두)
+    if (newAccount) {
       const { error: depErr } = await supabase.from('deposits').insert({
         account_code: newAccount.account_code,
         amount:       initialBalance,
@@ -670,10 +895,84 @@ export default function Customers() {
       if (depErr) console.error('초기 잔액 이력 기록 실패:', depErr)
     }
 
+    // 관리자 등록 링크 발급 + SOLAPI 문자 발송 (실패해도 계정 생성은 이미 끝났으니 토스트로만 알림)
+    if (newAccount) {
+      try {
+        const { data: token, error: linkErr } = await supabase.rpc('admin_registration_issue_link', {
+          p_account_code: newAccount.account_code,
+        })
+        if (linkErr) throw linkErr
+
+        // 문자 단문 요금 유도를 위한 단축링크 (bit.ly 등 외부 서비스는 무료 발급량이 너무 적어 자체 구현)
+        const { data: shortCode } = await supabase.rpc('create_short_link', {
+          p_target_url: `${SUNPOS_KAKAO_URL}/register/admin/${token}`,
+        })
+        const link = shortCode ? `${SUNPOS_KAKAO_URL}/s/${shortCode}` : `${SUNPOS_KAKAO_URL}/register/admin/${token}`
+        const { error: sendErr } = await supabase.functions.invoke('send-notification', {
+          body: {
+            purpose: 'admin_registration',
+            phone,
+            params: { storeName, accountName: newForm.name.trim(), link },
+          },
+        })
+        if (sendErr) throw sendErr
+      } catch (e) {
+        console.error('관리자 등록 링크 발송 실패:', e)
+        setPrinterToast('문자 발송에 실패했어요. 번호를 확인해 주세요')
+        setTimeout(() => setPrinterToast(''), 3500)
+      }
+    }
+
     await fetchAccounts().catch(() => {})
-    setNewForm({ name: '', type: '과', org: '', manager: '', phone: '', pin: '', warnThreshold: '30000', initialDeposit: '', initialDepositMemo: '' })
-    setAddPinError('')
+    setNewForm({ name: '', type: '부서', org: '', manager: '', phone: '', pin: '', initialDeposit: '', initialDepositMemo: '', prepayValidity: 'none' })
+    setAddDupAccount(null)
+    setAddConfirm(false)
+    setAddSubmitting(false)
     setAddOpen(false)
+  }
+
+  // ── 관리자 등록 문자 재발송 ───────────────────────────────────────────────────
+  // 이미 완료된 계정이면 admin_registration_issue_link RPC가 서버에서 막아줌 (raise exception).
+  async function handleResendAdminRegistration() {
+    if (!selected) return
+    setResendLoading(true)
+    try {
+      const { data: token, error: linkErr } = await supabase.rpc('admin_registration_issue_link', {
+        p_account_code: selected.account_code,
+      })
+      if (linkErr) throw linkErr
+
+      const { data: shortCode } = await supabase.rpc('create_short_link', {
+        p_target_url: `${SUNPOS_KAKAO_URL}/register/admin/${token}`,
+      })
+      const link = shortCode ? `${SUNPOS_KAKAO_URL}/s/${shortCode}` : `${SUNPOS_KAKAO_URL}/register/admin/${token}`
+      const { error: sendErr } = await supabase.functions.invoke('send-notification', {
+        body: {
+          purpose: 'admin_registration',
+          phone: selected.contact_phone,
+          params: { storeName, accountName: selected.account_name, link },
+        },
+      })
+      if (sendErr) throw sendErr
+      setPrinterToast('관리자 등록 문자를 다시 보냈어요')
+    } catch (e) {
+      console.error('재발송 실패:', e)
+      const msg = (e as { message?: string })?.message ?? ''
+      setPrinterToast(msg.includes('이미 관리자 등록이 완료된 계정') ? '이미 관리자 등록이 완료된 계정이에요' : '문자 발송에 실패했어요. 번호를 확인해 주세요')
+    } finally {
+      setResendLoading(false)
+      setTimeout(() => setPrinterToast(''), 3500)
+      fetchRegisteredAdmins()
+    }
+  }
+
+  // ── 중복 전화번호 발견 시: 기존 계정으로 가서 충전 ────────────────────────────
+  function goChargeExistingAccount() {
+    if (!addDupAccount) return
+    const acc = accounts.find(a => a.account_code === addDupAccount.account_code)
+    setAddOpen(false)
+    setAddDupAccount(null)
+    if (acc) { setSelected(acc); setChargeOpen(true) }
   }
 
   // ── 충전 등록 ─────────────────────────────────────────────────────────────────
@@ -733,10 +1032,8 @@ export default function Customers() {
       org:           selected.organization_name ?? '',
       manager:       selected.contact_person ?? '',
       phone:         selected.contact_phone ?? '',
-      pin:           selected.pin_code,
-      warnThreshold:  String(selected.warning_threshold),
-      balance:        String(selected.current_balance),
-      adjustReason:   '',
+      pin:           selected.pin_code ?? '',
+      prepayValidity: selected.prepay_validity,
     })
     setEditOpen(true)
   }
@@ -762,9 +1059,16 @@ export default function Customers() {
     }
     setEditPinError('')
 
-    const newBalance   = parseInt(editForm.balance.replace(/,/g, ''), 10)
-    const balanceValid = !isNaN(newBalance)
-    const balanceDelta = balanceValid ? newBalance - selected.current_balance : 0
+    // PIN 이 바뀌었으면 암호화본도 같이 갱신한다. 평문만 바꾸면 카카오 로그인이
+    // 옛 PIN 으로 남아서 "일치하지 않는다"가 뜬다 (2026-10-13 장애 원인)
+    let pinCols
+    try {
+      pinCols = await buildPinColumns(editForm.pin)
+    } catch (e) {
+      console.error('PIN 설정 실패:', e)
+      setEditPinError('PIN 저장에 실패했어요. 다시 시도해 주세요.')
+      return
+    }
 
     const { error } = await supabase
       .from('accounts')
@@ -774,29 +1078,14 @@ export default function Customers() {
         organization_name: editForm.org.trim() || null,
         contact_person:    editForm.manager.trim(),
         contact_phone:     editForm.phone.trim() || null,
-        pin_code:          editForm.pin.trim(),
-        warning_threshold: parseInt(editForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
-        ...(balanceValid ? { current_balance: newBalance } : {}),
+        pin_code:          pinCols.pin_code,
+        pin_encrypted:     pinCols.pin_encrypted,
+        prepay_validity:   editForm.prepayValidity,
       })
       .eq('account_code', selected.account_code)
     if (error) { console.error('수정 실패:', error); return }
 
-    // 잔액이 바뀐 경우 balance_adjustments에 이력 기록
-    if (balanceValid && balanceDelta !== 0) {
-      await supabase.from('balance_adjustments').insert({
-        account_code:   selected.account_code,
-        store_id:       storeId,
-        amount:         balanceDelta,
-        balance_before: selected.current_balance,
-        balance_after:  newBalance,
-        reason:         editForm.adjustReason?.trim() || null,
-      })
-    }
-
     await fetchAccounts().catch(() => {})
-    if (balanceValid && balanceDelta !== 0) {
-      fetchStatement(selected.account_code).catch(() => {})
-    }
     setSelected(prev => prev ? {
       ...prev,
       account_name:      editForm.name.trim(),
@@ -804,9 +1093,8 @@ export default function Customers() {
       organization_name: editForm.org.trim() || null,
       contact_person:    editForm.manager.trim(),
       contact_phone:     editForm.phone.trim() || null,
+      prepay_validity:   editForm.prepayValidity,
       pin_code:          editForm.pin.trim(),
-      warning_threshold: parseInt(editForm.warnThreshold.replace(/,/g, ''), 10) || 30000,
-      ...(balanceValid ? { current_balance: newBalance } : {}),
     } : prev)
     setEditPinError('')
     setEditOpen(false)
@@ -876,49 +1164,13 @@ export default function Customers() {
     if (error) { console.error('삭제 실패:', error); return }
     await fetchAccounts(showInactive).catch(() => {})
     setSelected(null)
-    setDeleteConfirm(false)
+    setEditDeactivateConfirm(false)
+    setEditOpen(false)
     await checkDowngrade()
   }
 
   // ── 충전 이력 수정 ────────────────────────────────────────────────────────────
-  async function handleSaveDeposit(deposit: DbDeposit) {
-    const newAmt = parseInt(editDepositAmt.replace(/[^0-9-]/g, ''), 10)
-    if (isNaN(newAmt) || !selected) return
-
-    // deposits UPDATE + accounts.current_balance 조정을 RPC로 원자적 처리
-    const { error } = await supabase.rpc('update_deposit', {
-      p_deposit_id:     deposit.deposit_id,
-      p_amount:         newAmt,
-      p_note:           editDepositNote.trim() || null,
-      p_payment_method: editDepositMethod,
-    })
-    if (error) { console.error('충전 수정 실패:', error); return }
-
-    await Promise.all([fetchAccounts(), fetchDeposits(selected.account_code)]).catch(() => {})
-    // 잔액은 fetchAccounts 후 DB에서 다시 조회해 selected 갱신
-    const { data: refreshed } = await supabase
-      .from('accounts')
-      .select('*')
-      .eq('account_code', selected.account_code)
-      .single()
-    if (refreshed) setSelected(refreshed as DbAccount)
-    setEditingDepositId(null)
-  }
-
   // ── 거래처 영구 삭제 (하드) ──────────────────────────────────────────────────
-  async function handleHardDeleteAccount() {
-    if (!selected) return
-    const { error } = await supabase
-      .from('accounts')
-      .delete()
-      .eq('account_code', selected.account_code)
-    if (error) { console.error('영구 삭제 실패:', error); return }
-    await fetchAccounts(showInactive).catch(() => {})
-    setSelected(null)
-    setHardDeleteConfirm(false)
-    await checkDowngrade()
-  }
-
   // ── 거래처 복구 ───────────────────────────────────────────────────────────────
   async function handleRestoreAccount() {
     if (!selected) return
@@ -931,1193 +1183,738 @@ export default function Customers() {
     setSelected(null)
   }
 
+  // ── 고객현황 사이드바 집계 (Figma node 494:1051) ─────────────────────────────
+  const typeCounts: Record<string, number> = {}
+  for (const a of accounts) typeCounts[a.account_type] = (typeCounts[a.account_type] ?? 0) + 1
+  const typeTotal = accounts.length || 1
+  // 표의 유형 태그 색 — 우측 계정유형 도넛과 같은 기준(건수 많은 순)으로 팔레트를 배정해 둘이 어긋나지 않게 한다
+  const typeColorOrder = [...customerTypes].sort((a, b) => (typeCounts[b] ?? 0) - (typeCounts[a] ?? 0))
+  const typeColorOf = (t: string) => {
+    const i = typeColorOrder.indexOf(t)
+    return TYPE_DONUT_COLORS[(i < 0 ? 0 : i) % TYPE_DONUT_COLORS.length]
+  }
+  const totalMembers = Object.values(memberCounts).reduce((s, n) => s + n, 0)
+  const active30dPct = accounts.length > 0 ? Math.round((active30dCount / accounts.length) * 100) : 0
+  const topOrderedAccounts = [...accounts]
+    .filter(a => (monthlyOrderCount[a.account_code] ?? 0) > 0)
+    .sort((a, b) => (monthlyOrderCount[b.account_code] ?? 0) - (monthlyOrderCount[a.account_code] ?? 0))
+    .slice(0, 3)
+  const maxYearlyDeposit = Math.max(1, ...yearlyDeposits)
+
   return (
-    <div className="h-full flex overflow-hidden bg-gray-bg gap-3 p-3">
+    <div className="h-full flex flex-col overflow-hidden bg-canvas">
 
-      {/* 잔액 불일치 툴팁 (fixed, overflow 클리핑 없음) */}
-      {discTooltip && (
-        <div
-          className="fixed z-[9999] w-56 rounded-lg bg-ink text-white text-[10px] leading-snug px-2.5 py-2 shadow-lg pointer-events-none"
-          style={{ top: discTooltip.y, right: window.innerWidth - discTooltip.x }}
-        >
-          <span className="font-bold text-white">이 잔액은 맞아요.</span>
-          <br />
-          <span className="text-gray-300">주문 당시 실제로 남아있던 금액이에요.</span>
-          <br /><br />
-          <span className="text-gray-400">다만 충전 기록과 {Math.abs(discTooltip.amount).toLocaleString()}원 차이가 나고 있어요. 거래처 등록 당시 초기 잔액이 기록되지 않았거나, 이전에 잔액을 수정한 적이 있는데 당시에는 그 내역이 정확히 기록되지 않아서 생긴 차이예요.</span>
-          <br /><br />
-          <span className="text-orange-300">8월부터는 잔액을 수정하면 이용내역서에 '잔액조정'으로 남겨지기 때문에 이 표시가 뜨지 않아요.</span>
-        </div>
-      )}
 
-      {/* ── 테이블 영역 ── */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-xl shadow-sm">
+      {/* ── 좌측 고객 테이블 + 우측 고객현황 사이드바. 둘 다 고정 실제 px, transform:scale 없음 —
+           모든 px는 Figma 원본(2240 캔버스) 수치 × FIGMA_SCALE — src/lib/figma-scale.ts 참고 ── */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
 
-        {/* 헤더: 필터 초기화 버튼 (활성 시에만 표시) */}
-        {hasColFilter && (
-          <div className="px-5 py-2 border-b border-gray-border flex-shrink-0 flex items-center justify-end">
-            <button
-              onClick={() => { setColFilters({ name: new Set(), type: new Set(), balance: new Set() }); setNameFilterSearch('') }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              필터 초기화
-            </button>
-          </div>
-        )}
-
-        {/* 테이블 헤더 */}
-        <div ref={filterDropRef} className="grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-5 py-2 bg-white text-[11px] font-bold text-gray-text uppercase tracking-wide border-b-2 border-gray-border flex-shrink-0">
-          <span className="whitespace-nowrap">#</span>
-
-          {/* 거래처명 필터 */}
-          <span className="relative flex items-center gap-0.5 whitespace-nowrap overflow-hidden">
-            거래처명
-            <button
-              onClick={() => setOpenFilterCol(v => v === 'name' ? null : 'name')}
-              className={`ml-0.5 rounded px-0.5 transition-colors ${colFilters.name.size > 0 ? 'text-green' : 'text-gray-border hover:text-gray-text'}`}
-            >
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18l-7 8.5V20l-4-2v-5.5L3 4z"/></svg>
-            </button>
-            {openFilterCol === 'name' && (
-              <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-border rounded-xl shadow-lg py-1.5 min-w-[180px] max-h-[280px] flex flex-col">
-                <div className="px-2 pb-1.5 border-b border-gray-border/50 flex-shrink-0">
-                  <input
-                    autoFocus
-                    value={nameFilterSearch}
-                    onChange={e => setNameFilterSearch(e.target.value)}
-                    placeholder="검색..."
-                    className="w-full text-[11px] px-2 py-1 border border-gray-border rounded-lg focus:outline-none focus:border-ink normal-case tracking-normal font-normal"
-                  />
-                </div>
-                <div className="overflow-y-auto flex-1">
-                  {filteredNameOptions.map(a => (
-                    <label key={a.account_code} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-bg cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={colFilters.name.has(a.account_code)}
-                        onChange={() => toggleColFilter('name', a.account_code)}
-                        className="accent-green w-3.5 h-3.5 flex-shrink-0"
-                      />
-                      <span className="text-[11px] font-normal text-ink normal-case tracking-normal truncate">{a.account_name}</span>
-                    </label>
-                  ))}
-                </div>
-                {colFilters.name.size > 0 && (
-                  <button onClick={() => { setColFilters(p => ({ ...p, name: new Set() })); setNameFilterSearch('') }} className="w-full text-left px-3 py-1.5 text-[11px] text-gray-text hover:text-ink border-t border-gray-border/50 flex-shrink-0 normal-case tracking-normal">
-                    초기화
-                  </button>
-                )}
-              </div>
-            )}
-          </span>
-
-          {/* 유형 필터 */}
-          <span className="relative flex items-center gap-0.5">
-            유형
-            <button
-              onClick={() => setOpenFilterCol(v => v === 'type' ? null : 'type')}
-              className={`ml-0.5 rounded px-0.5 transition-colors ${colFilters.type.size > 0 ? 'text-green' : 'text-gray-border hover:text-gray-text'}`}
-            >
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18l-7 8.5V20l-4-2v-5.5L3 4z"/></svg>
-            </button>
-            {openFilterCol === 'type' && (
-              <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-border rounded-xl shadow-lg py-1.5 min-w-[110px]">
-                {typeValues.map(val => (
-                  <label key={val} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-bg cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={colFilters.type.has(val)}
-                      onChange={() => toggleColFilter('type', val)}
-                      className="accent-green w-3.5 h-3.5"
-                    />
-                    <span className="text-[11px] font-normal text-ink normal-case tracking-normal">{val}</span>
-                  </label>
-                ))}
-                {colFilters.type.size > 0 && (
-                  <button onClick={() => setColFilters(p => ({ ...p, type: new Set() }))} className="w-full text-left px-3 py-1.5 text-[11px] text-gray-text hover:text-ink border-t border-gray-border/50 mt-1 normal-case tracking-normal">
-                    초기화
-                  </button>
-                )}
-              </div>
-            )}
-          </span>
-
-          <span className="whitespace-nowrap overflow-hidden">담당자</span>
-          <span className="whitespace-nowrap overflow-hidden">연락처</span>
-          <span className="whitespace-nowrap overflow-hidden">PIN</span>
-
-          {/* 현재잔액 필터 */}
-          <span className="relative flex items-center gap-0.5 whitespace-nowrap overflow-hidden">
-            현재잔액
-            <button
-              onClick={() => setOpenFilterCol(v => v === 'balance' ? null : 'balance')}
-              className={`ml-0.5 rounded px-0.5 transition-colors ${colFilters.balance.size > 0 ? 'text-green' : 'text-gray-border hover:text-gray-text'}`}
-            >
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18l-7 8.5V20l-4-2v-5.5L3 4z"/></svg>
-            </button>
-            {openFilterCol === 'balance' && (
-              <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-border rounded-xl shadow-lg py-1.5 min-w-[110px]">
-                {balanceValues.map(val => (
-                  <label key={val} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-bg cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={colFilters.balance.has(val)}
-                      onChange={() => toggleColFilter('balance', val)}
-                      className="accent-green w-3.5 h-3.5"
-                    />
-                    <span className={`text-[11px] font-normal normal-case tracking-normal ${val === '음수' ? 'text-danger' : val === '경고' ? 'text-orange-500' : 'text-ink'}`}>{val}</span>
-                  </label>
-                ))}
-                {colFilters.balance.size > 0 && (
-                  <button onClick={() => setColFilters(p => ({ ...p, balance: new Set() }))} className="w-full text-left px-3 py-1.5 text-[11px] text-gray-text hover:text-ink border-t border-gray-border/50 mt-1 normal-case tracking-normal">
-                    초기화
-                  </button>
-                )}
-              </div>
-            )}
-          </span>
-
-          <span>이번달</span>
-        </div>
-
-        {/* 목록 */}
-        <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
-          {loading ? (
-            <div className="h-full flex items-center justify-center text-gray-text text-[11px]">
-              <div className="w-6 h-6 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
-              불러오는 중...
+        {/* 좌측: 검색 + 유형 필터 + 테이블 */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* 검색창 — Menus.tsx와 동일하게 relative 컨테이너 + absolute 버튼으로 위치 통일 */}
+          <div className="relative flex-shrink-0 px-[26px] pt-[17px] pb-[13px]" style={{ height: 59 }}>
+            <div className="field-wrap border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px]" style={{ width: 250, height: 31 }}>
+              <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="계정이름 또는 주문자 이름 검색"
+                className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[13px] text-ink placeholder:text-[#8C8379] bg-transparent"
+              />
             </div>
-          ) : fetchError ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-text text-[11px] gap-2.5">
-              <div className="text-[36px]">⚠️</div>
-              <div className="font-bold text-ink text-[11px]">거래처 목록을 불러오지 못했습니다</div>
+            {/* 우상단 텍스트 버튼 — 메뉴·주문 화면의 텍스트 버튼과 같은 위치(top 3)로 맞춤 */}
+            {typeEditMode ? (
+              <div className="absolute flex items-center gap-[16px]" style={{ right: 26, top: 3 }}>
+                <button onClick={cancelTypeEdit} className="text-[13px] font-medium text-gray-text whitespace-nowrap hover:text-ink transition-colors">
+                  편집 취소
+                </button>
+                <button
+                  onClick={confirmTypeEdit}
+                  disabled={typeSaving}
+                  className="px-[15px] py-[7px] rounded-lg bg-[#2C261F] text-white text-[13px] font-semibold whitespace-nowrap disabled:opacity-50 transition-opacity"
+                >
+                  {typeSaving ? '저장 중...' : '완료'}
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => setRetryCount(c => c + 1)}
-                className="px-3 py-2 rounded-lg bg-ink text-white text-[11px] font-bold hover:bg-ink/80 transition-colors"
+                onClick={startTypeEdit}
+                className="absolute flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                style={{ right: 26, top: 3 }}
               >
-                다시 시도
+                화면 편집 ✎
               </button>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-text text-[11px]">
-              {search ? '검색 결과가 없습니다' : showInactive ? '비활성 거래처가 없습니다' : '등록된 거래처가 없습니다'}
-            </div>
-          ) : (
-            filtered.map((acc) => (
+            )}
+          </div>
+
+          <div className="flex-shrink-0 flex items-center justify-between gap-[13px] px-[26px] pb-[13px]">
+            {/* 유형 필터 pill — Figma 503:786: 평소엔 전체/유형들만, 화면 편집 중엔 각 유형에 연필 아이콘 + "유형 추가" */}
+            <div className="flex items-center gap-[4px] flex-wrap">
               <button
-                key={acc.account_code}
-                onClick={() => setSelected(acc)}
-                className="w-full grid grid-cols-[36px_1fr_60px_80px_110px_80px_80px_90px] px-5 py-2.5 text-left hover:bg-gray-bg transition-colors text-[11px]"
+                onClick={() => setTypeFilter('all')}
+                className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors ${
+                  typeFilter === 'all' ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink'
+                }`}
               >
-                <span className="text-gray-text text-[11px] whitespace-nowrap overflow-hidden">{seqMap[acc.account_code]}</span>
-                <span className="font-semibold text-ink truncate min-w-0">{acc.account_name}</span>
-                <span className="overflow-hidden">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${TYPE_BADGE[acc.account_type]}`}>
-                    {acc.account_type}
+                전체
+              </button>
+              {(typeEditMode ? typeDraft : customerTypes).map((t, i) => (
+                typeEditMode && editingTypeIdx === i ? (
+                  <input
+                    key={i}
+                    autoFocus
+                    value={t}
+                    maxLength={7}
+                    onChange={e => setTypeDraft(prev => prev.map((x, xi) => xi === i ? e.target.value.slice(0, 7) : x))}
+                    onBlur={() => setEditingTypeIdx(null)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingTypeIdx(null) }}
+                    className="px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium border border-ink outline-none"
+                    style={{ width: Math.max(60, t.length * 14 + 20) }}
+                  />
+                ) : (
+                  <button
+                    key={i}
+                    onClick={() => typeEditMode ? setEditingTypeIdx(i) : setTypeFilter(t)}
+                    className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors flex items-center gap-[6px] ${
+                      !typeEditMode && typeFilter === t ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink'
+                    }`}
+                  >
+                    {t}
+                    {typeEditMode && (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z" stroke="#6A635E" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                    )}
+                  </button>
+                )
+              ))}
+              {typeEditMode && typeDraft.length < 6 && (
+                <button
+                  onClick={addTypeDraft}
+                  className="px-[10px] py-[6px] text-[15px] font-medium text-[#6A635E] whitespace-nowrap flex items-center gap-[4px] hover:text-ink transition-colors"
+                >
+                  유형 추가
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
+                </button>
+              )}
+            </div>
+            {!typeEditMode && (
+              <button
+                onClick={() => setShowInactive(v => !v)}
+                className={`text-[13px] font-medium whitespace-nowrap transition-colors flex-shrink-0 ${showInactive ? 'text-danger' : 'text-[#6A635E] hover:text-ink'}`}
+              >
+                {showInactive ? '비활성 고객 보는 중' : '비활성 보기'}
+              </button>
+            )}
+          </div>
+
+          {/* 테이블 */}
+          <div className="relative flex-1 min-h-0">
+            <ScrollHint scrollRef={tableScrollRef} topOffset={55} bottomOffset={38} />
+            <div ref={tableScrollRef} className="h-full overflow-y-auto px-[26px] pb-[26px]">
+            {/* overflow-hidden 을 빼야 머리글 sticky 가 산다(DataTable.tsx 주석 참고).
+                모서리는 rounded + 첫 행/마지막 행이 알아서 맞춰진다. */}
+            <div className="bg-canvas-soft rounded-[13px]">
+              <div className="sticky top-0 z-10 bg-[#D7D2CE] border-y border-[#C1B7AA] flex items-center text-[#6A635E] text-[15px] font-medium rounded-t-[13px]" style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
+                <span style={{ width: 51 }}>순번</span>
+                <span className="flex-1">계정 이름</span>
+                <span style={{ width: 80 }}>유형</span>
+                <span style={{ width: 77 }} className="flex items-center justify-end gap-[5px]">
+                  추이
+                  <span
+                    className="w-[13px] h-[13px] rounded-full bg-[#E8E4E2] text-[#787878] text-[9px] flex items-center justify-center cursor-default"
+                    onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTrendInfoTooltip({ x: r.left + r.width / 2, y: r.top }) }}
+                    onMouseLeave={() => setTrendInfoTooltip(null)}
+                  >
+                    i
                   </span>
                 </span>
-                <span className="text-gray-text whitespace-nowrap overflow-hidden">{acc.contact_person ?? '—'}</span>
-                <span className="text-gray-text font-mono text-[11px] whitespace-nowrap overflow-hidden">{acc.contact_phone ?? '—'}</span>
-                <span
-                  className="flex items-center gap-1 group"
-                  onClick={e => { e.stopPropagation(); setPinVisible(v => v === acc.account_code ? null : acc.account_code) }}
-                >
-                  <span className="font-mono">{pinVisible === acc.account_code ? acc.pin_code : '****'}</span>
-                  <svg className="w-3.5 h-3.5 text-gray-text opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-                <span className={`font-bold ${acc.current_balance < 0 ? 'text-danger' : acc.current_balance < acc.warning_threshold ? 'text-orange-500' : 'text-ink'}`}>
-                  {acc.current_balance < 0 ? `- ${won(Math.abs(acc.current_balance))}` : won(acc.current_balance)}
-                </span>
-                <span className="text-gray-text">
-                  {(monthlyUsage[acc.account_code] ?? 0) > 0
-                    ? `-${won(monthlyUsage[acc.account_code])}`
-                    : won(0)}
-                </span>
-              </button>
-            ))
+                <span style={{ width: 97 }} className="text-right">이용자수</span>
+                <span style={{ width: 116 }} className="text-right">잔액</span>
+                <span style={{ width: 141 }} className="text-right">이번달 선결제</span>
+              </div>
+
+              {loading ? (
+                <div className="flex items-center justify-center text-[#ADADAD] text-[13px]" style={{ height: 193 }}>불러오는 중...</div>
+              ) : fetchError ? (
+                <div className="flex flex-col items-center justify-center gap-[8px] text-[#ADADAD] text-[13px]" style={{ height: 193 }}>
+                  고객 목록을 불러오지 못했습니다
+                  <button onClick={() => setRetryCount(c => c + 1)} className="px-[13px] py-[6px] rounded-[6px] bg-ink text-white text-[10px] font-bold">다시 시도</button>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="flex items-center justify-center text-[#ADADAD] text-[13px]" style={{ height: 193 }}>
+                  {search ? '검색 결과가 없습니다' : showInactive ? '비활성 고객이 없습니다' : '등록된 고객이 없습니다'}
+                </div>
+              ) : (
+                filtered.map((acc, i) => {
+                  const trend = orderTrend[acc.account_code] ?? 0
+                  return (
+                    <button
+                      key={acc.account_code}
+                      onClick={() => setSelected(acc)}
+                      className="w-full flex items-center text-left text-[17px] text-ink hover:bg-white/40 transition-colors border-b border-[#E5E5E5] last:border-b-0"
+                      style={{ height: 46, paddingLeft: 15, paddingRight: 15 }}
+                    >
+                      <span style={{ width: 51 }}>{i + 1}</span>
+                      <span className="flex-1 truncate">{acc.account_name}</span>
+                      <span style={{ width: 80 }}>
+                        {(() => {
+                          const c = typeColorOf(acc.account_type)
+                          return (
+                            <span
+                              className="inline-block px-[8px] py-[3px] rounded-[6px] text-[12px] font-medium whitespace-nowrap max-w-full truncate align-middle"
+                              style={{ color: c, backgroundColor: `${c}1F` }}
+                            >
+                              {TYPE_LABEL[acc.account_type] ?? acc.account_type}
+                            </span>
+                          )
+                        })()}
+                      </span>
+                      <span style={{ width: 77 }} className={`text-right ${trend > 0 ? 'text-[#3374FF]' : trend < 0 ? 'text-[#FF676F]' : 'text-[#ADADAD]'}`}>
+                        {trend > 0 ? `+${trend}건` : trend < 0 ? `${trend}건` : '-'}
+                      </span>
+                      <span style={{ width: 97 }} className="text-right">{memberCounts[acc.account_code] ?? 0}명</span>
+                      <span style={{ width: 116 }} className={`text-right font-medium ${acc.current_balance < 0 ? 'text-danger' : ''}`}>
+                        {acc.current_balance < 0 ? `-${won(Math.abs(acc.current_balance))}` : won(acc.current_balance)}
+                      </span>
+                      <span style={{ width: 141 }} className="text-right">
+                        {(monthlyDeposits[acc.account_code] ?? 0) > 0 ? `+${won(monthlyDeposits[acc.account_code])}` : won(0)}
+                      </span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+            </div>
+          </div>
+
+          {/* "추이" 헤더 i 아이콘 툴팁 — 표 밖(fixed)에서 렌더해야 안 잘림 */}
+          {trendInfoTooltip && (
+            <div
+              className="fixed z-50 pointer-events-none bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[8px] py-[8px] w-[112px] -translate-x-1/2"
+              style={{
+                left:   trendInfoTooltip.x / rootZoom(),
+                bottom: (window.innerHeight - trendInfoTooltip.y) / rootZoom() + 6,
+              }}
+            >
+              <span className="block text-[12px] font-semibold text-ink text-center leading-[1.2]">지난달보다 늘어난<br />주문량이에요</span>
+            </div>
           )}
+        </div>
+
+        {/* 우측: 고객현황 사이드바 — Figma node 494:1051 "고객현황" (실데이터) */}
+        <div className="relative flex-shrink-0 w-[400px] h-full bg-[#F9F9F9] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden">
+          {!selected ? (
+            <div className="h-full overflow-y-auto flex flex-col gap-[13px] px-[26px] py-[13px]">
+          {/* 제목 옆 '>' — 전체메뉴 고객 > 고객 현황 화면으로 진입 */}
+          <button
+            onClick={onOpenDetail}
+            disabled={!onOpenDetail}
+            className="flex items-center gap-[6px] self-start group"
+          >
+            <span className="text-[21px] font-medium text-ink whitespace-nowrap">고객현황</span>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="text-[#6A635E] group-hover:text-ink transition-colors">
+              <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+
+          <div className="flex gap-[6px]">
+            <StatCard className="bg-[#F2F2F2] rounded-[13px]" padding={13} gap={9} style={{ width: 196 }}>
+              <div className="text-[13px] font-medium text-[#2C261F] tracking-[-0.5px]">계정/이용자수</div>
+              <div className="text-[21px] font-medium text-ink whitespace-nowrap">{accounts.length}팀/{totalMembers}명</div>
+            </StatCard>
+            <StatCard className="bg-[#F2F2F2] rounded-[13px] flex-1" padding={13} gap={9}>
+              <div className="text-[13px] font-medium text-[#2C261F] tracking-[-0.5px] whitespace-nowrap">최근 30일 주문율</div>
+              <div className="text-[18px] font-medium text-ink">{active30dPct}%</div>
+            </StatCard>
+          </div>
+
+          {/* 선결제 추이 — 올해 월별 충전합계 바차트 */}
+          <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13 }}>
+            <div className="text-[15px] font-semibold text-[#2C261F]">선결제 추이</div>
+            <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
+              {yearlyDeposits.map((amt, i) => (
+                <div
+                  key={i}
+                  className="flex-1 flex flex-col items-center justify-end h-full px-[1px] cursor-pointer"
+                  onMouseEnter={e => setBarTooltip({ monthIdx: i, x: e.clientX, y: e.clientY })}
+                  onMouseMove={e => setBarTooltip(t => t && { ...t, x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setBarTooltip(null)}
+                >
+                  <div className="w-full bg-[#6A635E] rounded-t-[2px] transition-opacity" style={{ height: Math.max(2, (amt / maxYearlyDeposit) * 51), opacity: barTooltip && barTooltip.monthIdx !== i ? 0.4 : 1 }} />
+                </div>
+              ))}
+            </div>
+            {barTooltip && (() => {
+              const monthRows = yearlyDepositRows.filter(r => new Date(r.created_at).getMonth() === barTooltip.monthIdx)
+              const byAccount = new Map<string, { name: string; total: number; dates: string[] }>()
+              for (const r of monthRows) {
+                const name = accounts.find(a => a.account_code === r.account_code)?.account_name ?? '(삭제된 계정)'
+                const day = new Date(r.created_at).getDate()
+                const cur = byAccount.get(r.account_code) ?? { name, total: 0, dates: [] }
+                cur.total += r.amount
+                cur.dates.push(`${day}일`)
+                byAccount.set(r.account_code, cur)
+              }
+              const rows = [...byAccount.values()].sort((a, b) => b.total - a.total)
+              return (
+                <div
+                  className="fixed z-50 pointer-events-none bg-white border border-gray-border rounded-xl shadow-lg px-3 py-2.5 text-[11px] min-w-[180px] max-w-[280px]"
+                  style={barTooltip.x > window.innerWidth / 2
+                    ? { right: window.innerWidth - barTooltip.x + 12, top: barTooltip.y - 8 }
+                    : { left: barTooltip.x + 12, top: barTooltip.y - 8 }}
+                >
+                  <div className="font-bold text-ink mb-1.5">{barTooltip.monthIdx + 1}월 · {won(yearlyDeposits[barTooltip.monthIdx])} ({rows.length}개 과)</div>
+                  {rows.length === 0 ? (
+                    <div className="text-gray-text">선결제 내역 없음</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {rows.map(r => (
+                        <div key={r.name} className="flex justify-between gap-2">
+                          <span className="text-ink font-semibold truncate">{r.name}</span>
+                          <span className="text-gray-text flex-shrink-0">{won(r.total)} · {r.dates.join(', ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+            <div className="flex mt-[6px]" style={{ width: 323 }}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <div key={i} className="flex-1 text-center text-[10px] text-[#6A635E]">{i + 1}월</div>
+              ))}
+            </div>
+          </div>
+
+          {/* 계정유형 도넛 — 비율 높은 순으로 정렬해 범례도 위→아래, 도넛도 12시(위)부터 시계방향으로 큰 비율부터 */}
+          {(() => {
+            const typesSorted = [...customerTypes].sort((a, b) => (typeCounts[b] ?? 0) - (typeCounts[a] ?? 0))
+            const colorOf = (i: number) => TYPE_DONUT_COLORS[i % TYPE_DONUT_COLORS.length]
+            // 유형이 1개뿐이면 범례가 짧아 박스 높이가 도넛(top 28 + size 109)보다 작아져
+            // 원그래프가 박스 아래로 삐져나왔다 — minHeight로 도넛이 들어갈 높이를 보장한다
+            return (
+              <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13, minHeight: 150 }}>
+                <div className="text-[15px] font-semibold text-[#2C261F]">계정유형</div>
+                <div className="flex flex-col gap-[8px] mt-[19px]" style={{ width: 193 }}>
+                  {typesSorted.filter(t => typeCounts[t]).map((t, i) => (
+                    <div
+                      key={t}
+                      className="flex items-center gap-[3px] cursor-pointer"
+                      onMouseEnter={e => setDonutTooltip({ type: t, x: e.clientX, y: e.clientY })}
+                      onMouseMove={e => setDonutTooltip(cur => cur && { ...cur, x: e.clientX, y: e.clientY })}
+                      onMouseLeave={() => setDonutTooltip(null)}
+                    >
+                      <span className="w-[13px] h-[13px] rounded-full flex-shrink-0" style={{ backgroundColor: colorOf(i) }} />
+                      <span className="text-[12px] text-[#2C261F] tracking-[-0.46px] whitespace-nowrap">
+                        {TYPE_LABEL[t] ?? t} ({Math.round((typeCounts[t] / typeTotal) * 100)}%, {typeCounts[t]}팀)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="absolute" style={{ right: 19, top: 28 }}>
+                  <DonutChart size={109} strokeWidth={21} segments={typesSorted.map((t, i) => ({
+                    pct: typeCounts[t] ? Math.round((typeCounts[t] / typeTotal) * 100) : 0,
+                    color: colorOf(i),
+                  }))} />
+                </div>
+                {donutTooltip && (() => {
+                  const list = accounts.filter(a => a.account_type === donutTooltip.type)
+                  return (
+                    <div
+                      className="fixed z-50 pointer-events-none bg-white border border-gray-border rounded-xl shadow-lg px-3 py-2.5 text-[11px] min-w-[180px] max-w-[280px]"
+                      style={donutTooltip.x > window.innerWidth / 2
+                        ? { right: window.innerWidth - donutTooltip.x + 12, top: donutTooltip.y - 8 }
+                        : { left: donutTooltip.x + 12, top: donutTooltip.y - 8 }}
+                    >
+                      <div className="font-bold text-ink mb-1.5">{TYPE_LABEL[donutTooltip.type] ?? donutTooltip.type} · {list.length}팀</div>
+                      <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                        {list.map(a => (
+                          <div key={a.account_code} className="flex justify-between gap-2">
+                            <span className="text-ink font-semibold truncate">{a.account_name}</span>
+                            <span className="text-gray-text flex-shrink-0">{won(a.current_balance)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )
+          })()}
+
+          {/* 가장 많이 주문한 고객 (이번달 기준) — 위 계정유형 박스와, 그리고 제목과 1번 항목 사이를 더 띄움 */}
+          <div className="flex flex-col gap-[16px] mt-[14px]">
+            <div className="text-[15px] font-semibold text-[#2C261F] whitespace-nowrap">가장 많이 주문한 고객</div>
+            {topOrderedAccounts.length === 0 ? (
+              <div className="text-[10px] text-[#ADADAD] py-[13px]">이번달 주문한 고객이 없습니다.</div>
+            ) : (
+              <div className="space-y-[13px]">
+                {topOrderedAccounts.map((acc, i) => (
+                  <div key={acc.account_code} className="flex items-center gap-[10px]">
+                    <span className={`w-[19px] h-[19px] rounded-full flex items-center justify-center text-[12px] font-bold flex-shrink-0 ${
+                      i === 0 ? 'bg-[#E8E4E2] text-[#8C8379]' : 'bg-[#E5E5E5] text-[#ADADAD]'
+                    }`}>{i + 1}</span>
+                    <span className={`text-[13px] ${i === 0 ? 'text-[#2C261F] font-medium' : 'text-[#6A635E]'}`}>
+                      {acc.account_name} ({monthlyOrderCount[acc.account_code]}건)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+            </div>
+          ) : (
+            <CustomerDetailPanel
+              selected={selected}
+              accountOrders={accountOrders}
+              deposits={deposits}
+              members={members}
+              registeredAdmins={registeredAdmins}
+              memberCounts={memberCounts}
+              phoneRevealed={phoneRevealed}
+              setPhoneRevealed={setPhoneRevealed}
+              detailTab={detailTab}
+              setDetailTab={setDetailTab}
+              onQr={() => setAccountQr(selected.account_code)}
+              onOpenStatement={handleOpenStatement}
+              showInactive={showInactive}
+              onEdit={openEdit}
+              onRestore={handleRestoreAccount}
+              onResendAdmin={handleResendAdminRegistration}
+              resendLoading={resendLoading}
+            />
+          )}
+          </div>
+
+          {/* 계정 추가 / 금액 충전 — 항상 사이드바 하단에 고정 */}
+          <div className="flex-shrink-0 flex gap-[6px] px-[26px] py-[13px]">
+            <button
+              onClick={() => { if (accounts.filter(a => a.is_active !== false).length < PLAN_LIMITS[plan].accounts) setAddOpen(true) }}
+              className="flex-1 bg-[#E8E4E2] text-[#6A635E] rounded-[13px] flex items-center justify-center text-[21px] font-medium"
+              style={{ height: 64 }}
+              title={accounts.filter(a => a.is_active !== false).length >= PLAN_LIMITS[plan].accounts
+                ? `${PLAN_NAMES[plan]} 플랜 한도(${PLAN_LIMITS[plan].accounts === Infinity ? '무제한' : PLAN_LIMITS[plan].accounts}) 도달`
+                : undefined}
+            >
+              계정 추가
+            </button>
+            <button
+              onClick={() => {
+                if (selected) { setChargeOpen(true) }
+                else if (filtered.length === 1) { setSelected(filtered[0]); setChargeOpen(true) }
+              }}
+              disabled={!selected && filtered.length !== 1}
+              className="flex-1 bg-[#2C261F] text-[#F9F9F9] rounded-[13px] flex items-center justify-center text-[21px] font-medium disabled:opacity-40"
+              style={{ height: 64 }}
+              title={selected || filtered.length === 1 ? undefined : '왼쪽 표에서 고객을 선택하거나 검색으로 한 명으로 좁혀주세요'}
+            >
+              금액 충전
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ── 거래처 상세 모달 ── */}
-      {selected && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40" onClick={() => { setSelected(null); setDeleteConfirm(false) }}>
-          <div className="modal-in bg-white rounded-2xl shadow-xl w-[720px] max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
-            {/* 모달 헤더 */}
-            <div className="flex items-center justify-between px-8 pt-7 pb-0 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="text-[18px] font-semibold text-ink">{selected.account_name}</div>
-                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${TYPE_BADGE[selected.account_type]}`}>
-                  {selected.account_type}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* 잔액 + 충전 버튼 — 헤더 우측 */}
-                <span className={`text-[11px] font-extrabold ${selected.current_balance < 0 ? 'text-danger' : selected.current_balance < selected.warning_threshold ? 'text-orange-500' : 'text-green'}`}>
-                  {selected.current_balance < 0 ? `- ${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
-                </span>
-                {!showInactive && (
-                  <button onClick={() => {
-                    const now = new Date()
-                    setChargeDate(now.toLocaleDateString('en-CA'))
-                    setChargeTime(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`)
-                    setChargeConfirm(false)
-                    setChargeAmt('')
-                    setChargeMemo('')
-                    setChargeMethod('신용카드')
-                    setChargeError('')
-                    setChargeOpen(true)
-                  }} className="px-3 py-1.5 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[11px] font-bold hover:bg-[#00BB55] transition-colors">
-                    💳 충전
-                  </button>
-                )}
-                {!showInactive && (
-                  <button onClick={openEdit} className="px-3 py-1.5 rounded-lg border border-gray-border text-[11px] font-bold text-gray-text hover:bg-gray-bg transition-colors">
-                    수정
-                  </button>
-                )}
-                <button onClick={() => { setSelected(null); setDeleteConfirm(false) }} className="text-gray-text hover:text-ink text-[18px] ml-1">✕</button>
-              </div>
-            </div>
-
-            {/* 스크롤 영역 */}
-            <div className="overflow-y-auto px-8 pt-6 pb-9 flex-1">
-
-              {/* QR (좌) + 6가지 정보 (우) */}
-              <div className="flex gap-5 mb-5 items-start">
-
-                {/* 왼쪽: 인라인 QR */}
-                <div className="flex flex-col items-center gap-2 flex-shrink-0">
-                  {selectedQrDataUrl ? (
-                    <img src={selectedQrDataUrl} alt="QR" className="w-[200px] h-[200px] rounded-xl" />
-                  ) : (
-                    <div className="w-[200px] h-[200px] rounded-xl border border-gray-border flex items-center justify-center text-[11px] text-gray-text">
-                      QR 생성 중…
-                    </div>
-                  )}
-                  {/* 제목 */}
-                  <p className="text-[11px] text-center leading-tight px-1">
-                    <span className="font-semibold text-ink">{storeName}</span>
-                    <span className="text-gray-text"> '{selected.account_name}' 선결제 QR</span>
-                  </p>
-                  {/* URL + 복사 */}
-                  <div className="flex items-center gap-1 w-[200px] border border-gray-border rounded-lg px-2 py-1 bg-gray-bg">
-                    <span className="flex-1 text-[10px] text-gray-text truncate text-left min-w-0" style={{ direction: 'rtl', unicodeBidi: 'plaintext' }}>
-                      {selectedQrUrl}
-                    </span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(selectedQrUrl)
-                        setQrCopied(true)
-                        setTimeout(() => setQrCopied(false), 2000)
-                      }}
-                      className="flex-shrink-0"
-                      title="URL 복사"
-                    >
-                      {qrCopied ? (
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="#16a84c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="8" height="9" rx="1.5" stroke="#727272" strokeWidth="1.4"/><path d="M11 5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v6A1.5 1.5 0 0 0 4 11.5H5" stroke="#727272" strokeWidth="1.4" strokeLinecap="round"/></svg>
-                      )}
-                    </button>
-                  </div>
-                  {/* 버튼 3개 */}
-                  <div className="flex gap-1 w-[200px]">
-                    <button
-                      disabled={!selectedQrDataUrl}
-                      onClick={() => {
-                        if (!selectedQrDataUrl) return
-                        const a = document.createElement('a')
-                        a.href = selectedQrDataUrl
-                        a.download = `QR_${selected.account_name}.png`
-                        a.click()
-                      }}
-                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-gray-border text-ink hover:bg-gray-bg disabled:opacity-40 transition-colors"
-                    >
-                      이미지 저장
-                    </button>
-                    <button
-                      disabled={!selectedQrDataUrl}
-                      onClick={handlePrintQr}
-                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-gray-border text-ink hover:bg-gray-bg disabled:opacity-40 transition-colors"
-                    >
-                      PDF 출력
-                    </button>
-                    <button
-                      disabled={!selectedQrDataUrl}
-                      onClick={handlePrintQrReceipt}
-                      className="flex-1 py-1.5 text-[11px] font-bold rounded-lg bg-ink text-white hover:bg-ink/90 disabled:opacity-40 transition-colors"
-                    >
-                      영수증 출력
-                    </button>
-                  </div>
-                </div>
-
-                {/* 오른쪽: 6가지 정보 */}
-                <div className="flex-1 space-y-4 text-[13px] pt-1">
-                  <InfoRow label="담당자"        value={selected.contact_person ?? '—'} />
-                  <InfoRow label="연락처"        value={selected.contact_phone ?? '—'} />
-                  <InfoRow label="기관명"        value={selected.organization_name ?? '—'} />
-                  <InfoRow label="PIN"           value={selected.pin_code} />
-                  <InfoRow label="잔액 경고 기준" value={won(selected.warning_threshold)} />
-                  <InfoRow label="이번달 사용액"  value={`-${won(monthlyUsage[selected.account_code] ?? 0)}`} />
-                </div>
-              </div>
-
-              {/* 이력 탭 */}
-              <div className="flex gap-0 border-b border-gray-border mb-3">
-                {(['orders', 'charges', 'members', 'statement'] as const).map(t => (
-                  <button key={t} onClick={() => { setDetailTab(t); setOrderPage(0); setChargePage(0) }}
-                    className={`px-3 py-2 text-[11px] font-bold border-b-2 transition-colors
-                      ${detailTab === t ? 'border-[#00DD67] text-[#008F42]' : 'border-transparent text-gray-text hover:text-ink'}`}>
-                    {t === 'orders'    ? '주문 내역'
-                      : t === 'charges'   ? '충전 이력'
-                      : t === 'members'   ? `누적 주문자${members.length > 0 ? ` (${members.length})` : ''}`
-                      : '이용내역서'}
-                  </button>
-                ))}
-              </div>
-
-              {/* 주문 내역 */}
-              {detailTab === 'orders' && (() => {
-                const total = accountOrders.length
-                const pages = Math.ceil(total / PAGE_SIZE)
-                const slice = accountOrders.slice(orderPage * PAGE_SIZE, (orderPage + 1) * PAGE_SIZE)
-                return (
-                  <div>
-                    <div className="space-y-2">
-                      {total === 0
-                        ? <div className="text-[11px] text-gray-text py-2">주문 이력 없음</div>
-                        : slice.map(o => {
-                            const dt = new Date(o.createdAt)
-                            const DAY = ['일','월','화','수','목','금','토']
-                            const dateStr = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
-                            const timeStr = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-                            const dow = DAY[dt.getDay()]
-                            return (
-                              <div key={o.code} className="bg-gray-bg rounded-lg px-3 py-2 text-[11px]">
-                                {/* 날짜·방법 + 합계·상태 */}
-                                <div className="flex justify-between items-start mb-2">
-                                  <span className="text-gray-text">{dateStr} ({dow}) {timeStr} · {o.method}</span>
-                                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                                    <StatusTag status={o.status} />
-                                    <span className="font-bold text-ink">{won(o.total)}</span>
-                                  </div>
-                                </div>
-                                {/* 주문자 */}
-                                <div className="text-[11px] text-gray-text mb-1">
-                                  {o.orderer}{o.phone ? ` · ${o.phone}` : ''}
-                                </div>
-                                {/* 메뉴별 한 줄씩 */}
-                                <div className="space-y-1.5 border-t border-gray-border pt-2">
-                                  {o.items.map((item, idx) => (
-                                    <div key={idx} className="flex justify-between items-start gap-2">
-                                      <div className="min-w-0">
-                                        <span className="font-semibold text-ink">
-                                          {item.qty > 1 ? `${item.name} ×${item.qty}` : item.name}
-                                        </span>
-                                        {item.options.length > 0 && (
-                                          <div className="text-[11px] text-gray-text mt-0.5 leading-snug">
-                                            {item.options.join(' · ')}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <span className="text-ink flex-shrink-0 font-medium">{won(item.price * item.qty)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                {/* 주문 후 잔액 */}
-                                {o.balanceAfter !== undefined && o.status !== '취소' && (
-                                  <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-border">
-                                    <span className="text-[11px] text-gray-text">주문 후 잔액</span>
-                                    <span className={`text-[11px] font-bold ${o.balanceAfter < 0 ? 'text-danger' : 'text-green'}`}>
-                                      {o.balanceAfter < 0 ? `- ${won(Math.abs(o.balanceAfter))}` : won(o.balanceAfter)}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })
-                      }
-                    </div>
-                    {pages > 1 && (
-                      <div className="flex items-center justify-center gap-1 mt-3">
-                        <button onClick={() => setOrderPage(0)} disabled={orderPage === 0}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
-                          «
-                        </button>
-                        <button onClick={() => setOrderPage(p => p - 1)} disabled={orderPage === 0}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
-                          ‹ 이전
-                        </button>
-                        <span className="text-[11px] text-gray-text px-1">{orderPage + 1} / {pages}</span>
-                        <button onClick={() => setOrderPage(p => p + 1)} disabled={orderPage >= pages - 1}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
-                          다음 ›
-                        </button>
-                        <button onClick={() => setOrderPage(pages - 1)} disabled={orderPage >= pages - 1}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">
-                          »
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* 충전 이력 */}
-              {detailTab === 'charges' && (() => {
-                const { year, month } = calMonth
-                const firstDay    = new Date(year, month, 1).getDay()
-                const daysInMonth = new Date(year, month + 1, 0).getDate()
-                const monthLabel  = `${year}년 ${month + 1}월`
-
-                // 이 달 충전 이력
-                const monthDeposits = deposits.filter(d => {
-                  const dt = new Date(d.created_at)
-                  return dt.getFullYear() === year && dt.getMonth() === month
-                })
-
-                // 날짜별 집계
-                const dayMap: Record<number, { count: number; total: number }> = {}
-                monthDeposits.forEach(d => {
-                  const day = new Date(d.created_at).getDate()
-                  if (!dayMap[day]) dayMap[day] = { count: 0, total: 0 }
-                  dayMap[day].count++
-                  dayMap[day].total += d.amount
-                })
-                const monthTotal = monthDeposits.reduce((s, d) => s + d.amount, 0)
-                const monthCount = monthDeposits.length
-
-                // 캘린더 셀
-                const cells: (number | null)[] = []
-                for (let i = 0; i < firstDay; i++) cells.push(null)
-                for (let i = 1; i <= daysInMonth; i++) cells.push(i)
-                while (cells.length % 7 !== 0) cells.push(null)
-
-                const today = new Date()
-                const DAY_LABELS = ['일','월','화','수','목','금','토']
-                const DAY = ['일','월','화','수','목','금','토']
-
-                return (
-                  <div>
-                    {/* ── 캘린더 ── */}
-                    <div className="mb-4">
-                      {/* 헤더: 월 이동 + 이번 달 통계 */}
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => setCalMonth(c => { const d = new Date(c.year, c.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}
-                            className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-bg text-gray-text text-[16px] leading-none"
-                          >‹</button>
-                          <button
-                            onClick={() => setMonthPickerOpen(true)}
-                            className="text-[11px] font-bold text-ink w-[88px] text-center hover:text-green transition-colors underline underline-offset-2 decoration-dotted"
-                          >{monthLabel}</button>
-                          <button
-                            onClick={() => setCalMonth(c => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}
-                            className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-bg text-gray-text text-[16px] leading-none"
-                          >›</button>
-                        </div>
-                        <div className="text-right">
-                          {monthCount > 0 ? (
-                            <>
-                              <p className="text-[11px] font-bold text-green">+{won(monthTotal)}</p>
-                              <p className="text-[10px] text-gray-text">{monthCount}회 충전</p>
-                            </>
-                          ) : (
-                            <p className="text-[11px] text-gray-text">충전 없음</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* 월 선택 모달 */}
-                      {monthPickerOpen && (() => {
-                        // 충전 이력 있는 월만 집계
-                        const monthSummary: Record<string, { year: number; month: number; total: number; count: number }> = {}
-                        deposits.forEach(d => {
-                          const dt = new Date(d.created_at)
-                          const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-                          if (!monthSummary[key]) monthSummary[key] = { year: dt.getFullYear(), month: dt.getMonth(), total: 0, count: 0 }
-                          monthSummary[key].total += d.amount
-                          monthSummary[key].count++
-                        })
-                        const sortedMonths = Object.entries(monthSummary).sort((a, b) => b[0].localeCompare(a[0]))
-                        const allTimeTotal = deposits.reduce((s, d) => s + d.amount, 0)
-
-                        return (
-                          <div
-                            className="fixed inset-0 z-[300] flex items-center justify-center"
-                            style={{ background: 'rgba(0,0,0,0.35)' }}
-                            onClick={() => setMonthPickerOpen(false)}
-                          >
-                            <div
-                              className="modal-in bg-white rounded-2xl shadow-2xl w-[280px] max-h-[420px] flex flex-col overflow-hidden"
-                              onClick={e => e.stopPropagation()}
-                            >
-                              {/* 모달 헤더 */}
-                              <div className="flex items-center justify-between px-4 pt-4 pb-0 flex-shrink-0">
-                                <span className="text-[11px] font-bold text-ink">월 선택</span>
-                                <div className="flex items-center gap-2.5">
-                                  <div className="text-right">
-                                    <p className="text-[10px] text-gray-text leading-none mb-0.5">총 충전액</p>
-                                    <p className="text-[11px] font-extrabold text-green leading-none">+{won(allTimeTotal)}</p>
-                                  </div>
-                                  <button onClick={() => setMonthPickerOpen(false)} className="text-gray-text text-[16px] hover:text-ink leading-none">✕</button>
-                                </div>
-                              </div>
-                              {/* 월 리스트 */}
-                              <div className="overflow-y-auto flex-1">
-                                {sortedMonths.length === 0 ? (
-                                  <p className="text-[11px] text-gray-text text-center py-6">충전 이력 없음</p>
-                                ) : sortedMonths.map(([key, info]) => {
-                                  const isSelected = calMonth.year === info.year && calMonth.month === info.month
-                                  return (
-                                    <button
-                                      key={key}
-                                      onClick={() => { setCalMonth({ year: info.year, month: info.month }); setMonthPickerOpen(false) }}
-                                      className={`w-full flex items-center justify-between px-3 py-2.5 text-left border-b border-gray-border/50 transition-colors
-                                        ${isSelected ? 'bg-green-soft' : 'hover:bg-gray-bg'}`}
-                                    >
-                                      <div>
-                                        <span className={`text-[11px] font-bold ${isSelected ? 'text-green' : 'text-ink'}`}>
-                                          {info.year}년 {info.month + 1}월
-                                        </span>
-                                        <span className="text-[10px] text-gray-text ml-2">{info.count}회</span>
-                                      </div>
-                                      <span className={`text-[11px] font-extrabold ${isSelected ? 'text-green' : 'text-ink'}`}>
-                                        +{won(info.total)}
-                                      </span>
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })()}
-
-                      {/* 요일 헤더 */}
-                      <div className="grid grid-cols-7 mb-0.5">
-                        {DAY_LABELS.map((d, i) => (
-                          <div key={d} className={`text-center text-[10px] font-bold py-1 ${i === 0 ? 'text-danger' : i === 6 ? 'text-blue-500' : 'text-gray-text'}`}>{d}</div>
-                        ))}
-                      </div>
-
-                      {/* 날짜 그리드 */}
-                      <div className="grid grid-cols-7">
-                        {cells.map((day, idx) => {
-                          if (!day) return <div key={`e${idx}`} className="h-9" />
-                          const hasDeposit = !!dayMap[day]
-                          const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day
-                          const dow = (firstDay + day - 1) % 7
-                          return (
-                            <div key={day} className="flex flex-col items-center h-9 pt-0.5">
-                              <div className={`w-6 h-6 flex items-center justify-center rounded-full text-[11px] font-semibold
-                                ${isToday ? 'bg-ink text-white' : dow === 0 ? 'text-danger' : dow === 6 ? 'text-blue-500' : 'text-ink'}`}>
-                                {day}
-                              </div>
-                              {hasDeposit && (
-                                <div className="flex flex-col items-center gap-0" style={{ marginTop: 1 }}>
-                                  <div className="w-1 h-1 rounded-full bg-green" />
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* ── 구분선 ── */}
-                    <div className="border-t border-gray-border mb-3" />
-
-                    {/* ── 해당 월 충전 리스트 ── */}
-                    <div className="space-y-2">
-                      {monthCount === 0
-                        ? <div className="text-[11px] text-gray-text py-2">이 달 충전 이력 없음</div>
-                        : monthDeposits.map(d => {
-                            const dt   = new Date(d.created_at)
-                            const date = dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
-                            const time = dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-                            const dow  = DAY[dt.getDay()]
-                            const isEditing = editingDepositId === d.deposit_id
-
-                            if (isEditing) {
-                              return (
-                                <div key={d.deposit_id} className="bg-green-soft/40 border border-green/30 rounded-lg px-3 py-2 text-[11px] space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      autoFocus
-                                      value={editDepositAmt}
-                                      onChange={e => setEditDepositAmt(e.target.value.replace(/[^0-9-]/g, ''))}
-                                      onKeyDown={e => { if (e.key === 'Enter') handleSaveDeposit(d); if (e.key === 'Escape') setEditingDepositId(null) }}
-                                      inputMode="numeric"
-                                      className="flex-1 border-0 border-b-2 border-green bg-transparent px-0 py-1 text-[11px] font-bold focus:outline-none"
-                                    />
-                                    <span className="text-gray-text flex-shrink-0">원</span>
-                                  </div>
-                                  {(() => {
-                                    const newAmt = parseInt(editDepositAmt, 10)
-                                    const delta = isNaN(newAmt) ? 0 : newAmt - d.amount
-                                    if (delta === 0 || isNaN(newAmt)) return null
-                                    return (
-                                      <p className={`text-[11px] font-semibold ${delta > 0 ? 'text-green' : 'text-danger'}`}>
-                                        {delta > 0 ? `▲ +${won(delta)} 잔액 증가` : `▼ ${won(Math.abs(delta))} 잔액 감소`}
-                                      </p>
-                                    )
-                                  })()}
-                                  <div>
-                                    <p className="text-[10px] font-bold text-gray-text mb-1">결제수단</p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
-                                        <button key={m} onClick={() => setEditDepositMethod(m)}
-                                          className={`px-2 py-1 rounded-full border text-[10px] font-semibold transition-colors focus:outline-none
-                                            ${editDepositMethod === m ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-white'}`}>
-                                          {m}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <input
-                                    value={editDepositNote}
-                                    onChange={e => setEditDepositNote(e.target.value)}
-                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveDeposit(d); if (e.key === 'Escape') setEditingDepositId(null) }}
-                                    placeholder="비고 (선택)"
-                                    className="w-full border-0 border-b border-gray-border bg-transparent px-0 py-1 text-[11px] focus:outline-none"
-                                  />
-                                  <div className="flex gap-2 pt-1">
-                                    <button onClick={() => setEditingDepositId(null)}
-                                      className="flex-1 py-1.5 rounded-lg bg-gray-100 text-gray-text text-[11px] font-bold hover:bg-gray-200">취소</button>
-                                    <button onClick={() => handleSaveDeposit(d)}
-                                      className="flex-1 py-1.5 rounded-lg bg-green text-white text-[11px] font-bold hover:bg-[#015c28]">저장</button>
-                                  </div>
-                                </div>
-                              )
-                            }
-
-                            return (
-                              <div key={d.deposit_id} className="bg-gray-bg rounded-lg px-3 py-2 flex justify-between items-center text-[11px] group/dep">
-                                <div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-green">+{won(d.amount)}</span>
-                                    <span className="text-[10px] font-semibold text-gray-text bg-white border border-gray-border px-1.5 py-0.5 rounded-full">
-                                      {d.payment_method ?? '신용카드'}
-                                    </span>
-                                  </div>
-                                  <div className="text-gray-text">
-                                    {date} ({dow}) {time}
-                                    {d.note ? ` · ${d.note}` : ''}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => { setEditingDepositId(d.deposit_id); setEditDepositAmt(String(d.amount)); setEditDepositNote(d.note ?? ''); setEditDepositMethod(d.payment_method ?? '신용카드') }}
-                                    className="text-[11px] font-bold text-gray-text border border-gray-border rounded-md px-2 py-0.5 hover:bg-white hover:text-ink transition-colors opacity-0 group-hover/dep:opacity-100"
-                                  >수정</button>
-                                  <span className="text-[10px] font-bold text-green bg-green-soft px-2 py-0.5 rounded-full flex-shrink-0">충전</span>
-                                </div>
-                              </div>
-                            )
-                          })
-                      }
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* 누적 주문자 */}
-              {detailTab === 'members' && (
-                <div>
-                  {members.length === 0 ? (
-                    <div className="text-[11px] text-gray-text py-2">등록된 주문자 없음</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {members.map((m, idx) => {
-                        const lastDt = m.last_ordered_at ? new Date(m.last_ordered_at) : null
-                        const lastStr = lastDt
-                          ? lastDt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' })
-                          : '—'
-                        return (
-                          <div key={m.id} className="bg-gray-bg rounded-lg px-3 py-2 flex items-center gap-2.5 text-[11px] group/member">
-                            <span className="text-[11px] text-gray-text w-5 text-center flex-shrink-0">{idx + 1}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-ink truncate">{m.name}</div>
-                              <div className="text-gray-text text-[11px] mt-0.5">
-                                {m.phone ?? '—'} · 마지막 {lastStr}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="text-[11px] font-bold text-green bg-green-soft px-2 py-0.5 rounded-full">
-                                {m.order_count}회
-                              </span>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 이용내역서 */}
-              {detailTab === 'statement' && (() => {
-                const rows = buildStmtRows()
-
-                function prevMonth() {
-                  if (stmtAllTime) { setStmtAllTime(false); return }
-                  const [y, m] = stmtMonth.split('-').map(Number)
-                  const d = new Date(y, m - 2, 1)
-                  setStmtMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-                }
-                function nextMonth() {
-                  if (stmtAllTime) return
-                  const [y, m] = stmtMonth.split('-').map(Number)
-                  const d = new Date(y, m, 1)
-                  setStmtMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-                }
-
-                const fmtRowDate = (iso: string) => {
-                  const d = new Date(iso)
-                  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-                }
-
-                return (
-                  <div>
-                    {/* 컨트롤 바 */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-1">
-                        <button onClick={prevMonth} disabled={stmtAllTime}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">‹</button>
-                        <span className="text-[11px] font-semibold w-24 text-center">
-                          {stmtAllTime ? '전체 기간' : stmtMonth}
-                        </span>
-                        <button onClick={nextMonth} disabled={stmtAllTime}
-                          className="px-2 py-1 text-[11px] font-bold rounded border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">›</button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setStmtAllTime(v => !v)}
-                          className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors
-                            ${stmtAllTime ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}
-                        >
-                          전체 기간
-                        </button>
-                        <button
-                          onClick={downloadCSV}
-                          className="px-3 py-1.5 rounded-lg bg-ink text-white text-[11px] font-bold hover:bg-ink/80 transition-colors"
-                        >
-                          CSV 다운로드
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 테이블 */}
-                    {stmtLoading ? (
-                      <div className="flex items-center justify-center py-8 text-gray-text text-[11px]">
-                        <div className="w-5 h-5 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
-                        불러오는 중...
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto -mx-1">
-                        <table className="text-[10px] border-collapse w-full">
-                          <thead>
-                            <tr className="bg-gray-bg text-[9px] font-bold text-gray-text uppercase">
-                              <th colSpan={3} className="text-left py-1.5 border border-gray-border px-1.5">선결제내역</th>
-                              <th colSpan={5} className="text-left py-1.5 border border-gray-border px-1.5">사용내역</th>
-                              <th rowSpan={2} className="text-left py-1.5 border border-gray-border px-1.5 whitespace-nowrap">잔액</th>
-                            </tr>
-                            <tr className="bg-gray-bg text-[9px] font-semibold text-gray-text">
-                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">일자</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">금액</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left">기타</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">일자</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left whitespace-nowrap">금액</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left">내역</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left">비고</th>
-                              <th className="py-1 px-1.5 border border-gray-border text-left">서명</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rows.length === 0 ? (
-                              <tr>
-                                <td colSpan={9} className="text-center py-5 text-gray-text text-[11px]">내역 없음</td>
-                              </tr>
-                            ) : rows.map((row, idx) => {
-                              if (row.type === 'adjustment') {
-                                return (
-                                  <tr key={idx} className="bg-orange-50">
-                                    {/* 선결제내역: 일자 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-orange-600 font-medium whitespace-nowrap">
-                                      <div className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1 py-0.5 rounded mb-0.5 w-fit">잔액조정</div>
-                                      {fmtRowDate(row.date)}
-                                    </td>
-                                    {/* 선결제내역: 금액 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount >= 0 ? 'var(--green)' : 'var(--danger)' }}>
-                                      {row.amount >= 0 ? `+${won(row.amount)}` : `-${won(Math.abs(row.amount))}`}
-                                    </td>
-                                    {/* 선결제내역: 기타 */}
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    {/* 사용내역: 일자 */}
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    {/* 사용내역: 금액 */}
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    {/* 사용내역: 내역 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px] break-words">
-                                      {row.reason || '—'}
-                                    </td>
-                                    {/* 사용내역: 비고 — 조정 전후 잔액 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px]">
-                                      <span className="whitespace-nowrap">{won(row.balanceBefore)}</span>
-                                      <span className="text-gray-text mx-0.5">→</span>
-                                      <span className="whitespace-nowrap">{won(row.balanceAfter)}</span>
-                                    </td>
-                                    {/* 사용내역: 서명 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text text-[9px]">
-                                      {row.orderer ?? ''}
-                                    </td>
-                                    {/* 잔액 */}
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold" style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>
-                                      {won(row.balanceAfter)}
-                                    </td>
-                                  </tr>
-                                )
-                              } else if (row.type === 'deposit') {
-                                return (
-                                  <tr key={idx} className="hover:bg-green-soft/20 transition-colors">
-                                    <td className="py-1 px-1.5 border border-gray-border text-green font-medium whitespace-nowrap">{fmtRowDate(row.date)}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount < 0 ? 'var(--danger)' : 'var(--green)' }}>
-                                      {row.amount < 0 ? `-${won(Math.abs(row.amount))}` : `+${won(row.amount)}`}
-                                    </td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.paymentMethod}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-bold text-green">{won(row.balanceAfter)}</td>
-                                  </tr>
-                                )
-                              } else {
-                                return (
-                                  <tr key={idx} className="hover:bg-gray-bg/60 transition-colors">
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border" />
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text whitespace-nowrap">{fmtRowDate(row.date)}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium text-ink whitespace-nowrap">-{won(row.amount)}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-ink break-words">{row.summary}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text break-words">{row.note}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-gray-text">{row.orderer}</td>
-                                    <td className="py-1 px-1.5 border border-gray-border text-right font-medium">
-                                      <span style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>{won(row.balanceAfter)}</span>
-                                      {row.discrepancy !== undefined && (
-                                        <span
-                                          className="inline-flex items-center justify-center ml-0.5 cursor-help w-3.5 h-3.5 rounded-full bg-green text-white text-[8px] font-bold"
-                                          onMouseEnter={e => {
-                                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                                            setDiscTooltip({ x: r.right, y: r.bottom + 6, amount: row.discrepancy! })
-                                          }}
-                                          onMouseLeave={() => setDiscTooltip(null)}
-                                        >?</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                )
-                              }
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* 삭제 / 복구 — 맨 하단 */}
-              <div className="pt-5 mt-5 border-t border-gray-border">
-                {showInactive ? (
-                  <div className="space-y-2">
-                    <button onClick={handleRestoreAccount} className="w-full py-3 rounded-xl text-[11px] font-bold text-[#008F42] hover:bg-green-soft transition-colors border border-[#00DD67]/30 focus:outline-none">
-                      거래처 복구
-                    </button>
-                    {!hardDeleteConfirm ? (
-                      <button onClick={() => setHardDeleteConfirm(true)} className="w-full py-3 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
-                        영구 삭제
-                      </button>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="mb-2">
-                          <p className="text-[11px] text-center text-ink font-semibold leading-tight">정말 영구 삭제하시겠어요?</p>
-                          <p className="text-[11px] text-center text-danger leading-tight mt-0.5">복구할 수 없습니다.</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => setHardDeleteConfirm(false)} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
-                          <button onClick={handleHardDeleteAccount} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">영구 삭제 확인</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : !deleteConfirm ? (
-                  <button onClick={() => setDeleteConfirm(true)} className="w-full py-3 rounded-xl text-[11px] font-bold text-danger hover:bg-red-50 transition-colors border border-danger/30 focus:outline-none">
-                    거래처 삭제
-                  </button>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="mb-5">
-                      <p className="text-[11px] text-center text-ink font-semibold leading-tight">정말 삭제하시겠어요?</p>
-                      <p className="text-[11px] text-center text-gray-text leading-tight mt-0.5">추후 복구할 수 있어요.</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-gray-100 text-gray-text hover:bg-gray-200 focus:outline-none">취소</button>
-                      <button onClick={handleDeleteAccount} className="flex-1 py-3 rounded-xl text-[11px] font-bold bg-danger text-white hover:bg-red-700 focus:outline-none">삭제 확인</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── 거래처 추가 모달 ── */}
+      {/* ── 거래처 추가 모달 — scale 제거, FIGMA_SCALE로 고정 px 재계산 (메뉴 상세 모달과 동일 패턴) ── */}
       {addOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="modal-in bg-white rounded-2xl shadow-xl px-8 py-10 w-[480px] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-7">
-              <div className="text-[17px] font-semibold">거래처 추가</div>
-              <button onClick={() => setAddOpen(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setAddOpen(false); setAddDupAccount(null); setAddConfirm(false) }}>
+          <div
+            className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            style={{ width: 900 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 px-[62px] pt-[39px] pb-[15px]">
+              <h2 className="text-[26px] font-semibold text-ink">계정 추가</h2>
             </div>
 
-            <div className="space-y-5">
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">거래처명 <span className="text-danger">*</span></label>
-                <div className="relative">
-                  <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value.slice(0, 25) }))}
-                    maxLength={25} placeholder="예: 북구청 공원녹지과" className={INPUT_CLS} />
-                  <span className={`absolute right-2.5 bottom-2 text-[10px] ${newForm.name.length >= 25 ? 'text-danger' : 'text-gray-text'}`}>
-                    {newForm.name.length}/25
-                  </span>
-                </div>
-              </div>
+            <div className="overflow-y-auto flex-1 px-[62px] pb-[26px]">
+              <CustFormField label="선결제 계정이름">
+                <input
+                  value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value.slice(0, 50) }))}
+                  maxLength={50} placeholder="ex) 구청 공원녹지과" className={CUST_INPUT_CLS}
+                />
+              </CustFormField>
 
-              <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-2">유형</label>
-                <div className="flex gap-2">
-                  {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
+              <CustFormField label="계정 유형">
+                <div className="flex gap-[6px] flex-wrap">
+                  {customerTypes.map(t => (
                     <button key={t} onClick={() => setNewForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none
-                        ${newForm.type === t ? 'bg-green-soft text-green' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      {t}
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[13px] font-semibold whitespace-nowrap transition-colors ${
+                        newForm.type === t ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
+                      }`}>
+                      {TYPE_LABEL[t] ?? t}
                     </button>
                   ))}
                 </div>
-              </div>
+              </CustFormField>
 
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">기관명</label>
-                <input value={newForm.org} onChange={e => setNewForm(f => ({ ...f, org: e.target.value }))}
-                  placeholder="예: 북구청" className={INPUT_CLS} />
-              </div>
+              <CustFormField label="선결제 유효기간">
+                <div className="flex gap-[6px]">
+                  {PREPAY_VALIDITY_OPTIONS.map(v => (
+                    <button key={v} onClick={() => setNewForm(f => ({ ...f, prepayValidity: v }))}
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[13px] font-semibold whitespace-nowrap transition-colors ${
+                        newForm.prepayValidity === v ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
+                      }`}>
+                      {PREPAY_VALIDITY_LABEL[v]}
+                    </button>
+                  ))}
+                </div>
+              </CustFormField>
 
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">담당자 <span className="text-danger">*</span></label>
-                <input value={newForm.manager} onChange={e => setNewForm(f => ({ ...f, manager: e.target.value }))}
-                  placeholder="예: 김민준" className={INPUT_CLS} />
-              </div>
+              <CustFormField label="관리자 이름">
+                <input value={newForm.manager} onChange={e => setNewForm(f => ({ ...f, manager: e.target.value }))} className={CUST_INPUT_CLS} />
+              </CustFormField>
 
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">연락처</label>
-                <input value={newForm.phone} onChange={e => setNewForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
-                  placeholder="010-0000-0000" inputMode="numeric" className={INPUT_CLS} />
-              </div>
-
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">PIN <span className="text-danger">*</span> (4자리)</label>
-                <input value={newForm.pin} onChange={e => { setNewForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })); setAddPinError('') }}
-                  placeholder="0000" maxLength={4} inputMode="numeric" className={INPUT_CLS + ' font-mono'} />
-                {addPinError && <p className="text-[11px] text-danger font-semibold mt-1">{addPinError}</p>}
-              </div>
-
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">잔액 경고 기준</label>
-                <input value={newForm.warnThreshold} onChange={e => setNewForm(f => ({ ...f, warnThreshold: e.target.value }))}
-                  placeholder="30000" className={INPUT_CLS} />
-              </div>
-            </div>
-
-            {/* 초기 잔액 */}
-            <div className="mt-6 pt-5">
-              <div className="space-y-3">
-                <div>
-                  <label className="text-[13px] font-semibold text-gray-text block mb-1.5">초기 잔액 (선택)</label>
-                  <div className="flex items-baseline gap-2">
-                    <input
-                      value={newForm.initialDeposit}
-                      onChange={e => {
-                        const raw = e.target.value.replace(/[^0-9-]/g, '')
-                        // 맨 앞 '-' 하나만 허용
-                        const cleaned = raw.startsWith('-') ? '-' + raw.slice(1).replace(/-/g, '') : raw.replace(/-/g, '')
-                        setNewForm(f => ({ ...f, initialDeposit: cleaned }))
-                      }}
-                      placeholder="예: 300000 또는 -15000"
-                      inputMode="numeric"
-                      className="flex-1 border-0 border-b-2 border-gray-border bg-transparent px-0 py-1.5 text-[16px] font-bold focus:outline-none focus:border-[#00DD67] transition-colors"
-                    />
-                    <span className="text-[11px] font-semibold text-gray-text flex-shrink-0">원</span>
+              <CustFormField label="관리자 연락처">
+                <input
+                  value={newForm.phone}
+                  onChange={e => { setNewForm(f => ({ ...f, phone: formatPhone(e.target.value) })); setAddDupAccount(null); setAddPhoneError(''); setAddConfirm(false) }}
+                  inputMode="numeric" placeholder="010-0000-0000" className={CUST_INPUT_CLS}
+                />
+                {addPhoneError && <p className="text-[12px] text-danger font-semibold mt-[8px]">{addPhoneError}</p>}
+                {addDupAccount && (
+                  <div className="mt-[10px] px-[15px] py-[13px] rounded-[10px] bg-orange-50 border border-orange-200">
+                    <p className="text-[13px] font-semibold text-orange-700 mb-[10px]">
+                      이 번호로 등록된 계정이 있어요: {addDupAccount.account_name}
+                    </p>
+                    <div className="flex gap-[8px]">
+                      <button
+                        onClick={goChargeExistingAccount}
+                        className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-white border border-orange-300 text-orange-700 hover:bg-orange-100 transition-colors"
+                      >
+                        기존 계정에 충전하기
+                      </button>
+                      <button
+                        onClick={() => { setAddDupAccount(null); setAddConfirm(true) }}
+                        className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-orange-600 text-white hover:bg-orange-700 transition-colors"
+                      >
+                        그래도 신규로 만들기
+                      </button>
+                    </div>
                   </div>
-                  {(() => {
-                    const v = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
-                    if (!newForm.initialDeposit || isNaN(v) || v === 0) return null
-                    return (
-                      <p className={`text-[11px] font-bold mt-1 ${v < 0 ? 'text-danger' : 'text-green'}`}>
-                        {v < 0 ? `미수금 -${won(Math.abs(v))}` : `잔액 ${won(v)}`}
-                      </p>
-                    )
-                  })()}
-                </div>
-                <div>
-                  <label className="text-[13px] font-semibold text-gray-text block mb-1.5">비고</label>
-                  <input
-                    value={newForm.initialDepositMemo}
-                    onChange={e => setNewForm(f => ({ ...f, initialDepositMemo: e.target.value }))}
-                    placeholder="예: 6월 선결제"
-                    className={INPUT_CLS}
-                  />
-                </div>
-              </div>
-            </div>
+                )}
+              </CustFormField>
 
-            <div className="flex gap-2.5 mt-6">
-              <button onClick={() => { setAddOpen(false); setAddPinError('') }}
-                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg focus:outline-none">
-                취소
-              </button>
-              <button
-                onClick={handleAddAccount}
-                disabled={!newForm.name.trim() || !newForm.manager.trim() || newForm.pin.length !== 4}
-                className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold hover:bg-[#00BB55] transition-colors focus:outline-none disabled:opacity-50">
-                등록
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              <CustFormField label="PIN 번호 (4자리, 선결제 주문시 사용)">
+                <PinField
+                  value={newForm.pin}
+                  onChange={v => { setNewForm(f => ({ ...f, pin: v })); setAddPinError('') }}
+                  placeholder="ex) 자주쓰는 4자리번호"
+                  className={CUST_INPUT_CLS + ' font-mono tracking-[4px]'}
+                />
+                {addPinError && <p className="text-[12px] text-danger font-semibold mt-[8px]">{addPinError}</p>}
+              </CustFormField>
 
-      {/* ── 정보 수정 모달 ── */}
-      {editOpen && selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="modal-in bg-white rounded-2xl shadow-xl px-8 py-10 w-[480px] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-7">
-              <div className="text-[17px] font-semibold">정보 수정</div>
-              <button onClick={() => setEditOpen(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
-            </div>
-            <div className="space-y-5">
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">거래처명 <span className="text-danger">*</span></label>
-                <div className="relative">
-                  <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value.slice(0, 25) }))}
-                    maxLength={25} className={INPUT_CLS} />
-                  <span className={`absolute right-2.5 bottom-2 text-[10px] ${editForm.name.length >= 25 ? 'text-danger' : 'text-gray-text'}`}>
-                    {editForm.name.length}/25
-                  </span>
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] font-bold text-gray-text block mb-2">유형</label>
-                <div className="flex gap-2">
-                  {(['과', '기업', '개인', '기타'] as DbAccount['account_type'][]).map(t => (
-                    <button key={t} onClick={() => setEditForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none
-                        ${editForm.type === t ? 'bg-green-soft text-green' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">기관명</label>
-                <input value={editForm.org} onChange={e => setEditForm(f => ({ ...f, org: e.target.value }))} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">담당자 <span className="text-danger">*</span></label>
-                <input value={editForm.manager} onChange={e => setEditForm(f => ({ ...f, manager: e.target.value }))} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">연락처</label>
-                <input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: formatPhone(e.target.value) }))} inputMode="numeric" placeholder="010-0000-0000" className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">PIN <span className="text-danger">*</span> (4자리)</label>
-                <input value={editForm.pin} onChange={e => { setEditForm(f => ({ ...f, pin: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })); setEditPinError('') }}
-                  maxLength={4} inputMode="numeric" className={INPUT_CLS + ' font-mono'} />
-                {editPinError && <p className="text-[11px] text-danger font-semibold mt-1">{editPinError}</p>}
-              </div>
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">잔액 경고 기준</label>
-                <input value={editForm.warnThreshold} onChange={e => setEditForm(f => ({ ...f, warnThreshold: e.target.value }))} className={INPUT_CLS} />
-              </div>
-              <div>
-                <label className="text-[13px] font-semibold text-gray-text block mb-1.5">선결제 잔액</label>
-                <div className="flex items-baseline gap-2">
+              <CustFormField label="선결제 금액">
+                <div className="field-wrap flex items-center border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px]">
                   <input
-                    value={editForm.balance}
+                    value={newForm.initialDeposit}
                     onChange={e => {
                       const raw = e.target.value.replace(/[^0-9-]/g, '')
                       const cleaned = raw.startsWith('-') ? '-' + raw.slice(1).replace(/-/g, '') : raw.replace(/-/g, '')
-                      setEditForm(f => ({ ...f, balance: cleaned }))
+                      setNewForm(f => ({ ...f, initialDeposit: cleaned }))
                     }}
-                    inputMode="numeric"
-                    className={INPUT_CLS + ' font-bold'}
+                    inputMode="numeric" placeholder="0" className="field-bare flex-1 outline-none text-[14px] text-ink"
                   />
-                  <span className="text-[11px] font-semibold text-gray-text flex-shrink-0">원</span>
+                  <span className="text-[14px] text-ink">원</span>
                 </div>
+                {/* 양수일 때의 '잔액 N원'은 뺐다 — 방금 친 숫자를 바로 아래에서 한 번 더
+                    읽어주는 것뿐이라 아무 말도 하지 않는다.
+                    음수는 남긴다. 마이너스를 치면 '미수금'이 된다는 건 숫자만 봐선 모른다. */}
                 {(() => {
-                  const v = parseInt(editForm.balance.replace(/,/g, ''), 10)
-                  const delta = isNaN(v) ? 0 : v - selected.current_balance
-                  if (isNaN(v) || delta === 0) return null
+                  const v = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
+                  if (!newForm.initialDeposit || isNaN(v) || v >= 0) return null
                   return (
-                    <p className={`text-[11px] font-semibold mt-1 ${delta > 0 ? 'text-green' : 'text-danger'}`}>
-                      {delta > 0 ? `▲ +${won(delta)} 증가` : `▼ ${won(delta)} 감소`}
+                    <p className="text-[13px] font-semibold mt-[8px] text-danger">
+                      미수금 -{won(Math.abs(v))}
                     </p>
                   )
                 })()}
-                {(() => {
-                  const v = parseInt(editForm.balance.replace(/,/g, ''), 10)
-                  const delta = isNaN(v) ? 0 : v - selected.current_balance
-                  if (isNaN(v) || delta === 0) return null
-                  return (
-                    <div className="mt-2">
-                      <label className="text-[13px] font-semibold text-gray-text block mb-1.5">수정 사유 <span className="text-gray-400 text-[10px] font-normal">(필수)</span></label>
-                      <input
-                        value={editForm.adjustReason}
-                        onChange={e => setEditForm(f => ({ ...f, adjustReason: e.target.value }))}
-                        placeholder="예: 이전 잔액 이월, 오류 수정 등"
-                        className={INPUT_CLS + ' text-[11px]'}
-                      />
-                    </div>
-                  )
-                })()}
-              </div>
+              </CustFormField>
+
+              <CustFormField label="비고">
+                <input value={newForm.initialDepositMemo} onChange={e => setNewForm(f => ({ ...f, initialDepositMemo: e.target.value }))} placeholder="ex) 6월 선결제" className={CUST_INPUT_CLS} />
+              </CustFormField>
+
+              {addConfirm && (
+                <div className="mt-[13px] px-[15px] py-[13px] rounded-[10px] bg-green-soft border border-green/30">
+                  <p className="text-[14px] font-semibold text-ink mb-[10px]">
+                    {newForm.manager} {newForm.phone}로 관리자 등록 링크가 발송됩니다
+                  </p>
+                  <div className="flex gap-[8px]">
+                    <button
+                      onClick={() => setAddConfirm(false)}
+                      disabled={addSubmitting}
+                      className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-white border border-gray-border text-gray-text hover:bg-gray-bg transition-colors disabled:opacity-50"
+                    >
+                      취소
+                    </button>
+                    <button
+                      onClick={handleAddAccount}
+                      disabled={addSubmitting}
+                      className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-green text-white hover:bg-green/90 transition-colors disabled:opacity-50"
+                    >
+                      {addSubmitting ? '등록 중...' : '확인'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex gap-2.5 mt-6">
-              <button onClick={() => { setEditOpen(false); setEditPinError('') }} className="flex-1 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">취소</button>
-              <button onClick={handleEditAccount}
-                disabled={(() => {
-                  if (!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4) return true
-                  const v = parseInt(editForm.balance.replace(/,/g, ''), 10)
-                  const delta = isNaN(v) ? 0 : v - (selected?.current_balance ?? 0)
-                  if (delta !== 0 && !editForm.adjustReason.trim()) return true
-                  return false
-                })()}
-                className="flex-1 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
+
+            <div className="flex items-center justify-end gap-[10px] px-[62px] py-[20px] border-t border-[#ADADAD]/30 flex-shrink-0">
+              <button onClick={() => { setAddOpen(false); setAddDupAccount(null); setAddConfirm(false) }} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-semibold hover:opacity-90 transition-opacity">
+                닫기
+              </button>
+              <button
+                onClick={openAddConfirm}
+                disabled={
+                  !newForm.name.trim() ||
+                  !newForm.manager.trim() ||
+                  !isValidManagerPhone(newForm.phone.trim()) ||
+                  newForm.pin.length !== 4 ||
+                  !newForm.initialDeposit ||
+                  parseInt(newForm.initialDeposit.replace(/,/g, ''), 10) === 0
+                }
+                className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[15px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
                 저장
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 정보 수정 모달 — 계정 추가 모달과 같은 디자인 시스템(900px · #FCFCFC · CustFormField) ── */}
+      {editOpen && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setEditOpen(false); setEditPinError('') }}>
+          <div
+            className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            style={{ width: 900 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 px-[62px] pt-[39px] pb-[15px]">
+              <h2 className="text-[26px] font-semibold text-ink">계정정보 수정</h2>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-[62px] pb-[26px]">
+              <CustFormField label="선결제 계정이름">
+                <div className="relative">
+                  <input
+                    value={editForm.name}
+                    onChange={e => setEditForm(f => ({ ...f, name: e.target.value.slice(0, 50) }))}
+                    maxLength={50} className={CUST_INPUT_CLS}
+                  />
+                  <span className={`absolute right-[14px] bottom-[11px] text-[11px] ${editForm.name.length >= 50 ? 'text-danger' : 'text-[#ADADAD]'}`}>
+                    {editForm.name.length}/50
+                  </span>
+                </div>
+              </CustFormField>
+
+              <CustFormField label="계정 유형">
+                <div className="flex gap-[6px] flex-wrap">
+                  {customerTypes.map(t => (
+                    <button key={t} onClick={() => setEditForm(f => ({ ...f, type: t }))}
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[13px] font-semibold whitespace-nowrap transition-colors ${
+                        editForm.type === t ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
+                      }`}>
+                      {TYPE_LABEL[t] ?? t}
+                    </button>
+                  ))}
+                </div>
+              </CustFormField>
+
+              <CustFormField label="선결제 유효기간">
+                <div className="flex gap-[6px]">
+                  {PREPAY_VALIDITY_OPTIONS.map(v => (
+                    <button key={v} onClick={() => setEditForm(f => ({ ...f, prepayValidity: v }))}
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[13px] font-semibold whitespace-nowrap transition-colors ${
+                        editForm.prepayValidity === v ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
+                      }`}>
+                      {PREPAY_VALIDITY_LABEL[v]}
+                    </button>
+                  ))}
+                </div>
+              </CustFormField>
+
+              <CustFormField label="관리자 이름">
+                <MaskedField
+                  value={editForm.manager}
+                  masked={maskName(editForm.manager)}
+                  onChange={v => setEditForm(f => ({ ...f, manager: v }))}
+                  placeholder="ex) 김민수"
+                />
+              </CustFormField>
+
+              <CustFormField label="관리자 연락처">
+                <MaskedField
+                  value={editForm.phone}
+                  masked={maskPhone(editForm.phone)}
+                  onChange={v => setEditForm(f => ({ ...f, phone: formatPhone(v) }))}
+                  placeholder="010-0000-0000"
+                  inputMode="numeric"
+                />
+              </CustFormField>
+
+              <CustFormField label="PIN 번호 (4자리)">
+                <PinField
+                  value={editForm.pin}
+                  onChange={v => { setEditForm(f => ({ ...f, pin: v })); setEditPinError('') }}
+                  className={CUST_INPUT_CLS + ' font-mono tracking-[4px]'}
+                />
+                {editPinError && <p className="text-[12px] text-danger font-semibold mt-[6px]">{editPinError}</p>}
+              </CustFormField>
+
+              <CustFormField label="선결제 잔액">
+                <div className={`w-full border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] font-semibold bg-[#F2F2F2] ${selected.current_balance < 0 ? 'text-danger' : 'text-ink'}`}>
+                  {won(selected.current_balance)}
+                </div>
+                <p className="text-[12px] text-[#ADADAD] mt-[6px]">잔액은 여기서 못 바꿔요. 금액 충전으로 올리거나 문의해 주세요</p>
+
+                {/* 계정 비활성화 — Figma 491:2391(메뉴 상세 모달 '삭제')과 같은 속성.
+                    되돌리기 어려운 동작이라 하단 CTA 줄이 아니라 본문 끝에 두고 한 번 더 묻는다. */}
+                {editDeactivateConfirm ? (
+                  <div className="mt-[52px] flex items-center gap-[9px]">
+                    <span className="text-[13px] text-[#FF676F]">비활성화하면 복구 전까지 목록에서 안 보여요</span>
+                    <button
+                      onClick={handleDeleteAccount}
+                      className="h-[50px] px-[26px] rounded-[13px] bg-[#FF676F] text-white text-[16px] font-medium hover:brightness-95 transition-all"
+                    >
+                      확인
+                    </button>
+                    <button
+                      onClick={() => setEditDeactivateConfirm(false)}
+                      className="h-[50px] px-[26px] rounded-[13px] bg-[#F2F2F2] text-[#787878] text-[16px] font-medium hover:brightness-95 transition-all"
+                    >
+                      취소
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setEditDeactivateConfirm(true)}
+                    className="mt-[52px] h-[50px] px-[26px] rounded-[13px] bg-[#FFEFEF] text-[#FF676F] text-[16px] font-medium hover:brightness-95 transition-all"
+                  >
+                    비활성화
+                  </button>
+                )}
+              </CustFormField>
+            </div>
+
+            <div className="flex-shrink-0 flex items-center px-[62px] pt-[18px] pb-[32px] border-t border-[#E8E4E2]">
+              <div className="flex items-center gap-[10px] ml-auto">
+              <button
+                onClick={() => { setEditOpen(false); setEditPinError('') }}
+                className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-semibold hover:opacity-90 transition-opacity"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleEditAccount}
+                disabled={!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4}
+                className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[15px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                저장
+              </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2138,128 +1935,133 @@ export default function Customers() {
         <AccountQrModal
           accountCode={accountQr}
           accountName={accounts.find(a => a.account_code === accountQr)?.account_name ?? ''}
+          qrSystem={accounts.find(a => a.account_code === accountQr)?.qr_system ?? 'legacy'}
           storeId={storeId}
           onClose={() => setAccountQr(null)}
         />
       )}
 
-      {/* ── 충전 등록 모달 ── */}
+      {/* ── 충전 등록 모달 — scale 제거, FIGMA_SCALE로 고정 px 재계산 ── */}
       {chargeOpen && selected && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="modal-in bg-white rounded-2xl shadow-xl px-8 py-10 w-[560px]">
-
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setChargeOpen(false); setChargeError('') }}>
+          <div
+            className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            style={{ width: 900 }}
+            onClick={e => e.stopPropagation()}
+          >
             {!chargeConfirm ? (
-              /* ── 1단계: 입력 ── */
               <>
-                <div className="text-[17px] font-semibold mb-1">충전 등록</div>
-                <div className="text-[11px] text-gray-text mb-5">{selected.account_name}</div>
-
-                {/* 금액 */}
-                <div className="mb-4">
-                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">충전 금액</label>
-                  <div className="relative">
-                    <input
-                      value={chargeAmt ? Number(chargeAmt).toLocaleString('ko-KR') : ''}
-                      onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, ''))}
-                      placeholder="0" inputMode="numeric"
-                      className="w-full border border-gray-border rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-ink focus:outline-none transition-colors" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gray-text pointer-events-none">원</span>
-                  </div>
+                <div className="flex-shrink-0 px-[62px] pt-[39px] pb-[15px]">
+                  <h2 className="text-[26px] font-semibold text-ink">선결제 충전</h2>
+                  <p className="text-[13px] text-[#6A635E] mt-[5px]">{selected.account_name}</p>
                 </div>
 
-                {/* 결제수단 */}
-                <div className="mb-4">
-                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">결제수단</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
-                      <button key={m} onClick={() => setChargeMethod(m)}
-                        className={`px-3 py-1.5 rounded-full border text-[11px] font-semibold transition-colors focus:outline-none
-                          ${chargeMethod === m ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'}`}>
-                        {m}
-                      </button>
-                    ))}
-                  </div>
+                <div className="overflow-y-auto flex-1 px-[62px] pb-[26px]">
+                  <CustFormField label="충전 금액">
+                    <div className="field-wrap flex items-center border border-[#ADADAD] rounded-[10px] px-[19px] py-[17px]">
+                      <input
+                        value={chargeAmt ? Number(chargeAmt).toLocaleString('ko-KR') : ''}
+                        onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="0" inputMode="numeric"
+                        className="field-bare flex-1 outline-none text-[18px] font-semibold text-ink"
+                      />
+                      <span className="text-[18px] text-ink">원</span>
+                    </div>
+                  </CustFormField>
+
+                  <CustFormField label="결제수단">
+                    <div className="flex flex-wrap gap-[6px]">
+                      {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
+                        <button key={m} onClick={() => setChargeMethod(m)}
+                          className={`px-[13px] py-[8px] rounded-[10px] text-[15px] font-medium whitespace-nowrap transition-colors ${
+                            chargeMethod === m ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878]'
+                          }`}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </CustFormField>
+
+                  <CustFormField label="선결제 일시 (실제 결제한 날짜·시간)">
+                    <div className="flex gap-[8px]">
+                      <input type="date" value={chargeDate} onChange={e => setChargeDate(e.target.value)}
+                        max={new Date().toLocaleDateString('en-CA')}
+                        className={CUST_INPUT_CLS} />
+                      <input type="time" value={chargeTime} onChange={e => setChargeTime(e.target.value)}
+                        className={`${CUST_INPUT_CLS} w-[167px] flex-shrink-0`} />
+                    </div>
+                  </CustFormField>
+
+                  <CustFormField label="비고 (선택)">
+                    <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
+                      placeholder="예: 7월 법인카드" className={CUST_INPUT_CLS} />
+                  </CustFormField>
                 </div>
 
-                {/* 선결제 일시 */}
-                <div className="mb-4">
-                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">선결제 일시 <span className="font-normal text-gray-text">(실제 결제한 날짜·시간)</span></label>
-                  <div className="flex gap-2">
-                    <input type="date" value={chargeDate} onChange={e => setChargeDate(e.target.value)}
-                      max={new Date().toLocaleDateString('en-CA')}
-                      className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:outline-none focus:border-green" />
-                    <input type="time" value={chargeTime} onChange={e => setChargeTime(e.target.value)}
-                      className="w-[110px] border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:outline-none focus:border-green" />
-                  </div>
-                </div>
-
-                {/* 비고 */}
-                <div className="mb-5">
-                  <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">비고 (선택)</label>
-                  <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
-                    placeholder="예: 7월 법인카드" className={INPUT_CLS} />
-                </div>
-
-                <div className="flex gap-2 justify-end">
+                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] border-t border-[#ADADAD]/30 flex-shrink-0">
                   <button onClick={() => { setChargeOpen(false); setChargeError('') }}
-                    className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-text text-[11px] font-semibold hover:bg-gray-200 focus:outline-none transition-colors">
+                    className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
                     취소
                   </button>
                   <button
                     onClick={() => setChargeConfirm(true)}
                     disabled={!chargeAmt || parseInt(chargeAmt) <= 0}
-                    className="px-4 py-1.5 rounded-lg bg-ink text-white text-[11px] font-semibold hover:bg-ink/80 transition-colors focus:outline-none disabled:opacity-50">
+                    className="px-[21px] py-[10px] rounded-[9px] bg-ink text-white text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40">
                     다음
                   </button>
                 </div>
               </>
             ) : (
-              /* ── 2단계: 최종 확인 ── */
               <>
-                <div className="text-[17px] font-semibold mb-1">충전 내용 확인</div>
-                <div className="text-[11px] text-gray-text mb-5">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</div>
-
-                <div className="bg-gray-bg rounded-xl p-4 space-y-3 mb-5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[11px] text-gray-text">거래처</span>
-                    <span className="text-[11px] font-bold text-ink">{selected.account_name}</span>
-                  </div>
-                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[11px] text-gray-text">충전 금액</span>
-                    <span className="text-[18px] font-extrabold text-ink">+{won(parseInt(chargeAmt))}</span>
-                  </div>
-                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[11px] text-gray-text">결제수단</span>
-                    <span className="text-[11px] font-semibold text-ink">{chargeMethod}</span>
-                  </div>
-                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[11px] text-gray-text">선결제 일시</span>
-                    <span className="text-[11px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
-                  </div>
-                  {chargeMemo && (
-                    <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                      <span className="text-[11px] text-gray-text">비고</span>
-                      <span className="text-[11px] font-semibold text-ink">{chargeMemo}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center border-t border-gray-border pt-3">
-                    <span className="text-[11px] text-gray-text">충전 후 잔액</span>
-                    <span className="text-[11px] font-bold text-ink">{won(selected.current_balance + parseInt(chargeAmt))}</span>
-                  </div>
+                <div className="flex-shrink-0 px-[62px] pt-[39px] pb-[15px]">
+                  <h2 className="text-[26px] font-semibold text-ink">충전 내용 확인</h2>
+                  <p className="text-[12px] text-[#6A635E] mt-[5px]">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</p>
                 </div>
 
-                {chargeError && (
-                  <p className="text-[11px] text-danger font-semibold mb-3">{chargeError}</p>
-                )}
-                <div className="flex gap-2 justify-end">
+                <div className="overflow-y-auto flex-1 px-[62px] pb-[26px]">
+                  <div className="bg-[#F2F2F2] rounded-[13px] p-[18px] space-y-[10px]">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[12px] text-[#6A635E]">고객</span>
+                      <span className="text-[13px] font-bold text-ink">{selected.account_name}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
+                      <span className="text-[12px] text-[#6A635E]">충전 금액</span>
+                      <span className="text-[17px] font-extrabold text-ink">+{won(parseInt(chargeAmt))}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
+                      <span className="text-[12px] text-[#6A635E]">결제수단</span>
+                      <span className="text-[12px] font-semibold text-ink">{chargeMethod}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
+                      <span className="text-[12px] text-[#6A635E]">선결제 일시</span>
+                      <span className="text-[12px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
+                    </div>
+                    {chargeMemo && (
+                      <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
+                        <span className="text-[12px] text-[#6A635E]">비고</span>
+                        <span className="text-[12px] font-semibold text-ink">{chargeMemo}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
+                      <span className="text-[12px] text-[#6A635E]">충전 후 잔액</span>
+                      <span className="text-[13px] font-bold text-ink">{won(selected.current_balance + parseInt(chargeAmt))}</span>
+                    </div>
+                  </div>
+
+                  {chargeError && (
+                    <p className="text-[10px] text-danger font-semibold mt-[10px]">{chargeError}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] border-t border-[#ADADAD]/30 flex-shrink-0">
                   <button onClick={() => { setChargeConfirm(false); setChargeError('') }}
-                    className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-text text-[11px] font-semibold hover:bg-gray-200 focus:outline-none transition-colors">
+                    className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
                     취소
                   </button>
                   <button
                     onClick={handleCharge}
                     disabled={chargeLoading}
-                    className="px-4 py-1.5 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[11px] font-semibold hover:bg-[#00BB55] transition-colors focus:outline-none disabled:opacity-50">
+                    className="px-[21px] py-[10px] rounded-[9px] bg-ink text-white text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40">
                     {chargeLoading ? '처리 중...' : '충전 확정'}
                   </button>
                 </div>
@@ -2268,6 +2070,157 @@ export default function Customers() {
           </div>
         </div>
       )}
+
+      {/* ── 이용내역서 모달 (월별 선결제·사용내역 표 + CSV 다운로드) ── */}
+      {statementOpen && selected && (() => {
+        const rows = buildStmtRows()
+        const fmtRowDate = (iso: string) => {
+          const d = new Date(iso)
+          return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        }
+        return (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => setStatementOpen(false)}>
+            <div
+              className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+              style={{ width: 1030 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex-shrink-0 px-[41px] pt-[31px] pb-[15px]">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-[21px] font-medium text-ink">이용내역서</h2>
+                  <span className="text-[12px] text-[#6A635E]">{selected.account_name}</span>
+                </div>
+                <div className="flex items-center justify-between mt-[13px]">
+                  <div className="flex items-center gap-[5px]">
+                    <button onClick={prevStmtMonth} disabled={stmtAllTime}
+                      className="px-[8px] py-[5px] text-[10px] font-bold rounded-lg border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">‹</button>
+                    <span className="text-[10px] font-semibold w-[64px] text-center">{stmtAllTime ? '전체 기간' : stmtMonth}</span>
+                    <button onClick={nextStmtMonth} disabled={stmtAllTime}
+                      className="px-[8px] py-[5px] text-[10px] font-bold rounded-lg border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">›</button>
+                    <button
+                      onClick={() => setStmtAllTime(v => !v)}
+                      className={`ml-[5px] text-[9px] font-bold px-[9px] py-[4px] rounded-full border transition-colors ${
+                        stmtAllTime ? 'border-green bg-green-soft text-green' : 'border-gray-border text-gray-text hover:bg-gray-bg'
+                      }`}
+                    >
+                      전체 기간
+                    </button>
+                  </div>
+                  <button onClick={downloadCSV} className="px-[12px] py-[6px] rounded-lg bg-ink text-white text-[9px] font-bold hover:opacity-90 transition-opacity">
+                    CSV 다운로드
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto flex-1 px-[41px] pb-[26px]">
+                {stmtLoading ? (
+                  <div className="flex items-center justify-center py-[40px] text-gray-text text-[14px]">
+                    <div className="w-5 h-5 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
+                    불러오는 중...
+                  </div>
+                ) : (
+                  <table className="text-[12px] border-collapse w-full">
+                    <thead>
+                      <tr className="bg-gray-bg text-[10px] font-bold text-gray-text uppercase">
+                        <th colSpan={3} className="text-left py-[8px] border border-gray-border px-[8px]">선결제내역</th>
+                        <th colSpan={5} className="text-left py-[8px] border border-gray-border px-[8px]">사용내역</th>
+                        <th rowSpan={2} className="text-left py-[8px] border border-gray-border px-[8px] whitespace-nowrap">잔액</th>
+                      </tr>
+                      <tr className="bg-gray-bg text-[10px] font-semibold text-gray-text">
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left whitespace-nowrap">일자</th>
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left whitespace-nowrap">금액</th>
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left">기타</th>
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left whitespace-nowrap">일자</th>
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left whitespace-nowrap">금액</th>
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left">내역</th>
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left">비고</th>
+                        <th className="py-[6px] px-[8px] border border-gray-border text-left">서명</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr><td colSpan={9} className="text-center py-[24px] text-gray-text text-[13px]">내역 없음</td></tr>
+                      ) : rows.map((row, idx) => {
+                        if (row.type === 'adjustment') {
+                          return (
+                            <tr key={idx} className="bg-orange-50">
+                              <td className="py-[6px] px-[8px] border border-gray-border text-orange-600 font-medium whitespace-nowrap">
+                                <div className="text-[9px] font-bold bg-orange-100 text-orange-600 px-[4px] py-[2px] rounded mb-[2px] w-fit">잔액조정</div>
+                                {fmtRowDate(row.date)}
+                              </td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount >= 0 ? 'var(--green)' : 'var(--danger)' }}>
+                                {row.amount >= 0 ? `+${won(row.amount)}` : `-${won(Math.abs(row.amount))}`}
+                              </td>
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[10px] break-words">{row.reason || '—'}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[10px]">
+                                <span className="whitespace-nowrap">{won(row.balanceBefore)}</span>
+                                <span className="text-gray-text mx-[2px]">→</span>
+                                <span className="whitespace-nowrap">{won(row.balanceAfter)}</span>
+                              </td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[10px]">{row.orderer ?? ''}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold" style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>
+                                {won(row.balanceAfter)}
+                              </td>
+                            </tr>
+                          )
+                        } else if (row.type === 'deposit') {
+                          return (
+                            <tr key={idx} className="hover:bg-green-soft/20 transition-colors">
+                              <td className="py-[6px] px-[8px] border border-gray-border text-green font-medium whitespace-nowrap">{fmtRowDate(row.date)}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount < 0 ? 'var(--danger)' : 'var(--green)' }}>
+                                {row.amount < 0 ? `-${won(Math.abs(row.amount))}` : `+${won(row.amount)}`}
+                              </td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text">{row.paymentMethod}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold text-green">{won(row.balanceAfter)}</td>
+                            </tr>
+                          )
+                        } else {
+                          return (
+                            <tr key={idx} className={`transition-colors ${row.discrepancy ? 'bg-red-50' : 'hover:bg-gray-bg/60'}`}>
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border" />
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text whitespace-nowrap">{fmtRowDate(row.date)}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-medium text-ink whitespace-nowrap">-{won(row.amount)}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-ink break-words">{row.summary}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text break-words">{row.note}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text">{row.orderer}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-medium">
+                                <span style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>{won(row.balanceAfter)}</span>
+                                {/* 앞 행 잔액 + 충전 − 주문금액 과 실제 스냅샷이 어긋난 경우 —
+                                     주문 외 경로로 잔액이 바뀌었다는 뜻이라 조용히 넘기지 않고 표시한다 */}
+                                {row.discrepancy !== undefined && (
+                                  <div className="mt-[2px] text-[9px] font-bold text-danger whitespace-nowrap" title="이 주문 직전에 주문·충전·조정 기록 없이 잔액이 바뀌었습니다">
+                                    ⚠️ 기록 없는 잔액 변동 {row.discrepancy > 0 ? `+${won(row.discrepancy)}` : `-${won(Math.abs(row.discrepancy))}`}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        }
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end px-[41px] py-[13px] border-t border-[#ADADAD]/30 flex-shrink-0">
+                <button onClick={() => setStatementOpen(false)} className="px-[18px] py-[9px] rounded-[8px] bg-[#E8E4E2] text-[#6A635E] text-[10px] font-semibold hover:opacity-90 transition-opacity">
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── 다운그레이드 안내 모달 ── */}
       {downgradeModal && (() => {
@@ -2310,6 +2263,224 @@ export default function Customers() {
   )
 }
 
+// 우측 사이드 패널 — 고객 선택 시 "고객현황" 집계 대신 해당 고객 상세정보로 전환 (Figma node 644:372)
+function CustomerDetailPanel({
+  selected, accountOrders, deposits, members, registeredAdmins, memberCounts,
+  phoneRevealed, setPhoneRevealed, detailTab, setDetailTab, onQr, onOpenStatement,
+  showInactive, onEdit, onRestore, onResendAdmin, resendLoading,
+}: {
+  selected: DbAccount
+  accountOrders: Order[]
+  deposits: DbDeposit[]
+  members: { id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]
+  registeredAdmins: Set<string>
+  memberCounts: Record<string, number>
+  phoneRevealed: boolean
+  setPhoneRevealed: (v: boolean | ((prev: boolean) => boolean)) => void
+  detailTab: 'orders' | 'charges' | 'members' | 'statement' | 'people'
+  setDetailTab: (t: 'orders' | 'charges' | 'members' | 'statement' | 'people') => void
+  onQr: () => void
+  onOpenStatement: () => void
+  showInactive: boolean
+  onEdit: () => void
+  onRestore: () => void
+  onResendAdmin: () => void
+  resendLoading: boolean
+}) {
+  const phoneParts = (selected.contact_phone ?? '').split('-')
+  const phoneMid = phoneParts.length === 3 ? phoneParts[1] : null
+
+  // 모든 px는 Figma 원본(2240 캔버스) 수치 × FIGMA_SCALE — src/lib/figma-scale.ts 참고.
+  // 헤더(이름/연락처/통계/탭)는 flex-shrink-0로 고정, 탭 내용만 flex-1 overflow-y-auto로 스크롤.
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 flex flex-col gap-[13px] px-[26px] pt-[26px]">
+        {/* 제목 + 액션 버튼 — 긴 계정명이 버튼과 겹치지 않도록 한 줄 flex, 제목은 말줄임 */}
+        <div className="flex items-center justify-between">
+          <div className="min-w-0">
+            <span className="text-[21px] font-medium text-ink truncate">{selected.account_name}</span>
+          </div>
+          <div className="flex-shrink-0 flex items-center gap-[6px]">
+            <button onClick={onEdit} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">수정</button>
+            <button onClick={onOpenStatement} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">이용내역서</button>
+            <button onClick={onQr} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">QR보기</button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-[10px] text-[14px] font-medium text-[#414141]">
+          <span className="truncate">{selected.contact_person ? maskName(selected.contact_person) : '-'}</span>
+          {selected.qr_system === 'kakao' && !registeredAdmins.has(selected.account_code) && (
+            <PillTag label="등록대기" />
+          )}
+          <span className="flex-shrink-0 w-[1px] h-[17px] bg-[#414141]" />
+          {selected.contact_phone ? (
+            <span className="flex-shrink-0 flex items-center gap-[5px]">
+              <span>{phoneParts[0]}-</span>
+              {phoneMid && (
+                <button
+                  onClick={() => setPhoneRevealed(v => !v)}
+                  className="flex items-center gap-[4px] border border-[#D9D9D9] rounded-[6px] px-[6px] py-[3px] text-[#414141]"
+                >
+                  <span className="font-mono text-[10px]">{phoneRevealed ? phoneMid : '••••'}</span>
+                  <EyeIcon off={phoneRevealed} size={11} />
+                </button>
+              )}
+              <span>-{phoneParts[2] ?? ''}</span>
+            </span>
+          ) : (
+            <span className="flex-shrink-0 text-[#ADADAD]">연락처 없음</span>
+          )}
+          <span className="flex-shrink-0 w-[1px] h-[17px] bg-[#414141]" />
+          <span className="flex-shrink-0">{TYPE_LABEL[selected.account_type]}</span>
+        </div>
+
+        {!registeredAdmins.has(selected.account_code) && selected.qr_system === 'kakao' && (
+          <button onClick={onResendAdmin} disabled={resendLoading} className="text-[9px] text-orange-600 hover:underline disabled:opacity-50 text-left -mt-[8px]">
+            {resendLoading ? '발송 중...' : '📨 관리자 등록 문자 재발송'}
+          </button>
+        )}
+
+        {/* 선결제잔액 / 이용자수 */}
+        <div className="flex gap-[4px]">
+          <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={10} gap={6}>
+            <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">선결제 잔액</div>
+            <div className={`text-[18px] font-medium whitespace-nowrap ${selected.current_balance < 0 ? 'text-danger' : 'text-[#2C261F]'}`}>
+              {selected.current_balance < 0 ? `-${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
+            </div>
+          </StatCard>
+          <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={10} gap={6}>
+            <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">이용자수</div>
+            <div className="text-[17px] font-medium text-[#1E1E1E]">{memberCounts[selected.account_code] ?? 0}명</div>
+          </StatCard>
+        </div>
+
+        {/* 선결제 유효기간 + 만료 경고, 계정 비활성화/복구 */}
+        <div className="flex items-center justify-between">
+          <span className={`text-[10px] ${isPrepayExpired(selected.prepay_validity, deposits[0]?.created_at) ? 'text-danger font-semibold' : 'text-[#6A635E]'}`}>
+            {prepayValidityDisplay(selected.prepay_validity, deposits[0]?.created_at)}
+          </span>
+          {/* 계정 비활성화는 "계정정보 수정" 모달 하단으로 옮겼다 — 되돌리기 어려운 동작이
+              목록 옆에 노출돼 있으면 잘못 누르기 쉽다. 여기엔 복구만 남긴다. */}
+          {showInactive && (
+            <button onClick={onRestore} className="text-[10px] font-semibold text-green hover:underline">비활성 계정 복구</button>
+          )}
+        </div>
+
+        {/* 탭 */}
+        <div className="flex items-center gap-[21px]">
+          {([['orders', '주문내역'], ['charges', '충전이력'], ['members', '구성원']] as const).map(([t, label]) => (
+            <button
+              key={t}
+              onClick={() => setDetailTab(t)}
+              className={`relative text-[14px] font-medium pb-[5px] transition-colors ${detailTab === t ? 'text-ink' : 'text-[#ADADAD]'}`}
+            >
+              {label}
+              {detailTab === t && <span className="absolute left-0 bottom-0 w-full h-[2px] bg-[#414141]" />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-[26px] pt-[13px] pb-[26px]">
+        {detailTab === 'orders' && (
+          accountOrders.length === 0 ? (
+            <div className="text-[10px] text-[#ADADAD] py-[13px]">주문 이력이 없습니다.</div>
+          ) : (
+            <div className="space-y-[8px]">
+              {accountOrders.slice(0, 15).map(o => {
+                const dt = new Date(o.createdAt)
+                const dateStr = `${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+                return (
+                  <div key={o.code} className="bg-[#F2F2F2] rounded-[10px] px-[13px] py-[10px]">
+                    <div className="flex items-center justify-between mb-[5px]">
+                      <span className="text-[9px] text-[#787878]">{dateStr} · {o.method}</span>
+                      <div className="flex items-center gap-[5px]">
+                        <StatusTag status={o.status} />
+                        <span className="text-[10px] font-bold text-ink">{won(o.total)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-[4px] text-[9px] text-[#787878] mb-[5px]">
+                      <RevealText value={o.orderer} masked={maskName(o.orderer)} iconSize={9} />
+                      {o.phone && (
+                        <>
+                          <span>·</span>
+                          <RevealText value={o.phone} masked={maskPhone(o.phone)} iconSize={9} />
+                        </>
+                      )}
+                    </div>
+                    <div className="space-y-[3px]">
+                      {o.items.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-ink truncate">{item.qty > 1 ? `${item.name} ×${item.qty}` : item.name}</span>
+                          <span className="text-ink flex-shrink-0">{won(item.price * item.qty)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {o.balanceAfter !== undefined && o.status !== '취소' && (
+                      <div className="text-right text-[9px] text-[#6A635E] mt-[5px]">잔액 {won(o.balanceAfter)}</div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        )}
+
+        {detailTab === 'charges' && (
+          deposits.length === 0 ? (
+            <div className="text-[10px] text-[#ADADAD] py-[13px]">충전 이력이 없습니다.</div>
+          ) : (
+            <div className="space-y-[8px]">
+              {deposits.slice(0, 15).map(d => {
+                const dt = new Date(d.created_at)
+                const dateStr = `${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+                return (
+                  <div key={d.deposit_id} className="bg-[#F2F2F2] rounded-[10px] px-[13px] py-[10px] flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-semibold text-ink">{d.payment_method}</div>
+                      <div className="text-[9px] text-[#787878]">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-[12px] font-bold ${d.amount < 0 ? 'text-danger' : 'text-green'}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
+                      <div className="text-[9px] text-[#6A635E]">잔액 {won(d.balance_after)}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        )}
+
+        {detailTab === 'members' && (
+          members.length === 0 ? (
+            <div className="text-[10px] text-[#ADADAD] py-[13px]">이용자 정보가 없습니다.</div>
+          ) : (
+            <div className="space-y-[8px]">
+              {members.map(m => (
+                <div key={m.id} className="bg-[#F2F2F2] rounded-[10px] px-[13px] py-[10px] flex items-center justify-between">
+                  <div className="flex flex-col items-start gap-[3px]">
+                    <RevealText
+                      value={m.name} masked={maskName(m.name)} iconSize={10}
+                      className="text-[10px] font-semibold text-ink"
+                    />
+                    {m.phone && (
+                      <RevealText
+                        value={m.phone} masked={maskPhone(m.phone)} iconSize={9}
+                        className="text-[9px] text-[#787878]"
+                      />
+                    )}
+                  </div>
+                  <div className="text-right text-[9px] text-[#6A635E]">주문 {m.order_count}건</div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  )
+}
+
 function StatusTag({ status }: { status: string }) {
   const styles: Record<string, string> = {
     '취소':   'bg-red-100 text-danger',
@@ -2324,17 +2495,10 @@ function StatusTag({ status }: { status: string }) {
   )
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-gray-text">{label}</span>
-      <span className="font-semibold text-ink">{value}</span>
-    </div>
-  )
-}
-
-function AccountQrModal({ accountCode, accountName, storeId, onClose }: { accountCode: string; accountName: string; storeId: string; onClose: () => void }) {
-  const url = `${BASE_URL}?store=${storeId}&account=${accountCode}`
+function AccountQrModal({ accountCode, accountName, qrSystem, storeId, onClose }: { accountCode: string; accountName: string; qrSystem: 'legacy' | 'kakao'; storeId: string; onClose: () => void }) {
+  const url = qrSystem === 'kakao'
+    ? `${SUNPOS_KAKAO_URL}/qr/${accountCode}`
+    : `${BASE_URL}?store=${storeId}&account=${accountCode}`
   const [copied, setCopied] = useState(false)
   const qrDataUrl = useQrDataUrl(url)
 
@@ -2356,12 +2520,11 @@ function AccountQrModal({ accountCode, accountName, storeId, onClose }: { accoun
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
       <div className="modal-in bg-white rounded-2xl shadow-xl p-7 w-[460px]">
         <div className="flex items-center justify-between mb-1">
-          <div className="text-[17px] font-semibold">거래처 전용 QR</div>
+          <div className="text-[17px] font-semibold">고객 전용 QR</div>
           <button onClick={onClose} className="text-gray-text hover:text-ink text-[18px]">✕</button>
         </div>
         <div className="text-[11px] text-gray-text mb-4">
-          <span className="font-semibold text-ink">{accountName}</span> 고객 전용 링크입니다.<br />
-          스캔하면 PIN 없이 바로 주문자 입력으로 진입합니다.
+          <span className="font-semibold text-ink">{accountName}</span> 고객 전용 링크입니다.
         </div>
         {qrDataUrl ? (
           <div className="flex flex-col items-center mb-4">
@@ -2373,11 +2536,11 @@ function AccountQrModal({ accountCode, accountName, storeId, onClose }: { accoun
         )}
         <div className="flex gap-2">
           <button onClick={saveImage} disabled={!qrDataUrl}
-            className="flex-1 py-2.5 rounded-xl font-bold text-[11px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
+            className="flex-1 py-[14px] rounded-xl font-bold text-[15px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
             이미지 저장
           </button>
           <button onClick={copy}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-[11px] transition-colors
+            className={`flex-1 py-[14px] rounded-xl font-bold text-[15px] transition-colors
               ${copied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}>
             {copied ? '✓ 복사됨' : '링크 복사'}
           </button>
@@ -2414,7 +2577,7 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
           <button onClick={onClose} className="text-gray-text hover:text-ink text-[18px]">✕</button>
         </div>
         <div className="text-[11px] text-gray-text mb-4">
-          누구나 거래처를 선택하고 PIN을 입력해 주문할 수 있는 공용 링크입니다.
+          누구나 고객을 선택하고 PIN을 입력해 주문할 수 있는 공용 링크입니다.
         </div>
         {qrDataUrl ? (
           <div className="flex flex-col items-center mb-4">
@@ -2426,11 +2589,11 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
         )}
         <div className="flex gap-2">
           <button onClick={saveImage} disabled={!qrDataUrl}
-            className="flex-1 py-2.5 rounded-xl font-bold text-[11px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
+            className="flex-1 py-[14px] rounded-xl font-bold text-[15px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
             이미지 저장
           </button>
           <button onClick={copy}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-[11px] transition-colors
+            className={`flex-1 py-[14px] rounded-xl font-bold text-[15px] transition-colors
               ${copied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}>
             {copied ? '✓ 복사됨' : '링크 복사'}
           </button>

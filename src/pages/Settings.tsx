@@ -4,6 +4,8 @@ import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 import { useStore } from '../lib/store-context'
 import { PLAN_LIMITS, PLAN_NAMES } from '../lib/plans'
 import { UpgradeModal } from './Sales'
+import { useDeliveryInfo, BASE_DISTANCE_OPTIONS, TIER_DISTANCE_OPTIONS, tierFeeRange } from '../hooks/useDeliveryInfo'
+import DaumPostcodeEmbed from '../components/DaumPostcodeEmbed'
 
 interface PrinterSettings { portName: string }
 interface ReceiptSettings  {
@@ -14,14 +16,15 @@ interface ReceiptSettings  {
 }
 interface ComPort { path: string; manufacturer: string; friendlyName: string }
 
-type DayHours = { enabled: boolean; open: string; close: string }
-type BreakHours = { enabled: boolean; start: string; end: string }
+export type DayHours = { enabled: boolean; open: string; close: string }
+export type BreakHours = { enabled: boolean; start: string; end: string }
 
 interface SettingsProps {
   onOpenHours: () => void
   onOpenProfile: () => void
   operatingHours: Record<string, DayHours>
   breakTime: Record<string, BreakHours>
+  showToast: (msg: string) => void
 }
 
 type Api = {
@@ -41,11 +44,28 @@ const PORT_LABEL = isWindows ? 'COM 포트' : '포트'
 
 const SIZE_LABELS: Record<string, string> = { small: '기본', normal: '보통', large: '크게' }
 
-const DAY_LABELS: Record<string, string> = { mon:'월', tue:'화', wed:'수', thu:'목', fri:'금', sat:'토', sun:'일' }
-const DAY_ORDER = ['mon','tue','wed','thu','fri','sat','sun']
+export const DAY_LABELS: Record<string, string> = { mon:'월', tue:'화', wed:'수', thu:'목', fri:'금', sat:'토', sun:'일' }
+export const DAY_ORDER = ['mon','tue','wed','thu','fri','sat','sun']
 
-export default function Settings({ onOpenHours, onOpenProfile, operatingHours, breakTime }: SettingsProps) {
-  const { storeName, plan } = useStore()
+export default function Settings({ onOpenHours, onOpenProfile, operatingHours, breakTime, showToast }: SettingsProps) {
+  const { storeId, storeName, plan } = useStore()
+  const delivery = useDeliveryInfo(storeId, showToast)
+  const [editingLocation, setEditingLocation] = useState(false)
+  const [editingTip,      setEditingTip]      = useState(false)
+
+  async function handleSaveLocation() {
+    const ok = await delivery.saveLocation()
+    if (ok) setEditingLocation(false)
+  }
+
+  async function handleSaveTipConfig() {
+    const ok = await delivery.saveTipConfig()
+    if (ok) setEditingTip(false)
+  }
+
+  function formatDistance(m: number): string {
+    return m >= 1000 ? `${m / 1000}km` : `${m}m`
+  }
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [comPorts,   setComPorts]   = useState<ComPort[]>([])
   const [printer,    setPrinter]    = useState<PrinterSettings>({ portName: '' })
@@ -155,14 +175,26 @@ export default function Settings({ onOpenHours, onOpenProfile, operatingHours, b
               </div>
               <div className="flex justify-between text-[12px]">
                 <span className="text-gray-text">매출 분석</span>
-                <span className={`font-semibold ${PLAN_LIMITS[plan].analytics ? 'text-green' : 'text-gray-text'}`}>
+                <span className={`font-semibold flex items-center gap-1 ${PLAN_LIMITS[plan].analytics ? 'text-green' : 'text-gray-text'}`}>
                   {PLAN_LIMITS[plan].analytics ? '사용 가능' : '미지원'}
+                  {PLAN_LIMITS[plan].analytics && (
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <circle cx="7" cy="7" r="7" fill="white"/>
+                      <path d="M4 7l2 2 4-4" stroke="#017333" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
                 </span>
               </div>
               <div className="flex justify-between text-[12px]">
                 <span className="text-gray-text">SMS 알림</span>
-                <span className={`font-semibold ${PLAN_LIMITS[plan].sms ? 'text-green' : 'text-gray-text'}`}>
+                <span className={`font-semibold flex items-center gap-1 ${PLAN_LIMITS[plan].sms ? 'text-green' : 'text-gray-text'}`}>
                   {PLAN_LIMITS[plan].sms ? '사용 가능' : '미지원'}
+                  {PLAN_LIMITS[plan].sms && (
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <circle cx="7" cy="7" r="7" fill="white"/>
+                      <path d="M4 7l2 2 4-4" stroke="#017333" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
                 </span>
               </div>
             </div>
@@ -178,6 +210,210 @@ export default function Settings({ onOpenHours, onOpenProfile, operatingHours, b
             <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
           </div>
         </Section>
+
+        {/* ── 배달정보 (매장 위치 + 거리별 배달팁) ── */}
+        <Section title="배달정보">
+          <div className="space-y-4">
+            {/* 매장 위치 */}
+            <div>
+              {!editingLocation ? (
+                delivery.roadAddress ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <LocationPinIcon />
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold text-ink truncate">
+                          {delivery.roadAddress}{delivery.addressDetail ? ` · ${delivery.addressDetail}` : ''}
+                        </div>
+                        <div className="text-[11px] text-gray-text mt-0.5">매장 위치</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setEditingLocation(true)}
+                      className="px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors flex-shrink-0"
+                    >
+                      변경
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 bg-gray-bg rounded-xl px-4 py-3">
+                    <span className="text-[13px] text-gray-text">매장 위치가 아직 등록되지 않았어요</span>
+                    <button
+                      onClick={() => setEditingLocation(true)}
+                      className="px-3 py-1.5 bg-ink text-white rounded-lg text-[11px] font-semibold hover:opacity-90 transition-colors flex-shrink-0"
+                    >
+                      등록
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={delivery.draftAddress}
+                      readOnly
+                      placeholder="주소 검색을 눌러주세요"
+                      className="flex-1 border border-gray-border rounded-xl px-3 py-2.5 text-[13px] text-ink bg-gray-bg"
+                    />
+                    <button
+                      onClick={delivery.openAddressSearch}
+                      className="px-3 py-2.5 bg-gray-100 text-ink rounded-xl text-[12px] font-semibold hover:bg-gray-200 transition-colors flex-shrink-0"
+                    >
+                      주소 검색
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={delivery.draftDetail}
+                    onChange={e => delivery.setDraftDetail(e.target.value)}
+                    placeholder="상세 주소 (선택) 예) 2층 201호"
+                    className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] text-ink focus:outline-none focus:border-green"
+                  />
+                  <p className="text-[11px] text-gray-text leading-relaxed">
+                    거리별 배달팁 계산에 쓰이는 위치예요. 도로명 주소 기준 자동 변환이라 실제 위치와 다를 수 있어요.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    {delivery.roadAddress && (
+                      <button
+                        onClick={() => setEditingLocation(false)}
+                        className="px-4 py-2.5 bg-gray-100 text-gray-text rounded-xl text-[13px] font-semibold hover:bg-gray-200 transition-colors"
+                      >
+                        취소
+                      </button>
+                    )}
+                    <button
+                      onClick={handleSaveLocation}
+                      disabled={delivery.savingLocation || !delivery.draftAddress.trim()}
+                      className="px-5 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
+                    >
+                      {delivery.savingLocation ? '저장 중...' : '저장'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-border" />
+
+            {/* 거리별 배달팁 */}
+            <div>
+              {!editingTip ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[13px] text-ink">
+                    <span className="font-semibold">{formatDistance(delivery.baseDistanceM)}까지</span>
+                    {' '}{delivery.baseFee.toLocaleString('ko-KR')}원
+                    <span className="text-gray-text">, 이후 {delivery.tierDistanceM}m당 </span>
+                    <span className="font-semibold">+{delivery.tierFee.toLocaleString('ko-KR')}원</span>
+                  </div>
+                  <button
+                    onClick={() => setEditingTip(true)}
+                    className="px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors flex-shrink-0"
+                  >
+                    수정
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <Field label="기본 배달거리">
+                    <div className="flex gap-1.5 flex-wrap">
+                      {BASE_DISTANCE_OPTIONS.map(d => (
+                        <button
+                          key={d}
+                          onClick={() => delivery.setBaseDistanceM(d)}
+                          className={[
+                            'px-3 py-1.5 rounded-lg text-[12px] font-bold border transition-colors',
+                            delivery.baseDistanceM === d
+                              ? 'bg-ink text-white border-ink'
+                              : 'bg-gray-100 text-gray-text border-gray-border hover:bg-gray-200',
+                          ].join(' ')}
+                        >
+                          {formatDistance(d)}
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="기본 배달팁">
+                      <MoneyInput value={delivery.baseFee} onChange={delivery.setBaseFee} min={0} />
+                    </Field>
+                    <Field label={`${delivery.tierDistanceM}m당 할증액`}>
+                      <MoneyInput
+                        value={delivery.tierFee}
+                        onChange={delivery.setTierFee}
+                        min={tierFeeRange(delivery.tierDistanceM).min}
+                        max={tierFeeRange(delivery.tierDistanceM).max}
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="추가 거리 단위">
+                    <div className="flex gap-1.5">
+                      {TIER_DISTANCE_OPTIONS.map(d => (
+                        <button
+                          key={d}
+                          onClick={() => delivery.changeTierDistanceM(d)}
+                          className={[
+                            'px-3 py-1.5 rounded-lg text-[12px] font-bold border transition-colors',
+                            delivery.tierDistanceM === d
+                              ? 'bg-ink text-white border-ink'
+                              : 'bg-gray-100 text-gray-text border-gray-border hover:bg-gray-200',
+                          ].join(' ')}
+                        >
+                          {d}m당
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+                  <p className="text-[11px] text-gray-text leading-relaxed -mt-1">
+                    할증액 범위: {tierFeeRange(delivery.tierDistanceM).min}~{tierFeeRange(delivery.tierDistanceM).max}원
+                  </p>
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setEditingTip(false)}
+                      className="px-4 py-2.5 bg-gray-100 text-gray-text rounded-xl text-[13px] font-semibold hover:bg-gray-200 transition-colors"
+                    >
+                      취소
+                    </button>
+                    <button
+                      onClick={handleSaveTipConfig}
+                      disabled={delivery.savingTip}
+                      className="px-5 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
+                    >
+                      {delivery.savingTip ? '저장 중...' : '저장'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Section>
+
+        {/* ── 다음 주소검색 모달 (Electron은 window.open 팝업을 막아서 embed 방식 사용) ── */}
+        {delivery.addressModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={() => delivery.setAddressModalOpen(false)}
+          >
+            <div
+              className="bg-white rounded-2xl w-[420px] h-[520px] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-border flex-shrink-0">
+                <span className="text-[14px] font-bold text-ink">주소 검색</span>
+                <button
+                  onClick={() => delivery.setAddressModalOpen(false)}
+                  className="text-gray-text text-[13px] hover:text-ink"
+                >
+                  닫기
+                </button>
+              </div>
+              <DaumPostcodeEmbed onComplete={delivery.completeAddressSearch} />
+            </div>
+          </div>
+        )}
 
         {/* ── 운영시간 설정 ── */}
         <Section title="운영시간">
@@ -630,12 +866,38 @@ function Section({ title, action, children, noBorder }: { title: React.ReactNode
   )
 }
 
+function MoneyInput({ value, onChange, min, max }: { value: number; onChange: (n: number) => void; min?: number; max?: number }) {
+  return (
+    <div className="relative">
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={50}
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="w-full border border-gray-border rounded-xl pl-3 pr-9 py-2.5 text-[13px] text-ink focus:outline-none focus:border-green"
+      />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-text pointer-events-none">원</span>
+    </div>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="text-[13px] font-semibold text-gray-text mb-1.5 block">{label}</label>
       {children}
     </div>
+  )
+}
+
+function LocationPinIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-text flex-shrink-0 mt-0.5">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
   )
 }
 

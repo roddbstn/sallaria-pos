@@ -4,8 +4,12 @@ import { won, orderToPayload, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { track } from '../lib/firebase'
 import { useStore } from '../lib/store-context'
+import { maskName, maskPhone } from '../lib/mask'
+import { defaultPrepMins, readyClock } from '../lib/pickup-time'
+import RevealText from './ui/RevealText'
 
-// 복사 버튼 컴포넌트
+// 복사 버튼 — 아이콘만. 전엔 [복사] 글자 배지라 옆의 전화번호·주소와 글자끼리 경쟁했다.
+// 복사 직후 1.5초간 체크로 바뀌어 "눌렸다"를 알린다(토스트 없이).
 function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray' | 'black' }) {
   const [copied, setCopied] = useState(false)
   function handleCopy() {
@@ -14,18 +18,26 @@ function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray'
       setTimeout(() => setCopied(false), 1500)
     })
   }
-  const style = copied
-    ? { backgroundColor: 'rgba(0,221,103,0.12)', color: '#008F42' }
-    : variant === 'black'
-      ? { backgroundColor: '#1E1E1E', color: '#FFFFFF' }
-      : { backgroundColor: '#F0F0F0', color: '#727272' }
+  // gray = 어두운 헤더 위, black = 밝은 회색 박스 위
+  const color = copied ? '#00C45A' : variant === 'black' ? '#414141' : '#D9D9D9'
   return (
     <button
       onClick={handleCopy}
-      className="ml-1.5 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors flex-shrink-0"
-      style={style}
+      aria-label={copied ? '복사됨' : '복사'}
+      title={copied ? '복사됨' : '복사'}
+      className="ml-[5px] p-[2px] rounded-[4px] hover:opacity-60 transition-opacity flex-shrink-0"
     >
-      {copied ? '✓ 복사됨' : '복사'}
+      {copied ? (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="5.4" y="5.4" width="8.1" height="8.1" rx="1.8" stroke={color} strokeWidth="1.4" />
+          <path d="M10.6 5.4V4.2A1.8 1.8 0 0 0 8.8 2.4H4.2A1.8 1.8 0 0 0 2.4 4.2v4.6a1.8 1.8 0 0 0 1.8 1.8h1.2"
+                stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
     </button>
   )
 }
@@ -34,31 +46,29 @@ interface Props {
   queue:      Order[]
   onClose:    () => void   // 현재(첫 번째) 주문 제거
   onApprove?: () => void
+  /** 낙관적 처리 뒤 백그라운드 작업이 실패했을 때 — 화면은 이미 넘어가 있으므로 토스트로 알린다 */
+  onError?:   (msg: string) => void
 }
 
 type Stage = 'summary' | 'approve' | 'reject'
 
 const REJECT_REASONS = ['재료 소진', '마감시간 초과', '주문 폭주', '매장 사정', '기타']
-const PREP_PRESETS   = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
+// Figma 733:673 의 칩 8개 (5~40분, 5분 간격). 그 위 ±버튼으로 1분 단위 미세조정.
+const PREP_PRESETS   = [5, 10, 15, 20, 25, 30, 35, 40]
 
-const METHOD_BADGE: Record<string, string> = {
-  '포장':    'bg-blue-100 text-blue-700',
-  '매장 식사':'bg-purple-100 text-purple-700',
-  '배달':    'bg-orange-100 text-orange-700',
-}
-
-const CARD_W = 400   // 카드 너비(px)
-const CARD_GAP = 20  // 카드 간격(px)
+// Figma 733:652 / 733:673 — 네이티브 캔버스 638×789.
+// 프로젝트 공통 비율 FIGMA_SCALE(0.643)로 환산한 고정 px를 쓴다(lib/figma-scale.ts 참고).
+const CARD_W   = 410  // 638 × 0.643
+const CARD_GAP = 20   // 대기 카드 사이 간격 — Figma엔 없는 우리 큐 UI 값
 
 // 마지막 승인 소요시간 기억 (세션 내 유지)
 let lastPrepMins = 15
 
-export default function OrderPopup({ queue, onClose, onApprove }: Props) {
+export default function OrderPopup({ queue, onClose, onApprove, onError }: Props) {
   const { storeName } = useStore()
   const [stage,    setStage]    = useState<Stage>('summary')
   const [prepMins, setPrepMins] = useState(lastPrepMins)
   const [reason,   setReason]   = useState('')
-  const [loading,  setLoading]  = useState(false)
   const [sliding,  setSliding]  = useState(false)  // 슬라이드 애니메이션 중
 
   const order = queue[0]
@@ -70,89 +80,125 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
     setTimeout(() => {
       setSliding(false)
       setStage('summary')
-      setPrepMins(15)
+      setPrepMins(lastPrepMins)
       setReason('')
       onClose()
     }, 320)
   }
 
-  async function handleApprove() {
+  // 승인 화면 진입 — 소요시간 기본값을 손님이 고른 수령시간으로 맞춘다.
+  // 한가하면 그대로 "접수"만 누르면 되고, 바쁘면 그 자리에서 덮어쓴다.
+  function openApprove() {
+    setPrepMins(defaultPrepMins(order.requestedPickupMinutes, lastPrepMins))
+    setStage('approve')
+  }
+
+  // 접수/거부는 "낙관적"으로 처리한다.
+  //
+  // 피크타임에 점주는 팝업을 1초 안에 넘겨야 하는데, 예전엔 RPC + Realtime broadcast + 영수증
+  // IPC 를 전부 await 한 뒤에야 카드가 넘어가서 버튼이 "처리 중…"으로 1~3초 멈춰 있었다.
+  // 성공률이 사실상 100%인 작업을 기다리느라 매번 느린 셈이라, 화면은 즉시 넘기고
+  // 뒷일은 백그라운드로 돌린다. 실패하면 onError 로 토스트를 띄운다(주문은 DB에 그대로 남아
+  // 주문 화면에서 다시 처리할 수 있다).
+  function handleApprove() {
     lastPrepMins = prepMins   // 다음 팝업 초기값으로 기억
-    setLoading(true)
+    const target  = order     // dismiss 후 queue[0] 이 바뀌므로 지금 값을 붙잡는다
+    const mins    = prepMins
 
-    // ① approve_order RPC: 상태 → '조리중' + 잔액 차감 (원자적)
-    await supabase.rpc('approve_order', { p_order_code: order.code })
+    // 손님 화면에 안내할 시간은 **둘 중 긴 쪽**이다.
+    //   · 주방이 30분 필요한데 손님이 10분 뒤에 온다고 했으면 → 30분 (음식이 늦는다)
+    //   · 주방은 5분이면 되는데 손님이 30분 뒤에 온다고 했으면 → 30분 (손님이 그때 온다)
+    // prep_minutes 는 주방 기준이라 그대로 두고, 안내용만 따로 계산한다.
+    const notify = Math.max(mins, target.requestedPickupMinutes ?? 0)
 
-    // ② broadcast로 예상 소요시간 전달 (fire-and-forget)
-    ;(async () => {
-      const ch = supabase.channel(`orders:order_code=${order.code}`)
-      await new Promise<void>(resolve => {
-        ch.subscribe(s => {
-          if (s !== 'SUBSCRIBED') return
-          ch.send({ type: 'broadcast', event: 'ORDER_ACCEPTED', payload: { estimated_minutes: prepMins } })
-            .finally(() => { supabase.removeChannel(ch); resolve() })
-        })
-        setTimeout(resolve, 3000)
-      })
-    })()
-
-    // ③ Electron IPC (영수증 출력)
-    const w = window as unknown as { api?: { approveOrder?: Function } }
-    await w.api?.approveOrder?.({ order: orderToPayload(order, storeName), prepMins })
-
-    track('pos_order_approved', {
-      order_code:        order.code,
-      total_amount:      order.total,
-      method:            order.method,
-      item_count:        order.items.length,
-      prep_mins:         prepMins,
-    })
-
-    setLoading(false)
     onApprove?.()
     dismiss()
-  }
 
-  async function handleReject() {
-    if (!reason) return
-    setLoading(true)
-
-    // ① cancel_order RPC (status → '취소' + 잔액 환원 — QR 웹사이트 postgres_changes 트리거)
-    await supabase.rpc('cancel_order', { p_order_code: order.code })
-
-    // ② broadcast로 거부 사유 전달 (fire-and-forget)
-    ;(async () => {
-      const ch = supabase.channel(`orders:order_code=${order.code}`)
-      await new Promise<void>(resolve => {
-        ch.subscribe(s => {
-          if (s !== 'SUBSCRIBED') return
-          ch.send({ type: 'broadcast', event: 'ORDER_REJECTED', payload: { reason } })
-            .finally(() => { supabase.removeChannel(ch); resolve() })
+    void (async () => {
+      try {
+        // ① approve_order RPC: 상태 → '조리중' + **소요시간·승인시각 기록**
+        //    prep_minutes 를 같이 넘기지 않으면 홈 화면의 '남은 시간'이 기준을 잃는다
+        //    (2026-10-15 이전엔 broadcast 로만 보내서 새로고침하면 사라졌다)
+        const { error } = await supabase.rpc('approve_order', {
+          p_order_code:   target.code,
+          p_prep_minutes: mins,
         })
-        setTimeout(resolve, 3000)
-      })
+        if (error) throw error
+
+        // ② broadcast로 예상 소요시간 전달 (fire-and-forget)
+        const ch = supabase.channel(`orders:order_code=${target.code}`)
+        await new Promise<void>(resolve => {
+          ch.subscribe(st => {
+            if (st !== 'SUBSCRIBED') return
+            ch.send({ type: 'broadcast', event: 'ORDER_ACCEPTED', payload: { estimated_minutes: notify } })
+              .finally(() => { supabase.removeChannel(ch); resolve() })
+          })
+          setTimeout(resolve, 3000)
+        })
+
+        // ③ Electron IPC (영수증 출력)
+        const w = window as unknown as { api?: { approveOrder?: Function } }
+        await w.api?.approveOrder?.({ order: orderToPayload(target, storeName), prepMins: mins })
+
+        track('pos_order_approved', {
+          order_code:   target.code,
+          total_amount: target.total,
+          method:       target.method,
+          item_count:   target.items.length,
+          prep_mins:    mins,
+        })
+      } catch (e) {
+        onError?.(`접수 처리 실패 (#${target.orderNumber ?? ''}) — 주문 화면에서 다시 시도해주세요`)
+        console.error('[OrderPopup] approve 실패:', e)
+      }
     })()
-
-    // ③ Electron IPC
-    const w = window as unknown as { api?: { rejectOrder?: Function } }
-    await w.api?.rejectOrder?.({ orderCode: order.code, reason })
-
-    track('pos_order_rejected', {
-      order_code:   order.code,
-      total_amount: order.total,
-      method:       order.method,
-      reason,
-    })
-
-    setLoading(false)
-    dismiss()
   }
 
-  // 슬라이드 시 translateX 값
-  const translateX = sliding ? -(CARD_W + CARD_GAP) : 0
+  function handleReject() {
+    if (!reason) return
+    const target = order
+    const why    = reason
 
-  // 모달 너비: 모든 카드 완전히 표시
-  const modalW = CARD_W * queue.length + CARD_GAP * (queue.length - 1)
+    dismiss()
+
+    void (async () => {
+      try {
+        // ① cancel_order RPC (status → '취소' + 잔액 환원 — QR 웹사이트 postgres_changes 트리거)
+        const { error } = await supabase.rpc('cancel_order', { p_order_code: target.code })
+        if (error) throw error
+
+        // ② broadcast로 거부 사유 전달 (fire-and-forget)
+        const ch = supabase.channel(`orders:order_code=${target.code}`)
+        await new Promise<void>(resolve => {
+          ch.subscribe(st => {
+            if (st !== 'SUBSCRIBED') return
+            ch.send({ type: 'broadcast', event: 'ORDER_REJECTED', payload: { reason: why } })
+              .finally(() => { supabase.removeChannel(ch); resolve() })
+          })
+          setTimeout(resolve, 3000)
+        })
+
+        // ③ Electron IPC
+        const w = window as unknown as { api?: { rejectOrder?: Function } }
+        await w.api?.rejectOrder?.({ orderCode: target.code, reason: why })
+
+        track('pos_order_rejected', {
+          order_code:   target.code,
+          total_amount: target.total,
+          method:       target.method,
+          reason:       why,
+        })
+      } catch (e) {
+        onError?.(`거부 처리 실패 (#${target.orderNumber ?? ''}) — 주문 화면에서 다시 시도해주세요`)
+        console.error('[OrderPopup] reject 실패:', e)
+      }
+    })()
+  }
+
+  // 하단 버튼 — Figma 733:652/673 공통 (h 78→50, r 20→13, 거부·이전 171 : 승인·접수 377 ≈ 1:2.2)
+  // 높이는 Figma 환산값(50)보다 키웠다 — 터치로도 누르는 POS라 손가락 목표를 넉넉히.
+  // 굵기는 semibold → medium 한 단계 낮춤(카드 안에서 제일 굵은 글자가 버튼일 필요는 없다).
+  const BTN = 'h-[58px] rounded-[13px] text-[18px] font-medium flex items-center justify-center transition-colors disabled:opacity-50'
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
@@ -174,258 +220,338 @@ export default function OrderPopup({ queue, onClose, onApprove }: Props) {
             <div
               key={o.code}
               style={{ width: CARD_W, flexShrink: 0, maxHeight: 'calc(100vh - 40px)' }}
-              className={`bg-white rounded-2xl overflow-hidden flex flex-col ${idx > 0 ? 'opacity-60' : ''}`}
+              className={`bg-[#FCFCFC] rounded-[19px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] overflow-hidden flex flex-col ${idx > 0 ? 'opacity-60' : ''}`}
             >
-              {/* ── 헤더 (대시보드 카드 스타일) ── */}
-              <div className="bg-ink px-5 py-3 flex-shrink-0">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-white font-medium text-[16px]">
+              {/* ── 헤더 (Figma 578:1078 — h 158→102, bg #6A635E) ──
+                  좌: 주문번호 + 이용방법 / 우: 주문시각 · 거래처|주문자 · 연락처 */}
+              <div className="bg-[#6A635E] h-[102px] flex-shrink-0 px-[26px] flex justify-between">
+                <div className="pt-[19px] flex flex-col gap-[6px]">
+                  <span className="text-[#FCFCFC] text-[23px] font-semibold leading-[28px]">
                     #{o.orderNumber ?? String(idx + 1)}
                   </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-white/60 text-[13px] font-medium">
-                      {new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} 주문
-                    </span>
-                  </div>
+                  <span className="text-[#FCFCFC] text-[23px] font-semibold leading-[28px]">{o.method}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-white/80 text-[13px]">
-                      {o.accountName === o.orderer ? o.accountName : `${o.accountName} · ${o.orderer}`}
-                    </span>
-                    {o.phone && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-white/60 text-[12px]">{o.phone}</span>
+                <div className="pt-[13px] flex flex-col items-end min-w-0">
+                  <span className="text-[#FCFCFC] text-[13px] font-normal leading-none">
+                    {new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                  </span>
+                  {/* 주문자 이름도 가린 채로 — 팝업은 카운터 앞에서 손님에게 그대로 보인다 */}
+                  <span className="mt-[30px] text-[#FCFCFC] text-[15px] font-semibold leading-none flex items-center gap-[5px] max-w-full truncate">
+                    {o.accountName === o.orderer ? o.accountName : (
+                      <>
+                        <span className="truncate">{o.accountName}</span>
+                        <span>|</span>
+                        <RevealText value={o.orderer} masked={maskName(o.orderer)} iconSize={13} onDark />
+                      </>
+                    )}
+                  </span>
+                  {o.phone && (
+                    <span className="mt-[3px] flex items-center">
+                      <RevealText
+                        value={o.phone} masked={maskPhone(o.phone)}
+                        className="text-[#D9D9D9] text-[12px] font-normal leading-none" iconSize={11} onDark
+                      />
                       <CopyButton text={o.phone} variant="gray" />
-                    </div>
+                    </span>
                   )}
-                  </div>
-                  <span className="text-white font-semibold text-[20px] leading-none">{o.method}</span>
                 </div>
               </div>
 
-              {/* ── 카드 본문 (첫 번째만 인터랙티브) ── */}
-              <div className="px-6 py-5 overflow-y-auto flex-1">
-                {idx === 0 ? (
-                  <>
-                    {/* 1단계: 주문 요약 */}
-                    {stage === 'summary' && (
-                      <>
-                        <div className="bg-gray-bg rounded-xl p-4 mb-4 space-y-3">
-                          {o.items.map((item, i) => (
-                            <div key={i} className="flex gap-3 items-start">
-                              {/* 메뉴 이미지 */}
-                              <div className="w-[48px] h-[48px] rounded-lg overflow-hidden flex-shrink-0 bg-gray-200">
-                                {item.imageUrl ? (
-                                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-[20px]">🍽️</div>
-                                )}
+              {idx === 0 ? (
+                <>
+                  {/* ─────────── 1단계: 주문 요약 (Figma 733:652) ─────────── */}
+                  {stage === 'summary' && (
+                    <>
+                      <div className="flex-1 overflow-y-auto px-[26px] pt-[40px] pb-[14px]">
+                        {/* 메뉴 목록 — 메뉴명 | 수량, 그 아래 └ 단가 / └ 옵션 */}
+                        {o.items.map((item, i) => (
+                          <div key={i} className={`flex gap-[14px] ${i > 0 ? 'mt-[24px]' : ''}`}>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[20px] font-semibold text-[#1E1E1E] truncate">
+                                {item.name} | {item.qty}개
                               </div>
-                              {/* 메뉴 정보 */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex justify-between text-[15px] font-semibold">
-                                  <span className="truncate">{item.name} · {item.qty}개</span>
-                                  <span className="text-[12px] font-normal text-gray-text flex-shrink-0 ml-2">{won(item.price * item.qty)}</span>
-                                </div>
-                                {item.options.length > 0 && (
-                                  <div className="text-[12px] text-gray-text mt-0.5 space-y-0.5">
-                                    {item.options.map((opt, oi) => <div key={oi}>└ {opt}</div>)}
-                                  </div>
-                                )}
+                              <div className="mt-[12px] flex flex-col gap-[10px]">
+                                <BranchLine>{won(item.price)}</BranchLine>
+                                {item.options.map((opt, oi) => <BranchLine key={oi}>{opt}</BranchLine>)}
                               </div>
                             </div>
-                          ))}
-                          <div className="border-t border-gray-border pt-2.5 mt-2.5 flex justify-between items-center">
-                            <span className="font-semibold text-[15px]">합계</span>
-                            <span className="text-ink text-[20px] font-bold">{won(o.total)}</span>
+                            {/* 썸네일 131→84 */}
+                            <div className="w-[84px] h-[84px] rounded-[6px] overflow-hidden flex-shrink-0 bg-[#F2F2F2]">
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[28px]">🍽️</div>
+                              )}
+                            </div>
                           </div>
+                        ))}
+
+                        <div className="h-px bg-[#D9D9D9] my-[26px]" />
+
+                        <div className="flex items-center justify-between">
+                          <span className="text-[15px] font-semibold text-[#1E1E1E]">합계</span>
+                          <span className="text-[18px] font-semibold text-[#1E1E1E]">{won(o.total)}</span>
                         </div>
-                        {o.remarks && (() => {
+
+                        {/* 요청사항 / 배달 정보 */}
+                        {(() => {
                           const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parseNote(o.remarks)
+                          const note = customerNote || (!deliveryAddress ? o.remarks : '')
                           return (
-                            <div className="mb-3 space-y-2">
-                              {customerNote && (
-                                <div>
-                                  <div className="text-[12px] font-bold text-gray-text mb-1">가게 요청사항 💬</div>
-                                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-[13px] text-ink font-semibold">
-                                    {customerNote}
+                            <>
+                              {note && (
+                                <>
+                                  {/* '가게 요청사항' 라벨은 뺐다. 이 팝업에서 회색 박스에 담긴
+                                      자유 문장은 이것뿐이라 박스 자체가 라벨 역할을 한다
+                                      (홈 상세의 요청사항도 같은 이유로 라벨을 뺐다).
+                                      배달 주소·배달 요청사항은 둘이 나란히 와서 구분이 필요하므로 라벨을 남긴다. */}
+                                  <div className="mt-[32px] rounded-[13px] bg-[#F2F2F2] px-[19px] py-[16px] text-[15px] font-semibold text-[#1E1E1E] leading-[1.5] whitespace-pre-wrap">
+                                    {note}
                                   </div>
-                                </div>
+                                </>
                               )}
                               {deliveryAddress && (
-                                <div>
-                                  <div className="text-[12px] font-bold text-gray-text mb-1">배달 주소 🛵</div>
-                                  <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 space-y-1.5">
-                                    <div className="flex items-center justify-between text-[13px] text-ink font-semibold">
-                                      <span className="flex-1 min-w-0 truncate">{deliveryAddress}</span>
+                                <>
+                                  <div className="mt-[32px] text-[15px] font-normal text-[#1E1E1E]">배달 주소</div>
+                                  <div className="mt-[13px] rounded-[13px] bg-[#F2F2F2] px-[19px] py-[16px]">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[15px] font-semibold text-[#1E1E1E] flex-1 min-w-0 truncate">{deliveryAddress}</span>
                                       <CopyButton text={deliveryAddress} variant="black" />
                                     </div>
                                     {deliveryDetail && (
-                                      <div className="flex items-center justify-between text-[12px] text-gray-text">
-                                        <span className="flex-1 min-w-0 truncate">{deliveryDetail}</span>
+                                      <div className="mt-[6px] flex items-center justify-between gap-2">
+                                        <span className="text-[13px] font-normal text-[#787878] flex-1 min-w-0 truncate">{deliveryDetail}</span>
                                         <CopyButton text={deliveryDetail} variant="black" />
                                       </div>
                                     )}
-                                  </div>
-                                  {deliveryNote && (
-                                    <div className="mt-2">
-                                      <div className="text-[12px] font-bold text-gray-text mb-1">배달 요청사항 📝</div>
-                                      <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 flex items-center justify-between gap-2">
-                                        <span className="text-[13px] text-ink flex-1 min-w-0">{deliveryNote}</span>
-                                        <CopyButton text={deliveryNote} variant="black" />
+                                    {deliveryNote && (
+                                      <div className="mt-[10px] pt-[10px] border-t border-[#D9D9D9] text-[13px] font-normal text-[#414141]">
+                                        {deliveryNote}
                                       </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                              {!deliveryAddress && !customerNote && (
-                                <div>
-                                  <div className="text-[12px] font-bold text-gray-text mb-1">요청사항 💬</div>
-                                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-[13px] text-ink font-semibold">
-                                    {o.remarks}
+                                    )}
                                   </div>
+                                </>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </div>
+
+                      {/* 하단 버튼 — 거부(연분홍/빨강) : 승인(짙은 먹) = 171 : 377 */}
+                      <div className="flex-shrink-0 px-[26px] pb-[26px] flex gap-[6px]">
+                        <button
+                          onClick={() => setStage('reject')}
+                          className={`${BTN} w-[110px] flex-shrink-0 bg-[#FFEFEF] text-[#FF676F] hover:brightness-95`}
+                        >
+                          거부
+                        </button>
+                        <button
+                          onClick={openApprove}
+                          className={`${BTN} flex-1 bg-[#2C261F] text-[#F9F9F9] hover:opacity-90`}
+                        >
+                          승인
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* ─────────── 2A단계: 소요시간 (Figma 733:673) ─────────── */}
+                  {stage === 'approve' && (
+                    <>
+                      {/* Figma 733:673 세로 좌표(원본 → ×0.643, 헤더 102 제외한 본문 기준):
+                          스테퍼 178→76 · 칩1행 260 · 칩2행 306 · 안내박스 360 · 버튼 431 */}
+                      <div className="flex-1 overflow-y-auto px-[26px] pt-[24px] pb-[14px] flex flex-col">
+                        {/* 손님 기준 결과를 맨 위에 — 아래 스테퍼·칩은 "분"만 다루지만
+                            점주가 실제로 판단할 때 필요한 건 몇 시에 가져가느냐다.
+                            스테퍼를 돌리면 분과 시각이 같이 움직인다. */}
+                        {/* 윗줄은 **손님이 주문할 때 고른 시간**이다. 스테퍼를 돌려도 움직이지 않는다 —
+                            점주가 조리시간을 바꾼다고 손님이 한 말이 바뀌지는 않으니까.
+                            전엔 여기도 prepMins 를 썼는데, 그러면 "손님은 5분 후에 수령할 수 있어요"가
+                            점주의 입력을 손님의 요청인 척 되돌려주는 꼴이었다. */}
+                        {(() => {
+                          const req = o.requestedPickupMinutes
+                          if (req == null) return (
+                            <div className="text-[15px] font-normal text-[#787878] mb-[28px]">
+                              손님이 수령 시간을 고르지 않았어요
+                            </div>
+                          )
+                          if (req === 0) return (
+                            <div className="text-[15px] font-normal text-[#414141] mb-[28px]">
+                              손님은 <span className="font-semibold text-[#1E1E1E]">지금 바로</span>
+                              {o.method === '배달' ? ' 배달 출발을 원해요' : ' 받으러 와요'}
+                            </div>
+                          )
+                          return (
+                            <div className="text-[15px] font-normal text-[#414141] mb-[28px]">
+                              손님은 <span className="font-semibold text-[#1E1E1E]">{req}분 후({readyClock(req, new Date(o.createdAt))})</span>에
+                              {o.method === '배달' ? ' 배달 출발을 원해요' : ' 수령하길 원해요'}
+                            </div>
+                          )
+                        })()}
+
+                        {/* 스테퍼 — Figma는 +가 왼쪽, −가 오른쪽 */}
+                        <div className="flex items-center justify-between px-[51px]">
+                          <StepBtn onClick={() => setPrepMins(p => Math.min(90, p + 1))} kind="plus" />
+                          <span className="text-[31px] font-semibold text-[#1E1E1E] leading-none tabular-nums">
+                            {prepMins}분
+                          </span>
+                          <StepBtn onClick={() => setPrepMins(p => Math.max(1, p - 1))} kind="minus" />
+                        </div>
+
+                        {/* 프리셋 칩 4×2 */}
+                        {/* 4열 × 2행 고정. flex-wrap 으로 두면 폭이 358이라 한 줄에 5개가 들어가
+                            5+3으로 깨진다 — Figma 좌표(폭 57 · 간격 10 · 총 258 가운데정렬) 그대로 그리드로 박는다 */}
+                        <div className="mt-[39px] grid grid-cols-4 gap-x-[10px] gap-y-[12px] w-[258px] mx-auto">
+                          {PREP_PRESETS.map(mins => (
+                            <button
+                              key={mins}
+                              onClick={() => setPrepMins(mins)}
+                              className={`w-[57px] py-[8px] rounded-[10px] border text-[15px] font-medium transition-colors
+                                ${prepMins === mins
+                                  ? 'bg-[#6A635E] text-[#F9F9F9] border-[#6A635E]'
+                                  : 'bg-transparent text-[#414141] border-[#D9D9D9] hover:bg-[#F2F2F2]'}`}>
+                              {mins}분
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Figma 557:4367 — 회색 안내 박스 한 개.
+                            "몇 분"만 말하면 점주가 머릿속으로 시계를 더해야 해서 시각을 같이 적는다.
+                            스테퍼를 돌리면 분과 시각이 같이 움직인다. */}
+                        {/* 여기가 스테퍼를 따라 움직이는 줄이다.
+                            ⚠️ prepMins 를 그대로 쓰면 안 된다 — 실제로 손님에게 가는 값은
+                            handleApprove 의 notify = max(prepMins, 손님요청) 이다.
+                            주방이 5분이어도 손님이 30분 뒤 온다고 했으면 30분으로 안내된다.
+                            그 차이를 안 적으면 "내가 5분 했는데 왜 30분이지?"가 된다. */}
+                        {(() => {
+                          const req    = o.requestedPickupMinutes ?? 0
+                          const notify = Math.max(prepMins, req)
+                          return (
+                            <div className="mt-[20px] rounded-[13px] bg-[#F2F2F2] px-[19px] py-[14px] min-h-[57px] flex flex-col justify-center">
+                              <div className="text-[15px] font-semibold text-[#1E1E1E]">
+                                고객에게 [{notify}분 뒤 {o.method === '배달' ? '배달출발' : '준비완료'}]로 안내돼요
+                              </div>
+                              {notify !== prepMins && (
+                                <div className="text-[12px] font-normal text-[#787878] mt-[4px]">
+                                  주방은 {prepMins}분이지만 손님이 {req}분 뒤에 온다고 해서 그 시간으로 안내돼요
                                 </div>
                               )}
                             </div>
                           )
                         })()}
-                        <div className="flex gap-[10px] mt-2">
-                          <button
-                            onClick={() => setStage('reject')}
-                            className="flex-[1] py-2.5 rounded-[10px] bg-ink text-white font-bold text-[14px] hover:bg-ink/80 transition-colors"
-                          >
-                            거부
-                          </button>
-                          <button
-                            onClick={() => setStage('approve')}
-                            style={{ backgroundColor: '#00DD67' }}
-                            className="flex-[3] py-2.5 rounded-[10px] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 transition-opacity"
-                          >
-                            승인
-                          </button>
-                        </div>
-                      </>
-                    )}
+                      </div>
 
-                    {/* 2A단계: 소요시간 */}
-                    {stage === 'approve' && (
-                      <>
-                        {/* 주문 메뉴 요약 (compact) */}
-                        <div className="bg-gray-bg rounded-xl px-3 py-2 mb-3 space-y-1 max-h-[120px] overflow-y-auto">
-                          {order.items.map((item, i) => (
-                            <div key={i} className="text-[12px]">
-                              <span className="font-semibold text-ink">{item.name} · {item.qty}개</span>
-                              {item.options.length > 0 && (
-                                <span className="text-gray-text ml-1">{item.options.join(', ')}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                      <div className="flex-shrink-0 px-[26px] pb-[26px] flex gap-[6px]">
+                        <button
+                          onClick={() => setStage('summary')}
+                          className={`${BTN} w-[110px] flex-shrink-0 bg-[#F2F2F2] text-[#414141] hover:brightness-95`}
+                        >
+                          이전
+                        </button>
+                        <button
+                          onClick={handleApprove}
+                          className={`${BTN} flex-1 bg-[#2C261F] text-[#F9F9F9] hover:opacity-90`}
+                        >
+                          접수
+                        </button>
+                      </div>
+                    </>
+                  )}
 
-                        <div className="text-[13px] font-bold mb-3">{order.method === '배달' ? '배달 출발까지 예상 소요시간' : '예상 소요시간'}</div>
-                        <div className="flex items-center justify-center gap-4 mb-3">
-                          <button
-                            onClick={() => setPrepMins(p => Math.max(1, p - 1))}
-                            className="w-10 h-10 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[20px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
-                            −
-                          </button>
-                          <div className="w-24 text-center flex-shrink-0">
-                            <span className="text-[42px] font-extrabold text-green leading-none tabular-nums">{prepMins}</span>
-                            <span className="text-[15px] font-semibold text-gray-text ml-1">분</span>
-                          </div>
-                          <button
-                            onClick={() => setPrepMins(p => Math.min(90, p + 1))}
-                            className="w-10 h-10 rounded-xl bg-gray-100 text-gray-text hover:bg-gray-200 text-[20px] flex items-center justify-center transition-colors duration-75 flex-shrink-0">
-                            +
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-6 gap-1 mb-3">
-                          {PREP_PRESETS.map(mins => (
-                            <button
-                              key={mins}
-                              onClick={() => setPrepMins(mins)}
-                              className={`py-1.5 rounded-lg font-medium text-[12px] transition-colors duration-75 border
-                                ${prepMins === mins
-                                  ? 'bg-ink text-white border-ink'
-                                  : 'text-gray-text border-gray-border hover:bg-gray-bg'}`}>
-                              {mins}분
-                            </button>
-                          ))}
-                        </div>
-                        <div className="bg-gray-bg rounded-xl px-4 py-2.5 mb-3 text-[12px] text-gray-text font-semibold leading-relaxed">
-                          <strong className="text-ink">"약 {prepMins}분 후 {order.method === '배달' ? '배달 출발' : '준비'} 예정"</strong>으로 안내됩니다.
-                        </div>
-                        <div className="flex gap-[10px]">
-                          <button
-                            onClick={() => setStage('summary')}
-                            disabled={loading}
-                            className="flex-[1] py-2.5 rounded-[10px] bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors disabled:opacity-50"
-                          >
-                            뒤로
-                          </button>
-                          <button
-                            onClick={handleApprove}
-                            disabled={loading}
-                            style={{ backgroundColor: '#00DD67' }}
-                            className="flex-[3] py-2.5 rounded-[10px] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 transition-opacity disabled:opacity-60"
-                          >
-                            {loading ? '처리 중…' : '접수'}
-                          </button>
-                        </div>
-                      </>
-                    )}
-
-                    {/* 2B단계: 거부 사유 */}
-                    {stage === 'reject' && (
-                      <>
-                        <div className="text-[15px] font-bold mb-4">거부 사유를 선택해주세요</div>
-                        <div className="grid grid-cols-2 gap-2 mb-5">
+                  {/* ─────────── 2B단계: 거부 사유 (Figma 없음 — 같은 디자인 언어로) ─────────── */}
+                  {stage === 'reject' && (
+                    <>
+                      <div className="flex-1 overflow-y-auto px-[26px] pt-[40px] pb-[14px]">
+                        <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[20px]">거부 사유를 선택해주세요</div>
+                        <div className="grid grid-cols-2 gap-[10px]">
                           {REJECT_REASONS.map(r => (
                             <button key={r} onClick={() => setReason(r)}
-                              className={`py-3 rounded-xl border-2 text-[13px] font-semibold transition-colors
-                                ${reason === r ? 'border-danger bg-red-50 text-danger' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                              className={`py-[12px] rounded-[10px] border text-[15px] font-medium transition-colors
+                                ${reason === r
+                                  ? 'bg-[#FFEFEF] text-[#FF676F] border-[#FF676F]'
+                                  : 'bg-transparent text-[#414141] border-[#D9D9D9] hover:bg-[#F2F2F2]'}`}>
                               {r}
                             </button>
                           ))}
                         </div>
-                        <div className="flex gap-3">
-                          <button onClick={() => setStage('summary')}
-                            className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-bg transition-colors">
-                            뒤로
-                          </button>
-                          <button onClick={handleReject} disabled={!reason || loading}
-                            className="flex-1 py-3 rounded-xl bg-danger text-white font-bold text-[15px] hover:bg-danger/90 transition-colors disabled:opacity-40">
-                            {loading ? '처리 중…' : '거부 확정'}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  /* 다음 주문 미리보기 (읽기 전용) */
-                  <div className="space-y-2 pointer-events-none">
-                    {o.items.map((item, i) => (
-                      <div key={i}>
-                        <div className="text-[13px] font-semibold text-ink">
-                          {item.name} · {item.qty}개
-                        </div>
-                        {item.options.length > 0 && (
-                          <div className="text-[12px] text-gray-text ml-1 mt-0.5 space-y-0.5">
-                            {item.options.map((opt, oi) => <div key={oi}>└ {opt}</div>)}
-                          </div>
-                        )}
                       </div>
-                    ))}
-                    <div className="pt-2 border-t border-gray-border text-[14px] font-bold text-ink">
-                      {won(o.total)}
+                      <div className="flex-shrink-0 px-[26px] pb-[26px] flex gap-[6px]">
+                        <button
+                          onClick={() => setStage('summary')}
+                          className={`${BTN} w-[110px] flex-shrink-0 bg-[#F2F2F2] text-[#414141] hover:brightness-95`}
+                        >
+                          이전
+                        </button>
+                        <button
+                          onClick={handleReject}
+                          disabled={!reason}
+                          className={`${BTN} flex-1 bg-[#FFEFEF] text-[#FF676F] hover:brightness-95 disabled:opacity-40`}
+                        >
+                          거부 확정
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                /* 대기 중인 다음 주문 — 읽기 전용 미리보기 */
+                <div className="flex-1 overflow-y-auto px-[26px] pt-[40px] pb-[26px] pointer-events-none">
+                  {o.items.map((item, i) => (
+                    <div key={i} className={i > 0 ? 'mt-[16px]' : ''}>
+                      <div className="text-[15px] font-semibold text-[#1E1E1E] truncate">
+                        {item.name} | {item.qty}개
+                      </div>
+                      {item.options.length > 0 && (
+                        <div className="mt-[8px] flex flex-col gap-[8px]">
+                          {item.options.map((opt, oi) => <BranchLine key={oi} small>{opt}</BranchLine>)}
+                        </div>
+                      )}
                     </div>
+                  ))}
+                  <div className="h-px bg-[#D9D9D9] my-[20px]" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] font-semibold text-[#1E1E1E]">합계</span>
+                    <span className="text-[15px] font-semibold text-[#1E1E1E]">{won(o.total)}</span>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           ))}
       </div>
     </div>
+  )
+}
+
+/** Figma 578:1092 — 메뉴 하위 줄 앞의 └ 꺾쇠. 1.2px 선 2개(18px)를 테두리로 그린다 */
+function BranchLine({ children, small = false }: { children: React.ReactNode; small?: boolean }) {
+  const arm = small ? 9 : 12
+  return (
+    <div className="flex items-start">
+      <span
+        className="border-l border-b border-[#1E1E1E] flex-shrink-0 mr-[3px]"
+        style={{ width: arm, height: arm, marginTop: small ? 1 : 2 }}
+      />
+      <span className={`${small ? 'text-[13px]' : 'text-[15px]'} font-light text-[#1E1E1E] leading-none`}>
+        {children}
+      </span>
+    </div>
+  )
+}
+
+/** Figma 557:4384/4393 — 소요시간 ± 버튼 (73×67 → 47×43, bg #F2F2F2, 아이콘 #787878) */
+function StepBtn({ onClick, kind }: { onClick: () => void; kind: 'plus' | 'minus' }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-[47px] h-[43px] rounded-[10px] bg-[#F2F2F2] hover:bg-[#E8E4E2] flex items-center justify-center flex-shrink-0 transition-colors"
+      aria-label={kind === 'plus' ? '1분 늘리기' : '1분 줄이기'}
+    >
+      <span className="relative block w-[16px] h-[16px]">
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[16px] h-[2px] rounded-[5px] bg-[#787878]" />
+        {kind === 'plus' && (
+          <span className="absolute top-0 left-1/2 -translate-x-1/2 h-[16px] w-[2px] rounded-[5px] bg-[#787878]" />
+        )}
+      </span>
+    </button>
   )
 }

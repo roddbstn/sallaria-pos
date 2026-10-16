@@ -11,8 +11,10 @@ export interface DbAccount {
   account_code:      string
   account_number:    number
   account_name:      string
-  account_type:      '과' | '기업' | '개인' | '기타'
+  /** 매장이 자유롭게 생성/개명하는 고객 유형 — stores.customer_types(최대 6개)의 값 중 하나 */
+  account_type:      string
   pin_code:          string
+  pin_encrypted:     string | null
   organization_name: string | null
   contact_person:    string | null
   contact_phone:     string | null
@@ -22,6 +24,9 @@ export interface DbAccount {
   memo:              string | null
   is_active:         boolean
   created_at:        string
+  qr_system:         'legacy' | 'kakao'
+  /** 가장 최근 선결제(충전) 기준 유효기간 — 자동 만료 처리는 없고 점주가 눈으로 확인하는 용도 */
+  prepay_validity:   'none' | '6m' | '1y' | '2y'
 }
 
 export interface DbOrder {
@@ -116,11 +121,17 @@ export interface DbDeposit {
 }
 
 export interface DbStore {
-  id:        string
-  client_id: string
-  name:      string
-  address:   string | null
-  phone:     string | null
+  id:                  string
+  client_id:           string
+  name:                string
+  address:             string | null
+  phone:               string | null
+  representative_name: string | null
+  customer_types:      string[]
+  road_address:        string | null
+  address_detail:      string | null
+  lat:                 number | null
+  lng:                 number | null
 }
 
 export interface DbClient {
@@ -131,5 +142,6 @@ export interface DbClient {
   contact_phone: string | null
   contact_email: string | null
   address:       string | null
+  business_type: string | null
   is_active:     boolean
 }

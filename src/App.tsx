@@ -1,22 +1,35 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { useOperatingHours } from './hooks/useOperatingHours'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
+import { checkPhoneLoginState, PASSWORD_MIN_LEN } from './lib/auth-helpers'
 import { track } from './lib/firebase'
 import { StoreContext, type StoreSession } from './lib/store-context'
 import { playOrderSound } from './lib/sound'
 
-import logoWithText from './assets/logo-with-text.png'
+import storeIcon from './assets/icons/store.svg'
 import { HeaderSlotContext } from './lib/header-slot'
+import { formatKstDate, formatKstTime } from './lib/datetime'
 
-import Auth        from './pages/Auth'
-import Onboarding  from './pages/Onboarding'
-import Dashboard   from './pages/Dashboard'
-import Orders      from './pages/Orders'
+import AuthEntry   from './pages/auth/AuthEntry'
+import LoginScreen from './pages/auth/LoginScreen'
+import SignupFlow  from './pages/auth/signup/SignupFlow'
+import PhoneAuthFlow from './pages/auth/signup/PhoneAuthFlow'
+import type { SignupData } from './pages/auth/signup/types'
+import QrPasswordSetupModal from './components/auth/QrPasswordSetupModal'
+import Home       from './pages/Home'
+import Orders     from './pages/Orders'
 import Customers   from './pages/Customers'
 import Menus       from './pages/Menus'
-import Sales, { UpgradeModal } from './pages/Sales'
+import { UpgradeModal } from './pages/Sales'
 import Settings    from './pages/Settings'
+import StoreInfo   from './pages/StoreInfo'
+import CustomerHub, { type CustomerHubTab } from './pages/CustomerHub'
+import ProductHub, { type ProductHubTab } from './pages/ProductHub'
+import SupportModal from './components/SupportModal'
+import NotificationBell from './components/ui/NotificationBell'
+import SettingsHub, { type SettingsHubTab } from './pages/SettingsHub'
+import SalesHub, { type SalesHubTab } from './pages/SalesHub'
 import OrderPopup  from './components/OrderPopup'
 import ProfileModal from './components/ProfileModal'
 import { type Order } from './lib/mock-data'
@@ -26,7 +39,7 @@ import { mapOrderRow } from './lib/mappers'
 const ORDER_SELECT = `
   order_number, order_code, orderer_name, orderer_phone,
   ordered_at, total_amount, balance_before, balance_after,
-  method, status, note,
+  method, status, note, requested_pickup_minutes,
   accounts ( account_name ),
   order_items (
     order_item_id, menu_name, quantity, unit_price,
@@ -37,15 +50,8 @@ const ORDER_SELECT = `
 
 // ── 앱 상태 ───────────────────────────────────────────────────────────────────
 type Phase = 'loading' | 'auth' | 'onboarding' | 'welcome' | 'main'
-type Tab   = 'dashboard' | 'orders' | 'customers' | 'menus' | 'sales' | 'settings'
+type Tab   = 'home' | 'dashboard' | 'customers' | 'menus' | 'settings' | 'store-info' | 'customer-hub' | 'product-hub' | 'settings-hub' | 'sales-hub'
 
-// ── 사이드바 아이콘 (2D SVG) ──────────────────────────────────────────────────
-function IconHome()     { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg> }
-function IconOrders()   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg> }
-function IconCustomers(){ return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a6 6 0 0 1 6-6h2"/><circle cx="17" cy="16" r="3"/><path d="M20.5 19.5 22 21"/></svg> }
-function IconMenus()    { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="13" rx="8" ry="4"/><path d="M4 13c0 2.21 3.58 4 8 4s8-1.79 8-4"/><path d="M12 3v2"/><path d="M9 4.5C6.5 5.5 5 7.5 5 10"/><path d="M15 4.5C17.5 5.5 19 7.5 19 10"/></svg> }
-function IconSettings() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> }
-function IconSales()    { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><polyline points="7 9 10 12 13 9 17 13"/></svg> }
 
 // ── 시 드래그 티커 ────────────────────────────────────────────────────────────
 // ── 공통 슬라이드 틱커 (HourTicker / MinuteTicker 공유) ─────────────────────
@@ -259,42 +265,102 @@ function DayRow({
   )
 }
 
-const NAV: { id: Tab; Icon: () => JSX.Element; label: string }[] = [
-  { id: 'dashboard', Icon: IconHome,      label: '홈' },
-  { id: 'orders',    Icon: IconOrders,    label: '주문' },
-  { id: 'customers', Icon: IconCustomers, label: '고객' },
-  { id: 'menus',     Icon: IconMenus,     label: '메뉴' },
-  { id: 'sales',     Icon: IconSales,     label: '정산' },
-  { id: 'settings',  Icon: IconSettings,  label: '설정' },
+// ── 상단 탭 (Figma: 주문/메뉴/고객만 상단 탭, 나머지는 햄버거 드로어) ──────────
+// 'dashboard' 탭(실시간 주문 화면)이 Figma상 "주문" 탭 — 기존 Orders.tsx(주문 내역/분석)는 드로어에서만 진입
+const TOP_TABS: { id: Tab; label: string }[] = [
+  { id: 'home',      label: '홈' },
+  { id: 'dashboard', label: '주문' },
+  { id: 'menus',     label: '메뉴' },
+  { id: 'customers', label: '고객' },
 ]
 
-
-const PAGE_TITLES: Record<Tab, string> = {
-  dashboard: '홈',
-  orders:    '주문관리',
-  customers: '고객관리',
-  menus:     '메뉴관리',
-  sales:     '정산',
-  settings:  '설정',
-}
+// 햄버거(전체 메뉴)로 들어가는 허브형 화면 — 좌측 네비 + 본문 패널 구조라
+// 헤더 하단 구분선을 그리지 않는다(네비 상단과 겹쳐 보임)
+const HUB_TABS: Tab[] = ['store-info', 'customer-hub', 'product-hub', 'settings-hub', 'sales-hub']
 
 export default function App() {
   const [phase,      setPhase]      = useState<Phase>('loading')
   const phaseRef = useRef<Phase>('loading')
   const [session,    setSession]    = useState<StoreSession | null>(null)
   const [authObj,    setAuthObj]    = useState<Session | null>(null)
-  const [tab,        setTab]        = useState<Tab>('dashboard')
+  const [tab,        setTab]        = useState<Tab>('home')
+  // 고객 전체메뉴(CustomerHub)에서 처음 열릴 탭 — 햄버거 드로어에서 누른 항목으로 정해진다
+  const [customerHubTab, setCustomerHubTab] = useState<CustomerHubTab>('detail')
+  const [productHubTab,  setProductHubTab]  = useState<ProductHubTab>('menus')
+  const [settingsHubTab, setSettingsHubTab] = useState<SettingsHubTab>('printer')
+  const [salesHubTab,    setSalesHubTab]    = useState<SalesHubTab>('report')
+
+  // 활성 탭 밑줄 — 고정 px(106 + i*109) 추정치 대신, 실제 탭 버튼의 렌더된 중앙 위치를 측정해서
+  // 맞춘다. 한글 글자폭은 라틴 문자처럼 균등하지 않아 고정 간격 추정이 탭마다 미묘하게 어긋났음.
+  // 밑줄 폭(UNDERLINE_W) 자체는 Figma 원본 디자인 값 그대로 유지하고, 중심만 텍스트 중앙에 맞춘다.
+  const UNDERLINE_W = 69
+  const tabBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const [tabUnderlineLeft, setTabUnderlineLeft] = useState(106)
+  const measureUnderline = useCallback(() => {
+    const el = tabBtnRefs.current[tab]
+    if (el) setTabUnderlineLeft(el.offsetLeft + el.offsetWidth / 2 - UNDERLINE_W / 2)
+  }, [tab])
+  // 예전엔 deps가 [tab]뿐이라 "탭이 바뀔 때" 한 번만 쟀다. 그래서 첫 측정이 틀리면
+  // (웹폰트 로딩 전 폴백 글꼴 폭으로 쟀거나, 헤더가 아직 마운트되기 전이라 el이 null이어서
+  // 초기값 106이 그대로 남거나) 그 뒤로 영영 교정되지 않았다. 창 크기를 바꿔도 마찬가지.
+  // 폰트 로드 · 버튼 리사이즈 · 창 리사이즈를 모두 구독해 다시 잰다.
+  useLayoutEffect(() => {
+    measureUnderline()
+    document.fonts?.ready.then(measureUnderline).catch(() => {})
+    const ro = new ResizeObserver(measureUnderline)
+    Object.values(tabBtnRefs.current).forEach(el => el && ro.observe(el))
+    window.addEventListener('resize', measureUnderline)
+    return () => { ro.disconnect(); window.removeEventListener('resize', measureUnderline) }
+  }, [measureUnderline])
   const [headerRight, setHeaderRight] = useState<React.ReactNode>(null)
   const [queue,      setQueue]      = useState<Order[]>([])
-  const [wsStatus,   setWsStatus]   = useState<'connected' | 'disconnected'>('disconnected')
-  const [printerOk,  setPrinterOk]  = useState(false)
   const [toast,      setToast]      = useState('')
   const [toastTimer, setToastTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [updateReady, setUpdateReady] = useState<string | null>(null)
   const [profileOpen,  setProfileOpen]  = useState(false)
+  // 미리보기용 — 데이터 연동 전까지 auth 화면 눈으로 확인하기 위한 로컬 상태
+  const [authView, setAuthView] = useState<'entry' | 'signup' | 'login'>('entry')
+  const [qrOpen,   setQrOpen]   = useState(false)
+  // phase='onboarding' 재진입 시 이미 저장된 값(업종/주소/고객유형/대표자명)을 SignupFlow에 프리필
+  const [onboardingPrefill, setOnboardingPrefill] = useState<Partial<SignupData> | null>(null)
+  // 이미 비밀번호를 설정해둔 상태로 재진입했는지 — SignupFlow의 password 스텝 스킵 여부에 씀
+  const [onboardingHasPassword, setOnboardingHasPassword] = useState(false)
   const [upgradeOpen,  setUpgradeOpen]  = useState(false)
   // 웰컴 화면 페이드 제어 (true = 완전 표시, false = 페이드아웃 중)
   const [welcomeVisible, setWelcomeVisible] = useState(false)
+  // 상단 햄버거 전체메뉴 드로어.
+  //
+  // 클릭이 아니라 호버로 연다. 닫기는 "영역을 벗어나면" — 다만 햄버거와 패널 사이를
+  // 지나가는 몇 px 때문에 즉시 닫으면 깜빡이므로, 짧은 지연을 두고 다시 들어오면 취소한다.
+  const [hamburgerOpen, setHamburgerOpen] = useState(false)
+  const drawerCloseTimer = useRef<number | null>(null)
+
+  function openDrawer() {
+    if (drawerCloseTimer.current !== null) {
+      window.clearTimeout(drawerCloseTimer.current)
+      drawerCloseTimer.current = null
+    }
+    setHamburgerOpen(true)
+  }
+  function scheduleCloseDrawer() {
+    if (drawerCloseTimer.current !== null) window.clearTimeout(drawerCloseTimer.current)
+    drawerCloseTimer.current = window.setTimeout(() => {
+      drawerCloseTimer.current = null
+      setHamburgerOpen(false)
+    }, 160)
+  }
+  useEffect(() => () => {
+    if (drawerCloseTimer.current !== null) window.clearTimeout(drawerCloseTimer.current)
+  }, [])
+  // 문의 모달 — early return(onboarding/welcome) 위에 둘 것. 아래로 내리면 훅 개수가 렌더마다 달라진다
+  const [supportOpen, setSupportOpen] = useState(false)
+  // 값은 쓰지 않고 setter 만 쓴다(연결 상태는 IPC 쪽에서만 참조) — 자리를 비워 미사용 경고를 없앴다
+  const [, setWsStatus] = useState<'connected' | 'disconnected'>('disconnected')
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   // phaseRef: onAuthStateChange 클로저에서 현재 phase 읽기 위해 동기화
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -304,9 +370,51 @@ export default function App() {
     if (phase !== 'welcome') return
     setWelcomeVisible(true)
     const show = setTimeout(() => setWelcomeVisible(false), 1500)
-    const hide = setTimeout(() => setPhase('main'),         1800)
+    const hide = setTimeout(() => { setPhase('main'); setTab('home') }, 1800)
     return () => { clearTimeout(show); clearTimeout(hide) }
   }, [phase])
+
+  // onboarding 재진입 시 이미 저장된 값(clients/stores)을 SignupFlow 프리필로 로드
+  useEffect(() => {
+    if (phase !== 'onboarding' || !session) return
+    let cancelled = false
+
+    async function loadPrefill() {
+      const { data: clientRow } = await supabase
+        .from('clients').select('business_type, owner_name').eq('id', session!.clientId).maybeSingle()
+
+      let storeRow: { address: string | null; address_detail: string | null; lat: number | null; lng: number | null; customer_types: string[] | null } | null = null
+      if (session!.storeId) {
+        const { data } = await supabase
+          .from('stores')
+          .select('address, address_detail, lat, lng, customer_types')
+          .eq('id', session!.storeId)
+          .maybeSingle()
+        storeRow = data ?? null
+      }
+
+      // 전화번호가 있는 세션(OTP 가입)만 비밀번호 설정 여부 확인 — 기존 이메일 계정은 해당 없음
+      let hasPassword = false
+      if (authObj?.user.phone) {
+        hasPassword = (await checkPhoneLoginState(authObj.user.phone)) === 'has_password'
+      }
+
+      if (cancelled) return
+      setOnboardingHasPassword(hasPassword)
+      setOnboardingPrefill({
+        businessType:  clientRow?.business_type ?? '',
+        address:       storeRow?.address ?? '',
+        addressDetail: storeRow?.address_detail ?? '',
+        lat:           storeRow?.lat ?? null,
+        lng:           storeRow?.lng ?? null,
+        customerTypes: storeRow?.customer_types ?? [],
+        ownerName:     clientRow?.owner_name ?? '',
+      })
+    }
+
+    loadPrefill()
+    return () => { cancelled = true }
+  }, [phase, session?.clientId, session?.storeId, authObj?.user.phone])
 
   // 비밀번호 재설정 딥링크 수신 후 새 비밀번호 입력 모달
   const [showNewPwModal,  setShowNewPwModal]  = useState(false)
@@ -322,11 +430,12 @@ export default function App() {
   // ── 인증 + 스토어 로딩 ──────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      if (!s) { setPhase('auth'); return }
+      if (!s) { setPhase('auth'); setAuthView('entry'); return }
       // 자동 로그인 비활성화 시 저장된 세션 무효화
       if (localStorage.getItem('sallaria_pos_remember') === 'false') {
         await supabase.auth.signOut()
         setPhase('auth')
+        setAuthView('entry')
         return
       }
       setAuthObj(s)
@@ -336,14 +445,21 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       // INITIAL_SESSION 은 getSession()에서 이미 처리 — 중복 제외
       if (event === 'INITIAL_SESSION') return
-      if (event === 'TOKEN_REFRESH_FAILED' || !s) {
-        setPhase('auth'); setSession(null); setAuthObj(null); return
+      // supabase-js 의 AuthChangeEvent 유니온에는 없지만 런타임엔 실제로 오는 이벤트라
+      // 타입을 넓혀서 비교한다 (라이브러리 타입이 실제 동작보다 좁음)
+      if ((event as string) === 'TOKEN_REFRESH_FAILED' || !s) {
+        // 로그아웃/세션만료로 진짜 auth phase로 돌아갈 때만 authView를 초기화 —
+        // verifyOtp 성공 직후엔 건드리지 않아야 onboarding으로 넘어가기 전
+        // 시작화면이 깜빡 보이는 문제가 없다.
+        setPhase('auth'); setAuthView('entry'); setSession(null); setAuthObj(null); setTab('home'); setProfileOpen(false); return
       }
       setAuthObj(s)
       // TOKEN_REFRESHED: 세션 갱신만, 스토어 재로딩하면 onboarding 중 홈으로 튕김
       if (event === 'TOKEN_REFRESHED') return
-      // SIGNED_IN은 창 전환 복귀 시에도 발생함 — onboarding 중이면 무시
-      if (event === 'SIGNED_IN' && phaseRef.current === 'onboarding') return
+      // SIGNED_IN은 창 전환 복귀 시에도 발생함 — 이미 auth phase를 벗어나 있으면
+      // (main/onboarding 등) 진짜 새 로그인이 아니라 포커스 재검증일 뿐이므로 무시.
+      // 실제 신규 로그인은 OTP 인증 성공 직후 phase가 'auth'일 때만 일어난다.
+      if (event === 'SIGNED_IN' && phaseRef.current !== 'auth') return
       loadStoreSession(s.user.id, s.user.email ?? '')
     })
     return () => subscription.unsubscribe()
@@ -368,7 +484,7 @@ export default function App() {
       client = created
     }
 
-    if (!client) { setPhase('auth'); return }
+    if (!client) { setPhase('auth'); setAuthView('entry'); return }
 
     let plan = (client as { plan?: string }).plan ?? 'free'
 
@@ -437,6 +553,7 @@ export default function App() {
     }
     track('pos_store_login', { store_id: store.id, store_name: store.name })
     setPhase('main')
+    setTab('home')   // 기본 진입은 홈 — 하루 종일 켜두는 화면이다
   }
 
   // ── storeId → main process 전달 (Realtime 필터용) ────────────────────────────
@@ -455,12 +572,6 @@ export default function App() {
     })
   }, [])
 
-  // ── 프린터 상태 구독 ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    const w = window as unknown as { api?: { onPrinterStatus?: Function; offPrinterStatus?: Function } }
-    w.api?.onPrinterStatus?.((s: { connected: boolean }) => setPrinterOk(s.connected))
-    return () => { w.api?.offPrinterStatus?.() }
-  }, [])
 
   // ── IPC 구독 (Electron main process → renderer) ─────────────────────────────
   useEffect(() => {
@@ -524,20 +635,18 @@ export default function App() {
         .channel(`store-${session?.storeId}-orders-${Date.now()}`)
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'orders' },
+          { event: 'INSERT', schema: 'public', table: 'orders', filter: `store_id=eq.${session?.storeId}` },
           (payload: { new: { order_code: string } }) => {
             fetchAndQueue(payload.new.order_code)
           }
         )
         .on(
           'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'stores' },
+          { event: 'UPDATE', schema: 'public', table: 'stores', filter: `id=eq.${session?.storeId}` },
           (payload: { new?: { is_open?: boolean } }) => {
             const newIsOpen = payload.new?.is_open
             if (typeof newIsOpen === 'boolean') {
               setIsOpen(newIsOpen)
-              // 다른 기기의 변경이 권위 있음 — 수동 오버라이드 해제
-              manualOverrideRef.current = null
             }
           }
         )
@@ -615,29 +724,41 @@ export default function App() {
   // 운영 상태 + 운영시간 훅 (is_open 진실 공급원 = DB)
   const {
     isOpen, setIsOpen,
-    autoOpenEnabled,
     hoursOpen, setHoursOpen,
     operatingHours,
     breakTime,
     hoursDraft, setHoursDraft,
     breakDraft, setBreakDraft,
+    saveBreakTime,
     offHoursConfirm, setOffHoursConfirm,
     closureOpen, setClosureOpen,
-    closureType, setClosureType,
+    setClosureType,
     closureTime, setClosureTime,
     closureActive,
-    overrideType,
     vacationDays,
     vacationOpen, setVacationOpen,
     toggleIsOpen,
-    toggleAutoOpenEnabled,
     confirmForceOpen,
     saveOperatingHours,
+    setDayTime,
+    regularHolidays,
+    saveRegularHolidays,
     confirmClosure,
     cancelClosure,
     saveVacationDays,
     deleteVacationDay,
   } = useOperatingHours(session?.storeId, showToast)
+
+  // 매장 설정 화면의 미니 캘린더에서 고른 날짜를 기존 휴무일에 더한다.
+  // saveVacationDays는 "오늘 이후 전체 교체" 방식이라 반드시 기존 목록과 합쳐서 넘겨야 한다.
+  async function addVacationDays(dates: string[]) {
+    const existing = new Set(vacationDays.map(v => v.date))
+    const added = dates
+      .filter(d => !existing.has(d))
+      .map(d => ({ date: d, type: 'holiday' as const }))
+    if (added.length === 0) { showToast('이미 지정된 날짜예요'); return }
+    await saveVacationDays([...vacationDays, ...added])
+  }
 
   // ── 휴가 예약 모달 로컬 상태 ──────────────────────────────────────────────────
   const [vacCalYear,    setVacCalYear]    = useState(() => new Date().getFullYear())
@@ -695,7 +816,23 @@ export default function App() {
       showToast('탈퇴 처리 중 오류가 발생했습니다.')
       return
     }
-    await supabase.auth.signOut()
+
+    // auth.users 삭제는 DB 함수로 못 함(Supabase가 보호) — Admin API를 쓰는
+    // Edge Function으로 처리. 세션이 아직 있는 지금 호출해야 본인 확인(JWT)이 됨.
+    const { error: deleteAuthErr } = await supabase.functions.invoke('delete-auth-user')
+    if (deleteAuthErr) {
+      console.error('auth.users 삭제 실패:', deleteAuthErr)
+    }
+
+    // 위에서 실패해도 DB 쪽 탈퇴는 이미 끝났으니 로컬 세션은 정리하고 로그인 화면으로.
+    // signOut 자체가 실패해도(세션이 서버에서 이미 무효화됐을 수 있음) 무시하고 진행.
+    try {
+      await supabase.auth.signOut()
+    } catch (e) {
+      console.error('signOut 실패(무시):', e)
+    }
+    setDeleteLoading(false)
+    setDeleteConfirmOpen(false)
   }
 
   function openProfile() {
@@ -730,7 +867,7 @@ export default function App() {
   }, [])
 
   async function handleSaveNewPassword() {
-    if (newPw.length < 6) { setNewPwMsg({ text: '비밀번호는 6자 이상이어야 합니다.', ok: false }); return }
+    if (newPw.length < PASSWORD_MIN_LEN) { setNewPwMsg({ text: `비밀번호는 ${PASSWORD_MIN_LEN}자 이상이어야 합니다.`, ok: false }); return }
     if (newPw !== newPwConfirm) { setNewPwMsg({ text: '비밀번호가 일치하지 않습니다.', ok: false }); return }
     setNewPwSaving(true)
     const { error } = await supabase.auth.updateUser({ password: newPw })
@@ -759,15 +896,80 @@ export default function App() {
   }
 
   if (phase === 'auth') {
-    return <Auth onSuccess={() => {}} />
+    return (
+      <>
+        {authView === 'entry' && (
+          <AuthEntry
+            onStart={() => setAuthView('signup')}
+            onLogin={() => setAuthView('login')}
+          />
+        )}
+        {authView === 'signup' && (
+          <PhoneAuthFlow
+            onCancel={() => setAuthView('entry')}
+            onVerified={() => {
+              // verifyOtp 성공 시 실제 세션이 생기고, 아래 onAuthStateChange 리스너가
+              // 이걸 감지해서 loadStoreSession → phase='onboarding'으로 알아서 넘어간다.
+              // authView를 여기서 'entry'로 바꾸면 그 사이 짧게 시작화면이 보였다가
+              // onboarding으로 넘어가는 깜빡임이 생기므로 아무것도 하지 않고 phase 전환을 기다린다.
+            }}
+          />
+        )}
+        {authView === 'login' && (
+          <LoginScreen
+            onBack={() => setAuthView('entry')}
+            onLoginSuccess={() => { /* TODO: API 연동 */ }}
+            onOpenPasswordSetup={() => setQrOpen(true)}
+          />
+        )}
+        <QrPasswordSetupModal open={qrOpen} onClose={() => setQrOpen(false)} />
+      </>
+    )
   }
 
   if (phase === 'onboarding' && session) {
+    // 이미 저장된 값 로딩 전이면 대기 — 빈 값으로 먼저 그렸다가 프리필로 바뀌는 깜빡임 방지
+    if (!onboardingPrefill) {
+      return (
+        <div className="flex h-full w-full items-center justify-center bg-gray-bg">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 rounded-full border-4 border-gray-200 border-t-green animate-spin" />
+            <span className="text-[13px] text-gray-text">불러오는 중...</span>
+          </div>
+        </div>
+      )
+    }
+    // 이미 로그인된 사용자(기존 이메일 계정 포함)가 매장 정보를 마저 채우는 경우 —
+    // 전화인증은 이미 끝난 상태이므로 storeName부터 시작. onCancel을 안 넘기면
+    // 첫 스텝에서 "이전" 버튼 자체가 안 보임(돌아갈 화면이 없으므로).
     return (
-      <Onboarding
-        clientId={session.clientId}
-        onComplete={(storeId, storeName, plan) => {
-          setSession(s => s ? { ...s, storeId, storeName, plan } : s)
+      <SignupFlow
+        initialData={onboardingPrefill}
+        hasPassword={onboardingHasPassword}
+        onComplete={async (data) => {
+          const { data: storeId, error } = await supabase.rpc('complete_onboarding', {
+            p_store_id:       session.storeId || null,
+            p_store_name:     data.storeName,
+            p_owner_name:     data.ownerName,
+            p_address:        data.address,
+            p_business_type:  data.businessType,
+            p_customer_types: data.customerTypes,
+            p_sources:        data.sources,
+            p_source_other:   data.sourceOther,
+            p_requested_plan: data.plan,
+            p_address_detail: data.addressDetail || null,
+            p_lat:            data.lat,
+            p_lng:            data.lng,
+          })
+          if (error) throw error
+          // 대표자명을 auth 계정에도 심는다. complete_onboarding은 stores/clients만 쓰는데,
+          // 비밀번호 재설정 안내나 고객센터 응대처럼 auth 쪽만 보는 경로에서 이름이 비어 있었다.
+          // 실패해도 온보딩은 성공으로 본다 — 이름은 clients.owner_name이 원본이다.
+          const { error: metaErr } = await supabase.auth.updateUser({ data: { name: data.ownerName } })
+          if (metaErr) console.warn('[onboarding] auth 이름 저장 실패:', metaErr.message)
+          // clients.plan은 RPC에서 건드리지 않음 — 유료 신청은 plan_requests 접수만 하고
+          // 실제 플랜 전환은 결제 확인 후 운영자가 수동 처리함
+          setSession(s => s ? { ...s, storeId: storeId ?? s.storeId, storeName: data.storeName } : s)
           setPhase('welcome')
         }}
       />
@@ -812,81 +1014,282 @@ export default function App() {
 
   // ── 메인 POS ─────────────────────────────────────────────────────────────────
   const PAGE: Record<Tab, React.ReactNode> = {
-    dashboard: <Dashboard />,
-    orders:    <Orders />,
-    customers: <Customers />,
+    home:      <Home onOpenOrders={() => setTab('dashboard')} />,
+    dashboard: <Orders initialTab="주문내역" />,
+    customers: <Customers onOpenDetail={() => goToCustomerHub('detail')} />,
     menus:     <Menus />,
-    sales:     <Sales />,
-    settings:  <Settings onOpenHours={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }} onOpenProfile={openProfile} operatingHours={operatingHours} breakTime={breakTime} />,
+    settings:  <Settings onOpenHours={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }} onOpenProfile={openProfile} operatingHours={operatingHours} breakTime={breakTime} showToast={showToast} />,
+    // Figma node 664:541 — 매장 설정 / 대표자 정보. 영업시간·주소는 Settings.tsx와 동일한
+    // operatingHours/breakTime/useDeliveryInfo를 그대로 재사용(StoreInfo.tsx 참고).
+    'store-info': (
+      <StoreInfo
+        onBack={() => setTab('home')}
+        onOpenHours={() => { setHoursDraft({ ...operatingHours }); setBreakDraft({ ...breakTime }); setHoursOpen(true) }}
+        onAddVacationDays={addVacationDays}
+        onDeleteVacationDay={deleteVacationDay}
+        onSetDayTime={setDayTime}
+        regularHolidays={regularHolidays}
+        onSaveRegularHolidays={saveRegularHolidays}
+        onSaveBreakTime={saveBreakTime}
+        onSignOut={handleSignOut}
+        operatingHours={operatingHours}
+        breakTime={breakTime}
+        vacationDays={vacationDays}
+        showToast={showToast}
+      />
+    ),
+    // 햄버거 드로어 "고객" 그룹 — Figma node 532:3003 / 570:694 / 570:717 / 570:673.
+    // 드로어에서 누른 항목이 그대로 초기 탭이 된다.
+    'settings-hub': (
+      <SettingsHub
+        key={settingsHubTab}
+        initialTab={settingsHubTab}
+        onBack={() => setTab('home')}
+        showToast={showToast}
+      />
+    ),
+    // 햄버거 드로어 "매출 · 주문" 그룹 — 기존 Sales.tsx / Orders.tsx 를 허브 셸로 감싼 것
+    'sales-hub': (
+      <SalesHub
+        key={salesHubTab}
+        initialTab={salesHubTab}
+        onBack={() => setTab('home')}
+      />
+    ),
+    'product-hub': (
+      <ProductHub
+        key={productHubTab}
+        initialTab={productHubTab}
+        onBack={() => setTab('home')}
+        showToast={showToast}
+      />
+    ),
+    'customer-hub': (
+      <CustomerHub
+        key={customerHubTab}
+        initialTab={customerHubTab}
+        onBack={() => setTab('home')}
+      />
+    ),
   }
+
+  // ── 햄버거 드로어: 매출·주문 / 상품 / 고객 / 설정 (Figma 690:379 구조) ──
+  function goTo(id: Tab) { setTab(id); setHamburgerOpen(false) }
+  function goToCustomerHub(sub: CustomerHubTab) { setCustomerHubTab(sub); goTo('customer-hub') }
+  function goToProductHub(sub: ProductHubTab)  { setProductHubTab(sub);  goTo('product-hub') }
+  function goToSettingsHub(sub: SettingsHubTab) { setSettingsHubTab(sub); goTo('settings-hub') }
+  function goToSalesHub(sub: SalesHubTab)       { setSalesHubTab(sub);    goTo('sales-hub') }
+  // Figma node 690:379 — 매출·주문 / 상품 / 고객 / 설정 4단 그리드
+  const DRAWER_GROUPS: { title: string; items: { label: string; onClick: () => void }[] }[] = [
+    { title: '매출 · 주문', items: [
+      { label: '매출 리포트', onClick: () => goToSalesHub('report') },
+      { label: '주문 리포트', onClick: () => goToSalesHub('analysis') },
+      { label: '주문 내역',   onClick: () => goToSalesHub('history') },
+    ] },
+    { title: '상품', items: [
+      { label: '메뉴 상세',     onClick: () => goToProductHub('menus') },
+      { label: '옵션 상세',     onClick: () => goToProductHub('options') },
+      { label: '카테고리 상세', onClick: () => goToProductHub('categories') },
+    ] },
+    { title: '고객', items: [
+      { label: '고객 현황',   onClick: () => goToCustomerHub('detail') },
+      { label: '계정 관리',   onClick: () => goToCustomerHub('accounts') },
+      { label: '문자 보내기', onClick: () => goToCustomerHub('sms') },
+    ] },
+    { title: '설정', items: [
+      { label: 'QR출력',       onClick: () => goToSettingsHub('qr') },
+      { label: '프린터 연결',   onClick: () => goToSettingsHub('printer') },
+      { label: '영수증 · 증빙', onClick: () => goToSettingsHub('receipt') },
+      { label: '기타 설정',     onClick: () => goToSettingsHub('etc') },
+    ] },
+  ]
 
   return (
     <StoreContext.Provider value={session}>
-      <div className="flex flex-col h-full w-full overflow-hidden">
+      <div className="relative flex flex-col h-full w-full overflow-hidden">
 
-        {/* ── 공통 상단 헤더 ── */}
-        <header className="flex-shrink-0 h-[54px] bg-white border-b border-gray-border flex items-stretch">
-          <button
-            onClick={() => setTab('dashboard')}
-            title="홈으로"
-            className="w-[176px] flex-shrink-0 px-5 flex items-center hover:opacity-75 transition-opacity"
-          >
-            <img src={logoWithText} alt="sunpos" className="h-[48px] object-contain object-left" />
-          </button>
-          <div className="flex-1 px-4 flex items-center justify-between">
-            <span className="text-[15px] font-semibold text-ink">{PAGE_TITLES[tab]}</span>
-            <div className="flex items-center gap-4">
-              {headerRight}
-            </div>
-          </div>
-        </header>
+        {/* ── 상단 탭 네비게이션 — 창 폭에 맞춰 늘어나는 진짜 반응형 바. 왼쪽 그룹(햄버거/탭)은 left로,
+             오른쪽 그룹(프린터/시간/ON-OFF)은 right로 각각 자기 쪽 가장자리에 고정하고, 가운데는 그냥 비워둔다 ── */}
+        {/* 아래 모든 px 값은 Figma 2240 캔버스 원본 수치 × 0.643(=1440/2240, 앱 기본 창 폭 기준) 로 환산한
+             "고정 실제 크기" — Figma 자체가 2240px 캔버스를 ~0.64배로 축소해서 보여주는 걸 전제로 그려졌기 때문에,
+             원본 숫자를 그대로 쓰면 실제 화면에서 지나치게 커 보인다. 이후 페이즈도 동일 비율로 환산할 것. */}
+        {/* ── 상단 탭 네비게이션 — 햄버거/탭/밑줄/구분선/프린터/시간/ON-OFF ── */}
+        <div className={`relative z-10 flex-shrink-0 h-[58px] w-full overflow-hidden ${
+          HUB_TABS.includes(tab)
+            ? 'bg-canvas-line shadow-[0_2px_6px_rgba(0,0,0,0.07)]'
+            : 'bg-canvas'
+        }`}>
+            {/* 햄버거는 이 헤더 밖(아래 .drawer-anchor)에 있다 — 헤더가 overflow-hidden 이라
+                 안에 두면 펼쳐진 패널이 58px 높이에서 잘린다 */}
 
-        {/* ── 사이드바 + 컨텐츠 ── */}
-        <div className="flex flex-1 overflow-hidden">
-
-        {/* ── 사이드바 ── */}
-        <aside className="w-[176px] flex-shrink-0 bg-white dark:bg-[#242424] border-r border-gray-border/40 flex flex-col" style={{ borderRightWidth: '0.5px' }}>
-
-          {/* 네비게이션 */}
-          <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
-            {NAV.map(({ id, Icon, label }) => (
+            {TOP_TABS.map(({ id, label }, i) => (
               <button
                 key={id}
-                onClick={() => setTab(id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors
-                  ${tab === id
-                    ? 'bg-green-soft text-[#008F42] font-bold'
-                    : 'text-gray-text hover:bg-gray-bg hover:text-ink font-medium'}`}
+                ref={el => {
+                  tabBtnRefs.current[id] = el
+                  // 헤더가 늦게 마운트돼도 활성 탭 버튼이 붙는 즉시 밑줄을 맞춘다
+                  if (el && id === tab) measureUnderline()
+                }}
+                onClick={() => goTo(id)}
+                className={`pressable-tab absolute top-[15px] px-[10px] py-[6px] rounded-[8px] text-[21px] whitespace-nowrap leading-none hover:bg-[#F2F2F2] ${
+                  tab === id ? 'text-ink font-semibold' : 'text-[#787878] font-medium hover:text-ink'
+                }`}
+                style={{ left: 114 + i * 108 - 10 }}
               >
-                <span className="flex-shrink-0"><Icon /></span>
-                <span className="text-[13px] leading-tight">{label}</span>
+                {label}
               </button>
             ))}
-          </nav>
+            {/* 활성 탭 밑줄 — 탭 버튼의 실제 렌더 중앙(tabUnderlineLeft)에 맞춰 정렬, 폭은 고정.
+                 TOP_TABS에 없는 탭(매장 정보 등)일 땐 숨김 */}
+            {TOP_TABS.some(t => t.id === tab) && (
+              <div
+                className="absolute bg-[#2C261F] h-[3px] transition-[left] duration-150"
+                style={{ left: tabUnderlineLeft, width: UNDERLINE_W, top: 55 }}
+              />
+            )}
 
-          {/* 하단: 운영중 토글 */}
-          <div className="px-4 py-4 border-t border-gray-border flex-shrink-0">
+            {/* 헤더 밑줄.
+                 426px 에서 끊는 건 **우측 400px 사이드 패널이 있는 화면**에만 맞는 치수다.
+                 홈은 원래 사이드 패널이 없고, 주문 탭은 사이드 패널을 없애면서 그 여백이 사라졌다 —
+                 두 화면에선 선이 화면 가운데서 뚝 끊긴 것처럼 보였다. 그래서 끝까지 긋는다.
+                 고객 화면은 아직 400px 고객현황 패널이 있어 그대로 끊는다.
+                 전체메뉴(허브) 화면은 좌측 네비가 헤더 바로 아래에서 시작해 겹치므로 숨긴다. */}
+            {!HUB_TABS.includes(tab) && (
+              // 색은 --canvas-line(#D9D1C3) — 베이지 바탕(#EAE4D9) 위에 긋는 선의 시스템 값.
+              // #C1B7AA 는 추이 차트 막대에 쓰는 색이라 선으로는 한 단계 진했다.
+              <div className={`absolute bg-canvas-line h-px left-[26px] bottom-0 ${
+                tab === 'customers' ? 'right-[426px]' : 'right-[26px]'
+              }`} />
+            )}
+
+
+            {/* 날짜/시간 — 오른쪽 가장자리에서 140px 떨어진 지점에 중앙정렬(translate-x-1/2 + right) */}
+            <div
+              className="absolute translate-x-1/2 flex flex-col items-center leading-[normal] text-[#6A635E] font-semibold text-[13px] whitespace-nowrap"
+              style={{ right: 140, top: 12 }}
+            >
+              <span>{formatKstDate(now)}</span>
+              <span>{formatKstTime(now)}</span>
+            </div>
+
+            {/* 운영 ON/OFF — Figma node 496:657 (track 84x48, knob r18) × 0.643, 오른쪽 가장자리에서 26px */}
             <button
               onClick={toggleIsOpen}
               title={isOpen ? '운영중 — 클릭해서 종료' : '운영종료 — 클릭해서 시작'}
-              className="flex items-center gap-2.5 w-full group"
+              className={`absolute w-[54px] h-[31px] rounded-full transition-colors duration-200 ${
+                isOpen ? 'bg-[#6A635E]' : 'bg-[#ADADAD]'
+              }`}
+              style={{ right: 26, top: 12 }}
             >
-              <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0 ${isOpen ? 'bg-[#00DD67]' : 'bg-gray-300'}`}>
-                <span className={`absolute top-[3px] left-[3px] w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${isOpen ? 'translate-x-[14px]' : 'translate-x-0'}`} />
-              </div>
-              <span className={`text-[12px] font-semibold leading-none ${isOpen ? 'text-[#008F42]' : 'text-gray-text'}`}>
-                {isOpen ? '운영 중' : '종료됨'}
+              {/* 텍스트 — Figma node 496:660, knob 반대편에 위치(ON=왼쪽/OFF=오른쪽 미러) */}
+              <span
+                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-[13px] font-semibold text-[#FCFCFC] whitespace-nowrap transition-all duration-200`}
+                style={{ left: isOpen ? 16 : 38 }}
+              >
+                {isOpen ? 'ON' : 'OFF'}
               </span>
+              <span
+                className={`absolute top-[4px] left-[4px] w-[23px] h-[23px] rounded-full bg-[#FCFCFC] shadow-sm transition-transform duration-200 ${
+                  isOpen ? 'translate-x-[23px]' : 'translate-x-0'
+                }`}
+              />
             </button>
+        </div>
+
+        {/* ── 햄버거 드로어 (전체 메뉴) — Figma node 690:379 ── */}
+        {/* ── 전체메뉴 드로어 ──
+             햄버거 버튼과 패널을 한 앵커 안에 둔다. 패널이 버튼의 자식이라 패널 위에
+             마우스가 있는 동안엔 앵커의 mouseleave 가 뜨지 않는다 — 그래서 "버튼에서
+             패널로 넘어가다 닫히는" 일이 없다. 둘 다 벗어나면 그때 닫힌다. */}
+        {/* 알림 종 — 프린터 표시가 있던 자리.
+            프린터 연결 여부는 평소엔 아무 일도 없고 문제가 생기면 영수증이 안 나와서 바로 안다.
+            늘 떠 있을 만큼 급한 정보가 아니었다(상태는 설정 > 프린터 연결에서 본다).
+            반대로 거래처 관리자 등록은 일어난 순간 알아야 하는데 알릴 자리가 없었다.
+
+            ⚠️ 햄버거와 같은 이유로 **헤더 밖**에 둔다 — 헤더가 overflow-hidden 이라
+               안에 두면 펼쳐진 드롭다운이 58px 높이에서 잘린다. */}
+        <NotificationBell storeId={session?.storeId ?? null} />
+
+        <div
+          className="drawer-anchor absolute left-[18px] top-[15px] z-[60]"
+          onMouseEnter={openDrawer}
+          onMouseLeave={scheduleCloseDrawer}
+        >
+          <button
+            onClick={() => (hamburgerOpen ? setHamburgerOpen(false) : openDrawer())}
+            onFocus={openDrawer}
+            title="전체 메뉴"
+            aria-expanded={hamburgerOpen}
+            className="pressable-tab flex flex-col gap-[5px] p-[8px] rounded-[8px] hover:bg-[#F2F2F2]"
+          >
+            <span className="w-[22px] h-[2px] bg-ink rounded-[1px]" />
+            <span className="w-[22px] h-[2px] bg-ink rounded-[1px]" />
+            <span className="w-[22px] h-[2px] bg-ink rounded-[1px]" />
+          </button>
+
+          {/* 좌상단에서 우하단으로 자라나며 열린다(.drawer-panel, index.css).
+              언마운트하지 않는 이유: 닫힐 때도 같은 길로 접히게 하려면 DOM 이 남아야 한다. */}
+          <div
+            data-open={hamburgerOpen}
+            aria-hidden={!hamburgerOpen}
+            className="drawer-panel absolute left-0 top-[41px] w-[1090px] max-w-[calc(100vw-44px)] bg-[#FCFCFC] rounded-[32px] shadow-[0_18px_48px_rgba(0,0,0,0.18)] p-8"
+          >
+            {/* 매장명 — 오른쪽 화살표 클릭 시 매장 정보 화면으로 이동 */}
+            <button
+              onClick={() => { setHamburgerOpen(false); goTo('store-info') }}
+              className="pressable inline-flex items-center gap-3 bg-[#E8E4E2] rounded-tl-[45px] rounded-tr-[45px] rounded-br-[45px] rounded-bl-[6px] pl-5 pr-6 py-3 mb-7 hover:opacity-90"
+            >
+              <img src={storeIcon} alt="" className="w-[26px] h-[26px]" />
+              <span className="text-[22px] font-semibold text-ink">{session?.storeName}</span>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" stroke="#787878" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+
+            <div className="grid grid-cols-4 gap-x-8 gap-y-7">
+              {DRAWER_GROUPS.map(group => (
+                <div key={group.title}>
+                  <div className="text-[15px] text-[#ADADAD] font-medium mb-3">{group.title}</div>
+                  {/* 상단 탭(홈·주문·메뉴·고객)과 같은 조작감 — 올리면 박스가 뜨고, 누르면 꺼진다.
+                      밑줄은 "링크"라고 말하는데 여기 항목들은 화면을 바꾸는 버튼이다.
+                      -mx-3 로 박스만 바깥으로 넓혀 글자 시작선은 그대로 둔다. */}
+                  <div className="space-y-1 -mx-3">
+                    {group.items.map(item => (
+                      <button
+                        key={item.label}
+                        onClick={item.onClick}
+                        className="pressable-tab block w-full px-3 py-2 rounded-[10px] text-[17px] text-ink font-medium text-left hover:bg-[#F2F2F2]"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end mt-7">
+              <button
+                onClick={() => { setHamburgerOpen(false); setSupportOpen(true) }}
+                className="pressable border border-[#D9D9D9] rounded-[15px] px-5 py-3 text-[15px] font-medium text-[#414141] hover:bg-[#F2F2F2]"
+              >
+                선포스에 의견 보내기
+              </button>
+            </div>
           </div>
-        </aside>
+        </div>
+
+        {supportOpen && <SupportModal onClose={() => setSupportOpen(false)} showToast={showToast} />}
 
         {/* ── 컨텐츠 ── */}
-        <HeaderSlotContext.Provider value={{ setHeaderRight }}>
-          <main className="flex-1 overflow-hidden">
-            {PAGE[tab]}
-          </main>
-        </HeaderSlotContext.Provider>
+        <div className="relative flex flex-1 overflow-hidden">
+          {headerRight && (
+            <div className="absolute right-6 top-2 z-50 flex items-center gap-2">{headerRight}</div>
+          )}
+          <HeaderSlotContext.Provider value={{ setHeaderRight }}>
+            <main className="flex-1 overflow-hidden">
+              {PAGE[tab]}
+            </main>
+          </HeaderSlotContext.Provider>
+        </div>
 
         {/* ── 신규 주문 팝업 ── */}
         {queue.length > 0 && (
@@ -894,6 +1297,7 @@ export default function App() {
             queue={queue}
             onClose={dismissPopup}
             onApprove={() => showToast('🖨️ 영수증을 출력합니다')}
+            onError={showToast}
           />
         )}
 
@@ -1231,7 +1635,9 @@ export default function App() {
           setSession={setSession}
           authObj={authObj}
           onDeleteRequest={() => setDeleteConfirmOpen(true)}
+          onOpenPasswordSetup={() => setQrOpen(true)}
         />
+        <QrPasswordSetupModal open={qrOpen} onClose={() => setQrOpen(false)} />
 
         <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
 
@@ -1303,7 +1709,6 @@ export default function App() {
           </div>
         )}
 
-        </div>{/* flex flex-1 overflow-hidden */}
       </div>
     </StoreContext.Provider>
   )

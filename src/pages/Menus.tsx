@@ -1,15 +1,20 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { SegmentedControl } from '../components/SegmentedControl'
+import { formatPriceDisplay, FloatingCellInput, FloatingCellTextarea, GhostButton, ModalCTAButton, StepperButton } from '../components/ModalFormControls'
 import { type MenuDetail, type Category, type OptionGroup, type OptionItem } from '../lib/mock-data'
 import { won } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
-import { useHeaderSlot } from '../lib/header-slot'
+import { mapMenuRow } from '../lib/mappers'
+import rotateIcon from '../assets/icons/rotate.svg'
+import BottomToast from '../components/BottomToast'
+import MenuFormModal from '../components/menu/MenuFormModal'
+import CountStepper, { PlusMinusStepper } from '../components/ui/CountStepper'
+import { useMenuForm } from '../components/menu/use-menu-form'
+import { MenuTagBadges } from '../components/menu/tag-badges'
 
 type MenuTab      = 'menu' | 'option' | 'category'
-type StatusFilter = 'all' | 'active' | 'soldOut' | 'hidden'
-type TagFilter    = 'popular' | 'recommended' | 'new' | null
-type SoldOutState = 'active' | 'today' | 'permanent'
+import type { SoldOutState } from '../components/menu/menu-form-types'
 
 // ── 품절 상태 헬퍼 ────────────────────────────────────────────────────────────
 function getSoldOutState(soldOut: boolean, soldOutUntil: string | null | undefined): SoldOutState {
@@ -25,52 +30,107 @@ function getKSTEndOfDay(): string {
   return d.toISOString()
 }
 
-// ── DB row → 내부 타입 변환 ───────────────────────────────────────────────────
-function mapDbMenu(row: any): MenuDetail {
-  const optionGroups: OptionGroup[] = (row.menu_option_groups ?? [])
-    .sort((a: any, b: any) => a.display_order - b.display_order)
-    .map((mog: any) => {
-      const g = mog.option_groups
-      if (!g) return null
-      return {
-        id:         g.id,
-        name:       g.name,
-        isRequired: g.is_required,
-        isMulti:    g.is_multi,
-        maxSelect:  g.max_select ?? null,
-        items:      (g.option_items ?? [])
-          .sort((a: any, b: any) => a.display_order - b.display_order)
-          .map((it: any): OptionItem => ({
-            id:           it.id,
-            name:         it.name,
-            extra:        it.extra_price,
-            soldOut:      it.is_sold_out,
-            soldOutUntil: it.sold_out_until ?? null,
-            hidden:       it.is_hidden,
-            isPopular:    it.is_popular,
-          })),
-      } as OptionGroup
-    })
-    .filter(Boolean) as OptionGroup[]
-
-  return {
-    code:          row.id,
-    name:          row.name,
-    emoji:         '🍽️',
-    price:         row.base_price,
-    description:   row.description ?? '',
-    imageUrl:      row.image_url ?? undefined,
-    categoryId:    row.category_id,
-    active:        !row.is_hidden,
-    soldOut:       row.is_sold_out,
-    soldOutUntil:  row.sold_out_until ?? null,
-    order:         row.display_order,
-    isPopular:     row.is_popular     ?? false,
-    isRecommended: row.is_recommended ?? false,
-    isNew:         row.is_new         ?? false,
-    optionGroups,
-  }
+// ── 옵션 항목 수량 버튼 설정 (option_items.max_quantity) ─────────────────────
+// NULL = 수량 버튼 미사용(1개 고정) · 999 = 제한없음 · 1~998 = 최대 N개
+const QTY_UNLIMITED = 999
+function maxQtyLabel(maxQty: number | null | undefined): string {
+  if (maxQty == null) return '수량 버튼 사용'
+  if (maxQty >= QTY_UNLIMITED) return '제한없음'
+  return `최대 ${maxQty}개`
 }
+
+// "{옵션이름} 옵션은 최대 몇 개까지 선택할 수 있나요?" 모달 — Figma node 491:4381.
+// 제한없음(999) / 직접입력(스테퍼) 둘 중 하나를 고르고 확인하면 max_quantity가 정해진다.
+function OptionMaxQtyModal({
+  optionName, value, onClose, onConfirm,
+}: {
+  optionName: string
+  value: number | null
+  onClose: () => void
+  onConfirm: (next: number) => void
+}) {
+  const [unlimited, setUnlimited] = useState(value == null || value >= QTY_UNLIMITED)
+  const [count, setCount] = useState(value != null && value < QTY_UNLIMITED ? value : 1)
+  const shown = unlimited ? QTY_UNLIMITED : count
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-xl w-[460px] px-[28px] pt-[24px] pb-[22px]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-[20px]">
+          <div className="text-[18px] leading-[26px] font-semibold text-ink">
+            <span className="text-[#8C8379]">{optionName.trim() || '이 옵션'}</span> 옵션은<br />
+            최대 몇 개까지 선택할 수 있나요?
+          </div>
+          <button onClick={onClose} className="flex-shrink-0 text-[#6A635E] hover:text-ink text-[20px] leading-none">✕</button>
+        </div>
+
+        <div className="mt-[24px] flex items-center justify-between gap-[16px]">
+          <div className="flex flex-col gap-[11px]">
+            {([
+              { key: true,  label: '제한없음' },
+              { key: false, label: '직접입력' },
+            ] as const).map(opt => (
+              <button key={String(opt.key)} onClick={() => setUnlimited(opt.key)} className="flex items-center gap-[10px]">
+                <span className={`w-[20px] h-[20px] rounded-[6px] flex items-center justify-center flex-shrink-0 transition-colors ${
+                  unlimited === opt.key ? 'bg-[#C1B7AA]' : 'bg-transparent border-2 border-[#D9D2C8]'
+                }`}>
+                  {unlimited === opt.key && (
+                    <svg width="12" height="9" viewBox="0 0 15 11" fill="none"><path d="M1.5 5.5L5.5 9.5L13.5 1.5" stroke="#FCFCFC" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  )}
+                </span>
+                <span className="text-[14px] text-ink">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* 수량 스테퍼 — 제한없음일 땐 999 고정으로 비활성 */}
+          {/* −, 숫자칸, + 셋 다 40×40 정사각형. 가운데만 커서 저울이 기울어 보이던 걸 맞췄다 */}
+          <div className={`flex items-center gap-[2px] bg-[#F2F0EE] rounded-[10px] p-[5px] transition-opacity ${unlimited ? 'opacity-60' : ''}`}>
+            <button
+              onClick={() => setCount(c => Math.max(1, c - 1))}
+              disabled={unlimited}
+              className="w-[40px] h-[40px] flex items-center justify-center text-[20px] text-[#6A635E] disabled:text-[#C1B7AA]"
+            >
+              −
+            </button>
+            <input
+              value={shown}
+              onChange={e => { const n = parseInt(e.target.value.replace(/[^0-9]/g, '') || '0', 10); setCount(Math.min(998, Math.max(1, n))) }}
+              disabled={unlimited}
+              inputMode="numeric"
+              className="field-bare w-[40px] h-[40px] rounded-[8px] bg-[#FCFCFC] text-center text-[15px] font-medium text-ink outline-none disabled:bg-[#FCFCFC]"
+            />
+            <button
+              onClick={() => setCount(c => Math.min(998, c + 1))}
+              disabled={unlimited}
+              className="w-[40px] h-[40px] flex items-center justify-center text-[20px] text-[#6A635E] disabled:text-[#C1B7AA]"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-[26px] flex justify-end">
+          <button
+            onClick={() => onConfirm(unlimited ? QTY_UNLIMITED : count)}
+            className="px-[40px] h-[48px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 transition-opacity"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 메뉴 태그 뱃지 — 인기/추천/신규 다중 표시 가능 (Figma Frame 126/127/128)
+
+// 옵션 순서편집 — 포인터 기반 드래그 리오더 임계값 (Figma node 491:3881)
+// Figma 원본(66/59) × FIGMA_SCALE — src/lib/figma-scale.ts 참고
+const OPT_GROUP_ROW_H = 42
+const OPT_ITEM_ROW_H = 38
+
+// DB row → MenuDetail 변환은 lib/mappers.ts의 mapMenuRow 공용 (VerbalOrderModal.tsx와 공유)
 
 // ── 스토어 옵션 그룹 (옵션 탭용) ─────────────────────────────────────────────
 interface StoreOptionGroup {
@@ -84,43 +144,362 @@ interface StoreOptionGroup {
   isHidden:     boolean
   usedBy:       string[]
   usedByMenus:  { name: string; soldOut: boolean; hidden: boolean }[]
-  items:        { id: string; name: string; extra: number; soldOut: boolean; soldOutUntil: string | null; hidden: boolean }[]
+  items:        OptionItem[]
 }
 
 export default function Menus() {
-  const { storeId, plan } = useStore()
-  const { setHeaderRight } = useHeaderSlot()
+  const { storeId } = useStore()
+  const [previewCatId, setPreviewCatId] = useState<string>('all')
 
-  const [tab,          setTab]          = useState<MenuTab>('menu')
+  // QR오더 미리보기(iframe)와 좌측 카테고리 선택을 양방향으로 동기화.
+  // postMessage는 "이 특정 부모창 ↔ 이 특정 iframe" 사이에서만 오가므로, 손님이 QR코드를 찍어
+  // 최상위 탭으로 여는 실제 sallaria.web.app에는 전혀 영향 없음 — iframe 안에서 열렸을 때만 작동.
+  const QR_ORIGIN = 'https://sallaria.web.app'
+  const qrIframeRef = useRef<HTMLIFrameElement>(null)
+
+  // 왼쪽에서 카테고리를 바꾸면 iframe에도 알림
+  useEffect(() => {
+    qrIframeRef.current?.contentWindow?.postMessage(
+      { type: 'SUNPOS_SELECT_CATEGORY', categoryId: previewCatId === 'all' ? null : previewCatId },
+      QR_ORIGIN
+    )
+  }, [previewCatId])
+
+  // iframe(QR오더) 안에서 카테고리를 바꾸면 왼쪽도 따라감
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== QR_ORIGIN) return
+      if (e.data?.type === 'SUNPOS_CATEGORY_CHANGED') {
+        setPreviewCatId(e.data.categoryId || 'all')
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+  const [categoryAddOpen, setCategoryAddOpen] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [catAddStep,      setCatAddStep]      = useState<1 | 2>(1)
+  const [catAddMenuIds,   setCatAddMenuIds]   = useState<Set<string>>(new Set())
+  const [catAddSearch,    setCatAddSearch]    = useState('')
+  const [catAddSaving,    setCatAddSaving]    = useState(false)
+
+  // 카테고리/개별메뉴 6열 그리드의 좌측 영역 실측 폭 — 창 크기에 따라 카드 폭을 다시 계산해서
+  // 항상 사이드 패널까지 꽉 차게(고정 px로 하드코딩하면 창 크기가 다를 때마다 오른쪽에 빈 여백이 생김)
+  const gridAreaRef = useRef<HTMLDivElement>(null)
+  const [gridAreaW, setGridAreaW] = useState(1040)
+
+  const [tab] = useState<MenuTab>('menu')   // 탭 전환은 상위(허브)가 맡아 setter 는 안 쓴다
+  // 좌측은 항상 카테고리 그리드 — 우측 패널만 QR오더/개별메뉴 탭으로 전환 (Figma node 491:715/491:1346)
+  const [rightTab, setRightTab] = useState<'qr' | 'items'>('qr')
+
+  // ── 좌측 패널 표시 모드(카테고리/개별메뉴) + 화면편집 — Figma 491:592·491:2594·491:836 ──
+  // 매장(store) 단위 설정 — 다른 PC에서 열어도 동일해야 해서 stores 테이블에 저장
+  const [menuViewMode,     setMenuViewMode]     = useState<'category' | 'individual'>('category')
+  const [itemCountVisible, setItemCountVisible] = useState(true)
+  const [categoryTextSize, setCategoryTextSize] = useState<'default' | 'large'>('default')
+  const [menuEditMode,     setMenuEditMode]     = useState(false)
+  const [editOrder,        setEditOrder]        = useState<Category[]>([]) // 완료 누르기 전까지는 로컬 임시 순서
+  const [dragCatId,        setDragCatId]        = useState<string | null>(null)
+  const [deleteCatConfirm, setDeleteCatConfirm] = useState<Category | null>(null)
+  const [menuToast,        setMenuToast]        = useState<string | null>(null)
+
+  // ── 개별메뉴 모드 화면편집 — Figma node 491:2927 ("개별메뉴 모드-순서편집기능- 메뉴") ──
+  const [itemImageVisible, setItemImageVisible] = useState(true)
+  const [menuTextSize,     setMenuTextSize]     = useState<'default' | 'large'>('default')
+  const [editOrderMenus,   setEditOrderMenus]   = useState<MenuDetail[]>([]) // 완료 누르기 전까지는 로컬 임시 순서
+  const [dragMenuCode,     setDragMenuCode]     = useState<string | null>(null)
+
+  function showMenuToast(msg: string, ms = 2500) {
+    setMenuToast(msg)
+    setTimeout(() => setMenuToast(null), ms)
+  }
+
+  async function fetchMenuDisplayPrefs() {
+    if (!storeId) return
+    const { data } = await supabase
+      .from('stores')
+      .select('menu_display_mode, menu_item_count_visible, menu_category_text_size, menu_item_image_visible, menu_name_text_size')
+      .eq('id', storeId)
+      .maybeSingle()
+    if (data) {
+      setMenuViewMode(data.menu_display_mode as 'category' | 'individual')
+      setItemCountVisible(data.menu_item_count_visible)
+      setCategoryTextSize(data.menu_category_text_size as 'default' | 'large')
+      setItemImageVisible(data.menu_item_image_visible)
+      setMenuTextSize(data.menu_name_text_size as 'default' | 'large')
+    }
+  }
+
+  async function toggleMenuViewMode() {
+    const next = menuViewMode === 'category' ? 'individual' : 'category'
+    setMenuViewMode(next)
+    setOptionPanelMenu(null)
+    showMenuToast(`보기 설정을 ${next === 'category' ? '카테고리' : '개별메뉴'} 모드로 전환했어요`)
+    if (storeId) await supabase.from('stores').update({ menu_display_mode: next }).eq('id', storeId)
+  }
+
+  function enterMenuEditMode() {
+    if (menuViewMode === 'individual') {
+      const flattened = [...categories]
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .flatMap(cat => menus.filter(m => m.categoryId === cat.id))
+      setEditOrderMenus(flattened)
+      showMenuToast('카테고리 안에서 메뉴 박스를 잡고 옮기면 순서를 바꿀 수 있어요', 3000)
+    } else {
+      setEditOrder([...categories].sort((a, b) => a.displayOrder - b.displayOrder))
+      showMenuToast('카테고리 박스를 잡고 옮기면 순서를 바꿀 수 있어요', 3000)
+    }
+    setMenuEditMode(true)
+  }
+
+  function cancelMenuEdit() {
+    setMenuEditMode(false)
+    fetchMenuDisplayPrefs() // 토글들도 임시로 바꿨을 수 있으니 서버값으로 되돌림
+  }
+
+  // 순서 저장은 id 개수만큼 개별 UPDATE를 날리던 게 느렸던 원인(N+1) — RPC로 한 번에 처리.
+  // display_order 외 다른 저장(화면표시 토글)과도 독립적이라 Promise.all로 병렬 실행.
+  async function confirmMenuEdit() {
+    if (menuViewMode === 'individual') {
+      await Promise.all([
+        supabase.rpc('reorder_menus', { menu_ids: editOrderMenus.map(m => m.code) }),
+        storeId ? supabase.from('stores').update({
+          menu_item_image_visible: itemImageVisible,
+          menu_name_text_size:     menuTextSize,
+        }).eq('id', storeId) : Promise.resolve(),
+      ])
+      setMenus(editOrderMenus.map((m, i) => ({ ...m, order: i })))
+    } else {
+      await Promise.all([
+        supabase.rpc('reorder_categories', { category_ids: editOrder.map(c => c.id) }),
+        storeId ? supabase.from('stores').update({
+          menu_item_count_visible: itemCountVisible,
+          menu_category_text_size: categoryTextSize,
+        }).eq('id', storeId) : Promise.resolve(),
+      ])
+      setCategories(editOrder.map((c, i) => ({ ...c, displayOrder: i })))
+    }
+    setMenuEditMode(false)
+    showMenuToast('변경사항을 저장했어요', 2000)
+  }
+
+  function handleCatDragOver(e: React.DragEvent, overId: string) {
+    e.preventDefault()
+    if (!dragCatId || dragCatId === overId) return
+    setEditOrder(prev => {
+      const from = prev.findIndex(c => c.id === dragCatId)
+      const to = prev.findIndex(c => c.id === overId)
+      if (from === -1 || to === -1) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
+  // 개별메뉴 모드 화면편집 — 메뉴 카드의 빨간 X 버튼 (Figma Group 90~96)
+  function requestDeleteMenu(menu: MenuDetail) {
+    setSelected(menu)
+    setDeleteConfirm('single')
+  }
+
+  // 같은 카테고리 안에서만 재정렬 허용 (Figma: "카테고리 안에서 메뉴 박스를 잡고 옮기면...")
+  function handleMenuDragOver(e: React.DragEvent, overCode: string) {
+    e.preventDefault()
+    if (!dragMenuCode || dragMenuCode === overCode) return
+    setEditOrderMenus(prev => {
+      const from = prev.findIndex(m => m.code === dragMenuCode)
+      const to = prev.findIndex(m => m.code === overCode)
+      if (from === -1 || to === -1 || prev[from].categoryId !== prev[to].categoryId) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
+  // 카테고리 삭제 — Figma node 491:1065 확인 다이얼로그("메뉴는 삭제되지 않아요") 그대로.
+  // menus.category_id는 RESTRICT라 먼저 null로 풀어줘야 삭제 가능.
+  async function confirmDeleteCategory(cat: Category) {
+    await supabase.from('menus').update({ category_id: null }).eq('category_id', cat.id)
+    const { error } = await supabase.from('categories').delete().eq('id', cat.id)
+    if (error) { alert('카테고리 삭제 실패: ' + error.message); return }
+    setMenus(prev => prev.map(m => m.categoryId === cat.id ? { ...m, categoryId: '' } : m))
+    setCategories(prev => prev.filter(c => c.id !== cat.id))
+    setEditOrder(prev => prev.filter(c => c.id !== cat.id))
+    if (previewCatId === cat.id) setPreviewCatId('all')
+    setDeleteCatConfirm(null)
+  }
+
+  // ── 우측 패널 "연결된 옵션" 요약 (Figma node 628:371) ────────────────────────
+  function openOptionPanel(menu: MenuDetail) {
+    setOptionPanelMenu(prev => prev?.code === menu.code ? null : menu)
+    setOptionPanelExpandedGroupId(null)
+  }
+
+  // ── 옵션 순서편집 (Figma node 491:3881) ──────────────────────────────────────
+  function enterOptionReorder() {
+    if (!optionPanelMenu) return
+    // 연결된 옵션이 하나도 없으면 편집할 게 없으니 안내만 하고 모드 진입 안 함
+    if (optionPanelMenu.optionGroups.length === 0) {
+      showMenuToast('연결된 옵션이 없어요. 메뉴를 수정해주세요', 3000)
+      return
+    }
+    setReorderGroups(optionPanelMenu.optionGroups.map(g => ({ ...g, items: [...g.items] })))
+    setReorderExpandedGroupId(null)
+    setOptionReorderMode(true)
+    showMenuToast('옵션 또는 옵션그룹을 잡고 순서를 편집하세요', 3000)
+  }
+
+  function cancelOptionReorder() {
+    setOptionReorderMode(false)
+    setReorderGroups([])
+  }
+
+  async function confirmOptionReorder() {
+    if (!optionPanelMenu) return
+    await Promise.all([
+      ...reorderGroups.map((g, i) =>
+        supabase.from('menu_option_groups').update({ display_order: i }).eq('menu_id', optionPanelMenu.code).eq('option_group_id', g.id)
+      ),
+      ...reorderGroups.flatMap(g => g.items.map((it, i) =>
+        supabase.from('option_items').update({ display_order: i }).eq('id', it.id)
+      )),
+    ])
+    const updated = { ...optionPanelMenu, optionGroups: reorderGroups }
+    setOptionPanelMenu(updated)
+    setMenus(prev => prev.map(m => m.code === updated.code ? updated : m))
+    setOptionReorderMode(false)
+    setReorderGroups([])
+    showMenuToast('옵션 순서를 저장했어요', 2000)
+  }
+
+  // 옵션 순서편집 — 포인터 기반 커스텀 드래그(네이티브 HTML5 DnD 대신).
+  // 이유: 네이티브 드래그는 브라우저 기본 고스트 이미지(텍스트만 보이는 문제)와
+  // 커서 아이콘(초록 + 뱃지)을 띄워서 "칸 전체를 잡는" 느낌이 안 나고 커스텀 애니메이션도 불가능.
+  const [optDrag,        setOptDrag]        = useState<{ kind: 'group'; id: string } | { kind: 'item'; id: string; groupId: string } | null>(null)
+  const [optDragDeltaY,  setOptDragDeltaY]  = useState(0)
+  const optDragStartYRef = useRef(0)
+  // 스왑 임계값을 OPT_GROUP_ROW_H/OPT_ITEM_ROW_H 하드코딩 상수 대신, 드래그 시작 시점에 실제
+  // row 엘리먼트의 렌더된 높이를 측정해서 쓴다 — 나중에 패딩/폰트 크기 등으로 row 높이가 바뀌어도
+  // (상수를 깜빡하고 안 고쳐도) 드래그 감도가 안 깨지도록.
+  const optDragRowHRef = useRef(OPT_GROUP_ROW_H)
+
+  function startOptDrag(e: React.PointerEvent, info: { kind: 'group'; id: string } | { kind: 'item'; id: string; groupId: string }) {
+    e.preventDefault()
+    optDragStartYRef.current = e.clientY
+    optDragRowHRef.current = e.currentTarget.getBoundingClientRect().height || (info.kind === 'group' ? OPT_GROUP_ROW_H : OPT_ITEM_ROW_H)
+    setOptDragDeltaY(0)
+    setOptDrag(info)
+  }
+
+  useEffect(() => {
+    if (!optDrag) return
+    // 이 영역은 더 이상 ScaledCanvas(transform:scale) 안에 있지 않으므로, 화면 px 이동량을 그대로 쓴다.
+
+    function onMove(e: PointerEvent) {
+      const delta = e.clientY - optDragStartYRef.current
+      setOptDragDeltaY(delta)
+      const threshold = optDragRowHRef.current / 2
+
+      if (optDrag!.kind === 'group') {
+        if (Math.abs(delta) < threshold) return
+        const dir = delta > 0 ? 1 : -1
+        setReorderGroups(prev => {
+          const idx = prev.findIndex(g => g.id === optDrag!.id)
+          const targetIdx = idx + dir
+          if (idx === -1 || targetIdx < 0 || targetIdx >= prev.length) return prev
+          const next = [...prev]
+          const [moved] = next.splice(idx, 1)
+          next.splice(targetIdx, 0, moved)
+          return next
+        })
+        optDragStartYRef.current = e.clientY
+        setOptDragDeltaY(0)
+      } else {
+        if (Math.abs(delta) < threshold) return
+        const dir = delta > 0 ? 1 : -1
+        const groupId = optDrag!.groupId
+        setReorderGroups(prev => prev.map(g => {
+          if (g.id !== groupId) return g
+          const idx = g.items.findIndex(it => it.id === optDrag!.id)
+          const targetIdx = idx + dir
+          if (idx === -1 || targetIdx < 0 || targetIdx >= g.items.length) return g
+          const items = [...g.items]
+          const [moved] = items.splice(idx, 1)
+          items.splice(targetIdx, 0, moved)
+          return { ...g, items }
+        }))
+        optDragStartYRef.current = e.clientY
+        setOptDragDeltaY(0)
+      }
+    }
+    function onUp() {
+      setOptDrag(null)
+      setOptDragDeltaY(0)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [optDrag])
+
   const [menus,        setMenus]        = useState<MenuDetail[]>([])
   const [categories,   setCategories]   = useState<Category[]>([])
   const [storeGroups,  setStoreGroups]  = useState<StoreOptionGroup[]>([])
   const [search,       setSearch]       = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [catFilter,    setCatFilter]    = useState<string>('all')
-  const [tagFilter,    setTagFilter]    = useState<TagFilter>(null)
   const [checked,      setChecked]      = useState<Set<string>>(new Set())
   const [selected,     setSelected]     = useState<MenuDetail | null>(null)
   const [loading,      setLoading]      = useState(true)
 
+  // gridAreaRef가 가리키는 그리드 컨테이너는 loading이 끝나야 비로소 DOM에 마운트되므로, 마운트
+  // 직후(deps: []) 한 번만 도는 effect로는 아직 null인 ref를 보고 그냥 종료돼 버린다 — loading이
+  // false로 바뀐 뒤 다시 실행되도록 의존성에 포함해야 ResizeObserver가 실제로 등록된다.
+  useEffect(() => {
+    const el = gridAreaRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width
+      if (w) setGridAreaW(w)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [loading])
+
+  // 우측 패널 "연결된 옵션" 요약 + 옵션 순서편집 (Figma node 628:371, 491:3881)
+  const [optionPanelMenu,            setOptionPanelMenu]            = useState<MenuDetail | null>(null)
+  const [optionPanelExpandedGroupId, setOptionPanelExpandedGroupId] = useState<string | null>(null)
+  const [optionReorderMode,          setOptionReorderMode]          = useState(false)
+  const [reorderGroups,              setReorderGroups]              = useState<OptionGroup[]>([])
+  const [reorderExpandedGroupId,     setReorderExpandedGroupId]     = useState<string | null>(null)
+
   const [deleteConfirm, setDeleteConfirm] = useState<'bulk' | 'single' | null>(null)
 
-  const [editMode, setEditMode] = useState(false)
-  const [editForm, setEditForm] = useState({ name: '', price: '', description: '', soldOutState: 'active' as SoldOutState, active: true, categoryId: '' })
-  const [editImageFile,    setEditImageFile]    = useState<File | null>(null)
-  const [editImagePreview, setEditImagePreview] = useState('')
-  const [editImageError,   setEditImageError]   = useState('')
-  const [editSaving,       setEditSaving]       = useState(false)
-  const [addingGroup,      setAddingGroup]      = useState(false)
-  const [connectingGroup,  setConnectingGroup]  = useState(false)
-  const [connectGroupId,   setConnectGroupId]   = useState('')
+  // 메뉴 추가/수정 모달 (Figma node 491:2237 "메뉴 상세")
+  // 메뉴 추가/수정 폼 — 상태와 저장 로직은 use-menu-form 훅에 있다 (ProductHub 와 공용)
+  const menuForm = useMenuForm({
+    onCreated: menu => { setMenus(prev => [...prev, menu]); },
+    onUpdated: menu => {
+      applyLocalUpdate(menu)
+      setOptionPanelMenu(prev => prev?.code === menu.code ? menu : prev)
+    },
+    showToast: msg => showMenuToast(msg, 2000),
+  })
 
   const [addingStoreGroup, setAddingStoreGroup] = useState(false)
   const [newStoreGroup,    setNewStoreGroup]    = useState({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
-  const [addOptStep,       setAddOptStep]       = useState<1|2|3>(1)
-  const [newGroupItems,    setNewGroupItems]    = useState<{ id: string; name: string; price: string }[]>([{ id: crypto.randomUUID(), name: '', price: '' }])
-  const [step3CatId,       setStep3CatId]       = useState('')
+  const [addOptStep,       setAddOptStep]       = useState<1|2>(1)
+  // maxQty: 옵션 항목별 "수량 버튼" 설정 (Figma 491:3318의 "최대 N개 / 수량 버튼 사용").
+  // 아직 option_items에 대응 컬럼이 없어서 모달 안에서만 유지되고 저장되지는 않음.
+  const [newGroupItems,    setNewGroupItems]    = useState<{ id: string; name: string; price: string; maxQty: number | null }[]>([{ id: crypto.randomUUID(), name: '', price: '', maxQty: null }])
+  const [optQtyPickerId,   setOptQtyPickerId]   = useState<string | null>(null)
+  const [optDragItemId,    setOptDragItemId]    = useState<string | null>(null)
   const [step3MenuIds,     setStep3MenuIds]     = useState<Set<string>>(new Set())
+  const [optAddSearch,     setOptAddSearch]     = useState('')
+  const [optExpandedCats,  setOptExpandedCats]  = useState<Set<string>>(new Set())
   const [addOptLoading,    setAddOptLoading]    = useState(false)
 
   const [addingCat,          setAddingCat]          = useState(false)
@@ -141,6 +520,7 @@ export default function Menus() {
   const [addModalTab,   setAddModalTab]   = useState<'bulk' | 'detail'>('bulk')
   const [addCategoryId, setAddCategoryId] = useState('')
   const [addingNewCat,  setAddingNewCat]  = useState(false)
+  const [catFocused,    setCatFocused]    = useState(false)
   const [newCatInModal, setNewCatInModal] = useState('')
   // 일괄 추가
   const [addRows, setAddRows] = useState<{ id: string; name: string; price: string; imageFile?: File; imagePreview?: string }[]>([
@@ -202,14 +582,14 @@ export default function Menus() {
           option_groups (
             id, name, is_required, is_multi, max_select,
             option_items (
-              id, name, extra_price, is_popular, is_sold_out, sold_out_until, is_hidden, display_order
+              id, name, extra_price, is_popular, is_sold_out, sold_out_until, is_hidden, display_order, max_quantity
             )
           )
         )
       `)
       .in('category_id', catIds)
       .order('display_order')
-    setMenus((data ?? []).map(mapDbMenu))
+    setMenus((data ?? []).map(row => mapMenuRow(row)))
   }
 
   // ── 스토어 옵션 그룹 조회 (옵션 탭) ─────────────────────────────────────
@@ -219,7 +599,7 @@ export default function Menus() {
       .from('option_groups')
       .select(`
         id, name, display_order, is_required, is_multi, max_select, is_sold_out, sold_out_until, is_hidden,
-        option_items ( id, name, extra_price, is_sold_out, sold_out_until, is_hidden, display_order ),
+        option_items ( id, name, extra_price, is_sold_out, sold_out_until, is_hidden, display_order, max_quantity ),
         menu_option_groups ( menu_id, menus ( name, is_sold_out, is_hidden ) )
       `)
       .eq('store_id', storeId)
@@ -249,30 +629,11 @@ export default function Menus() {
           soldOut:      it.is_sold_out,
           soldOutUntil: it.sold_out_until ?? null,
           hidden:       it.is_hidden,
+          isPopular:    it.is_popular ?? false,
+          maxQty:       it.max_quantity ?? null,
         })),
     })))
   }
-
-  // ── 헤더 슬롯: 옵션추가 / 메뉴추가 버튼 ─────────────────────────────────
-  useEffect(() => {
-    setHeaderRight(
-      <div className="flex gap-2">
-        <button
-          onClick={() => { setAddingStoreGroup(true); setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' }) }}
-          className="px-3 py-2 bg-gray-100 text-ink rounded-lg text-[11px] font-bold hover:bg-gray-200 transition-colors"
-        >
-          옵션 추가
-        </button>
-        <button
-          onClick={openAddMenu}
-          className="px-3 py-2 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[11px] font-bold hover:bg-[#00BB55] transition-colors"
-        >
-          메뉴 추가
-        </button>
-      </div>
-    )
-    return () => setHeaderRight(null)
-  }, [])
 
   // ── 마운트 및 storeId 변경 시 로딩 ──────────────────────────────────────
   useEffect(() => {
@@ -282,66 +643,15 @@ export default function Menus() {
       await Promise.all([
         fetchMenus(cats.map(c => c.id)),
         fetchStoreGroups(),
+        fetchMenuDisplayPrefs(),
       ])
       setLoading(false)
     }
     if (storeId) load()
   }, [storeId])
 
-  // ── 카테고리 헬퍼 ──────────────────────────────────────────────────────────
-  function getCategoryName(id: string | null): string {
-    if (!id) return ''
-    return categories.find(c => c.id === id)?.name ?? ''
-  }
-
   function sortedCategories() {
     return [...categories].sort((a, b) => a.displayOrder - b.displayOrder)
-  }
-
-  function menuCountInCategory(catId: string) {
-    return menus.filter(m => m.categoryId === catId).length
-  }
-
-  // ── 메뉴 목록 필터링 ────────────────────────────────────────────────────────
-  const filteredMenus = menus.filter(m => {
-    const matchSearch = m.name.includes(search) || getCategoryName(m.categoryId).includes(search)
-    const matchStatus =
-      statusFilter === 'all'     ? true
-      : statusFilter === 'active'  ? m.active && !m.soldOut
-      : statusFilter === 'soldOut' ? m.soldOut
-      : !m.active
-    const matchCat = catFilter === 'all' || m.categoryId === catFilter
-    const matchTag =
-      tagFilter === null          ? true
-      : tagFilter === 'popular'     ? m.isPopular
-      : tagFilter === 'recommended' ? m.isRecommended
-      : m.isNew
-    return matchSearch && matchStatus && matchCat && matchTag
-  }).sort((a, b) => {
-    // QR오더와 동일하게: 카테고리 display_order 순 → 카테고리 내 메뉴 display_order 순
-    const catOrderA = categories.find(c => c.id === a.categoryId)?.displayOrder ?? Infinity
-    const catOrderB = categories.find(c => c.id === b.categoryId)?.displayOrder ?? Infinity
-    if (catOrderA !== catOrderB) return catOrderA - catOrderB
-    return (a.order ?? 0) - (b.order ?? 0)
-  })
-
-  // ── 메뉴 태그 토글 ─────────────────────────────────────────────────────────
-  async function toggleTag(menu: MenuDetail, tag: 'isPopular' | 'isRecommended' | 'isNew', e: React.MouseEvent) {
-    e.stopPropagation()
-    const dbField = tag === 'isPopular' ? 'is_popular' : tag === 'isRecommended' ? 'is_recommended' : 'is_new'
-    const next = !menu[tag]
-    setMenus(prev => prev.map(m => m.code === menu.code ? { ...m, [tag]: next } : m))
-    await supabase.from('menus').update({ [dbField]: next }).eq('id', menu.code)
-  }
-
-  // ── 메뉴 선택 ──────────────────────────────────────────────────────────────
-  function selectMenu(menu: MenuDetail) {
-    // 체크된 항목이 1개 이상이면 행 클릭도 체크박스 토글로 처리
-    if (checked.size > 0) { toggleCheck(menu.code); return }
-    if (selected?.code === menu.code) { setSelected(null); return }
-    setSelected(menu)
-    setEditMode(false)
-    setAddingGroup(false)
   }
 
   // ── 선택 메뉴 로컬 업데이트 헬퍼 ──────────────────────────────────────────
@@ -351,7 +661,7 @@ export default function Menus() {
   }
 
   // ── 카테고리 CRUD ──────────────────────────────────────────────────────────
-  async function addCategory(name: string) {
+  async function addCategory(name: string): Promise<Category | undefined> {
     if (!storeId) return
     const maxOrder = categories.reduce((m, c) => Math.max(m, c.displayOrder), 0)
     const { data, error } = await supabase
@@ -360,8 +670,19 @@ export default function Menus() {
       .select('id, name, display_order')
       .single()
     if (!error && data) {
-      setCategories(prev => [...prev, { id: data.id, name: data.name, displayOrder: data.display_order }])
+      const created = { id: data.id, name: data.name, displayOrder: data.display_order }
+      setCategories(prev => [...prev, created])
+      return created
     }
+    return undefined
+  }
+
+  // 새 카테고리 생성 + 선택된 메뉴들을 그 카테고리로 일괄 이동 (카테고리 추가 2단계 모달 전용)
+  async function addCategoryWithMenus(name: string, menuCodes: Set<string>) {
+    const created = await addCategory(name)
+    if (!created || menuCodes.size === 0) return
+    await Promise.all([...menuCodes].map(code => supabase.from('menus').update({ category_id: created.id }).eq('id', code)))
+    setMenus(prev => prev.map(m => menuCodes.has(m.code) ? { ...m, categoryId: created.id } : m))
   }
 
   async function renameCategory(id: string, name: string) {
@@ -389,7 +710,7 @@ export default function Menus() {
     const toRemoveSet = new Set(toRemove)
     setMenus(prev => prev.map(m => {
       if (toAddSet.has(m.code))    return { ...m, categoryId: catId }
-      if (toRemoveSet.has(m.code)) return { ...m, categoryId: undefined }
+      if (toRemoveSet.has(m.code)) return { ...m, categoryId: null }
       return m
     }))
     setCatEditSaving(false)
@@ -412,42 +733,6 @@ export default function Menus() {
     const { error } = await supabase.from('categories').delete().eq('id', id)
     if (error) { alert('카테고리 삭제 실패: ' + error.message); return }
     setCategories(prev => prev.filter(c => c.id !== id))
-  }
-
-  async function moveCategoryUp(id: string) {
-    const sorted = sortedCategories()
-    const idx = sorted.findIndex(c => c.id === id)
-    if (idx <= 0) return
-    const above = sorted[idx - 1]
-    const thisOrder = sorted[idx].displayOrder
-    const aboveOrder = above.displayOrder
-    await Promise.all([
-      supabase.from('categories').update({ display_order: aboveOrder }).eq('id', id),
-      supabase.from('categories').update({ display_order: thisOrder }).eq('id', above.id),
-    ])
-    setCategories(prev => prev.map(c => {
-      if (c.id === id)       return { ...c, displayOrder: aboveOrder }
-      if (c.id === above.id) return { ...c, displayOrder: thisOrder }
-      return c
-    }))
-  }
-
-  async function moveCategoryDown(id: string) {
-    const sorted = sortedCategories()
-    const idx = sorted.findIndex(c => c.id === id)
-    if (idx < 0 || idx >= sorted.length - 1) return
-    const below = sorted[idx + 1]
-    const thisOrder = sorted[idx].displayOrder
-    const belowOrder = below.displayOrder
-    await Promise.all([
-      supabase.from('categories').update({ display_order: belowOrder }).eq('id', id),
-      supabase.from('categories').update({ display_order: thisOrder }).eq('id', below.id),
-    ])
-    setCategories(prev => prev.map(c => {
-      if (c.id === id)       return { ...c, displayOrder: belowOrder }
-      if (c.id === below.id) return { ...c, displayOrder: thisOrder }
-      return c
-    }))
   }
 
   // ── 카테고리 드래그 앤 드롭 ─────────────────────────────────────────────────
@@ -473,21 +758,6 @@ export default function Menus() {
   }
 
   // ── 메뉴 추가 ───────────────────────────────────────────────────────────────
-  function openAddMenu() {
-    setAddModalTab('bulk')
-    setAddCategoryId(sortedCategories()[0]?.id ?? '')
-    setAddingNewCat(false)
-    setNewCatInModal('')
-    setAddRows([{ id: crypto.randomUUID(), name: '', price: '', imageFile: undefined, imagePreview: '' }])
-    setDetailForm({ name: '', price: '', description: '' })
-    setImageFile(null)
-    setImagePreview('')
-    setSelectedGroupIds([])
-    setAddError('')
-    setAddLoading(false)
-    setAddMenuOpen(true)
-  }
-
   function addRowLine() {
     setAddRows(prev => [...prev, { id: crypto.randomUUID(), name: '', price: '', imageFile: undefined, imagePreview: '' }])
   }
@@ -543,7 +813,7 @@ export default function Menus() {
     const { data, error } = await supabase
       .from('menus')
       .insert(inserts)
-      .select('id, category_id, name, description, base_price, is_sold_out, is_hidden, display_order')
+      .select('id, category_id, name, description, base_price, is_sold_out, is_hidden, display_order, is_popular, is_recommended, is_new')
 
     setAddLoading(false)
 
@@ -562,6 +832,9 @@ export default function Menus() {
       active:       true,
       soldOut:      false,
       order:        d.display_order,
+      isPopular:     d.is_popular     ?? false,
+      isRecommended: d.is_recommended ?? false,
+      isNew:         d.is_new         ?? false,
       optionGroups: [],
     }))
 
@@ -629,7 +902,7 @@ export default function Menus() {
         display_order: maxOrder + 1,
         image_url:     imageUrl,
       })
-      .select('id, category_id, name, description, base_price, is_sold_out, is_hidden, display_order')
+      .select('id, category_id, name, description, base_price, is_sold_out, is_hidden, display_order, is_popular, is_recommended, is_new')
       .single()
 
     if (error || !data) { setAddLoading(false); setAddError('저장 실패: ' + error?.message); return }
@@ -651,6 +924,9 @@ export default function Menus() {
       active:       true,
       soldOut:      false,
       order:        data.display_order,
+      isPopular:     data.is_popular     ?? false,
+      isRecommended: data.is_recommended ?? false,
+      isNew:         data.is_new         ?? false,
       optionGroups: selectedGroupIds.map(gid => {
         const g = storeGroups.find(sg => sg.id === gid)
         return g ? { id: g.id, name: g.name, isRequired: false, isMulti: false, maxSelect: null,
@@ -663,182 +939,33 @@ export default function Menus() {
     setAddMenuOpen(false)
   }
 
-  // ── 기본 정보 편집 ──────────────────────────────────────────────────────────
-  function startEdit() {
-    if (!selected) return
-    setEditForm({
-      name:         selected.name,
-      price:        String(selected.price),
-      description:  selected.description,
-      soldOutState: getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null),
-      active:       selected.active,
-      categoryId:   selected.categoryId ?? '',
-    })
-    setEditImageFile(null)
-    setEditImagePreview(selected.imageUrl ?? '')
-    setEditMode(true)
+  // ── 메뉴 추가/수정 모달 열기 (Figma node 491:2237) ──────────────────────────
+  // 폼 상태·저장은 menuForm 훅이 들고 있다. 여기서는 "어느 메뉴를 열지"만 정한다.
+  function openMenuFormEdit(menu: MenuDetail) {
+    setSelected(menu)
+    menuForm.openEdit(menu)
   }
 
-  async function saveEdit() {
-    if (!selected) return
-    const priceNum = parseInt(editForm.price, 10)
-    if (!editForm.name.trim() || isNaN(priceNum) || priceNum < 0) return
-
-    setEditSaving(true)
-    setEditImageError('')
-
-    let imageUrl: string | undefined = selected.imageUrl
-
-    if (editImageFile) {
-      const ext = editImageFile.name.split('.').pop() ?? 'jpg'
-      const { data: up, error: upErr } = await supabase.storage
-        .from('menu-images')
-        .upload(`${crypto.randomUUID()}.${ext}`, editImageFile, { contentType: editImageFile.type })
-      if (upErr || !up) {
-        setEditImageError(`사진 업로드 실패: ${upErr?.message ?? '알 수 없는 오류'}`)
-        setEditSaving(false)
-        return
-      }
-      imageUrl = supabase.storage.from('menu-images').getPublicUrl(up.path).data.publicUrl
-    }
-
-    const soldOutUpdates = editForm.soldOutState === 'active'
-      ? { is_sold_out: false, sold_out_until: null }
-      : editForm.soldOutState === 'today'
-      ? { is_sold_out: true, sold_out_until: getKSTEndOfDay() }
-      : { is_sold_out: true, sold_out_until: null }
-
-    const { error: updateErr } = await supabase.from('menus').update({
-      name:        editForm.name.trim(),
-      base_price:  priceNum,
-      description: editForm.description || null,
-      image_url:   imageUrl ?? null,
-      category_id: editForm.categoryId || null,
-      is_hidden:   !editForm.active,
-      ...soldOutUpdates,
-    }).eq('id', selected.code)
-
-    setEditSaving(false)
-
-    if (updateErr) {
-      setEditImageError(`저장 실패: ${updateErr.message}`)
-      return
-    }
-
-    // 가격(필수) 옵션 그룹의 extra_price를 0으로 유지
-    // (base_price가 실제 가격 소스 — extra_price가 남아있으면 주문 시 이중 계산됨)
-    const gaGyeokGroup = selected.optionGroups.find(g => g.name.startsWith('가격(필수)'))
-    if (gaGyeokGroup && gaGyeokGroup.items.some(it => it.extra > 0)) {
-      await supabase.from('option_items')
-        .update({ extra_price: 0 })
-        .eq('option_group_id', gaGyeokGroup.id)
-    }
-
-    applyLocalUpdate({
-      ...selected,
-      name:         editForm.name.trim(),
-      price:        priceNum,
-      description:  editForm.description,
-      imageUrl,
-      soldOut:      editForm.soldOutState !== 'active',
-      soldOutUntil: editForm.soldOutState === 'today' ? getKSTEndOfDay() : null,
-      active:       editForm.active,
-      categoryId:   editForm.categoryId || undefined,
-    })
-    setEditMode(false)
+  function openMenuFormAdd() {
+    setSelected(null)
+    menuForm.openAdd(selectedCatForAdd()?.id ?? sortedCategories()[0]?.id ?? '')
   }
 
-  async function connectGroup(groupId: string) {
-    if (!selected || !groupId) return
-    const maxOrder = selected.optionGroups.length
-    const { error } = await supabase.from('menu_option_groups').insert({
-      menu_id:         selected.code,
-      option_group_id: groupId,
-      display_order:   maxOrder,
-    })
-    if (error) { console.error(error); return }
-    const g = storeGroups.find(sg => sg.id === groupId)
-    if (!g) return
-    const newGrp: OptionGroup = {
-      id:         g.id,
-      name:       g.name,
-      isRequired: false,
-      isMulti:    false,
-      maxSelect:  null,
-      items:      g.items.map(it => ({ ...it, isPopular: false })),
-    }
-    applyLocalUpdate({ ...selected, optionGroups: [...selected.optionGroups, newGrp] })
-    setConnectingGroup(false)
-    setConnectGroupId('')
-  }
-
-  // ── 판매/표시 상태 토글 ────────────────────────────────────────────────────
-  async function toggleMenuStatus(field: 'soldOut' | 'active') {
-    if (!selected) return
-    const newVal = !selected[field]
-    const dbField = field === 'soldOut' ? 'is_sold_out' : 'is_hidden'
-    const dbVal   = field === 'soldOut' ? newVal : !newVal  // active=true → is_hidden=false
-    await supabase.from('menus').update({ [dbField]: dbVal }).eq('id', selected.code)
-    applyLocalUpdate({ ...selected, [field]: newVal })
-  }
-
-  // ── 메뉴 품절 3단계 상태 직접 설정 ───────────────────────────────────────────
-  async function setMenuSoldOutState(state: SoldOutState) {
-    if (!selected) return
-    const updates =
-      state === 'active'
-        ? { is_sold_out: false, sold_out_until: null }
-        : state === 'today'
-        ? { is_sold_out: true, sold_out_until: getKSTEndOfDay() }
-        : { is_sold_out: true, sold_out_until: null }
-    await supabase.from('menus').update(updates).eq('id', selected.code)
-    applyLocalUpdate({
-      ...selected,
-      soldOut:      state !== 'active',
-      soldOutUntil: state === 'today' ? getKSTEndOfDay() : null,
-    })
+  function selectedCatForAdd(): Category | undefined {
+    return categories.find(c => c.id === previewCatId)
   }
 
   // ── 옵션 그룹 CRUD (스토어 단위 — 옵션 탭용) ────────────────────────────────
-  async function createStandaloneGroup() {
-    if (!newStoreGroup.name.trim() || !storeId) return
-    const maxOrder = storeGroups.length
-    const { data, error } = await supabase
-      .from('option_groups')
-      .insert({
-        store_id:      storeId,
-        name:          newStoreGroup.name.trim(),
-        is_required:   newStoreGroup.isRequired,
-        is_multi:      newStoreGroup.isMulti,
-        max_select:    newStoreGroup.isMulti && newStoreGroup.maxSelect ? parseInt(newStoreGroup.maxSelect) : null,
-        display_order: maxOrder,
-      })
-      .select('id, name, is_required, is_multi, max_select')
-      .single()
-    if (error || !data) { console.error(error); return }
-    setStoreGroups(prev => [...prev, {
-      id: data.id, name: data.name,
-      isRequired:   data.is_required ?? false,
-      isMulti:      data.is_multi    ?? false,
-      maxSelect:    data.max_select  ?? null,
-      isSoldOut:    false,
-      soldOutUntil: null,
-      isHidden:     false,
-      usedBy:       [],
-      usedByMenus:  [],
-      items:        [],
-    }])
-    setAddingStoreGroup(false)
-    setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
-  }
-
   function closeOptGroupModal() {
     setAddingStoreGroup(false)
     setAddOptStep(1)
     setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
-    setNewGroupItems([{ id: crypto.randomUUID(), name: '', price: '' }])
-    setStep3CatId('')
+    setNewGroupItems([{ id: crypto.randomUUID(), name: '', price: '', maxQty: null }])
     setStep3MenuIds(new Set())
+    setOptAddSearch('')
+    setOptExpandedCats(new Set())
+    setOptQtyPickerId(null)
+    setOptDragItemId(null)
   }
 
   async function confirmOptGroupCreate() {
@@ -860,24 +987,34 @@ export default function Menus() {
       if (ge || !gd) { console.error(ge); return }
 
       const validItems = newGroupItems.filter(i => i.name.trim())
-      const itemResults = await Promise.all(
-        validItems.map((item, idx) =>
-          supabase.from('option_items')
-            .insert({ option_group_id: gd.id, name: item.name.trim(), extra_price: parseInt(item.price) || 0, display_order: idx })
-            .select('id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order')
-            .single()
-        )
-      )
-      const createdItems: OptionItem[] = itemResults
-        .filter(r => r.data && !r.error)
-        .map(r => ({ id: r.data!.id, name: r.data!.name, extra: r.data!.extra_price, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false }))
-
       const menuIds = Array.from(step3MenuIds)
-      if (menuIds.length > 0) {
-        await Promise.all(menuIds.map((menuId, i) =>
-          supabase.from('menu_option_groups').insert({ menu_id: menuId, option_group_id: gd.id, display_order: i })
-        ))
+
+      // 옵션 항목·메뉴 연결은 서로 독립적이고 각각 여러 행이라 벌크 insert 1번씩,
+      // 두 요청은 병렬로 실행 — 예전엔 행마다 개별 insert를 날려서(N+1) 항목·메뉴가
+      // 많을수록 느려졌음
+      const [itemsRes] = await Promise.all([
+        validItems.length > 0
+          ? supabase.from('option_items')
+              .insert(validItems.map((item, idx) => ({
+                option_group_id: gd.id, name: item.name.trim(),
+                extra_price: parseInt(item.price) || 0, display_order: idx,
+                max_quantity: item.maxQty,
+              })))
+              .select('id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order, max_quantity')
+          : Promise.resolve({ data: [], error: null }),
+        menuIds.length > 0
+          ? supabase.from('menu_option_groups').insert(
+              menuIds.map((menuId, i) => ({ menu_id: menuId, option_group_id: gd.id, display_order: i }))
+            )
+          : Promise.resolve({ data: [], error: null }),
+      ])
+
+      if (itemsRes.error) {
+        console.error('옵션 항목 저장 실패:', itemsRes.error)
+        alert('옵션그룹은 생성됐지만 옵션 항목 저장에 실패했습니다: ' + itemsRes.error.message + '\n항목을 다시 추가해주세요.')
       }
+      const createdItems: OptionItem[] = (itemsRes.data ?? [])
+        .map(d => ({ id: d.id, name: d.name, extra: d.extra_price, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false, maxQty: d.max_quantity ?? null }))
 
       const newGroup: any = {
         id: gd.id, name: gd.name,
@@ -895,6 +1032,10 @@ export default function Menus() {
       setStoreGroups(prev => [...prev, newGroup])
       if (selected && step3MenuIds.has(selected.code)) {
         applyLocalUpdate({ ...selected, optionGroups: [...selected.optionGroups, newGroup] })
+      }
+      // 메뉴 상세 모달에서 "옵션 추가 +"로 들어온 경우, 새로 만든 옵션그룹을 지금 편집 중인 메뉴에 바로 선택 처리
+      if (menuForm.mode) {
+        menuForm.toggleGroup(gd.id)
       }
     } finally {
       setAddOptLoading(false)
@@ -972,11 +1113,12 @@ export default function Menus() {
     const { data, error } = await supabase
       .from('option_items')
       .insert({ option_group_id: groupId, name, extra_price: extra, display_order: maxOrder })
-      .select('id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order')
+      .select('id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order, max_quantity')
       .single()
     if (error || !data) { console.error(error); return null }
     const item: OptionItem = { id: data.id, name: data.name, extra: data.extra_price,
-      soldOut: data.is_sold_out, soldOutUntil: null, hidden: data.is_hidden, isPopular: data.is_popular }
+      soldOut: data.is_sold_out, soldOutUntil: null, hidden: data.is_hidden, isPopular: data.is_popular,
+      maxQty: data.max_quantity ?? null }
     setStoreGroups(prev => prev.map(g => g.id !== groupId ? g : { ...g, items: [...g.items, item] }))
     return item
   }
@@ -1004,25 +1146,7 @@ export default function Menus() {
     ))
   }
 
-  // ── 메뉴 ↔ 옵션 그룹 연결/해제 ───────────────────────────────────────────────
-  async function disconnectGroup(groupId: string) {
-    if (!selected) return
-    await supabase.from('menu_option_groups')
-      .delete()
-      .eq('menu_id', selected.code)
-      .eq('option_group_id', groupId)
-    applyLocalUpdate({ ...selected, optionGroups: selected.optionGroups.filter(g => g.id !== groupId) })
-  }
-
   // ── 일괄 액션 ──────────────────────────────────────────────────────────────
-  function toggleCheck(code: string) {
-    setChecked(prev => {
-      const n = new Set(prev)
-      n.has(code) ? n.delete(code) : n.add(code)
-      return n
-    })
-  }
-
   async function bulkAction(action: 'soldOut' | 'unsoldOut' | 'todaySoldOut' | 'hide' | 'unhide') {
     const codes = [...checked]
     const updates =
@@ -1061,98 +1185,18 @@ export default function Menus() {
   async function deleteMenus(codes: string[]) {
     await Promise.all(codes.map(code => supabase.from('menus').delete().eq('id', code)))
     setMenus(prev => prev.filter(m => !codes.includes(m.code)))
+    setEditOrderMenus(prev => prev.filter(m => !codes.includes(m.code)))
     if (selected && codes.includes(selected.code)) {
       setSelected(null)
-      setEditMode(false)
+      menuForm.close()
     }
     setChecked(new Set())
     setDeleteConfirm(null)
   }
 
   // ── 옵션 탭: 스토어 단위 품절/숨김 토글 ──────────────────────────────────
-  async function toggleStoreOptItem(groupId: string, itemId: string, field: 'soldOut' | 'hidden') {
-    const group = storeGroups.find(g => g.id === groupId)
-    const item  = group?.items.find(it => it.id === itemId)
-    if (!item) return
-
-    const newVal  = !item[field]
-    const dbField = field === 'soldOut' ? 'is_sold_out' : 'is_hidden'
-    await supabase.from('option_items').update({ [dbField]: newVal }).eq('id', itemId)
-
-    setStoreGroups(prev => prev.map(g =>
-      g.id !== groupId ? g : {
-        ...g,
-        items: g.items.map(it => it.id !== itemId ? it : { ...it, [field]: newVal }),
-      }
-    ))
-  }
-
-  // ── 메뉴 상세 모달: 옵션 그룹 인라인 편집 핸들러 ──────────────────────────
-  async function modalUpdateItem(groupId: string, itemId: string, updates: Partial<OptionItem>) {
-    await updateStoreItem(groupId, itemId, updates)
-    if (!selected) return
-    applyLocalUpdate({
-      ...selected,
-      optionGroups: selected.optionGroups.map(g =>
-        g.id !== groupId ? g : { ...g, items: g.items.map(it => it.id !== itemId ? it : { ...it, ...updates }) }
-      ),
-    })
-  }
-
-  async function modalDeleteItem(groupId: string, itemId: string) {
-    await deleteStoreItem(groupId, itemId)
-    if (!selected) return
-    applyLocalUpdate({
-      ...selected,
-      optionGroups: selected.optionGroups.map(g =>
-        g.id !== groupId ? g : { ...g, items: g.items.filter(it => it.id !== itemId) }
-      ),
-    })
-  }
-
-  async function modalAddItem(groupId: string, name: string, extra: number) {
-    const item = await addStoreItem(groupId, name, extra)
-    if (!item || !selected) return
-    applyLocalUpdate({
-      ...selected,
-      optionGroups: selected.optionGroups.map(g =>
-        g.id !== groupId ? g : { ...g, items: [...g.items, item] }
-      ),
-    })
-  }
-
-  async function modalUpdateGroup(groupId: string, updates: Partial<OptionGroup>) {
-    await updateStoreGroup(groupId, updates)
-    if (!selected) return
-    applyLocalUpdate({
-      ...selected,
-      optionGroups: selected.optionGroups.map(g =>
-        g.id !== groupId ? g : { ...g, ...updates }
-      ),
-    })
-  }
-
   return (
-    <div className="h-full flex flex-col bg-gray-bg overflow-hidden p-3">
-
-      <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-xl shadow-sm relative">
-
-      {/* 탭 */}
-      <div className="px-4 pt-2.5 pb-0 flex-shrink-0 border-b border-gray-border">
-        <div className="flex gap-1">
-          {([
-            { v: 'menu',     l: '메뉴'    },
-            { v: 'option',   l: '옵션그룹' },
-            { v: 'category', l: '카테고리' },
-          ] as { v: MenuTab; l: string }[]).map(({ v, l }) => (
-            <button key={v} onClick={() => setTab(v)}
-              className={`px-3 py-1.5 text-[12px] font-semibold border-b-2 transition-colors -mb-px
-                ${tab === v ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className="h-full flex flex-col bg-gray-100 overflow-hidden relative">
 
       {/* 로딩 */}
       {loading && (
@@ -1162,472 +1206,906 @@ export default function Menus() {
         </div>
       )}
 
-      {/* ── 메뉴 탭 ── */}
-      {!loading && tab === 'menu' && (
-        <div className="flex-1 flex flex-col overflow-hidden">
+      {/* ── 메뉴 탭 — 좌측 카테고리 그리드(항상 고정) + 우측 QR오더/개별메뉴 탭 (Figma node 491:592, 491:715, 491:836, 491:1346) ── */}
+      {!loading && tab === 'menu' && (() => {
+        const COLS = 6
+        const GRID_PAD = 26
+        const GRID_GAP = 10
+        // 좌측 영역 실측 폭(gridAreaW) 기준으로 카드 폭을 매번 다시 계산 — 창 크기가 달라져도
+        // 항상 좌우 GRID_PAD만큼의 패딩만 남기고 6열이 꽉 차도록(고정 px면 창이 넓을 때 사이드
+        // 패널 앞에 큰 여백이 남았음)
+        const CARD_W = Math.max(80, Math.round((gridAreaW - GRID_PAD * 2 - GRID_GAP * (COLS - 1)) / COLS))
+        const COL_STEP = CARD_W + GRID_GAP
+        const countOf = (catId: string) => menus.filter(m => m.categoryId === catId).length
+        const selectedCat = categories.find(c => c.id === previewCatId) ?? null
+        const itemsOfSelectedCat = selectedCat ? menus.filter(m => m.categoryId === selectedCat.id) : []
+        const catTextSizeClass = categoryTextSize === 'large' ? 'text-[17px]' : 'text-[14px]'
+        const listForLeft = menuEditMode ? editOrder : categories
 
-          {/* 검색 + 상태 필터 + 태그 필터 */}
-          <div className="px-4 pt-3 pb-2 flex items-center gap-2.5 flex-shrink-0">
-            <div className="relative w-52 flex-shrink-0">
-              <input
-                value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="메뉴명, 카테고리 검색"
-                className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-ink"
-              />
-              <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <circle cx="6.5" cy="6.5" r="4.5" stroke="#727272" strokeWidth="1.5"/>
-                <path d="M10.5 10.5L14 14" stroke="#727272" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <div className="flex gap-1">
-              {([
-                { v: 'all',     l: '전체'   },
-                { v: 'active',  l: '판매중' },
-                { v: 'soldOut', l: '품절'   },
-                { v: 'hidden',  l: '숨김'   },
-              ] as { v: StatusFilter; l: string }[]).map(({ v, l }) => (
-                <button key={v} onClick={() => setStatusFilter(v)}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-colors focus:outline-none
-                    ${statusFilter === v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-1 ml-auto">
-              {([
-                { v: 'popular'     as TagFilter, l: '인기',   on: 'bg-[#F97316] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
-                { v: 'recommended' as TagFilter, l: '추천',   on: 'bg-[#00DD67] text-[#1A1A1A]', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
-                { v: 'new'         as TagFilter, l: '신메뉴', on: 'bg-[#1D6FE8] text-white', off: 'bg-gray-100 text-gray-text hover:bg-gray-200' },
-              ]).map(({ v, l, on, off }) => (
-                <button key={String(v)} onClick={() => setTagFilter(tagFilter === v ? null : v)}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-colors focus:outline-none
-                    ${tagFilter === v ? on : off}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          </div>
-          {/* 카테고리 필터 태그 */}
-          <div className="px-4 pb-2 border-b border-gray-border flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="flex-1 flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-                <button
-                  onClick={() => setCatFilter('all')}
-                  className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors flex-shrink-0 focus:outline-none
-                    ${catFilter === 'all' ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                >
-                  전체
-                </button>
-                {categories.map(cat => (
+        // 개별메뉴 모드 — 카테고리별 제목 + 6열 카드 묶음, 모든 px는 Figma 원본 × FIGMA_SCALE
+        // — src/lib/figma-scale.ts 참고. 행 높이는 이제 CSS Grid가 자동으로 처리하므로
+        // (카드 높이가 메뉴이름 줄바꿈에 따라 달라져도 같은 행끼리 stretch로 맞춰짐) 좌표 계산은
+        // 그룹 시작 위치(첫 카테고리 상단 여백/제목-카드 간격/그룹 간 간격)만 필요.
+        const INDIV_FIRST_TOP   = 73
+        const INDIV_HEADING_GAP = 29
+        const INDIV_GROUP_GAP   = 24
+        const individualGroups = categories
+          .slice()
+          .sort((a, b) => a.displayOrder - b.displayOrder)
+          .reduce<{ cat: Category; items: MenuDetail[] }[]>((acc, cat) => {
+            const items = menus.filter(m => m.categoryId === cat.id)
+            if (items.length === 0) return acc
+            acc.push({ cat, items })
+            return acc
+          }, [])
+
+        return (
+          <div className="relative bg-gray-100 flex flex-1 overflow-hidden min-h-0">
+            {/* 좌측: 카테고리 카드 그리드 / 개별메뉴 그리드 / 편집모드 그리드 — 검색창+버튼 영역은 고정, 그 아래만 스크롤 */}
+            <div ref={gridAreaRef} className="relative flex-1 min-w-0 overflow-hidden">
+              {/* 검색창 + 모드/편집 버튼 — 고정 영역 (뒤의 스크롤 콘텐츠를 가리도록 배경 깔고 z-index 위로) */}
+              <div className="absolute bg-gray-100" style={{ left: 0, top: 0, right: 0, height: 59, zIndex: 10 }} />
+              {/* 검색창 */}
+              <div className="field-wrap absolute border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px]" style={{ left: 26, top: 17, width: 250, height: 31, zIndex: 11 }}>
+                <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="메뉴이름, 카테고리 검색"
+                  className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[13px] text-ink placeholder:text-[#8C8379] bg-transparent"
+                />
+              </div>
+
+              {/* 카테고리 추가 / 메뉴 추가 — 현재 모드에 맞는 것만 노출 + "모드 변경"/화면편집. flex-gap으로 버튼 간 간격 항상 동일 — 편집모드일 땐 숨김 */}
+              {!menuEditMode && (
+                <div className="absolute flex items-center gap-[26px]" style={{ right: 26, top: 3, zIndex: 11 }}>
                   <button
-                    key={cat.id}
-                    onClick={() => setCatFilter(cat.id)}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors flex-shrink-0 focus:outline-none
-                      ${catFilter === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
+                    onClick={toggleMenuViewMode}
+                    className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
                   >
-                    {cat.name}
+                    모드 변경
+                    <img src={rotateIcon} alt="" width={13} height={13} />
                   </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setCatJumpOpen(true)}
-                className="flex-shrink-0 w-8 h-8 bg-white border border-gray-border rounded-full flex items-center justify-center text-gray-text hover:bg-gray-50 transition-colors"
-                style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-                aria-label="카테고리 바로가기"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-            </div>
-          </div>
-          {/* 메뉴 목록 카드 */}
-          <div className="flex-1 overflow-hidden flex flex-col mx-3 mb-3 mt-2 bg-white rounded-xl shadow-sm overflow-hidden">
-          {/* 테이블 헤더 */}
-          <div className="grid grid-cols-[36px_48px_2fr_2fr_90px_72px_72px_150px] gap-x-3 px-5 py-2 bg-white text-[11px] font-bold text-gray-text uppercase tracking-wide border-b-2 border-gray-border flex-shrink-0">
-            <span></span><span></span>
-            <span className="whitespace-nowrap overflow-hidden">메뉴명</span>
-            <span className="whitespace-nowrap overflow-hidden">카테고리</span>
-            <span className="whitespace-nowrap overflow-hidden">가격</span>
-            <span className="whitespace-nowrap overflow-hidden">판매상태</span>
-            <span className="whitespace-nowrap overflow-hidden">표시</span>
-            <span className="whitespace-nowrap overflow-hidden">태그</span>
-          </div>
-          {/* 목록 */}
-          <div className="flex-1 overflow-y-auto divide-y divide-gray-border">
-            {filteredMenus.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-gray-text text-[11px]">
-                {categories.length === 0 ? '카테고리 탭에서 카테고리를 먼저 추가하세요' : '메뉴가 없습니다'}
-              </div>
-            ) : (
-              filteredMenus.map(menu => (
-                <div key={menu.code} onClick={() => selectMenu(menu)}
-                  className={`grid grid-cols-[36px_48px_2fr_2fr_90px_72px_72px_150px] gap-x-3 px-5 py-2.5 items-center text-[11px] cursor-pointer transition-colors hover:bg-gray-bg
-                    ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
-                >
-                  <input type="checkbox" checked={checked.has(menu.code)}
-                    onChange={e => { e.stopPropagation(); toggleCheck(menu.code) }}
-                    onClick={e => e.stopPropagation()}
-                    className="w-4 h-4 accent-[#00DD67]"
-                  />
-                  {menu.imageUrl
-                    ? <img src={menu.imageUrl} alt={menu.name} className="w-10 h-9 rounded-lg object-cover flex-shrink-0" />
-                    : <span className="text-[22px]">{menu.emoji}</span>
-                  }
-                  <span className="font-semibold text-ink truncate min-w-0">{menu.name}</span>
-                  <span>
-                    {getCategoryName(menu.categoryId)
-                      ? <span className="text-[11px] font-medium text-gray-text bg-gray-bg px-2.5 py-0.5 rounded-full">{getCategoryName(menu.categoryId)}</span>
-                      : <span className="text-[11px] font-medium text-gray-border bg-gray-bg px-2.5 py-0.5 rounded-full italic">미지정</span>
-                    }
-                  </span>
-                  <span className="font-bold">{won(menu.price)}</span>
-                  <span>
-                    {(() => {
-                      const state = getSoldOutState(menu.soldOut, menu.soldOutUntil ?? null)
-                      return state === 'today'
-                        ? <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">오늘품절</span>
-                        : state === 'permanent'
-                        ? <span className="text-[11px] font-semibold text-danger bg-red-50 px-2 py-0.5 rounded-full">품절</span>
-                        : <span className="text-[11px] font-semibold text-green bg-green-soft px-2 py-0.5 rounded-full">판매중</span>
-                    })()}
-                  </span>
-                  <span>
-                    {!menu.active
-                      ? <span className="text-[11px] font-semibold text-gray-text bg-gray-100 px-2 py-0.5 rounded-full">숨김</span>
-                      : <span className="text-[11px] font-semibold text-ink bg-gray-bg px-2 py-0.5 rounded-full">노출</span>
-                    }
-                  </span>
-                  <span className="flex gap-1" onClick={e => e.stopPropagation()}>
-                    <button onClick={e => toggleTag(menu, 'isPopular', e)}
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${menu.isPopular ? 'bg-[#F97316] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      인기
+                  <button
+                    onClick={enterMenuEditMode}
+                    className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                  >
+                    화면 편집 ✎
+                  </button>
+                  {menuViewMode === 'category' ? (
+                    <button
+                      onClick={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+                      className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                    >
+                      카테고리 추가
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
                     </button>
-                    <button onClick={e => toggleTag(menu, 'isRecommended', e)}
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${menu.isRecommended ? 'bg-[#00DD67] text-[#1A1A1A]' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      추천
+                  ) : (
+                    <button
+                      onClick={openMenuFormAdd}
+                      className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                    >
+                      메뉴 추가
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
                     </button>
-                    <button onClick={e => toggleTag(menu, 'isNew', e)}
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors
-                        ${menu.isNew ? 'bg-[#1D6FE8] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      신메뉴
-                    </button>
-                  </span>
+                  )}
                 </div>
-              ))
-            )}
-          </div>
-          </div>
-        </div>
-      )}
+              )}
 
-      {/* ── 메뉴 상세 모달 ── */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-2.5 bg-black/40" onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }}>
-          <div className="modal-in bg-white rounded-2xl shadow-xl w-[680px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* 검색창/버튼 아래 — 이 영역만 스크롤. 맨 아래 메뉴/카테고리 박스가 화면 바닥에
+                   바로 붙어 보이지 않도록 padding-bottom 확보 */}
+              <div className="absolute overflow-y-auto pb-[26px]" style={{ left: 0, top: 0, right: 0, bottom: 0 }}>
 
-            {/* 모달 헤더 */}
-            <div className="flex items-center justify-between px-8 pt-7 pb-0 flex-shrink-0">
-              {editMode ? (
-                <>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-[11px] font-extrabold">{selected.name}</span>
-                    {editImageError && (
-                      <span className="text-[11px] text-danger mt-0.5">{editImageError}</span>
-                    )}
+              {/* 카테고리 모드 — 일반 보기(고정 그리드) */}
+              {menuViewMode === 'category' && !menuEditMode && (
+                listForLeft.length === 0 ? (
+                  <div className="absolute text-[13px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
+                    아직 등록된 카테고리가 없습니다.
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={() => { setEditMode(false); setEditImageError('') }} className="px-3 py-1.5 text-[11px] font-bold text-gray-text bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
-                    <button onClick={saveEdit} disabled={editSaving} className="px-3 py-1.5 text-[11px] font-bold text-[#1A1A1A] bg-[#00DD67] rounded-lg hover:bg-[#00BB55] disabled:opacity-50">
-                      {editSaving ? '저장 중...' : '저장'}
+                ) : listForLeft.map((cat, i) => {
+                  const col = i % COLS
+                  const row = Math.floor(i / COLS)
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => { setPreviewCatId(cat.id); setOptionPanelMenu(null) }}
+                      className={`absolute rounded-[13px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left transition-colors ${
+                        previewCatId === cat.id ? 'bg-[#E5E5E5]' : 'bg-[#FCFCFC]'
+                      }`}
+                      style={{ left: GRID_PAD + col * COL_STEP, top: 62 + row * 123, width: CARD_W, height: 117 }}
+                    >
+                      <div className={`absolute ${catTextSizeClass} font-semibold text-ink leading-snug`} style={{ left: 10, top: 10, right: 10 }}>
+                        {cat.name}
+                      </div>
+                      {itemCountVisible && (
+                        <div className="absolute text-[13px] font-light text-ink" style={{ right: 10, bottom: 10 }}>{countOf(cat.id)}개</div>
+                      )}
+                    </button>
+                  )
+                })
+              )}
+
+              {/* 카테고리 모드 — 편집 보기(드래그 순서변경 + 삭제) */}
+              {menuViewMode === 'category' && menuEditMode && (
+                <>
+                  {editOrder.length === 0 ? (
+                    <div className="absolute text-[13px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
+                      아직 등록된 카테고리가 없습니다.
+                    </div>
+                  ) : editOrder.map((cat, i) => {
+                    const col = i % COLS
+                    const row = Math.floor(i / COLS)
+                    return (
+                      <div
+                        key={cat.id}
+                        draggable
+                        onDragStart={() => setDragCatId(cat.id)}
+                        onDragOver={e => handleCatDragOver(e, cat.id)}
+                        onDragEnd={() => setDragCatId(null)}
+                        className={`absolute bg-[#FCFCFC] rounded-[13px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left cursor-grab active:cursor-grabbing ${
+                          dragCatId === cat.id ? 'opacity-40' : ''
+                        }`}
+                        style={{ left: GRID_PAD + col * COL_STEP, top: 62 + row * 123, width: CARD_W, height: 117 }}
+                      >
+                        <div className={`absolute ${catTextSizeClass} font-semibold text-ink leading-snug`} style={{ left: 10, top: 10, right: 10 }}>
+                          {cat.name}
+                        </div>
+                        {itemCountVisible && (
+                          <div className="absolute text-[13px] font-light text-ink" style={{ right: 10, bottom: 10 }}>{countOf(cat.id)}개</div>
+                        )}
+                        <button
+                          onClick={e => { e.stopPropagation(); setDeleteCatConfirm(cat) }}
+                          className="absolute w-[18px] h-[18px] rounded-full bg-[#FF676F] flex items-center justify-center"
+                          style={{ right: -5, top: -5 }}
+                          title="카테고리 삭제"
+                        >
+                          <svg width="9" height="9" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M11 3L3 11" stroke="#FCFCFC" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {/* 마지막 카테고리 다음 칸 — "+카테고리 추가" (Figma node 694:380) */}
+                  {(() => {
+                    const i = editOrder.length
+                    const col = i % COLS
+                    const row = Math.floor(i / COLS)
+                    return (
+                      <button
+                        onClick={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+                        className="absolute rounded-[20px] border border-[#ADADAD] flex items-center justify-center hover:bg-gray-100 transition-colors"
+                        style={{ left: GRID_PAD + col * COL_STEP, top: 62 + row * 123, width: CARD_W, height: 117 }}
+                        title="카테고리 추가"
+                      >
+                        <span className="relative" style={{ width: 41, height: 41 }}>
+                          <span className="absolute bg-[#ADADAD] rounded-full" style={{ left: '50%', top: 0, bottom: 0, width: 2, transform: 'translateX(-50%)' }} />
+                          <span className="absolute bg-[#ADADAD] rounded-full" style={{ top: '50%', left: 0, right: 0, height: 2, transform: 'translateY(-50%)' }} />
+                        </span>
+                      </button>
+                    )
+                  })()}
+                </>
+              )}
+
+              {/* 개별메뉴 모드 — 카테고리별로 묶어서 제목+6열 카드 나열 (Figma node 491:2824).
+                   CSS Grid로 배치 — 메뉴이름이 길어 줄바꿈돼도 그 카드만 높이가 늘어나고(이미지는
+                   카드 상단에 absolute 고정이라 안 밀림), 같은 행의 다른 카드들은 Grid의 기본
+                   align-items:stretch로 자동으로 같은 높이를 공유해서 이미지 줄이 서로 어긋나지
+                   않는다. 다음 행은 그 행의 최대 높이만큼만 간격이 벌어지고 내려감. */}
+              {menuViewMode === 'individual' && !menuEditMode && (
+                individualGroups.length === 0 ? (
+                  <div className="text-[13px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
+                    아직 등록된 메뉴가 없습니다.
+                  </div>
+                ) : (
+                  <div style={{ paddingTop: INDIV_FIRST_TOP, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
+                    {individualGroups.map(({ cat, items }, gi) => (
+                      <div key={cat.id} style={{ marginTop: gi > 0 ? INDIV_GROUP_GAP : 0 }}>
+                        <div className="text-[18px] font-semibold text-ink" style={{ marginBottom: INDIV_HEADING_GAP }}>
+                          {cat.name}
+                        </div>
+                        <div className="grid" style={{ gridTemplateColumns: `repeat(${COLS}, ${CARD_W}px)`, columnGap: GRID_GAP, rowGap: 6 }}>
+                          {items.map(menu => (
+                            <button
+                              key={menu.code}
+                              onClick={() => { openOptionPanel(menu); setRightTab('items') }}
+                              className={`relative flex flex-col rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left transition-colors p-[10px] ${
+                                optionPanelMenu?.code === menu.code ? 'bg-[#E5E5E5]' : 'bg-[#FCFCFC]'
+                              } ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
+                              style={{ minHeight: 86 }}
+                            >
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[15px]' : 'text-[13px]'}`} style={{ paddingRight: 58 }}>
+                                {menu.name}
+                              </div>
+                              <div className="text-[12px] font-light text-ink mt-auto">{won(menu.price)}</div>
+                              {itemImageVisible && (menu.imageUrl ? (
+                                <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                              ) : (
+                                <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                              ))}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* 개별메뉴 모드 — 편집 보기(카테고리 안에서만 드래그 순서변경 + 삭제, Figma node 491:2927) — 동일하게 Grid 기반 */}
+              {menuViewMode === 'individual' && menuEditMode && (() => {
+                const groups = [...categories]
+                  .sort((a, b) => a.displayOrder - b.displayOrder)
+                  .map(cat => ({ cat, items: editOrderMenus.filter(m => m.categoryId === cat.id) }))
+                  .filter(g => g.items.length > 0)
+                return groups.length === 0 ? (
+                  <div className="text-[13px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
+                    아직 등록된 메뉴가 없습니다.
+                  </div>
+                ) : (
+                  <div style={{ paddingTop: INDIV_FIRST_TOP, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
+                    {groups.map(({ cat, items }, gi) => (
+                      <div key={cat.id} style={{ marginTop: gi > 0 ? INDIV_GROUP_GAP : 0 }}>
+                        <div className="text-[18px] font-semibold text-ink" style={{ marginBottom: INDIV_HEADING_GAP }}>
+                          {cat.name}
+                        </div>
+                        <div className="grid" style={{ gridTemplateColumns: `repeat(${COLS}, ${CARD_W}px)`, columnGap: GRID_GAP, rowGap: 6 }}>
+                          {items.map(menu => (
+                            <div
+                              key={menu.code}
+                              draggable
+                              onDragStart={() => setDragMenuCode(menu.code)}
+                              onDragOver={e => handleMenuDragOver(e, menu.code)}
+                              onDragEnd={() => setDragMenuCode(null)}
+                              className={`relative flex flex-col bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] cursor-grab active:cursor-grabbing p-[10px] ${
+                                dragMenuCode === menu.code ? 'opacity-40' : ''
+                              }`}
+                              style={{ minHeight: 86 }}
+                            >
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[15px]' : 'text-[13px]'}`} style={{ paddingRight: 58 }}>
+                                {menu.name}
+                              </div>
+                              <div className="text-[12px] font-light text-ink mt-auto">{won(menu.price)}</div>
+                              {itemImageVisible && (menu.imageUrl ? (
+                                <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px] pointer-events-none" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                              ) : (
+                                <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                              ))}
+                              <button
+                                onClick={e => { e.stopPropagation(); requestDeleteMenu(menu) }}
+                                className="absolute w-[18px] h-[18px] rounded-full bg-[#FF676F] flex items-center justify-center"
+                                style={{ right: -5, top: -5 }}
+                                title="메뉴 삭제"
+                              >
+                                <svg width="9" height="9" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M11 3L3 11" stroke="#FCFCFC" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+
+              </div>
+            </div>
+
+            {/* 우측: QR오더/개별메뉴 탭(일반) ↔ 화면 설정(편집모드) — Group 78 (Figma node 491:1486, 491:836).
+                 400px — 주문/고객 화면 사이드바와 폭 통일 */}
+            <div className="relative flex-shrink-0 w-[400px] h-full bg-white shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] overflow-hidden">
+
+              {!menuEditMode ? (() => {
+                // Figma 원본(367) × FIGMA_SCALE — src/lib/figma-scale.ts 참고.
+                // 행 높이는 OPT_GROUP_ROW_H/OPT_ITEM_ROW_H(옵션 리오더 드래그 임계값과 공유)를 그대로 쓴다.
+                const GROUPS_START_TOP = 236
+                return (
+                <>
+
+                  {!optionReorderMode && (
+                    <div className="absolute bg-[#F2F2F2] rounded-[10px]" style={{ left: 117, top: 13, width: 165, height: 42 }}>
+                      <div
+                        className="absolute bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] transition-[left] duration-150"
+                        style={{ top: 3, width: 78, height: 36, left: rightTab === 'qr' ? 3 : 84 }}
+                      />
+                      <button
+                        onClick={() => setRightTab('qr')}
+                        className={`absolute flex items-center justify-center rounded-[10px] text-[15px] font-medium transition-colors ${rightTab === 'qr' ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                        style={{ left: 3, top: 3, width: 78, height: 36 }}
+                      >
+                        QR오더
+                      </button>
+                      <button
+                        onClick={() => setRightTab('items')}
+                        className={`absolute flex items-center justify-center rounded-[10px] text-[15px] font-medium transition-colors ${rightTab === 'items' ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                        style={{ left: 84, top: 3, width: 78, height: 36 }}
+                      >
+                        {menuViewMode === 'individual' ? '옵션' : '개별 메뉴'}
+                      </button>
+                    </div>
+                  )}
+
+                  {rightTab === 'qr' ? (
+                    categories.length === 0 ? (
+                      // 카테고리가 하나도 없으면 QR오더가 보여줄 메뉴 구조 자체가 없음 — Figma node 699:514
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[29px] px-[26px] text-center">
+                        <div className="text-[15px] text-[#ADADAD]">카테고리에 메뉴를 지정해 주세요</div>
+                        <button
+                          onClick={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+                          className="flex items-center gap-[8px] bg-[#E8E4E2] rounded-[16px] px-[24px] py-[16px] text-[15px] font-medium text-[#6A635E] hover:bg-[#dcd7d4] transition-colors"
+                        >
+                          + 카테고리 추가하기
+                        </button>
+                      </div>
+                    ) : !storeId ? (
+                      // storeId 없이 /demo를 열면 salaria-prepaid가 "침산" 매장으로 폴백해버려서
+                      // 엉뚱한 매장 메뉴가 뜬다 — 세션이 아직 없으면 아예 iframe을 띄우지 않는다
+                      <div className="absolute inset-0 flex items-center justify-center text-[15px] text-[#ADADAD]">
+                        매장 정보를 불러오는 중…
+                      </div>
+                    ) : (
+                    // 진짜 원인(로컬 테스트 페이지로 재현 후 확인): <iframe>은 "replaced element"라
+                    // position:absolute에 top+bottom만 주면(height 생략) 일반 div처럼 그 사이 간격만큼
+                    // 자동으로 안 늘어나고 브라우저 기본값인 150px로 떨어진다 — 그래서 임베드된 사이트의
+                    // 공지 모달(화면 중앙에 꽉 차야 할 내용)이 150px짜리 좁은 창 안에 끼어서 일부만 보이고
+                    // 나머지는 흰 배경만 보였던 것. top + height(calc)로 명시하니 바로 해결됨.
+                    // 같은 이유로 width도 left+right만으로는 자동으로 안 늘어나므로(replaced element는
+                    // 양 축 다 동일한 함정) 폭도 명시적으로 계산해서 넣는다 — 패널(400px) 전체를 꽉 채움.
+                    // 좌우 여백은 iframe 자체가 아니라 그 안에 임베드된 사이트 쪽 레이아웃 패딩에 맡긴다.
+                    <iframe
+                      // storeId를 key에 포함 — 매장이 바뀌면 src만 갈아끼우는 게 아니라 iframe 자체를
+                      // 새로 만들어서, 이전 매장 세션(sessionStorage)이 남아 재사용되는 일이 없게 한다
+                      key={`${rightTab}-${storeId}`}
+                      ref={qrIframeRef}
+                      // storeId를 안 넘기면 salaria-prepaid의 /demo가 예전처럼 "침산" 매장으로
+                      // 폴백해버려서, 모든 sunpos 계정에서 침산점 메뉴만 보이는 버그가 있었음 —
+                      // 이제 현재 로그인된 매장의 실제 메뉴가 뜨도록 store 쿼리파라미터로 넘김
+                      src={`https://sallaria.web.app/demo?store=${storeId}`}
+                      title="sallaria.web.app 실제 메뉴 화면 (데모 세션 — 실제 주문 접수 안 됨)"
+                      className="absolute border-0"
+                      style={{ left: 0, top: 55, height: 'calc(100% - 55px)', width: 400 }}
+                      onLoad={() => {
+                        // iframe이 막 로드된 직후엔 아직 메뉴 데이터를 못 받았을 수 있어 바로 보내면
+                        // 유실될 수 있음 — 약간의 지연을 두고 현재 선택된 카테고리를 한 번 더 동기화
+                        setTimeout(() => {
+                          qrIframeRef.current?.contentWindow?.postMessage(
+                            { type: 'SUNPOS_SELECT_CATEGORY', categoryId: previewCatId === 'all' ? null : previewCatId },
+                            QR_ORIGIN
+                          )
+                        }, 800)
+                      }}
+                    />
+                    )
+                  ) : menuViewMode === 'individual' && optionReorderMode && optionPanelMenu ? (
+                    <>
+                      {/* 옵션 순서편집 (Figma node 491:3881) */}
+                      <div className="absolute text-[21px] font-semibold text-ink" style={{ left: 26, top: 26 }}>옵션순서를 편집하세요</div>
+
+                      <div className="absolute bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)]" style={{ left: 26, top: 81, width: 159, height: 86 }}>
+                        <div className="absolute text-[13px] font-semibold text-ink leading-snug" style={{ left: 10, top: 10, width: 89 }}>{optionPanelMenu.name}</div>
+                        {optionPanelMenu.imageUrl ? (
+                          <img src={optionPanelMenu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
+                        ) : (
+                          <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
+                        )}
+                        <div className="absolute text-[12px] font-light text-ink" style={{ left: 10, top: 66 }}>{won(optionPanelMenu.price)}</div>
+                      </div>
+
+                      <div className="absolute text-[15px] font-medium text-ink" style={{ left: 26, top: 192 }}>연결된 옵션</div>
+
+                      <div className="absolute overflow-y-auto" style={{ left: 26, top: GROUPS_START_TOP, right: 26, bottom: 84 }}>
+                        {(() => {
+                          let cursor = 0
+                          return reorderGroups.map(g => {
+                            const groupTop = cursor
+                            cursor += OPT_GROUP_ROW_H
+                            const expanded = reorderExpandedGroupId === g.id
+                            const itemRows = expanded ? g.items.map(it => {
+                              const itemTop = cursor
+                              cursor += OPT_ITEM_ROW_H
+                              return { it, itemTop }
+                            }) : []
+                            const isDraggingThisGroup = optDrag?.kind === 'group' && optDrag.id === g.id
+                            return (
+                              <div key={g.id}>
+                                <div
+                                  onPointerDown={e => startOptDrag(e, { kind: 'group', id: g.id })}
+                                  className="absolute flex items-center justify-between w-full select-none"
+                                  style={{
+                                    top: groupTop,
+                                    height: OPT_GROUP_ROW_H,
+                                    cursor: isDraggingThisGroup ? 'grabbing' : 'grab',
+                                    transform: isDraggingThisGroup ? `translateY(${optDragDeltaY}px)` : undefined,
+                                    transition: isDraggingThisGroup ? 'none' : 'top 150ms ease',
+                                    zIndex: isDraggingThisGroup ? 10 : undefined,
+                                    opacity: isDraggingThisGroup ? 0.85 : 1,
+                                  }}
+                                >
+                                  <button
+                                    onPointerDown={e => e.stopPropagation()}
+                                    onClick={() => setReorderExpandedGroupId(expanded ? null : g.id)}
+                                    className="flex items-center gap-[8px]"
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" className={`transition-transform ${expanded ? 'rotate-180' : ''}`}><path d="M5 7.5L10 12.5L15 7.5" stroke="#ADADAD" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                    <span className="text-[18px] font-semibold text-ink">{g.name}</span>
+                                  </button>
+                                  <div className="flex items-center gap-[10px]">
+                                    <div className={`flex items-center justify-center px-[8px] py-[5px] rounded-[16px] ${g.isRequired ? 'bg-[#6A635E]' : 'bg-[#F2F2F2]'}`}>
+                                      <span className={`text-[12px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
+                                    </div>
+                                    <svg width="17" height="17" viewBox="0 0 27 27" fill="none"><circle cx="8" cy="6" r="2" fill="#ADADAD"/><circle cx="19" cy="6" r="2" fill="#ADADAD"/><circle cx="8" cy="13.5" r="2" fill="#ADADAD"/><circle cx="19" cy="13.5" r="2" fill="#ADADAD"/><circle cx="8" cy="21" r="2" fill="#ADADAD"/><circle cx="19" cy="21" r="2" fill="#ADADAD"/></svg>
+                                  </div>
+                                </div>
+                                {itemRows.map(({ it, itemTop }) => {
+                                  const isDraggingThisItem = optDrag?.kind === 'item' && optDrag.id === it.id
+                                  return (
+                                    <div
+                                      key={it.id}
+                                      onPointerDown={e => startOptDrag(e, { kind: 'item', id: it.id, groupId: g.id })}
+                                      className="absolute flex items-center justify-between w-full select-none"
+                                      style={{
+                                        top: itemTop,
+                                        height: OPT_ITEM_ROW_H,
+                                        cursor: isDraggingThisItem ? 'grabbing' : 'grab',
+                                        transform: isDraggingThisItem ? `translateY(${optDragDeltaY}px)` : undefined,
+                                        transition: isDraggingThisItem ? 'none' : 'top 150ms ease',
+                                        zIndex: isDraggingThisItem ? 10 : undefined,
+                                        opacity: isDraggingThisItem ? 0.85 : 1,
+                                      }}
+                                    >
+                                      <span className="text-[15px] font-medium text-ink">{it.name}</span>
+                                      <div className="flex items-center gap-[10px]">
+                                        <span className="text-[15px] font-medium text-ink">+{won(it.extra)}</span>
+                                        <svg width="13" height="13" viewBox="0 0 27 27" fill="none"><circle cx="8" cy="6" r="2" fill="#ADADAD"/><circle cx="19" cy="6" r="2" fill="#ADADAD"/><circle cx="8" cy="13.5" r="2" fill="#ADADAD"/><circle cx="19" cy="13.5" r="2" fill="#ADADAD"/><circle cx="8" cy="21" r="2" fill="#ADADAD"/><circle cx="19" cy="21" r="2" fill="#ADADAD"/></svg>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })
+                        })()}
+                      </div>
+
+                      {/* 고객 화면 사이드패널의 계정 추가/금액 충전 버튼과 디자인 통일 — 통일 전 font-semibold를 1단계 낮춰 font-medium으로 */}
+                      <div className="absolute flex gap-[6px]" style={{ left: 26, right: 26, bottom: 20 }}>
+                        <button
+                          onClick={cancelOptionReorder}
+                          className="flex-1 bg-[#E8E4E2] text-[#6A635E] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:bg-[#dcd7d4] transition-colors"
+                          style={{ height: 64 }}
+                        >
+                          취소
+                        </button>
+                        <button
+                          onClick={confirmOptionReorder}
+                          className="flex-1 bg-[#2C261F] text-[#F9F9F9] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:opacity-90 transition-opacity"
+                          style={{ height: 64 }}
+                        >
+                          완료
+                        </button>
+                      </div>
+                    </>
+                  ) : menuViewMode === 'individual' && optionPanelMenu ? (
+                    <>
+                      {/* 메뉴 선택 시 "연결된 옵션" 요약 (Figma node 628:371) */}
+                      <button onClick={() => openOptionPanel(optionPanelMenu)} className="absolute bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left" style={{ left: 26, top: 81, width: 159, height: 86 }}>
+                        <div className="absolute text-[13px] font-semibold text-ink leading-snug" style={{ left: 10, top: 10, width: 89 }}>{optionPanelMenu.name}</div>
+                        {optionPanelMenu.imageUrl ? (
+                          <img src={optionPanelMenu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
+                        ) : (
+                          <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
+                        )}
+                        <div className="absolute text-[12px] font-light text-ink" style={{ left: 10, top: 66 }}>{won(optionPanelMenu.price)}</div>
+                      </button>
+
+                      <div className="absolute text-[15px] font-medium text-ink" style={{ left: 26, top: 192 }}>연결된 옵션</div>
+
+                      {optionPanelMenu.optionGroups.length === 0 ? (
+                        <div className="absolute text-[12px] text-[#ADADAD]" style={{ left: 26, top: GROUPS_START_TOP }}>연결된 옵션이 없습니다.</div>
+                      ) : (
+                        <div className="absolute overflow-y-auto" style={{ left: 26, top: GROUPS_START_TOP, right: 26, bottom: 20 }}>
+                          {(() => {
+                            let cursor = 0
+                            return optionPanelMenu.optionGroups.map(g => {
+                              const groupTop = cursor
+                              cursor += OPT_GROUP_ROW_H
+                              const expanded = optionPanelExpandedGroupId === g.id
+                              const itemRows = expanded ? g.items.map(it => {
+                                const itemTop = cursor
+                                cursor += OPT_ITEM_ROW_H
+                                return { it, itemTop }
+                              }) : []
+                              return (
+                                <div key={g.id}>
+                                  <button
+                                    onClick={() => setOptionPanelExpandedGroupId(expanded ? null : g.id)}
+                                    className="absolute flex items-center justify-between w-full"
+                                    style={{ top: groupTop, height: OPT_GROUP_ROW_H }}
+                                  >
+                                    <span className="flex items-center gap-[8px]">
+                                      <svg width="13" height="13" viewBox="0 0 20 20" fill="none" className={`transition-transform ${expanded ? 'rotate-180' : ''}`}><path d="M5 7.5L10 12.5L15 7.5" stroke="#ADADAD" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                      <span className="text-[18px] font-semibold text-ink">{g.name}</span>
+                                    </span>
+                                    <div className={`flex items-center justify-center px-[8px] py-[5px] rounded-[16px] ${g.isRequired ? 'bg-[#6A635E]' : 'bg-[#F2F2F2]'}`}>
+                                      <span className={`text-[12px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
+                                    </div>
+                                  </button>
+                                  {itemRows.map(({ it, itemTop }) => (
+                                    <div key={it.id} className="absolute flex items-center justify-between w-full" style={{ top: itemTop, height: OPT_ITEM_ROW_H }}>
+                                      <span className="text-[15px] font-medium text-ink">{it.name}</span>
+                                      <span className="text-[15px] font-medium text-ink">+{won(it.extra)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )
+                            })
+                          })()}
+                        </div>
+                      )}
+
+                      {/* 고객 화면 사이드패널의 계정 추가/금액 충전 버튼과 디자인 통일 — 통일 전 font-semibold를 1단계 낮춰 font-medium으로 */}
+                      <div className="absolute flex gap-[6px]" style={{ left: 26, right: 26, bottom: 20 }}>
+                        <button
+                          onClick={enterOptionReorder}
+                          className="flex-1 bg-[#E8E4E2] text-[#6A635E] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:bg-[#dcd7d4] transition-colors"
+                          style={{ height: 64 }}
+                        >
+                          순서 편집
+                        </button>
+                        <button
+                          onClick={() => optionPanelMenu && openMenuFormEdit(optionPanelMenu)}
+                          className="flex-1 bg-[#2C261F] text-[#F9F9F9] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:opacity-90 transition-opacity"
+                          style={{ height: 64 }}
+                        >
+                          수정
+                        </button>
+                      </div>
+                    </>
+                  ) : menuViewMode === 'individual' ? (
+                    <div className="absolute text-[15px] text-[#ADADAD] -translate-x-1/2" style={{ left: 200, top: 105 }}>
+                      메뉴를 선택해 주세요
+                    </div>
+                  ) : !selectedCat ? (
+                    <div className="absolute text-[15px] text-[#ADADAD] -translate-x-1/2" style={{ left: 200, top: 105 }}>
+                      카테고리를 선택해 주세요
+                    </div>
+                  ) : (
+                    <div className="absolute overflow-y-auto" style={{ left: 26, top: 105, right: 26, bottom: 26 }}>
+                      <div className="text-[21px] font-semibold text-ink mb-[26px]">{selectedCat.name}</div>
+                      {itemsOfSelectedCat.length === 0 ? (
+                        <div className="text-[12px] text-[#ADADAD] py-[13px]">이 카테고리에 메뉴가 없습니다.</div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-x-[14px] gap-y-[26px]">
+                          {itemsOfSelectedCat.map(menu => (
+                            <button key={menu.code} onClick={() => openMenuFormEdit(menu)} className={`text-left ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}>
+                              {menu.imageUrl ? (
+                                <img src={menu.imageUrl} alt="" className="rounded-[13px] object-cover w-full" style={{ aspectRatio: '1/1' }} />
+                              ) : (
+                                <div className="rounded-[13px] bg-[#F2F2F2] w-full" style={{ aspectRatio: '1/1' }} />
+                              )}
+                              <div className="text-[15px] font-medium text-ink mt-[8px] leading-snug">{menu.name}</div>
+                              <div className="flex items-center justify-between mt-[6px]">
+                                <span className="text-[15px] font-medium text-ink">{won(menu.price)}</span>
+                                <MenuTagBadges menu={menu} />
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+                )
+              })() : menuViewMode === 'individual' ? (
+                <>
+                  {/* 편집모드 — 개별메뉴 모드 화면 설정 토글 2종 (Figma node 491:2927) */}
+                  <div className="absolute text-[21px] font-semibold text-black" style={{ left: 26, top: 82 }}>메뉴 이미지 표시</div>
+                  <div className="absolute" style={{ left: 26, right: 26, top: 132 }}>
+                    <SegmentedControl
+                      options={[{ label: '표시', value: true }, { label: '숨기기', value: false }]}
+                      value={itemImageVisible}
+                      onChange={setItemImageVisible}
+                      padding={3}
+                      className="rounded-[10px] h-[50px]"
+                      thumbClassName="rounded-[10px]"
+                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                    />
+                  </div>
+
+                  <div className="absolute text-[21px] font-semibold text-black" style={{ left: 26, top: 220 }}>메뉴 글자 크기</div>
+                  <div className="absolute" style={{ left: 26, right: 26, top: 270 }}>
+                    <SegmentedControl
+                      options={[{ label: '기본', value: 'default' }, { label: '큰 글씨', value: 'large' }]}
+                      value={menuTextSize}
+                      onChange={setMenuTextSize}
+                      padding={3}
+                      className="rounded-[10px] h-[50px]"
+                      thumbClassName="rounded-[10px]"
+                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                    />
+                  </div>
+
+                  {/* 완료 / 취소 — 고객 화면 사이드패널의 계정 추가/금액 충전 버튼과 디자인 통일, font-semibold는 통일 전 1단계 낮춰 font-medium으로 */}
+                  <div className="absolute flex gap-[6px]" style={{ left: 26, right: 26, bottom: 20 }}>
+                    <button
+                      onClick={cancelMenuEdit}
+                      className="flex-1 bg-[#E8E4E2] text-[#6A635E] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:bg-[#dcd7d4] transition-colors"
+                      style={{ height: 64 }}
+                    >
+                      편집 취소
+                    </button>
+                    <button
+                      onClick={confirmMenuEdit}
+                      className="flex-1 bg-[#2C261F] text-[#F9F9F9] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:opacity-90 transition-opacity"
+                      style={{ height: 64 }}
+                    >
+                      완료
                     </button>
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="min-w-0">
-                      <div className="text-[17px] font-semibold text-ink">{selected.name}</div>
-                    </div>
+                  {/* 편집모드 — 카테고리 모드 화면 설정 토글 2종 (Figma node 491:836) */}
+                  {/* 메뉴 개수 표시 */}
+                  <div className="absolute text-[21px] font-semibold text-black" style={{ left: 26, top: 82 }}>메뉴 개수 표시</div>
+                  <div className="absolute" style={{ left: 26, right: 26, top: 132 }}>
+                    <SegmentedControl
+                      options={[{ label: '표시', value: true }, { label: '숨기기', value: false }]}
+                      value={itemCountVisible}
+                      onChange={setItemCountVisible}
+                      padding={3}
+                      className="rounded-[10px] h-[50px]"
+                      thumbClassName="rounded-[10px]"
+                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                    />
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={() => setDeleteConfirm('single')} className="px-3 py-2 text-[11px] font-bold text-danger bg-red-50 rounded-lg hover:bg-red-100">삭제</button>
-                    <button onClick={startEdit} className="px-3 py-2 text-[11px] font-bold text-ink bg-gray-100 rounded-lg hover:bg-gray-200">상세 수정</button>
-                    <button onClick={() => { setSelected(null); setEditMode(false); setAddingGroup(false); setConnectingGroup(false) }} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-text hover:bg-gray-100 text-[18px]">✕</button>
+
+                  {/* 카테고리 글자 크기 */}
+                  <div className="absolute text-[21px] font-semibold text-black" style={{ left: 26, top: 220 }}>카테고리 글자 크기</div>
+                  <div className="absolute" style={{ left: 26, right: 26, top: 270 }}>
+                    <SegmentedControl
+                      options={[{ label: '기본', value: 'default' }, { label: '큰 글씨', value: 'large' }]}
+                      value={categoryTextSize}
+                      onChange={setCategoryTextSize}
+                      padding={3}
+                      className="rounded-[10px] h-[50px]"
+                      thumbClassName="rounded-[10px]"
+                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                    />
+                  </div>
+
+                  {/* 완료 / 취소 — 고객 화면 사이드패널의 계정 추가/금액 충전 버튼과 디자인 통일, font-semibold는 통일 전 1단계 낮춰 font-medium으로 */}
+                  <div className="absolute flex gap-[6px]" style={{ left: 26, right: 26, bottom: 20 }}>
+                    <button
+                      onClick={cancelMenuEdit}
+                      className="flex-1 bg-[#E8E4E2] text-[#6A635E] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:bg-[#dcd7d4] transition-colors"
+                      style={{ height: 64 }}
+                    >
+                      편집 취소
+                    </button>
+                    <button
+                      onClick={confirmMenuEdit}
+                      className="flex-1 bg-[#2C261F] text-[#F9F9F9] rounded-[13px] flex items-center justify-center text-[21px] font-medium hover:opacity-90 transition-opacity"
+                      style={{ height: 64 }}
+                    >
+                      완료
+                    </button>
                   </div>
                 </>
               )}
             </div>
 
-            {/* 모달 바디 */}
-            <div className="overflow-y-auto flex-1 px-8 py-9 space-y-5">
+            <BottomToast message={menuToast} />
+          </div>
+        )
+      })()}
 
-              {/* 기본 정보 편집 폼 */}
-              {editMode && (
-                <div className="space-y-3">
-                  {/* 상단: 사진(소형) + 이름/가격 */}
-                  <div className="flex gap-2.5">
-                    {/* 사진 — 작은 정방형 */}
-                    <div className="flex-shrink-0 flex flex-col gap-1">
-                      <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴 사진</span>
-                      <div className="flex flex-col items-center gap-1">
-                      <div
-                        onDragOver={e => e.preventDefault()}
-                        onDrop={e => {
-                          e.preventDefault()
-                          const file = e.dataTransfer.files[0]
-                          if (file?.type.startsWith('image/')) { setEditImageFile(file); setEditImagePreview(URL.createObjectURL(file)) }
-                        }}
-                      >
-                      <label className="block cursor-pointer">
-                        <input type="file" accept="image/*" className="hidden"
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            setEditImageFile(file)
-                            setEditImagePreview(URL.createObjectURL(file))
-                          }}
-                        />
-                        {editImagePreview ? (
-                          <div className="relative w-[76px] h-[76px] rounded-xl overflow-hidden border border-gray-border">
-                            <img src={editImagePreview} className="w-full h-full object-cover" alt="preview" />
-                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                              <span className="text-white text-[10px] font-bold">변경</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="w-[76px] h-[76px] border border-gray-border rounded-xl flex flex-col items-center justify-center gap-1.5 hover:bg-gray-100 transition-colors group">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="stroke-gray-300 group-hover:stroke-gray-500 transition-colors" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                            </svg>
-                            <span className="text-[10px] text-gray-text group-hover:text-gray-500 leading-tight text-center transition-colors">업로드</span>
-                          </div>
-                        )}
-                      </label>
-                      {editImagePreview && (
-                        <button type="button" onClick={() => { setEditImageFile(null); setEditImagePreview('') }}
-                          className="text-[10px] text-danger hover:underline">제거</button>
-                      )}
-                      </div>
-                      </div>
-                    </div>
-                    {/* 이름 + 가격 */}
-                    <div className="flex-1 flex gap-2">
-                      <label className="block flex-1">
-                        <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴명</span>
-                        <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
-                          className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-green focus:outline-none" />
-                      </label>
-                      <label className="block flex-1">
-                        <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">기본 가격 (원)</span>
-                        <div className="mt-1 flex items-center gap-1.5">
-                          <input type="text" inputMode="numeric" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value.replace(/[^0-9]/g,'') }))}
-                            className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none" />
-                          <div className="flex flex-col gap-0.5">
-                            <button type="button" onClick={() => setEditForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) + 100) )}))}
-                              className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
-                              <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4.5L4 1.5L7 4.5"/></svg>
-                            </button>
-                            <button type="button" onClick={() => setEditForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) - 100) )}))}
-                              className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
-                              <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1.5L4 4.5L7 1.5"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-                  {/* 설명 */}
-                  <label className="block">
-                    <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">설명</span>
-                    <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
-                      rows={2} className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] resize-none" />
-                  </label>
-                  {/* 카테고리 */}
-                  <label className="block">
-                    <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">카테고리</span>
-                    <select value={editForm.categoryId} onChange={e => setEditForm(p => ({ ...p, categoryId: e.target.value }))}
-                      className="mt-1 w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] bg-white">
-                      <option value="">카테고리 없음</option>
-                      {sortedCategories().map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  {/* 판매/표시 상태 */}
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div>
-                      <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">판매 상태</span>
-                      <SegmentedControl
-                        options={[
-                          { label: '판매중',   value: 'active'    as SoldOutState },
-                          { label: '오늘품절', value: 'today'     as SoldOutState },
-                          { label: '계속품절', value: 'permanent' as SoldOutState },
-                        ]}
-                        value={editForm.soldOutState}
-                        onChange={(v) => setEditForm(p => ({ ...p, soldOutState: v }))}
-                        size="xs"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">표시 상태</span>
-                      <SegmentedControl
-                        options={[
-                          { label: '노출', value: true },
-                          { label: '숨김', value: false },
-                        ]}
-                        value={editForm.active}
-                        onChange={(v) => setEditForm(p => ({ ...p, active: v }))}
-                        size="xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+      {/* ── 카테고리 삭제 확인 (Figma node 491:949) ── */}
+      {deleteCatConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => setDeleteCatConfirm(null)}>
+          <div className="modal-in bg-white rounded-[20px] shadow-xl p-8 w-[380px] flex flex-col items-center text-center" onClick={e => e.stopPropagation()}>
+            <div className="text-[16px] font-semibold text-ink mb-2">
+              '{deleteCatConfirm.name}' 카테고리를<br />삭제하시겠어요?
+            </div>
+            <div className="text-[12px] text-gray-text mb-6">메뉴는 삭제되지 않아요</div>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setDeleteCatConfirm(null)}
+                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]"
+              >
+                아니요
+              </button>
+              <button
+                onClick={() => confirmDeleteCategory(deleteCatConfirm)}
+                className="flex-1 py-3 rounded-xl bg-danger text-white font-bold text-[13px]"
+              >
+                네
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {/* 보기 모드 */}
-              {!editMode && (
-                <>
-                <div className="flex gap-2.5">
-                  {/* 썸네일 */}
-                  {selected.imageUrl && (
-                    <div className="w-[88px] flex-shrink-0 rounded-xl overflow-hidden border border-gray-border self-stretch">
-                      <img src={selected.imageUrl} alt={selected.name} className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                  {/* 정보 */}
-                  <div className="flex-1 bg-gray-bg rounded-xl px-3 py-2.5 space-y-2">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-gray-text">메뉴명</span>
-                      <span className="font-semibold text-ink">{selected.name}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-gray-text">기본 가격</span>
-                      <span className="font-bold">{won(selected.price)}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-gray-text">카테고리</span>
-                      <span className="font-semibold text-ink">{getCategoryName(selected.categoryId) || <span className="text-gray-border italic text-[11px]">미지정</span>}</span>
-                    </div>
-                  </div>
+      {/* ── 카테고리 추가 (1단계: 이름 / 2단계: 적용할 메뉴 선택 — Figma node 656:373의 2단계 패턴 참고) ── */}
+      {categoryAddOpen && (() => {
+        const search = catAddSearch.trim().toLowerCase()
+        const visibleCats = sortedCategories()
+        const menusByCat = (catId: string) => menus.filter(m =>
+          m.categoryId === catId && (!search || m.name.toLowerCase().includes(search))
+        )
+        const totalVisible = visibleCats.reduce((s, c) => s + menusByCat(c.id).length, 0)
+        const allChecked = totalVisible > 0 && visibleCats.every(c => menusByCat(c.id).every(m => catAddMenuIds.has(m.code)))
+
+        function closeModal() {
+          setCategoryAddOpen(false)
+          setCatAddStep(1)
+          setCatAddMenuIds(new Set())
+          setCatAddSearch('')
+        }
+        function toggleAll() {
+          setCatAddMenuIds(prev => {
+            const next = new Set(prev)
+            const ids = visibleCats.flatMap(c => menusByCat(c.id).map(m => m.code))
+            if (allChecked) { ids.forEach(id => next.delete(id)) } else { ids.forEach(id => next.add(id)) }
+            return next
+          })
+        }
+        async function handleCreate() {
+          if (!newCategoryName.trim()) return
+          setCatAddSaving(true)
+          await addCategoryWithMenus(newCategoryName, catAddMenuIds)
+          setCatAddSaving(false)
+          closeModal()
+        }
+
+        return (
+          // 메뉴 상세 모달(z-50)보다 늦게 렌더링돼 같은 z-50이면 DOM 순서상 메뉴 상세 모달 아래에 깔리던 문제 — z-[60]으로 명시적으로 위에 오도록
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={closeModal}>
+            <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[560px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+
+              {/* 헤더 + 단계 표시 (옵션그룹 추가 모달과 동일 패턴) */}
+              <div className="px-[28px] pt-[28px] pb-0 flex-shrink-0">
+                <div className="flex items-center justify-between mb-[18px]">
+                  <span className="text-[18px] font-semibold text-[#1E1E1E]">카테고리 추가</span>
+                  <button onClick={closeModal} aria-label="닫기" className="text-[#787878] hover:text-[#2C261F] transition-colors">
+                    <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                    </svg>
+                  </button>
                 </div>
-                {/* 판매중/오늘품절/품절 + 노출/숨김 — 우측 정렬 */}
-                <div className="flex justify-end gap-2 mt-3">
-                  <SegmentedControl
-                    options={[
-                      { label: '판매중',   value: 'active'    as SoldOutState },
-                      { label: '오늘품절', value: 'today'     as SoldOutState },
-                      { label: '계속품절', value: 'permanent' as SoldOutState },
-                    ]}
-                    value={getSoldOutState(selected.soldOut, selected.soldOutUntil ?? null)}
-                    onChange={setMenuSoldOutState}
-                    size="xs"
-                  />
-                  <SegmentedControl
-                    options={[
-                      { label: '노출', value: true },
-                      { label: '숨김', value: false },
-                    ]}
-                    value={selected.active}
-                    onChange={(v) => { if (selected.active !== v) toggleMenuStatus('active') }}
-                    size="xs"
+                <div className="flex gap-[4px]">
+                  {([1, 2] as const).map(s => (
+                    <div key={s} className={`h-[3px] flex-1 rounded-full transition-colors ${s <= catAddStep ? 'bg-[#6A635E]' : 'bg-[#E8E4E2]'}`} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 1: 카테고리 이름 */}
+              {catAddStep === 1 && (
+                <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-4 overflow-y-auto">
+                  <FloatingCellInput
+                    autoFocus
+                    value={newCategoryName}
+                    onChange={setNewCategoryName}
+                    onKeyDown={e => { if (e.key === 'Enter' && newCategoryName.trim()) setCatAddStep(2) }}
+                    label="카테고리 이름 (예: 샐러드)"
                   />
                 </div>
-                </>
               )}
 
-              {/* 옵션 그룹 연결 — 편집 모드에서 태그 버튼으로 연결/해제 */}
-              {editMode && (
-                <div>
-                  <span className="text-[11px] font-extrabold text-ink block mb-2">옵션 그룹 연결</span>
-                  {storeGroups.length === 0 ? (
-                    <p className="text-[11px] text-gray-text mt-1">옵션그룹 탭에서 옵션그룹을 만들어보세요</p>
-                  ) : (
-                    <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-                      {storeGroups.map(g => {
-                        const connected = selected.optionGroups.some(og => og.id === g.id)
-                        return (
-                          <button
-                            key={g.id}
-                            onClick={() => connected ? disconnectGroup(g.id) : connectGroup(g.id)}
-                            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors
-                              ${connected ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
-                          >
-                            {g.name}
-                          </button>
-                        )
-                      })}
+              {/* Step 2: 적용할 메뉴 선택 — 검색 + 카테고리별 구분 리스트 + 전체선택 */}
+              {catAddStep === 2 && (
+                <div className="flex flex-col flex-1 min-h-0">
+                  <div className="px-5 pt-[20px] pb-3 flex-shrink-0 flex items-center gap-3">
+                    <div className="field-wrap flex-1 flex items-center gap-2 border border-gray-border rounded-xl px-3 py-2">
+                      <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
+                      <input
+                        value={catAddSearch}
+                        onChange={e => setCatAddSearch(e.target.value)}
+                        placeholder="메뉴 이름을 검색할 수 있어요"
+                        className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[13px] text-ink placeholder:text-[#8C8379] bg-transparent"
+                      />
                     </div>
-                  )}
-                </div>
-              )}
+                    <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-text whitespace-nowrap cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={allChecked} onChange={toggleAll} disabled={totalVisible === 0} />
+                      메뉴 전체선택
+                    </label>
+                  </div>
 
-              {/* 옵션 그룹 세부내용 — 항상 표시, 인라인 편집 가능 (가격(필수) 그룹 제외) */}
-              {(() => {
-                const editableGroups = selected.optionGroups
-                return (
-                  <div>
-                    <div className="flex items-center mb-2">
-                      <span className="text-[13px] font-semibold text-gray-text">옵션 그룹</span>
-                    </div>
-                    {editableGroups.length === 0 ? (
-                      <div className="text-[11px] text-gray-text text-center py-8 border border-dashed border-gray-border rounded-xl">
-                        연결된 옵션 그룹이 없습니다
+                  <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4">
+                    {totalVisible === 0 ? (
+                      <div className="text-center py-10 text-[12px] text-gray-text">
+                        {search ? '검색 결과가 없습니다.' : '등록된 메뉴가 없습니다.'}
                       </div>
                     ) : (
-                      <div className="flex gap-3 overflow-x-auto pb-2">
-                        {editableGroups.map(g => {
-                          const sg = storeGroups.find(s => s.id === g.id)
-                          // g(selected.optionGroups)에 값이 있으면 우선 사용 — 가격(필수) 등 storeGroups에 없는 그룹 대응
-                          const gAny = g as any
+                      <div className="flex flex-col gap-3">
+                        {visibleCats.map(cat => {
+                          const items = menusByCat(cat.id)
+                          if (items.length === 0) return null
                           return (
-                            <div key={g.id} className="min-w-[300px] flex-shrink-0">
-                            <OptionGroupPanel
-                              group={g}
-                              isSoldOut={gAny.isSoldOut ?? sg?.isSoldOut ?? false}
-                              soldOutUntil={gAny.soldOutUntil ?? sg?.soldOutUntil ?? null}
-                              isHidden={gAny.isHidden ?? sg?.isHidden ?? false}
-                              readOnly
-                              onSetSoldOutState={state => setGroupSoldOutState(g.id, state)}
-                              onToggleHidden={() => toggleGroupHidden(g.id)}
-                              onUpdateGroup={updates => modalUpdateGroup(g.id, updates)}
-                              onDeleteGroup={() => deleteStoreGroup(g.id)}
-                              onUpdateItem={(itemId, updates) => modalUpdateItem(g.id, itemId, updates)}
-                              onDeleteItem={itemId => modalDeleteItem(g.id, itemId)}
-                              onAddItem={(name, extra) => modalAddItem(g.id, name, extra)}
-                              onReorderItem={(fromIdx, toIdx) => reorderStoreItem(g.id, fromIdx, toIdx)}
-                            />
+                            <div key={cat.id}>
+                              <div className="text-[12px] font-bold text-gray-text mb-1.5">{cat.name}</div>
+                              <div className="flex flex-col gap-0.5">
+                                {items.map(menu => (
+                                  <label key={menu.code} className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={catAddMenuIds.has(menu.code)}
+                                      onChange={() => setCatAddMenuIds(prev => {
+                                        const next = new Set(prev)
+                                        if (next.has(menu.code)) next.delete(menu.code); else next.add(menu.code)
+                                        return next
+                                      })}
+                                    />
+                                    <div className="w-7 h-7 rounded-md overflow-hidden bg-gray-100 flex-shrink-0">
+                                      {menu.imageUrl && <img src={menu.imageUrl} className="w-full h-full object-cover" alt="" />}
+                                    </div>
+                                    <span className="text-[13px] text-ink">{menu.name}</span>
+                                    {menu.soldOut && <span className="text-[10px] text-danger font-bold">품절</span>}
+                                  </label>
+                                ))}
+                              </div>
                             </div>
                           )
                         })}
                       </div>
                     )}
                   </div>
-                )
-              })()}
+
+                  <div className="px-5 pb-2 flex-shrink-0 text-[11px] text-gray-text">
+                    '{newCategoryName}' 카테고리에 적용할 메뉴 {catAddMenuIds.size}개 선택됨 (선택 사항)
+                  </div>
+                </div>
+              )}
+
+              {/* 푸터 버튼 */}
+              <div className={`flex items-center ${catAddStep === 1 ? 'justify-end' : 'justify-between'} border-t border-[#E8E4E2] px-[28px] py-[16px] flex-shrink-0 mt-auto`}>
+                {catAddStep > 1 && (
+                  <button
+                    onClick={() => setCatAddStep(1)}
+                    className="h-[50px] px-[26px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all"
+                  >
+                    이전
+                  </button>
+                )}
+                <button
+                  onClick={() => catAddStep < 2 ? (newCategoryName.trim() && setCatAddStep(2)) : handleCreate()}
+                  disabled={catAddStep < 2 ? !newCategoryName.trim() : catAddSaving}
+                  className="h-[50px] px-[26px] rounded-[13px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-all"
+                >
+                  {catAddStep < 2 ? '다음' : (catAddSaving ? '저장 중…' : '완료')}
+                </button>
+              </div>
             </div>
           </div>
+        )
+      })()}
 
-          {/* 수정 중 안내 배너 */}
-          {editMode && (
-            <div
-              className="w-[680px] flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[11px] font-semibold text-white/90"
-              style={{ background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)' }}
-              onClick={e => e.stopPropagation()}
-            >
-              <span className="opacity-60">✏️</span>
-              <span>
-                {(() => {
-                  const code = selected.name.charCodeAt(selected.name.length - 1)
-                  const particle = (code >= 0xAC00 && code <= 0xD7A3 && (code - 0xAC00) % 28 !== 0) ? '을' : '를'
-                  return <><strong className="text-white">{selected.name}</strong>{particle} 수정중이에요</>
-                })()}
-              </span>
-            </div>
-          )}
-        </div>
+      {/* ── 메뉴 추가/수정 모달 (Figma node 491:2237 "메뉴 상세") — 고정 실제 px, scale 없음.
+           원인 메모: 예전엔 width:1402,height:1500 네이티브 값에 transform:scale(menuScale*0.72)를 걸었는데,
+           max-h-[90vh]는 scale 적용 "전" 레이아웃(실제 뷰포트 기준)으로 평가되는 CSS라, height:1500이
+           90vh(기본 창 기준 약 700대)에 걸려 먼저 클램프된 뒤에 또 0.46배로 축소되면서 모달이 심하게
+           짧아져 보였음 — jazzy-forging-quiche.md 비율로 환산한 고정 px만 쓰고 scale은 제거함 ── */}
+      {menuForm.mode && (
+        <MenuFormModal
+          mode={menuForm.mode!}
+          form={menuForm.form}
+          setForm={menuForm.setForm}
+          saving={menuForm.saving}
+          canSave={menuForm.canSave}
+          imageError={menuForm.imageError}
+          imagePreview={menuForm.imagePreview}
+          setImagePreview={menuForm.setImagePreview}
+          setImageFile={menuForm.setImageFile}
+          categories={sortedCategories()}
+          storeGroups={storeGroups}
+          selectedGroupIds={menuForm.selectedGroupIds}
+          onToggleGroup={menuForm.toggleGroup}
+          onAddCategory={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+          onAddOptionGroup={() => setAddingStoreGroup(true)}
+          onDelete={() => setDeleteConfirm('single')}
+          onClose={menuForm.close}
+          onSave={() => menuForm.save(storeGroups, menus.reduce((m, mn) => Math.max(m, mn.order), 0) + 1)}
+        />
       )}
 
       {/* ── 옵션 탭 ── */}
@@ -1645,7 +2123,7 @@ export default function Menus() {
                   value={optionSearch}
                   onChange={e => setOptionSearch(e.target.value)}
                   placeholder="그룹명 · 옵션명 검색"
-                  className="w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] focus:outline-none focus:border-ink"
+                    className="floating-input w-full border border-gray-border rounded-lg pl-3 pr-7 py-2 text-[11px] hover:bg-gray-50 focus:outline-none transition-colors"
                 />
                 <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="13" height="13" viewBox="0 0 16 16" fill="none">
                   <circle cx="6.5" cy="6.5" r="4.5" stroke="#727272" strokeWidth="1.5"/>
@@ -1661,7 +2139,7 @@ export default function Menus() {
                 ] as { v: typeof optionFilter; l: string }[]).map(({ v, l }) => (
                   <button key={v} onClick={() => setOptionFilter(v)}
                     className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors
-                      ${optionFilter === v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
+                      ${optionFilter === v ? 'bg-gray-200 text-ink' : 'bg-transparent text-gray-text hover:bg-gray-100'}`}>
                     {l}
                   </button>
                 ))}
@@ -1773,7 +2251,7 @@ export default function Menus() {
                 카테고리가 없습니다. 위에서 추가해주세요.
               </div>
             )}
-            {sortedCategories().map((cat, idx, arr) => {
+            {sortedCategories().map((cat, idx) => {
               const catMenus = menus.filter(m => m.categoryId === cat.id)
               const isExpanded = expandedCatId === cat.id
               return (
@@ -1996,7 +2474,7 @@ export default function Menus() {
               </div>
 
               {/* 푸터 */}
-              <div className="flex gap-2 px-8 py-4 border-t border-gray-border flex-shrink-0 modal-footer">
+              <div className="flex gap-2 px-8 py-4 flex-shrink-0 modal-footer">
                 <button onClick={() => setCatEditModalId(null)}
                   className="flex-1 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">
                   취소
@@ -2086,7 +2564,7 @@ export default function Menus() {
                 const allMapped = catMenus.every(m => !!catDeleteRemap[m.code])
                 const canDelete = catMenus.length === 0 || allMapped
                 return (
-                  <div className="flex gap-2.5 px-5 py-3 border-t border-gray-border flex-shrink-0 modal-footer">
+                  <div className="flex gap-2.5 px-5 py-3 flex-shrink-0 modal-footer">
                     <button onClick={() => setCatDeleteModalId(null)}
                       className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
                       취소
@@ -2114,13 +2592,13 @@ export default function Menus() {
             {/* 헤더 */}
             <div className="flex items-center justify-between px-8 pt-7 pb-0 flex-shrink-0">
               <span className="text-[17px] font-semibold">메뉴 추가</span>
-              <button onClick={() => setAddMenuOpen(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
+              <button onClick={() => setAddMenuOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-text hover:bg-gray-100 text-[18px] transition-colors">✕</button>
             </div>
             {/* 탭 */}
-            <div className="flex gap-0 px-8 mt-4 border-b border-gray-border flex-shrink-0">
+            <div className="flex gap-0 px-8 mt-4 flex-shrink-0">
               {([{ v: 'bulk', l: '일괄' }, { v: 'detail', l: '상세' }] as const).map(({ v, l }) => (
                 <button key={v} onClick={() => { setAddModalTab(v); setAddError('') }}
-                  className={`px-4 py-2 text-[13px] font-bold border-b-2 transition-colors -mb-px
+                  className={`px-4 py-2 text-[13px] font-bold border-b-2 transition-colors
                     ${addModalTab === v ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
                   {l}
                 </button>
@@ -2128,41 +2606,47 @@ export default function Menus() {
             </div>
 
             {/* 카테고리 (공통) */}
-            <div className="px-8 pt-6 flex-shrink-0">
-              <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">
-                카테고리 <span className="text-danger">*</span>
-              </label>
-              <p className="text-[10px] text-gray-text mb-1.5">*카테고리를 하나씩 지정한 뒤 메뉴를 일괄로 추가해주세요</p>
+            <div className="px-6 pt-6 flex-shrink-0">
               {addingNewCat ? (
                 <div className="flex gap-2">
                   <input autoFocus value={newCatInModal} onChange={e => setNewCatInModal(e.target.value)}
                     placeholder="새 카테고리 이름"
-                    className="flex-1 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-gray-border focus:outline-none"
+                    className="floating-input flex-1 bg-transparent border-b border-gray-border pb-1.5 text-[11px] focus:outline-none focus:border-[#00DD67] transition-colors"
                     onKeyDown={e => e.key === 'Escape' && setAddingNewCat(false)}
                   />
-                  <button type="button" onClick={() => setAddingNewCat(false)}
-                    className="px-3 py-2 border border-gray-border rounded-lg text-[11px] font-bold text-gray-text hover:bg-gray-100 flex-shrink-0">
-                    취소
-                  </button>
+                  <GhostButton onClick={() => setAddingNewCat(false)}>취소</GhostButton>
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <div className="relative flex-1">
+                  <div className="relative flex-1 pt-2">
                     <select value={addCategoryId} onChange={e => setAddCategoryId(e.target.value)}
-                      className="w-full border border-gray-border rounded-lg px-3 py-2 pr-7 text-[11px] bg-white appearance-none focus:outline-none">
-                      <option value="">카테고리 선택</option>
+                      onFocus={() => setCatFocused(true)} onBlur={() => setCatFocused(false)}
+                      className="floating-input w-full bg-transparent border-b border-gray-border pb-1.5 pr-7 text-[13px] font-normal text-ink appearance-none focus:outline-none transition-colors"
+                      style={{ borderColor: catFocused ? '#00DD67' : undefined }}>
+                      <option value=""></option>
                       {sortedCategories().map(c => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                    <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <label
+                      className="absolute left-0 leading-none pointer-events-none transition-all duration-150"
+                      style={{
+                        top:      (catFocused || addCategoryId) ? 0 : 8,
+                        fontSize: (catFocused || addCategoryId) ? 9 : 13,
+                        fontWeight: (catFocused || addCategoryId) ? 500 : 400,
+                        color: 'var(--gray-text)',
+                        opacity: 0.85,
+                      }}
+                    >
+                      카테고리
+                    </label>
+                    <svg className="pointer-events-none absolute right-2.5 bottom-2 text-gray-400" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M2 3.5L5 6.5L8 3.5"/>
                     </svg>
                   </div>
-                  <button type="button" onClick={() => { setAddingNewCat(true); setNewCatInModal('') }}
-                    className="px-3 py-2 border border-gray-border rounded-lg text-[11px] font-medium text-gray-text hover:bg-gray-100 transition-colors flex-shrink-0">
-                    + 새로 만들기
-                  </button>
+                  <GhostButton onClick={() => { setAddingNewCat(true); setNewCatInModal('') }}>
+                    새로 만들기
+                  </GhostButton>
                 </div>
               )}
             </div>
@@ -2170,18 +2654,12 @@ export default function Menus() {
             {/* ── 일괄 추가 탭 ── */}
             {addModalTab === 'bulk' && (
               <div className="px-6 py-4 space-y-3 overflow-y-auto flex-1">
-                <div className="grid grid-cols-[40px_1fr_90px_28px] gap-2">
-                  <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">사진</span>
-                  <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">메뉴명</span>
-                  <span className="text-[11px] font-bold text-gray-text uppercase tracking-wide">가격 (원)</span>
-                  <span />
-                </div>
                 <div className="space-y-2">
                   {addRows.map((row, idx) => (
-                    <div key={row.id} className="grid grid-cols-[40px_1fr_90px_28px] gap-2 items-center">
+                    <div key={row.id} className="grid grid-cols-[40px_1fr_118px_28px] gap-2 items-center">
                       {/* 이미지 드롭존 */}
                       <div
-                        className="w-10 h-9 rounded-lg border border-gray-border cursor-pointer flex items-center justify-center overflow-hidden relative hover:bg-gray-400 transition-colors flex-shrink-0 group"
+                        className="w-10 h-9 mr-2 rounded-lg cursor-pointer flex items-center justify-center overflow-hidden relative hover:bg-gray-100 transition-colors flex-shrink-0"
                         onDragOver={e => e.preventDefault()}
                         onDrop={e => {
                           e.preventDefault()
@@ -2195,34 +2673,37 @@ export default function Menus() {
                         />
                         {row.imagePreview
                           ? <img src={row.imagePreview} className="w-full h-full object-cover" alt="" />
-                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-gray-400 group-hover:stroke-white transition-colors" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-gray-400 transition-colors" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         }
                       </div>
-                      <input autoFocus={idx === 0}
-                        value={row.name} onChange={e => updateRow(row.id, 'name', e.target.value)}
+                      <FloatingCellInput
+                        autoFocus={idx === 0}
+                        value={row.name} onChange={v => updateRow(row.id, 'name', v)}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
-                        placeholder={`메뉴명 ${idx + 1}`}
-                        className="border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none"
+                        label="메뉴 이름"
                       />
-                      <input type="text" inputMode="numeric"
-                        value={row.price} onChange={e => updateRow(row.id, 'price', e.target.value.replace(/[^0-9]/g,''))}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
-                        placeholder="0"
-                        className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none"
-                      />
+                      <div className="flex items-center gap-1">
+                        <FloatingCellInput
+                          inputMode="numeric"
+                          value={row.price} onChange={v => updateRow(row.id, 'price', v.replace(/[^0-9]/g,''))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRowLine() } }}
+                          label="금액" format={formatPriceDisplay}
+                        />
+                        <div className="flex flex-col gap-0.5">
+                          <StepperButton direction="up"   onStep={() => updateRow(row.id, 'price', String(Math.max(0, (parseInt(row.price) || 0) + 100)))} />
+                          <StepperButton direction="down" onStep={() => updateRow(row.id, 'price', String(Math.max(0, (parseInt(row.price) || 0) - 100)))} />
+                        </div>
+                      </div>
                       <button type="button" onClick={() => removeRowLine(row.id)}
                         disabled={addRows.length === 1}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-text hover:text-danger hover:bg-red-50 transition-colors disabled:opacity-20">
+                        className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-text hover:bg-gray-100 transition-colors disabled:opacity-20">
                         ×
                       </button>
                     </div>
                   ))}
                 </div>
-                <div className="flex justify-end">
-                  <button type="button" onClick={addRowLine}
-                    className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
-                    + 항목 추가
-                  </button>
+                <div className="flex justify-start">
+                  <GhostButton onClick={addRowLine}>+ 항목 추가</GhostButton>
                 </div>
                 {addError && <p className="text-[11px] text-danger bg-red-50 rounded-lg px-3 py-2">{addError}</p>}
               </div>
@@ -2231,85 +2712,71 @@ export default function Menus() {
             {/* ── 상세 추가 탭 ── */}
             {addModalTab === 'detail' && (
               <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
-                {/* 사진 */}
-                <div>
-                  <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1.5">사진</label>
-                  <div
-                    onDragOver={e => e.preventDefault()}
-                    onDrop={e => {
-                      e.preventDefault()
-                      const file = e.dataTransfer.files[0]
-                      if (file?.type.startsWith('image/')) { setImageFile(file); setImagePreview(URL.createObjectURL(file)) }
-                    }}
-                  >
-                  <label className="block cursor-pointer">
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        setImageFile(file)
-                        setImagePreview(URL.createObjectURL(file))
+                {/* 사진 (좌) + 메뉴 이름·금액 (우, 2줄) */}
+                <div className="flex gap-3">
+                  <div>
+                    <div
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => {
+                        e.preventDefault()
+                        const file = e.dataTransfer.files[0]
+                        if (file?.type.startsWith('image/')) { setImageFile(file); setImagePreview(URL.createObjectURL(file)) }
                       }}
-                    />
-                    {imagePreview ? (
-                      <div className="relative w-[96px] h-[96px] rounded-xl overflow-hidden border border-gray-border">
-                        <img src={imagePreview} className="w-full h-full object-cover" alt="preview" />
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                          <span className="text-white text-[11px] font-bold">변경</span>
+                    >
+                    <label className="block cursor-pointer">
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          setImageFile(file)
+                          setImagePreview(URL.createObjectURL(file))
+                        }}
+                      />
+                      {imagePreview ? (
+                        <div className="relative w-[96px] h-[96px] rounded-xl overflow-hidden border border-gray-border">
+                          <img src={imagePreview} className="w-full h-full object-cover" alt="preview" />
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                            <span className="text-white text-[11px] font-bold">변경</span>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="w-[96px] h-[96px] border border-gray-border rounded-xl flex flex-col items-center justify-center gap-1.5 hover:bg-gray-400 transition-colors group">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="stroke-gray-400 group-hover:stroke-white transition-colors" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        <span className="text-[10px] text-gray-text group-hover:text-white leading-tight text-center transition-colors">업로드</span>
-                      </div>
+                      ) : (
+                        <div className="w-[96px] h-[96px] rounded-xl flex flex-col items-center justify-center gap-1.5 hover:bg-gray-100 transition-colors">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="stroke-gray-400" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                          <span className="text-[10px] text-gray-400 leading-tight text-center transition-colors">메뉴 사진</span>
+                        </div>
+                      )}
+                    </label>
+                    {imagePreview && (
+                      <button type="button" onClick={() => { setImageFile(null); setImagePreview('') }}
+                        className="mt-1 text-[11px] text-danger hover:underline">사진 제거</button>
                     )}
-                  </label>
-                  {imagePreview && (
-                    <button type="button" onClick={() => { setImageFile(null); setImagePreview('') }}
-                      className="mt-1 text-[11px] text-danger hover:underline">사진 제거</button>
-                  )}
+                    </div>
                   </div>
-                </div>
-                {/* 메뉴명 */}
-                <div>
-                  <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">메뉴명 *</label>
-                  <input autoFocus value={detailForm.name}
-                    onChange={e => setDetailForm(p => ({ ...p, name: e.target.value }))}
-                    placeholder="예: 클래식 포케"
-                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-[#00DD67] focus:outline-none"
-                  />
-                </div>
-                {/* 가격 */}
-                <div>
-                  <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">기본 가격 (원) *</label>
-                  <div className="flex items-center gap-1.5">
-                    <input type="text" inputMode="numeric" value={detailForm.price}
-                      onChange={e => setDetailForm(p => ({ ...p, price: e.target.value.replace(/[^0-9]/g,'') }))}
-                      placeholder="0"
-                      className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[11px] focus:border-ink focus:outline-none"
+                  <div className="flex-1 min-w-0 flex flex-col justify-center gap-2.5">
+                    <FloatingCellInput
+                      autoFocus
+                      value={detailForm.name} onChange={v => setDetailForm(p => ({ ...p, name: v }))}
+                      label="메뉴 이름"
                     />
-                    <div className="flex flex-col gap-0.5">
-                      <button type="button" onClick={() => setDetailForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) + 100)) }))}
-                        className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
-                        <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4.5L4 1.5L7 4.5"/></svg>
-                      </button>
-                      <button type="button" onClick={() => setDetailForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) - 100)) }))}
-                        className="w-6 h-[18px] bg-gray-100 hover:bg-gray-200 rounded text-[9px] flex items-center justify-center transition-colors">
-                        <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1.5L4 4.5L7 1.5"/></svg>
-                      </button>
+                    <div className="flex items-center gap-1.5">
+                      <FloatingCellInput
+                        inputMode="numeric"
+                        value={detailForm.price} onChange={v => setDetailForm(p => ({ ...p, price: v.replace(/[^0-9]/g,'') }))}
+                        label="금액" format={formatPriceDisplay}
+                      />
+                      <div className="flex flex-col gap-0.5">
+                        <StepperButton direction="up"   onStep={() => setDetailForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) + 100)) }))} />
+                        <StepperButton direction="down" onStep={() => setDetailForm(p => ({ ...p, price: String(Math.max(0, (parseInt(p.price) || 0) - 100)) }))} />
+                      </div>
                     </div>
                   </div>
                 </div>
                 {/* 설명 */}
-                <div>
-                  <label className="text-[11px] font-bold text-gray-text uppercase tracking-wide block mb-1">설명</label>
-                  <textarea value={detailForm.description}
-                    onChange={e => setDetailForm(p => ({ ...p, description: e.target.value }))}
-                    placeholder="메뉴 설명 (선택)" rows={2}
-                    className="w-full border border-gray-border rounded-lg px-3 py-2 text-[11px] resize-none focus:border-green focus:outline-none"
-                  />
-                </div>
+                <FloatingCellTextarea
+                  value={detailForm.description}
+                  onChange={v => setDetailForm(p => ({ ...p, description: v }))}
+                  label="메뉴 설명 (선택)"
+                />
                 {/* 옵션 그룹 */}
                 {storeGroups.length > 0 && (
                   <div>
@@ -2335,21 +2802,15 @@ export default function Menus() {
             )}
 
             {/* 푸터 */}
-            <div className="flex gap-2.5 px-5 py-3 border-t border-gray-border flex-shrink-0 modal-footer">
-              <button onClick={() => setAddMenuOpen(false)}
-                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[11px] font-bold text-gray-text hover:bg-gray-200 transition-colors">
-                취소
-              </button>
+            <div className="flex justify-end px-5 py-4 flex-shrink-0 modal-footer">
               {addModalTab === 'bulk' ? (
-                <button onClick={confirmAddMenu} disabled={addLoading}
-                  className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] text-[11px] font-bold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
+                <ModalCTAButton onClick={confirmAddMenu} disabled={addLoading}>
                   {addLoading ? '저장 중...' : `${addRows.filter(r => r.name.trim() && r.price.trim()).length}개 추가`}
-                </button>
+                </ModalCTAButton>
               ) : (
-                <button onClick={confirmDetailMenu} disabled={addLoading}
-                  className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] text-[11px] font-bold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
+                <ModalCTAButton onClick={confirmDetailMenu} disabled={addLoading}>
                   {addLoading ? '저장 중...' : '추가'}
-                </button>
+                </ModalCTAButton>
               )}
             </div>
           </div>
@@ -2489,223 +2950,377 @@ export default function Menus() {
               <button onClick={() => setAddingCat(false)} className="text-gray-text hover:text-ink text-[18px]">✕</button>
             </div>
             <div className="px-6 py-8">
-              <input
+              <FloatingCellInput
                 autoFocus
                 value={newCatName}
-                onChange={e => setNewCatName(e.target.value)}
+                onChange={setNewCatName}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) }
                   if (e.key === 'Escape') setAddingCat(false)
                 }}
-                placeholder="카테고리 이름 (예: 리뷰이벤트, 이달의메뉴)"
-                className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] focus:outline-none focus:border-ink"
+                label="카테고리 이름 (예: 샐러드)"
               />
             </div>
-            <div className="flex gap-2.5 px-5 pb-5">
-              <button onClick={() => setAddingCat(false)}
-                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[13px] font-bold text-gray-text hover:bg-gray-200 transition-colors">
-                취소
-              </button>
-              <button
+            <div className="flex justify-end px-5 py-4">
+              <ModalCTAButton
                 onClick={() => { if (newCatName.trim()) { addCategory(newCatName); setNewCatName(''); setAddingCat(false) } }}
-                disabled={!newCatName.trim()}
-                className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] text-[13px] font-bold hover:bg-[#00BB55] transition-colors disabled:opacity-40">
+                disabled={!newCatName.trim()}>
                 추가
-              </button>
+              </ModalCTAButton>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── 옵션 그룹 추가 모달 (3단계) ── */}
-      {addingStoreGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeOptGroupModal}>
-          <div className="modal-in bg-white rounded-2xl shadow-xl w-[560px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      {/* ── 옵션 추가 모달 (2단계 — Figma node 491:3318(옵션 설정) / 491:3401(적용할 메뉴 선택)) ── */}
+      {addingStoreGroup && (() => {
+        const search = optAddSearch.trim().toLowerCase()
+        const visibleCats = sortedCategories()
+        const menusByCat = (catId: string) => menus.filter(m =>
+          m.categoryId === catId && (!search || m.name.toLowerCase().includes(search))
+        )
+        const totalVisible = visibleCats.reduce((s, c) => s + menusByCat(c.id).length, 0)
+        const allChecked = totalVisible > 0 && visibleCats.every(c => menusByCat(c.id).every(m => step3MenuIds.has(m.code)))
+        function toggleAllMenus() {
+          setStep3MenuIds(prev => {
+            const next = new Set(prev)
+            const ids = visibleCats.flatMap(c => menusByCat(c.id).map(m => m.code))
+            if (allChecked) { ids.forEach(id => next.delete(id)) } else { ids.forEach(id => next.add(id)) }
+            return next
+          })
+        }
+        function toggleCatMenus(catId: string) {
+          const ids = menusByCat(catId).map(m => m.code)
+          const allIn = ids.length > 0 && ids.every(id => step3MenuIds.has(id))
+          setStep3MenuIds(prev => {
+            const next = new Set(prev)
+            if (allIn) ids.forEach(id => next.delete(id)); else ids.forEach(id => next.add(id))
+            return next
+          })
+        }
+        function patchItem(id: string, patch: Partial<{ name: string; price: string; maxQty: number | null }>) {
+          setNewGroupItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
+        }
+        // 옵션 항목 드래그 순서 변경 — 드래그 중인 항목을 지나치는 항목 자리로 즉시 이동
+        function handleItemDragOver(e: React.DragEvent, overId: string) {
+          e.preventDefault()
+          if (!optDragItemId || optDragItemId === overId) return
+          setNewGroupItems(prev => {
+            const from = prev.findIndex(i => i.id === optDragItemId)
+            const to   = prev.findIndex(i => i.id === overId)
+            if (from < 0 || to < 0) return prev
+            const next = [...prev]
+            const [moved] = next.splice(from, 1)
+            next.splice(to, 0, moved)
+            return next
+          })
+        }
+        // 그룹 최대 선택 개수 — 1개면 단일 선택(is_multi=false), 2개 이상이면 복수 선택
+        const maxSelectValue = newStoreGroup.isMulti ? Number(newStoreGroup.maxSelect || 2) : 1   // 기본 1개
 
-            {/* 헤더 + 단계 표시 */}
-            <div className="px-6 pt-6 pb-0 flex-shrink-0">
-              <div className="flex items-center justify-between mb-5">
-                <span className="text-[17px] font-semibold">옵션그룹 추가</span>
-                <button onClick={closeOptGroupModal} className="text-gray-text hover:text-ink text-[18px]">✕</button>
-              </div>
-              <div className="flex gap-1">
-                {([1,2,3] as const).map(s => (
-                  <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= addOptStep ? 'bg-gray-500' : 'bg-gray-200'}`} />
-                ))}
-              </div>
-            </div>
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeOptGroupModal}>
+            <div className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-xl w-[640px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
 
-            {/* ── Step 1: 그룹 기본 설정 ── */}
-            {addOptStep === 1 && (
-              <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-4 overflow-y-auto">
-                <div>
-                  <div className="text-[13px] font-semibold text-gray-text mb-1.5">이름</div>
-                  <input
-                    autoFocus
-                    value={newStoreGroup.name}
-                    onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
-                    onKeyDown={e => e.key === 'Enter' && newStoreGroup.name.trim() && setAddOptStep(2)}
-                    placeholder="옵션 그룹명 (예: 드레싱 선택, 사이즈)"
-                    className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] focus:outline-none focus:border-gray-500"
-                  />
+              {/* 헤더 + 단계 표시 — Figma: 제목 아래 원형 숫자뱃지 + 단계명(현재 단계만 진하게) */}
+              <div className="px-[30px] pt-[30px] pb-[20px] flex-shrink-0">
+                <div className="flex items-center justify-between mb-[20px]">
+                  <span className="text-[22px] font-bold text-ink">옵션 추가</span>
+                  <button onClick={closeOptGroupModal} className="text-gray-text hover:text-ink text-[18px]">✕</button>
                 </div>
-                <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-[26px]">
+                  {([{ s: 1, label: '설정' }, { s: 2, label: '적용할 메뉴 선택' }] as const).map(({ s, label }) => (
+                    <div key={s} className="flex items-center gap-[8px]">
+                      <span className={`w-[24px] h-[24px] rounded-full flex items-center justify-center text-[12px] font-semibold flex-shrink-0 ${
+                        s === addOptStep ? 'bg-[#E8E4E2] text-ink' : 'bg-[#F2F2F2] text-[#ADADAD]'
+                      }`}>
+                        {s}
+                      </span>
+                      <span className={`text-[15px] font-semibold whitespace-nowrap ${s === addOptStep ? 'text-ink' : 'text-[#ADADAD]'}`}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Step 1: 옵션 설정 단계 — Figma node 491:3318 ── */}
+              {addOptStep === 1 && (
+                <div className="px-[30px] pb-[24px] flex flex-col gap-[26px] overflow-y-auto">
+
+                  {/* 옵션그룹 */}
                   <div>
-                    <div className="text-[13px] font-semibold text-gray-text mb-1.5">선택 여부<sup className="text-danger text-[8px]">*</sup></div>
-                    <SegmentedControl
-                      options={[{ label: '선택', value: false }, { label: '필수', value: true }]}
-                      value={newStoreGroup.isRequired}
-                      onChange={(v) => setNewStoreGroup(p => ({ ...p, isRequired: v }))}
+                    <div className="text-[15px] font-medium text-ink mb-[10px]">옵션그룹</div>
+                    <input
+                      autoFocus
+                      value={newStoreGroup.name}
+                      onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
+                      placeholder="ex) 토핑 추가"
+                      className="field-soft w-full h-[48px] border border-[#D9D9D9] rounded-[10px] px-[16px] text-[15px] text-ink placeholder:text-[#ADADAD] outline-none focus:border-[#6A635E] bg-transparent"
                     />
                   </div>
+
+                  {/* 옵션이름 — 항목마다 (드래그 핸들 + 이름 + 수량버튼 설정) / (가격 스테퍼 + 가격 + 삭제) 두 줄 */}
                   <div>
-                    <div className="text-[13px] font-semibold text-gray-text mb-1.5">복수 여부<sup className="text-danger text-[8px]">*</sup></div>
-                    <SegmentedControl
-                      options={[{ label: '단일', value: false }, { label: '복수', value: true }]}
-                      value={newStoreGroup.isMulti}
-                      onChange={(v) => setNewStoreGroup(p => ({ ...p, isMulti: v, maxSelect: '' }))}
-                    />
+                    <div className="text-[15px] font-medium text-ink mb-[10px]">옵션이름</div>
+                    <div className="flex flex-col gap-[16px]">
+                      {newGroupItems.map(item => (
+                        <div
+                          key={item.id}
+                          onDragOver={e => handleItemDragOver(e, item.id)}
+                          className={`flex flex-col gap-[8px] ${optDragItemId === item.id ? 'opacity-40' : ''}`}
+                        >
+                          <div className="field-wrap flex items-center gap-[10px] h-[48px] border border-[#D9D9D9] rounded-[10px] px-[14px]">
+                            <span
+                              draggable
+                              onDragStart={() => setOptDragItemId(item.id)}
+                              onDragEnd={() => setOptDragItemId(null)}
+                              className="flex-shrink-0 cursor-grab active:cursor-grabbing"
+                              title="끌어서 순서 변경"
+                            >
+                              <svg width="10" height="16" viewBox="0 0 10 16" fill="none">
+                                {[2, 8, 14].map(y => (
+                                  <g key={y}>
+                                    <circle cx="2" cy={y} r="1.3" fill="#ADADAD" />
+                                    <circle cx="8" cy={y} r="1.3" fill="#ADADAD" />
+                                  </g>
+                                ))}
+                              </svg>
+                            </span>
+                            <input
+                              value={item.name}
+                              onChange={e => patchItem(item.id, { name: e.target.value })}
+                              placeholder="ex) 발사믹 소스"
+                              className="field-bare flex-1 min-w-0 text-[15px] text-ink placeholder:text-[#ADADAD] outline-none bg-transparent"
+                            />
+                            {/* 수량 버튼 설정 — 클릭하면 "최대 몇 개까지" 모달 (Figma 491:4381) */}
+                            <button
+                              onClick={() => setOptQtyPickerId(item.id)}
+                              className="flex-shrink-0 flex items-center gap-[6px] text-[14px] text-[#6A635E] hover:text-ink transition-colors whitespace-nowrap"
+                            >
+                              {maxQtyLabel(item.maxQty)}
+                              <svg width="7" height="12" viewBox="0 0 8 14" fill="none"><path d="M1.5 1L6.5 7L1.5 13" stroke="#6A635E" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-[12px]">
+                            {/* 추가금액 ± 100원 — Figma node 491:3368 */}
+                            <PlusMinusStepper
+                              onPlus={() => patchItem(item.id, { price: String((parseInt(item.price) || 0) + 100) })}
+                              onMinus={() => patchItem(item.id, { price: String((parseInt(item.price) || 0) - 100) })}
+                            />
+                            <div className="field-wrap w-[170px] h-[44px] flex items-center gap-[6px] border border-[#D9D9D9] rounded-[10px] px-[14px]">
+                              <input
+                                inputMode="numeric"
+                                value={item.price ? formatPriceDisplay(item.price) : ''}
+                                // 맨 앞 '-' 하나만 남기고 나머지 비숫자는 버린다 (깎아주는 옵션 허용)
+                                onChange={e => {
+                                  const raw = e.target.value
+                                  const neg = raw.trimStart().startsWith('-')
+                                  const digits = raw.replace(/[^0-9]/g, '')
+                                  patchItem(item.id, { price: digits ? (neg ? '-' : '') + digits : '' })
+                                }}
+                                placeholder="0"
+                                className="field-bare flex-1 min-w-0 text-[15px] text-ink placeholder:text-[#ADADAD] outline-none bg-transparent"
+                              />
+                              <span className="text-[15px] text-ink flex-shrink-0">원</span>
+                            </div>
+                            <button
+                              onClick={() => setNewGroupItems(prev => prev.length > 1 ? prev.filter(i => i.id !== item.id) : prev)}
+                              disabled={newGroupItems.length === 1}
+                              className="ml-auto flex-shrink-0 px-[14px] py-[9px] rounded-[10px] bg-[#FFEFEF] text-[#FF676F] text-[14px] font-medium hover:bg-[#ffe3e3] disabled:opacity-40 transition-colors"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => setNewGroupItems(prev => [...prev, { id: crypto.randomUUID(), name: '', price: '', maxQty: null }])}
+                      className="mt-[16px] px-[16px] py-[11px] rounded-[10px] bg-[#E8E4E2] text-ink text-[14px] font-medium hover:bg-[#dcd7d4] transition-colors"
+                    >
+                      + 옵션 추가
+                    </button>
+                  </div>
+
+                  {/* 필수/선택 여부 + 선택을 허용할 최대 개수 */}
+                  <div className="grid grid-cols-2 gap-[26px]">
+                    <div>
+                      <div className="text-[15px] font-medium text-ink mb-[10px]">필수/선택 여부</div>
+                      <SegmentedControl
+                        options={[{ label: '필수', value: true }, { label: '선택', value: false }]}
+                        value={newStoreGroup.isRequired}
+                        onChange={v => setNewStoreGroup(p => ({ ...p, isRequired: v }))}
+                        padding={3}
+                        className="rounded-[10px] h-[48px]"
+                        thumbClassName="rounded-[8px]"
+                        optionClassName={active => `h-full flex items-center justify-center text-[15px] font-medium ${active ? 'text-ink' : 'text-[#ADADAD]'}`}
+                      />
+                    </div>
+                    <div>
+                      {/* "선택을 허용할 최대 개수"는 필수/선택 여부와 헷갈렸다.
+                          이 값은 필수든 선택이든 상관없이 "이 그룹 안에서 옵션을 몇 개까지
+                          고를 수 있나"를 정하는 값이라 '옵션'을 앞에 붙여 범위를 분명히 한다. */}
+                      <div className="text-[15px] font-medium text-ink mb-[10px]">옵션 선택을 허용할 최대개수</div>
+                      <CountStepper
+                        value={maxSelectValue}
+                        min={1}
+                        max={20}
+                        onChange={n => setNewStoreGroup(p => ({ ...p, isMulti: n > 1, maxSelect: n > 1 ? String(n) : '' }))}
+                      />
+                    </div>
                   </div>
                 </div>
-                {newStoreGroup.isMulti && (
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[2, 3, 4, 5].map(n => {
-                      const cur = Number(newStoreGroup.maxSelect)
-                      const active = cur === n
+              )}
+
+              {/* ── Step 2: 적용할 메뉴 선택 — Figma node 491:3401 (검색 + 카테고리 접기/펼치기 + 전체선택) ── */}
+              {addOptStep === 2 && (
+                <div className="flex flex-col flex-1 min-h-0">
+                  <div className="px-[30px] pb-[18px] flex-shrink-0">
+                    <div className="field-wrap flex items-center gap-[10px] h-[48px] border border-[#D9D9D9] rounded-[10px] px-[16px]">
+                      <svg width="16" height="16" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
+                      <input
+                        value={optAddSearch}
+                        onChange={e => setOptAddSearch(e.target.value)}
+                        placeholder="메뉴 이름을 검색할 수 있어요"
+                        className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[15px] text-ink placeholder:text-[#ADADAD] bg-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="px-[30px] pb-[10px] flex-shrink-0 flex items-center justify-between">
+                    <span className="text-[15px] text-[#8C8379]">카테고리</span>
+                    <button
+                      onClick={toggleAllMenus}
+                      disabled={totalVisible === 0}
+                      className="text-[15px] text-[#8C8379] hover:text-ink disabled:opacity-40 transition-colors"
+                    >
+                      메뉴 전체선택
+                    </button>
+                  </div>
+
+                  <div className="flex-1 min-h-0 overflow-y-auto px-[30px] pb-[10px]">
+                    {totalVisible === 0 ? (
+                      <div className="text-center py-10 text-[14px] text-gray-text">
+                        {search ? '검색 결과가 없습니다.' : '등록된 메뉴가 없습니다.'}
+                      </div>
+                    ) : visibleCats.map(cat => {
+                      const items = menusByCat(cat.id)
+                      if (items.length === 0) return null
+                      // 검색 중엔 결과를 바로 볼 수 있게 자동으로 펼침
+                      const expanded = search ? true : optExpandedCats.has(cat.id)
+                      const allInCat = items.every(m => step3MenuIds.has(m.code))
                       return (
-                        <button key={n} type="button"
-                          onClick={() => setNewStoreGroup(p => ({ ...p, maxSelect: active ? '' : String(n) }))}
-                          className={`py-2 rounded-lg text-[11px] font-semibold transition-colors focus:outline-none
-                            ${active ? 'bg-green-soft text-green' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                          최대 {n}개
-                        </button>
+                        <div key={cat.id}>
+                          <div className="flex items-center gap-[14px] py-[12px]">
+                            <button
+                              onClick={() => setOptExpandedCats(prev => {
+                                const next = new Set(prev)
+                                if (next.has(cat.id)) next.delete(cat.id); else next.add(cat.id)
+                                return next
+                              })}
+                              className="w-[28px] h-[28px] rounded-full bg-[#F2F2F2] flex items-center justify-center flex-shrink-0 hover:bg-[#E8E4E2] transition-colors"
+                              title={expanded ? '접기' : '펼치기'}
+                            >
+                              <svg width="12" height="7" viewBox="0 0 16 10" fill="none" className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
+                                <path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </button>
+                            <span className="flex-1 min-w-0 text-[16px] font-semibold text-ink truncate">{cat.name}</span>
+                            <input
+                              type="checkbox"
+                              checked={allInCat}
+                              onChange={() => toggleCatMenus(cat.id)}
+                              className="flex-shrink-0 w-[22px] h-[22px]"
+                              title="카테고리 전체 선택"
+                            />
+                          </div>
+                          {expanded && items.map(menu => {
+                            const checked = step3MenuIds.has(menu.code)
+                            return (
+                              <button
+                                key={menu.code}
+                                onClick={() => setStep3MenuIds(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(menu.code)) next.delete(menu.code); else next.add(menu.code)
+                                  return next
+                                })}
+                                className="w-full flex items-center gap-[10px] pl-[42px] pr-[2px] py-[10px] text-left hover:bg-[#F9F9F9] rounded-[8px] transition-colors"
+                              >
+                                <span className={`flex-1 min-w-0 truncate text-[15px] ${checked ? 'text-ink font-medium' : 'text-[#6A635E]'}`}>
+                                  {menu.name}
+                                </span>
+                                {menu.soldOut && <span className="text-[11px] text-danger font-bold flex-shrink-0">품절</span>}
+                                <svg width="18" height="13" viewBox="0 0 20 14" fill="none" className="flex-shrink-0">
+                                  <path d="M1.5 7L7 12.5L18.5 1.5" stroke={checked ? '#1E1E1E' : '#DDD7D1'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            )
+                          })}
+                        </div>
                       )
                     })}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* ── Step 2: 세부 옵션 항목 ── */}
-            {addOptStep === 2 && (
-              <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-2 overflow-y-auto">
-                {newGroupItems.map((item, idx) => (
-                  <div key={item.id} className="flex items-center gap-2">
-                    <input
-                      autoFocus={idx === 0}
-                      value={item.name}
-                      onChange={e => setNewGroupItems(prev => prev.map(i => i.id === item.id ? { ...i, name: e.target.value } : i))}
-                      placeholder={`옵션명 (예: 아보카도 추가)`}
-                      className="flex-1 border border-gray-border rounded-xl px-3 py-2 text-[12px] focus:outline-none focus:border-[#008F42]"
-                    />
-                    <div className="flex items-center border border-gray-border rounded-xl overflow-hidden">
-                      <input
-                        type="number" min="0" value={item.price}
-                        onChange={e => setNewGroupItems(prev => prev.map(i => i.id === item.id ? { ...i, price: e.target.value } : i))}
-                        placeholder="0"
-                        className="w-16 px-2 py-2 text-[12px] focus:outline-none text-right"
-                      />
-                      <span className="pr-2 text-[12px] text-gray-text">원</span>
-                    </div>
-                    <button
-                      onClick={() => setNewGroupItems(prev => prev.length > 1 ? prev.filter(i => i.id !== item.id) : prev)}
-                      className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-text text-[14px]">
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                <div className="flex justify-end mt-1">
+              {/* 푸터 — Figma: 2단계에선 좌측에 적용 메뉴 개수, 우측에 닫기/다음(마지막 단계는 완료) */}
+              <div className="flex items-center justify-between gap-[14px] px-[30px] py-[20px] flex-shrink-0 mt-auto modal-footer">
+                <span className="text-[14px] text-[#8C8379] truncate">
+                  {addOptStep === 2
+                    ? `'${newStoreGroup.name}' 옵션 적용할 메뉴 개수 (${step3MenuIds.size}/${totalVisible})`
+                    : ''}
+                </span>
+                <div className="flex items-center gap-[10px] flex-shrink-0">
                   <button
-                    onClick={() => setNewGroupItems(prev => [...prev, { id: crypto.randomUUID(), name: '', price: '' }])}
-                    className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
-                    + 항목 추가
+                    onClick={() => addOptStep === 2 ? setAddOptStep(1) : closeOptGroupModal()}
+                    className="px-[34px] h-[52px] rounded-[12px] bg-[#F2F0EE] text-ink text-[16px] font-medium hover:bg-[#E8E4E2] transition-colors"
+                  >
+                    {addOptStep === 2 ? '이전' : '닫기'}
                   </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Step 3: 메뉴 연결 ── */}
-            {addOptStep === 3 && (
-              <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-3 overflow-y-auto">
-                <div className="text-[12px] text-gray-text">이 옵션 그룹을 적용할 메뉴를 선택하세요. (선택 사항)</div>
-                {/* 카테고리 탭 */}
-                <div className="flex flex-wrap gap-1.5">
-                  {sortedCategories().map(cat => (
-                    <button key={cat.id} onClick={() => setStep3CatId(cat.id)}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors
-                        ${step3CatId === cat.id ? 'bg-ink text-white border-ink' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>
-                      {cat.name}
+                  {addOptStep === 1 ? (
+                    <button
+                      onClick={() => {
+                        if (!newStoreGroup.name.trim() || newGroupItems.every(i => !i.name.trim())) return
+                        setStep3MenuIds(new Set())
+                        setOptAddSearch('')
+                        setAddOptStep(2)
+                      }}
+                      disabled={!newStoreGroup.name.trim() || newGroupItems.every(i => !i.name.trim())}
+                      className="px-[34px] h-[52px] rounded-[12px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+                    >
+                      다음
                     </button>
-                  ))}
+                  ) : (
+                    <button
+                      onClick={confirmOptGroupCreate}
+                      disabled={addOptLoading}
+                      className="px-[34px] h-[52px] rounded-[12px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+                    >
+                      {addOptLoading ? '...' : '완료'}
+                    </button>
+                  )}
                 </div>
-                {/* 메뉴 목록 */}
-                {step3CatId ? (
-                  <div className="flex flex-col gap-0.5 max-h-[240px] overflow-y-auto border border-gray-border rounded-xl p-2">
-                    {menus.filter(m => m.categoryId === step3CatId).length === 0 ? (
-                      <div className="text-center py-6 text-[12px] text-gray-text">이 카테고리에 메뉴가 없습니다.</div>
-                    ) : menus.filter(m => m.categoryId === step3CatId).map(menu => (
-                      <label key={menu.code} className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                        <input type="checkbox" checked={step3MenuIds.has(menu.code)}
-                          onChange={() => setStep3MenuIds(prev => {
-                            const next = new Set(prev)
-                            if (next.has(menu.code)) next.delete(menu.code); else next.add(menu.code)
-                            return next
-                          })}
-                        />
-                        <span className="text-[13px] text-ink">{menu.name}</span>
-                        {menu.soldOut && <span className="text-[10px] text-danger font-bold">품절</span>}
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-6 text-[12px] text-gray-text border border-gray-border rounded-xl">카테고리를 선택하세요.</div>
-                )}
-                {step3MenuIds.size > 0 && (
-                  <div className="text-[11px] text-green font-bold">{step3MenuIds.size}개 메뉴 선택됨</div>
-                )}
               </div>
-            )}
-
-            {/* 푸터 버튼 */}
-            <div className="flex items-center justify-between px-5 py-4 border-t border-gray-border flex-shrink-0 mt-auto modal-footer">
-              {addOptStep === 1 ? (
-                <button onClick={closeOptGroupModal}
-                  className="px-4 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">
-                  취소
-                </button>
-              ) : (
-                <button onClick={() => setAddOptStep(s => (s - 1) as 1|2|3)}
-                  className="px-4 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">
-                  이전
-                </button>
-              )}
-              {addOptStep < 3 ? (
-                <button
-                  onClick={() => {
-                    if (addOptStep === 1 && !newStoreGroup.name.trim()) return
-                    if (addOptStep === 2) {
-                      const firstCat = sortedCategories()[0]
-                      setStep3CatId(firstCat?.id ?? '')
-                      setStep3MenuIds(new Set())
-                    }
-                    setAddOptStep(s => (s + 1) as 1|2|3)
-                  }}
-                  disabled={addOptStep === 1 && !newStoreGroup.name.trim()}
-                  className="px-6 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-40">
-                  {addOptStep === 2 && newGroupItems.every(i => !i.name.trim()) ? '건너뛰기' : '다음'}
-                </button>
-              ) : (
-                <button onClick={confirmOptGroupCreate} disabled={addOptLoading}
-                  className="px-6 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-50">
-                  {addOptLoading ? '저장 중...' : '완료'}
-                </button>
-              )}
             </div>
-          </div>
-        </div>
-      )}
 
-      </div>
+            {/* 수량 버튼 설정 모달 — Figma node 491:4381 */}
+            {optQtyPickerId && (() => {
+              const target = newGroupItems.find(i => i.id === optQtyPickerId)
+              if (!target) return null
+              return (
+                <OptionMaxQtyModal
+                  optionName={target.name}
+                  value={target.maxQty}
+                  onClose={() => setOptQtyPickerId(null)}
+                  onConfirm={next => { patchItem(target.id, { maxQty: next }); setOptQtyPickerId(null) }}
+                />
+              )
+            })()}
+          </div>
+        )
+      })()}
+
     </div>
   )
 }
@@ -2733,7 +3348,7 @@ function OptionGroupRow({
     >
       {/* 그룹명 + 상태 배지 */}
       <div className="flex items-center gap-1.5 min-w-0">
-        <span className={`font-semibold text-[13px] flex-1 truncate ${isSelected ? 'text-green' : 'text-ink'}`}>
+        <span className={`font-semibold text-[13px] flex-1 truncate text-ink ${isSelected ? 'underline' : ''}`}>
           {group.name}
         </span>
         {soldOutState === 'today' && (
@@ -2775,6 +3390,8 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
     </button>
   )
 }
+
+
 
 // ── OptionGroupPanel (오른쪽 상세 패널) ────────────────────────────────────────
 function OptionGroupPanel({
@@ -3027,22 +3644,22 @@ function OptionGroupPanel({
                   />
                 </div>
               </div>
-              <div className="w-px bg-gray-border flex-shrink-0 self-stretch" />
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-ink">
-                  {isHidden ? '숨김중' : '노출중'}
-                </span>
-                <Toggle on={!isHidden} onChange={onToggleHidden} />
+              <div className="flex flex-col gap-1.5 items-start">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-ink">
+                    {isHidden ? '숨김중' : '노출중'}
+                  </span>
+                  <Toggle on={!isHidden} onChange={onToggleHidden} />
+                </div>
+                <GhostButton onClick={() => { setSettingsName(group.name); setDeleteGroupConfirm(false); setSettingsOpen(true) }}>
+                  <span className="flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    그룹 설정
+                  </span>
+                </GhostButton>
               </div>
-              <button
-                onClick={() => { setSettingsName(group.name); setDeleteGroupConfirm(false); setSettingsOpen(true) }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-border text-[11px] font-medium text-gray-text hover:bg-gray-50 transition-colors"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                </svg>
-                그룹 설정
-              </button>
             </div>
           )}
         </div>
@@ -3064,18 +3681,19 @@ function OptionGroupPanel({
       {/* ── 항목 목록 ── */}
       <div className="flex-1 bg-white overflow-y-auto">
         <div
-          className={readOnly ? 'flex flex-wrap gap-1.5 px-3 py-2' : 'flex flex-wrap gap-2 px-3 py-2'}
+          className={readOnly ? 'flex flex-col gap-1.5 px-3 py-2' : 'flex flex-col gap-2 px-3 py-2'}
         >
           {group.items.map((item: OptionItem, itemIdx: number) => {
             const isMatch = sq && (item.name.includes(sq))
+            const itemState = getSoldOutState(item.soldOut, item.soldOutUntil ?? null)
+            const isUnavailable = itemState !== 'active' || item.hidden
             return editingItemId === item.id && !readOnly ? (
-              <div key={item.id} className="flex items-center gap-2 px-4 py-2.5 w-full border border-green rounded-lg bg-green-soft/20">
+              <div key={item.id} className="flex items-center gap-2 px-4 py-2.5 w-full rounded-lg" style={{ background: 'var(--gray-bg)' }}>
                 <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
                   className="flex-1 min-w-0 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[12px] focus:outline-none"
                 />
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <span className="text-[11px] text-gray-text">+</span>
                   <input type="text" value={editItemPrice}
                     onChange={e => setEditItemPrice(e.target.value.replace(/[^0-9]/g, ''))}
                     onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
@@ -3083,11 +3701,9 @@ function OptionGroupPanel({
                   />
                   <span className="text-[11px] text-gray-text">원</span>
                 </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => setEditItemPrice(String(Math.max(0, (parseInt(editItemPrice) || 0) - 500)))}
-                    className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">-500</button>
-                  <button onClick={() => setEditItemPrice(String((parseInt(editItemPrice) || 0) + 500))}
-                    className="bg-gray-100 hover:bg-gray-200 rounded px-1.5 py-0.5 text-[10px] font-semibold text-gray-text">+500</button>
+                <div className="flex flex-col gap-0.5 flex-shrink-0">
+                  <StepperButton direction="up"   onStep={() => setEditItemPrice(String((parseInt(editItemPrice) || 0) + 500))} />
+                  <StepperButton direction="down" onStep={() => setEditItemPrice(String(Math.max(0, (parseInt(editItemPrice) || 0) - 500)))} />
                 </div>
                 <button onClick={commitEditItem}
                   className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[10px] font-bold hover:bg-[#00BB55]">완료</button>
@@ -3108,9 +3724,7 @@ function OptionGroupPanel({
                 }) : undefined}
                 onDragEnd={!readOnly ? (() => { setDragItemIdx(null); setDragOverItemIdx(null) }) : undefined}
                 className={`flex items-center gap-2.5 text-[12px] group/row transition-colors
-                  ${readOnly ? 'px-3 py-2 rounded-lg bg-gray-50 flex-auto min-w-[140px]' : 'px-3 py-2 rounded-lg border border-gray-border bg-white flex-auto min-w-[200px]'}
-                  ${item.soldOut && !isMatch ? (readOnly ? '!bg-red-50' : '!bg-red-50 !border-red-200') : ''}
-                  ${item.hidden ? 'opacity-50' : ''}
+                  ${readOnly ? 'px-3 py-2 rounded-lg bg-gray-50 w-full' : 'px-3 py-2 rounded-lg border border-gray-border bg-white w-full'}
                   ${!readOnly && dragOverItemIdx === itemIdx && dragItemIdx !== itemIdx ? '!border-green !border-2' : ''}
                   ${!readOnly && dragItemIdx === itemIdx ? 'opacity-40' : ''}`}
                 style={isMatch ? { backgroundColor: 'var(--green-soft)' } : undefined}
@@ -3127,13 +3741,12 @@ function OptionGroupPanel({
                 )}
                 <div className="flex items-center gap-1.5 min-w-0 flex-1" onClick={!readOnly ? () => startEditItem(item) : undefined}
                   style={!readOnly ? { cursor: 'pointer' } : undefined}>
-                  <span className={`font-medium text-ink truncate ${!readOnly ? 'hover:text-green transition-colors' : ''} ${isMatch && sq ? 'text-green font-bold' : ''}`}>{item.name}</span>
+                  <span className={`font-medium text-ink truncate ${!readOnly ? 'hover:text-green transition-colors' : ''} ${isMatch && sq ? 'text-green font-bold' : ''} ${isUnavailable ? 'opacity-40 line-through' : ''}`}>{item.name}</span>
                   {item.isPopular && <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
                   {item.extra > 0 && <span className="text-[11px] text-gray-text flex-shrink-0">+{won(item.extra)}</span>}
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {(() => {
-                    const itemState = getSoldOutState(item.soldOut, item.soldOutUntil ?? null)
                     const nextState: SoldOutState = itemState === 'active' ? 'today' : itemState === 'today' ? 'permanent' : 'active'
                     const nextUpdates =
                       nextState === 'active'  ? { soldOut: false, soldOutUntil: null             }
@@ -3200,10 +3813,7 @@ function OptionGroupPanel({
           </div>
         ) : !readOnly ? (
           <div className="flex justify-end px-4 py-2.5 border-t border-gray-border">
-            <button onClick={() => setShowAddItem(true)}
-              className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#008F42] bg-[#E6F4EC] hover:bg-[#C9EAD5] transition-colors">
-              + 항목 추가
-            </button>
+            <GhostButton onClick={() => setShowAddItem(true)} size="lg">+ 항목 추가</GhostButton>
           </div>
         ) : null}
 

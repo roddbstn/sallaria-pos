@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } fro
 import { supabase, type DbAccount } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
+import { StatusTag } from '../components/ui/DataTable'
+import MonthlyBalanceModal from '../components/customer/MonthlyBalanceModal'
 import { useHeaderSlot } from '../lib/header-slot'
 import { PLAN_LIMITS } from '../lib/plans'
 import type { PlanTier } from '../lib/plans'
@@ -10,7 +12,9 @@ import type { PlanTier } from '../lib/plans'
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 const MONTH_NAMES   = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
 const DAY_NAMES     = ['일','월','화','수','목','금','토']
-const CHART_COLORS  = ['#00DD67','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316','#84CC16','#06B6D4']
+// 도넛·막대 공용 팔레트. 첫 색은 선결제 액센트(#017333), 나머지는 Dashboard 의 베스트셀러
+// 팔레트와 같은 색 — 같은 거래처가 화면마다 다른 색이면 색이 정보가 아니라 장식이 된다.
+const CHART_COLORS  = ['#017333','#3374FF','#F5A623','#FF676F','#9B59B6','#1ABC9C','#E67E22','#FF8418','#7ED321','#ADADAD']
 
 // ── KST 헬퍼 ─────────────────────────────────────────────────────────────────
 function monthRangeUtc(year: number, month: number) {
@@ -31,6 +35,42 @@ function kstTimeStr(iso: string): string {
   return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
 }
 function daysInMonth(year: number, month: number) { return new Date(year, month + 1, 0).getDate() }
+
+/** 마지막 주문 이후 지난 날수. 주문이 없으면 null */
+function daysSinceIso(iso: string | null): number | null {
+  if (!iso) return null
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+}
+
+/**
+ * 지난달 대비 증감 배지.
+ *
+ * 왜 세 숫자에 다 붙이나: 금액만 있으면 "많은가 적은가"를 점주가 지난달 화면을 다시 열어
+ * 비교해야 한다. 증감이 곧 판단이다.
+ *
+ * 지난달이 0이면 %를 만들 수 없다(0 → 100 은 무한 증가다). 그럴 때는 '신규'로 적는다.
+ * `goodWhenUp=false` 는 잔액처럼 늘어나는 게 좋지 않은 지표용 — 색을 뒤집는다.
+ */
+function DeltaBadge({ current, previous, goodWhenUp = true }: {
+  current: number
+  previous: number | null
+  goodWhenUp?: boolean
+}) {
+  if (previous === null) return null
+  if (previous === 0) {
+    if (current === 0) return <span className="text-[11px] font-normal text-[#ADADAD]">지난달도 0원</span>
+    return <span className="text-[11px] font-normal text-[#787878]">지난달 없음 · 신규</span>
+  }
+  const pct = Math.round(((current - previous) / Math.abs(previous)) * 100)
+  if (pct === 0) return <span className="text-[11px] font-normal text-[#787878]">지난달과 같음</span>
+  const up   = pct > 0
+  const good = up === goodWhenUp
+  return (
+    <span className={`text-[11px] font-normal ${good ? 'text-[#017333]' : 'text-danger'}`}>
+      {up ? '▲' : '▼'} 지난달 {up ? '+' : ''}{pct}%
+    </span>
+  )
+}
 function firstDow(year: number, month: number)    { return new Date(year, month, 1).getDay() }
 
 // ── 타입 ─────────────────────────────────────────────────────────────────────
@@ -139,14 +179,14 @@ function DonutChart({ segments, size = 100 }: { segments: DonutSegment[]; size?:
       </svg>
       {hoveredIdx !== null && tooltipPos && (
         <div
-          className="fixed z-50 pointer-events-none bg-white border border-gray-border rounded-xl shadow-lg px-3 py-2.5 text-[11px] min-w-[160px] max-w-[260px]"
+          className="fixed z-50 pointer-events-none bg-[#FCFCFC] border border-[#E5E5E5] rounded-[11px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-3 py-2.5 text-[11px] min-w-[160px] max-w-[260px]"
           style={
             tooltipPos.x > window.innerWidth / 2
               ? { right: window.innerWidth - tooltipPos.x + 12, top: tooltipPos.y - 8 }
               : { left: tooltipPos.x + 12, top: tooltipPos.y - 8 }
           }
         >
-          <div className="font-bold text-ink mb-1.5 flex items-center gap-1.5">
+          <div className="font-medium text-ink mb-1.5 flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: segments[hoveredIdx].color }} />
             {segments[hoveredIdx].label}
           </div>
@@ -334,8 +374,8 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
         >
           {showOrder   && <path d={ordArea} fill="#C4CBD4" fillOpacity="0.18" />}
           {showDeposit && <path d={depArea} fill="#34D060" fillOpacity="0.15" />}
-          {showOrder   && <path d={ordPath} fill="none" stroke="#C4CBD4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
-          {showDeposit && <path d={depPath} fill="none" stroke="#34D060" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
+          {showOrder   && <path d={ordPath} fill="none" stroke="#C1B7AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
+          {showDeposit && <path d={depPath} fill="none" stroke="#6A635E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
         </g>
 
         {/* x축 레이블 */}
@@ -372,7 +412,7 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
       {/* 호버 툴팁 */}
       {hoverDay !== null && ((showDeposit && hoverDepAmt > 0) || (showOrder && hoverOrdAmt > 0)) && (
         <div
-          className="absolute z-10 pointer-events-none bg-white border border-gray-border rounded-xl shadow-lg px-3 py-2.5 text-[11px] min-w-[140px]"
+          className="absolute z-10 pointer-events-none bg-[#FCFCFC] border border-[#E5E5E5] rounded-[11px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-3 py-2.5 text-[11px] min-w-[140px]"
           style={{
             top: '12px',
             ...(tooltipSide === 'right'
@@ -381,19 +421,19 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
             ),
           }}
         >
-          <div className="font-bold text-ink mb-1.5">{month + 1}월 {hoverDay}일</div>
+          <div className="font-medium text-ink mb-1.5">{month + 1}월 {hoverDay}일</div>
           {showDeposit && (
             <div className="flex items-center gap-1.5 mb-1">
               <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#34D060' }} />
               <span className="text-gray-text">선결제</span>
-              <span className="ml-auto font-bold text-green">{hoverDepAmt > 0 ? `+${hoverDepAmt.toLocaleString()}원` : '—'}</span>
+              <span className="ml-auto font-medium text-[#017333]">{hoverDepAmt > 0 ? `+${hoverDepAmt.toLocaleString()}원` : '—'}</span>
             </div>
           )}
           {showOrder && (
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#C4CBD4' }} />
               <span className="text-gray-text">주문</span>
-              <span className="ml-auto font-bold text-ink">{hoverOrdAmt > 0 ? `-${hoverOrdAmt.toLocaleString()}원` : '—'}</span>
+              <span className="ml-auto font-medium text-ink">{hoverOrdAmt > 0 ? `-${hoverOrdAmt.toLocaleString()}원` : '—'}</span>
             </div>
           )}
         </div>
@@ -423,7 +463,7 @@ const UPGRADE_FEATURE_TABLE: { label: string; free: FVal; basic: FVal; pro: FVal
 ]
 function UpgradeCheck() {
   return (
-    <span style={{ display:'inline-flex', width:16, height:16, borderRadius:'50%', background:'#00DD67', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+    <span style={{ display:'inline-flex', width:16, height:16, borderRadius:'50%', background:'#017333', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
       <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.2 5.7L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </span>
   )
@@ -431,7 +471,7 @@ function UpgradeCheck() {
 function UpgradeFCell({ v, isSelected }: { v: FVal; isSelected: boolean }) {
   if (v === false) return <span style={{ color:'#D1D5DB', fontSize:13 }}>—</span>
   if (v === true) return (
-    <span style={{ display:'inline-flex', width:18, height:18, borderRadius:'50%', background: isSelected ? '#00DD67' : '#E5E7EB', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+    <span style={{ display:'inline-flex', width:18, height:18, borderRadius:'50%', background: isSelected ? '#017333' : '#E5E5E5', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
       <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.2 5.7L8 1" stroke={isSelected ? '#fff' : '#9CA3AF'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </span>
   )
@@ -483,7 +523,7 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
                 <h2 style={{ fontSize:22, fontWeight:700, color:'#1A1A1A', marginBottom:4 }}>요금제를 선택해주세요</h2>
                 <p style={{ fontSize:13, color:'#727272' }}>선결제 고객 팀 수에 맞게 추천해드려요. 언제든 변경 가능해요.</p>
               </div>
-              <button onClick={() => setOpen(false)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:20, color:'#9CA3AF', lineHeight:1, padding:'0 0 0 16px' }}>✕</button>
+              <button onClick={() => onClose()} style={{ background:'none', border:'none', cursor:'pointer', fontSize:20, color:'#9CA3AF', lineHeight:1, padding:'0 0 0 16px' }}>✕</button>
             </div>
 
             {/* 슬라이더 */}
@@ -498,10 +538,10 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
               <style>{`
                 #upg-teamCount { -webkit-appearance:none; appearance:none; width:100%; height:26px; background:transparent; cursor:pointer; outline:none; display:block; }
-                #upg-teamCount::-webkit-slider-runnable-track { height:5px; border-radius:99px; background:linear-gradient(to right,#00DD67 ${fillPct}%,#E1E7E2 ${fillPct}%); }
-                #upg-teamCount::-moz-range-track { height:5px; border-radius:99px; background:linear-gradient(to right,#00DD67 ${fillPct}%,#E1E7E2 ${fillPct}%); }
-                #upg-teamCount::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #00DD67; box-shadow:0 2px 6px rgba(4,64,32,.16); margin-top:-7.5px; }
-                #upg-teamCount::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #00DD67; }
+                #upg-teamCount::-webkit-slider-runnable-track { height:5px; border-radius:99px; background:linear-gradient(to right,#017333 ${fillPct}%,#E5E5E5 ${fillPct}%); }
+                #upg-teamCount::-moz-range-track { height:5px; border-radius:99px; background:linear-gradient(to right,#017333 ${fillPct}%,#E5E5E5 ${fillPct}%); }
+                #upg-teamCount::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #017333; box-shadow:0 2px 6px rgba(4,64,32,.16); margin-top:-7.5px; }
+                #upg-teamCount::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #017333; }
               `}</style>
               <input type="range" id="upg-teamCount" min={1} max={25} value={teamCount} step={1} onChange={handleRange} />
               <div style={{ display:'flex', justifyContent:'space-between', fontFamily:'"IBM Plex Mono",monospace', fontSize:10, color:'#79837C', marginTop:2 }}>
@@ -521,10 +561,10 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
                     <button
                       key={p.id}
                       onClick={() => setSelectedPlan(p.id)}
-                      style={{ border:`2px solid ${isSelected ? '#00DD67' : '#E1E7E2'}`, borderRadius:12, padding:'14px 13px', background: isSelected ? '#F0FBF5' : '#fff', textAlign:'left', cursor:'pointer', transition:'border-color 0.15s,background 0.15s', position:'relative', display:'flex', flexDirection:'column' }}
+                      style={{ border:`2px solid ${isSelected ? '#017333' : '#E5E5E5'}`, borderRadius:12, padding:'14px 13px', background: isSelected ? '#E6F4EC' : '#FCFCFC', textAlign:'left', cursor:'pointer', transition:'border-color 0.15s,background 0.15s', position:'relative', display:'flex', flexDirection:'column' }}
                     >
                       {isMatch && !isCurrent && (
-                        <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#00DD67', color:'#03301A', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>추천</span>
+                        <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#017333', color:'#FCFCFC', fontSize:10, fontWeight:500, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>추천</span>
                       )}
                       {isCurrent && (
                         <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#1A1A1A', color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>현 요금제</span>
@@ -563,7 +603,7 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
                   ))}
                 </div>
                 {UPGRADE_FEATURE_TABLE.map((row, i) => (
-                  <div key={row.label} style={{ display:'grid', gridTemplateColumns:'1fr repeat(4,80px)', borderBottom: i < UPGRADE_FEATURE_TABLE.length - 1 ? '1px solid #F0F0F0' : 'none', background: i % 2 === 0 ? '#fff' : '#FAFBFA' }}>
+                  <div key={row.label} style={{ display:'grid', gridTemplateColumns:'1fr repeat(4,80px)', borderBottom: i < UPGRADE_FEATURE_TABLE.length - 1 ? '1px solid #E5E5E5' : 'none', background: i % 2 === 0 ? '#FCFCFC' : '#F9F9F9' }}>
                     <div style={{ padding:'7px 12px', fontSize:12.5, color:'#3D3D3D' }}>{row.label}</div>
                     {(['free','basic','pro','max'] as PlanTier[]).map(pid => (
                       <div key={pid} style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'7px 0' }}>
@@ -597,21 +637,21 @@ export function UpgradeGate() {
   return (
     <>
       <div className="h-full flex items-center justify-center bg-gray-bg p-6">
-        <div className="bg-white rounded-2xl shadow-sm px-10 py-12 flex flex-col items-center gap-4 text-center max-w-sm w-full">
+        <div className="bg-[#FCFCFC] rounded-[14px] border border-[#E5E5E5] px-10 py-12 flex flex-col items-center gap-4 text-center max-w-sm w-full">
           <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
             </svg>
           </div>
           <div>
-            <p className="text-[17px] font-bold text-ink mb-1">베이직 플랜부터 이용 가능해요</p>
+            <p className="text-[17px] font-semibold text-[#1E1E1E] mb-1">베이직 플랜부터 이용 가능해요</p>
             <p className="text-[13px] text-gray-text leading-relaxed">
-              월별 충전·주문 내역, 메뉴별 상세 주문 분석,<br />거래처별 매출 분석을 확인할 수 있어요.
+              월별 충전·주문 내역, 메뉴별 주문액,<br />거래처별 기여도를 확인할 수 있어요.
             </p>
           </div>
           <button
             onClick={() => setOpen(true)}
-            className="mt-2 px-6 py-2.5 bg-[#00DD67] text-[#1A1A1A] rounded-xl font-bold text-[13px] hover:bg-[#00BB55] transition-colors"
+            className="mt-2 px-6 h-[44px] bg-[#2C261F] text-[#F9F9F9] rounded-[10px] font-medium text-[13px] hover:opacity-90 transition-opacity"
           >
             플랜 업그레이드
           </button>
@@ -626,10 +666,11 @@ export default function Sales() {
   const { storeId, plan } = useStore()
   const now = new Date()
 
-  // 무료 플랜이면 정산 페이지 전체 잠금
-  if (!PLAN_LIMITS[plan].analytics) {
-    return <UpgradeGate />
-  }
+  // 무료 플랜이면 정산 페이지 전체 잠금.
+  // ⚠️ 이 return 은 반드시 아래 훅들을 "전부 호출한 뒤"에 해야 한다. 위로 올리면
+  //    플랜이 바뀌는 순간 렌더마다 훅 개수가 달라져서 React 가 트리를 통째로 버린다
+  //    ("Rendered more hooks than during the previous render" → 흰 화면).
+  const locked = !PLAN_LIMITS[plan].analytics
 
   // ── 월 상태 ───────────────────────────────────────────────────────────────
   const [year,  setYear]  = useState(now.getFullYear())
@@ -641,6 +682,12 @@ export default function Sales() {
   const [accounts, setAccounts] = useState<DbAccount[]>([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState(false)
+  // 지난달 합계 — 세 지표의 "▲ 지난달 +12%" 용. 금액만 필요해서 행을 들고 오지 않는다.
+  // 제외 필터(excludedAccounts)는 적용하지 않는다: 비교 대상이 달라지면 증감률이 거짓이 된다.
+  const [prevTotals, setPrevTotals] = useState<{ deposit: number; order: number } | null>(null)
+  // 선택한 달의 **마감 잔액** — 그 달 말일 23:59 까지의 원장 누적.
+  // '지금 잔액'이 아니다: 6월을 보고 있으면 6월 30일 기준이어야 그 달 숫자와 말이 맞는다.
+  const [closingBalance, setClosingBalance] = useState<number | null>(null)
 
   // ── 캘린더 필터 ───────────────────────────────────────────────────────────
   const [filterAccount, setFilterAccount] = useState<string | null>(null)
@@ -657,6 +704,8 @@ export default function Sales() {
   // ── 거래처 제외 필터 ──────────────────────────────────────────────────────
   const [excludedAccounts,   setExcludedAccounts]   = useState<Set<string>>(new Set())
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
+  // 카드는 '지금' 한 점만 보여준다. 쌓이는 중인지 줄어드는 중인지는 모달에서.
+  const [balanceModalOpen,   setBalanceModalOpen]   = useState(false)
   const filterDropdownRef = useRef<HTMLDivElement>(null)
 
   const { setHeaderRight } = useHeaderSlot()
@@ -721,6 +770,54 @@ export default function Sales() {
         items: (o.order_items ?? []).map((i: any) => ({ menu_name: i.menu_name, quantity: i.quantity })),
       })))
       setAccounts(accData ?? [])
+
+      // 지난달 — 같은 거래처 집합으로 금액만 합산한다
+      if (accountCodes.length > 0) {
+        const pm = month === 0 ? { y: year - 1, m: 11 } : { y: year, m: month - 1 }
+        const prevRange = monthRangeUtc(pm.y, pm.m)
+        const [pDep, pOrd] = await Promise.all([
+          supabase.from('deposits')
+            .select('amount')
+            .in('account_code', accountCodes)
+            .gte('created_at', prevRange.start).lt('created_at', prevRange.end),
+          supabase.from('orders')
+            .select('total_amount')
+            .eq('store_id', storeId).neq('status', '취소')
+            .in('account_code', accountCodes)
+            .gte('ordered_at', prevRange.start).lt('ordered_at', prevRange.end),
+        ])
+        if (thisId !== fetchIdRef.current) return
+        setPrevTotals({
+          deposit: (pDep.data ?? []).reduce((acc: number, r: { amount: number | null }) => acc + (r.amount ?? 0), 0),
+          order:   (pOrd.data ?? []).reduce((acc: number, r: { total_amount: number | null }) => acc + (r.total_amount ?? 0), 0),
+        })
+      } else {
+        setPrevTotals({ deposit: 0, order: 0 })
+      }
+
+      // ── 월말 마감 잔액 ──
+      // 잔액 스냅샷(deposits.balance_after)은 대부분 0이라 못 쓴다(lib/prepaid-ledger.ts 주석).
+      // 선택한 달 말일까지의 원장을 전부 누적한다: 충전 − 주문 + 수기조정.
+      if (accountCodes.length > 0) {
+        const monthEnd = new Date(Date.UTC(year, month + 1, 1) - KST_OFFSET_MS).toISOString()
+        const [cDep, cOrd, cAdj] = await Promise.all([
+          supabase.from('deposits').select('amount')
+            .in('account_code', accountCodes).lt('created_at', monthEnd),
+          supabase.from('orders').select('total_amount')
+            .eq('store_id', storeId).neq('status', '취소').eq('is_deleted', false)
+            .in('account_code', accountCodes).lt('ordered_at', monthEnd),
+          supabase.from('balance_adjustments').select('amount')
+            .in('account_code', accountCodes).lt('created_at', monthEnd),
+        ])
+        if (thisId !== fetchIdRef.current) return
+        const sum = (rows: { amount?: number | null; total_amount?: number | null }[] | null, key: 'amount' | 'total_amount') =>
+          (rows ?? []).reduce((acc, r) => acc + (r[key] ?? 0), 0)
+        setClosingBalance(
+          sum(cDep.data, 'amount') - sum(cOrd.data, 'total_amount') + sum(cAdj.data, 'amount'),
+        )
+      } else {
+        setClosingBalance(0)
+      }
     } catch {
       if (thisId !== fetchIdRef.current) return
       setError(true)
@@ -818,8 +915,8 @@ export default function Sales() {
           onClick={() => setFilterDropdownOpen(v => !v)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-semibold transition-colors ${
             excludedAccounts.size > 0
-              ? 'border-orange-300 bg-orange-50 text-orange-700'
-              : 'border-gray-border text-gray-text bg-white hover:bg-gray-bg'
+              ? 'border-[#FF8418] bg-[#FF84181F] text-[#FF8418]'
+              : 'border-[#D9D9D9] text-[#787878] bg-[#FCFCFC] hover:bg-[#F2F2F2]'
           }`}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -835,30 +932,30 @@ export default function Sales() {
         </button>
 
         {filterDropdownOpen && (
-          <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-border rounded-xl shadow-lg w-[230px] overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-50 bg-[#FCFCFC] border border-[#E5E5E5] rounded-[11px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[230px] overflow-hidden">
             {/* 전체 선택 / 해제 */}
             <div
               onClick={() => setExcludedAccounts(excludedAccounts.size === 0
                 ? new Set(accounts.map(a => a.account_code))
                 : new Set()
               )}
-              className="flex items-center gap-2.5 px-3 py-2.5 border-b border-gray-border/50 hover:bg-gray-bg cursor-pointer"
+              className="flex items-center gap-2.5 px-3 py-2.5 border-b border-[#E5E5E5]/50 hover:bg-gray-bg cursor-pointer"
             >
               <div className={`w-[16px] h-[16px] rounded-[4px] border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                 excludedAccounts.size === 0
-                  ? 'bg-[#00DD67] border-[#00DD67]'
+                  ? 'bg-[#BDB4A7] border-[#BDB4A7]'
                   : excludedAccounts.size < accounts.length
-                    ? 'bg-white border-gray-border'
-                    : 'bg-white border-gray-border'
+                    ? 'bg-[#FCFCFC] border-[#D9D9D9]'
+                    : 'bg-[#FCFCFC] border-[#D9D9D9]'
               }`}>
                 {excludedAccounts.size === 0 && (
                   <svg width="9" height="6" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 )}
                 {excludedAccounts.size > 0 && excludedAccounts.size < accounts.length && (
-                  <div className="w-2 h-0.5 bg-gray-400 rounded" />
+                  <div className="w-2 h-0.5 bg-[#787878] rounded" />
                 )}
               </div>
-              <span className="text-[13px] font-bold text-ink">전체 선택</span>
+              <span className="text-[13px] font-medium text-ink">전체 선택</span>
             </div>
             {/* 개별 거래처 */}
             <div className="max-h-[260px] overflow-y-auto">
@@ -876,7 +973,7 @@ export default function Sales() {
                     className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-bg cursor-pointer"
                   >
                     <div className={`w-[16px] h-[16px] rounded-[4px] border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      included ? 'bg-[#00DD67] border-[#00DD67]' : 'bg-white border-gray-border'
+                      included ? 'bg-[#BDB4A7] border-[#BDB4A7]' : 'bg-[#FCFCFC] border-[#D9D9D9]'
                     }`}>
                       {included && (
                         <svg width="9" height="6" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -1012,6 +1109,35 @@ export default function Sales() {
     deposit: accountStats.reduce((s, r) => s + r.monthDeposit, 0),
     order:   accountStats.reduce((s, r) => s + r.monthOrder, 0),
   }
+
+  // 세 번째 지표 — "앞으로 음식으로 갚아야 할 빚".
+  // 충전액·주문액은 그 달의 일이지만 이 숫자는 **지금 시점의 실시간 잔액 합계**다.
+  // 월을 넘겨 봐도 같은 값이 나오는 게 맞다. 과거 시점의 잔액 합계는 저장해 두지 않는다.
+  const totalLiability = useMemo(
+    () => accounts
+      .filter(a => !excludedAccounts.has(a.account_code))
+      .reduce((s, a) => s + (a.current_balance ?? 0), 0),
+    [accounts, excludedAccounts],
+  )
+
+  // 거래처별 기여도 — 비중·주문수·상태. 거래처 몇 곳이 매출 대부분을 만들기 때문에
+  // "상위 몇 곳이 몇 %"가 보여야 한 곳을 잃는 게 어떤 의미인지 알 수 있다.
+  const contribution = useMemo(() => {
+    const cntByAcc: Record<string, number> = {}
+    const lastByAcc: Record<string, string> = {}
+    for (const o of visibleOrders) {
+      cntByAcc[o.account_code] = (cntByAcc[o.account_code] ?? 0) + 1
+      const prev = lastByAcc[o.account_code]
+      if (!prev || o.ordered_at > prev) lastByAcc[o.account_code] = o.ordered_at
+    }
+    const totalOrder = accountStats.reduce((s, r) => s + r.monthOrder, 0)
+    return accountStats.map(r => ({
+      ...r,
+      orderCount: cntByAcc[r.acc.account_code] ?? 0,
+      share:      totalOrder > 0 ? (r.monthOrder / totalOrder) * 100 : 0,
+      lastOrderAt: lastByAcc[r.acc.account_code] ?? null,
+    }))
+  }, [accountStats, visibleOrders])
   const calCells = useMemo<(number | null)[]>(() => {
     const cells: (number | null)[] = [
       ...Array(firstDow(year, month)).fill(null),
@@ -1027,6 +1153,9 @@ export default function Sales() {
   const todayKstDow = isCurrentMonth ? DAY_NAMES[new Date(now.getTime() + KST_OFFSET_MS).getUTCDay()] : ''
 
   // ── 렌더 ──────────────────────────────────────────────────────────────────
+  // 플랜 잠금 판정은 맨 위에서 하되 return 은 여기서 — 위의 훅들은 플랜과 무관하게 매번 돈다
+  if (locked) return <UpgradeGate />
+
   return (
     <div className="h-full flex flex-col bg-gray-bg overflow-hidden p-3">
 
@@ -1038,14 +1167,14 @@ export default function Sales() {
       ) : error ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-text">
           <div className="text-[40px]">⚠️</div>
-          <div className="text-[16px] font-bold text-ink">데이터를 불러오지 못했습니다</div>
+          <div className="text-[16px] font-medium text-ink">데이터를 불러오지 못했습니다</div>
           <div className="text-[13px]">네트워크 상태를 확인하고 다시 시도해주세요.</div>
-          <button onClick={fetchData} className="mt-1 px-5 py-2 rounded-lg bg-ink text-white text-[13px] font-bold hover:bg-ink/80">
+          <button onClick={fetchData} className="mt-1 px-5 py-2 rounded-lg bg-ink text-white text-[13px] font-medium hover:bg-ink/80">
             다시 시도
           </button>
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden bg-white rounded-xl shadow-sm">
+        <div className="flex-1 flex overflow-hidden">
 
           {/* ── 좌측 메인 ── */}
           <div className="flex-1 overflow-y-auto px-8 py-5 space-y-4 min-w-0">
@@ -1054,32 +1183,39 @@ export default function Sales() {
             <div className="flex items-center gap-2">
               <button
                 onClick={prevMonth}
-                className="w-7 h-7 rounded-lg bg-white hover:bg-gray-200 border border-gray-border flex items-center justify-center text-[16px] text-ink transition-colors"
+                className="w-[28px] h-[28px] rounded-[8px] bg-[#FCFCFC] hover:bg-[#F2F2F2] border border-[#D9D9D9] flex items-center justify-center text-[15px] text-[#787878] transition-colors"
               >‹</button>
-              <span className="text-[14px] font-extrabold text-ink">{monthLabel}</span>
+              <span className="text-[14px] font-semibold text-[#1E1E1E]">{monthLabel}</span>
               <button
                 onClick={nextMonth}
                 disabled={isCurrentMonth}
-                className="w-7 h-7 rounded-lg bg-white hover:bg-gray-200 border border-gray-border flex items-center justify-center text-[16px] text-ink transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-[28px] h-[28px] rounded-[8px] bg-[#FCFCFC] hover:bg-[#F2F2F2] border border-[#D9D9D9] flex items-center justify-center text-[15px] text-[#787878] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >›</button>
             </div>
 
             {/* ── 요약 카드 ── */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white rounded-2xl px-3 py-3 shadow-sm">
+            {/* 요약 카드 — 고객 > 고객 현황의 StatCard 와 같은 규칙:
+                회색 박스(#F2F2F2 · r10), 라벨 12/medium, 숫자는 굵게 하지 않고 medium.
+                전엔 흰 카드 + 그림자 + extrabold 28px 라 이 화면만 톤이 떠 있었다. */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[12px] font-semibold text-gray-text mb-0.5 flex items-center gap-1.5 flex-wrap">
+                    <div className="text-[12px] font-medium text-[#2C261F] mb-[6px] flex items-center gap-1.5 flex-wrap">
                       <span>{MONTH_NAMES[month]} 선결제 매출</span>
                       {filterName && (
                         <>
                           <span className="text-gray-border">·</span>
-                          <span className="text-green">{filterName}</span>
+                          <span className="text-[#017333]">{filterName}</span>
                           <button onClick={() => setFilterAccount(null)} className="text-[10px] text-gray-text hover:text-ink bg-gray-100 rounded px-1.5 py-0.5">필터 해제</button>
                         </>
                       )}
                     </div>
-                    <div className="text-[28px] font-extrabold text-green break-all">+{won(monthTotalDeposit)}</div>
+                    <div className="text-[24px] font-medium text-[#2C261F] break-all">+{won(monthTotalDeposit)}</div>
+                    {/* 필터가 걸리면 지난달 합계와 비교 대상이 달라서 증감을 숨긴다 */}
+                    {!filterName && excludedAccounts.size === 0 && (
+                      <div className="mt-[3px]"><DeltaBadge current={monthTotalDeposit} previous={prevTotals?.deposit ?? null} /></div>
+                    )}
                     {(() => {
                       if (filterName) return null
                       const visibleAccounts = accounts.filter(a => !excludedAccounts.has(a.account_code))
@@ -1087,7 +1223,7 @@ export default function Sales() {
                       const total   = visibleAccounts.length
                       if (total === 0) return null
                       if (charged === 0) return <div className="text-[11px] text-gray-text mt-1">{MONTH_NAMES[month]} 충전 거래처 없음</div>
-                      if (charged === total) return <div className="text-[11px] text-green font-semibold mt-1">전체 {total}곳 모두 충전</div>
+                      if (charged === total) return <div className="text-[11px] text-[#017333] font-semibold mt-1">전체 {total}곳 모두 충전</div>
                       return <div className="text-[11px] text-gray-text mt-1">전체 {total}곳 중 {charged}곳 충전</div>
                     })()}
                   </div>
@@ -1105,11 +1241,11 @@ export default function Sales() {
                               .map(([day, amt]) => (
                                 <div key={day} className="flex justify-between gap-4 text-[10px]">
                                   <span className="text-gray-text">{month + 1}월 {day}일</span>
-                                  <span className="font-bold text-green">+{won(amt)}</span>
+                                  <span className="font-medium text-[#017333]">+{won(amt)}</span>
                                 </div>
                               ))}
-                            <div className="border-t border-gray-border/50 pt-1 mt-1 flex justify-between text-[10px] font-bold">
-                              <span>합계</span><span className="text-green">+{won(d.total)}</span>
+                            <div className="border-t border-[#E5E5E5] pt-1 mt-1 flex justify-between text-[10px] font-medium">
+                              <span>합계</span><span className="text-[#017333]">+{won(d.total)}</span>
                             </div>
                           </div>
                         ),
@@ -1118,20 +1254,23 @@ export default function Sales() {
                   )}
                 </div>
               </div>
-              <div className="bg-white rounded-2xl px-3 py-3 shadow-sm">
+              <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[12px] font-semibold text-gray-text mb-0.5 flex items-center gap-1.5 flex-wrap">
+                    <div className="text-[12px] font-medium text-[#2C261F] mb-[6px] flex items-center gap-1.5 flex-wrap">
                       <span>{MONTH_NAMES[month]} 주문액</span>
                       {filterName && (
                         <>
                           <span className="text-gray-border">·</span>
-                          <span className="text-green">{filterName}</span>
+                          <span className="text-[#017333]">{filterName}</span>
                         </>
                       )}
                     </div>
-                    <div className="text-[28px] font-extrabold text-ink break-all">-{won(monthTotalOrder)}</div>
-                    <div className="text-[11px] text-gray-text mt-1">
+                    <div className="text-[24px] font-medium text-[#2C261F] break-all">-{won(monthTotalOrder)}</div>
+                    {!filterName && excludedAccounts.size === 0 && (
+                      <div className="mt-[3px]"><DeltaBadge current={monthTotalOrder} previous={prevTotals?.order ?? null} /></div>
+                    )}
+                    <div className="text-[11px] font-normal text-[#787878] mt-[6px]">
                       취소 주문 제외
                     </div>
                   </div>
@@ -1149,10 +1288,10 @@ export default function Sales() {
                               .map(([day, amt]) => (
                                 <div key={day} className="flex justify-between gap-4 text-[10px]">
                                   <span className="text-gray-text">{month + 1}월 {day}일</span>
-                                  <span className="font-bold text-ink">-{won(amt)}</span>
+                                  <span className="font-medium text-ink">-{won(amt)}</span>
                                 </div>
                               ))}
-                            <div className="border-t border-gray-border/50 pt-1 mt-1 flex justify-between text-[10px] font-bold">
+                            <div className="border-t border-[#E5E5E5] pt-1 mt-1 flex justify-between text-[10px] font-medium">
                               <span>합계</span><span>-{won(d.total)}</span>
                             </div>
                           </div>
@@ -1162,12 +1301,42 @@ export default function Sales() {
                   )}
                 </div>
               </div>
+
+              {/* 세 번째 지표 — **그 달 마감 잔액**. 이 화면의 핵심이다.
+                  충전받은 돈은 이미 통장에 있지만 아직 번 돈이 아니다 — 앞으로 음식으로
+                  갚아야 할 빚이다.
+                  '지금 잔액'이 아니라 선택한 달 말일 기준으로 낸다: 6월을 보고 있는데
+                  10월 잔액이 떠 있으면 위 두 카드(6월 충전·주문)와 말이 맞지 않는다.
+                  이번 달을 보고 있으면 결국 지금 시점이라 둘이 같아진다. */}
+              <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-[8px] mb-[6px]">
+                    <span className="text-[12px] font-medium text-[#2C261F]">
+                      {isCurrentMonth ? '현재 선결제 잔액' : `${MONTH_NAMES[month]} 마감 잔액`}
+                    </span>
+                    <button
+                      onClick={() => setBalanceModalOpen(true)}
+                      className="pressable-tab h-[24px] px-[8px] rounded-[7px] bg-[#E8E4E2] text-[#6A635E] text-[11px] font-normal flex-shrink-0"
+                    >
+                      월별 잔액
+                    </button>
+                  </div>
+                  <div className={`text-[24px] font-medium break-all ${(closingBalance ?? 0) < 0 ? 'text-danger' : 'text-[#2C261F]'}`}>
+                    {closingBalance == null ? '—' : won(closingBalance)}
+                  </div>
+                  <div className="text-[11px] font-normal text-[#787878] mt-[6px] leading-relaxed">
+                    {isCurrentMonth
+                      ? '음식으로 갚아야 할 몫'
+                      : `${year}.${String(month + 1).padStart(2, '0')}.${new Date(year, month + 1, 0).getDate()} 기준`}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* ── 일자별 매출 그래프 ── */}
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-3 py-2.5 border-b border-gray-border flex items-center justify-between">
-                <div className="text-[13px] font-extrabold text-ink">일자별 매출</div>
+            <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-[#E5E5E5] flex items-center justify-between">
+                <div className="text-[13px] font-medium text-[#2C261F]">일자별 매출</div>
                 <div className="flex items-center gap-2 text-[11px]">
                   <button
                     onClick={() => {
@@ -1208,16 +1377,16 @@ export default function Sales() {
             </div>
 
             {/* ── 충전 캘린더 ── */}
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-3 py-2.5 border-b border-gray-border flex items-start justify-between">
+            <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-[#E5E5E5] flex items-start justify-between">
                 <div>
-                  <div className="text-[13px] font-extrabold text-ink">충전 캘린더</div>
+                  <div className="text-[13px] font-medium text-[#2C261F]">충전 캘린더</div>
                   <div className="text-[11px] text-gray-text mt-0.5">
                     클릭하여 상세 내역을 확인해보세요
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                  <div className="text-[12px] font-extrabold text-ink">
+                  <div className="text-[12px] font-semibold text-[#1E1E1E]">
                     {year}년 {MONTH_NAMES[month]}{isCurrentMonth ? ` ${todayKstDay}일 (${todayKstDow})` : ''}
                   </div>
                   <div className="text-[11px] text-gray-text">{month + 1}월 1일 ~ {month + 1}월 {daysInMonth(year, month)}일</div>
@@ -1226,16 +1395,16 @@ export default function Sales() {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-7 border-b border-gray-border/50">
+              <div className="grid grid-cols-7 border-b border-[#E5E5E5]/50">
                 {DAY_NAMES.map((d, i) => (
-                  <div key={d} className={`py-2 text-center text-[11px] font-bold
-                    ${i === 0 ? 'text-danger' : i === 6 ? 'text-blue-500' : 'text-gray-text'}`}>{d}</div>
+                  <div key={d} className={`py-2 text-center text-[11px] font-medium
+                    ${i === 0 ? 'text-[#FF676F]' : i === 6 ? 'text-[#3374FF]' : 'text-[#ADADAD]'}`}>{d}</div>
                 ))}
               </div>
               <div className="grid grid-cols-7">
                 {calCells.map((day, i) => {
                   if (!day) return (
-                    <div key={`empty-${i}`} className={`min-h-[60px] border-b border-gray-border/30 bg-gray-bg/40 ${i % 7 !== 6 ? 'border-r border-gray-border/30' : ''}`} />
+                    <div key={`empty-${i}`} className={`min-h-[60px] border-b border-[#E5E5E5]/30 bg-gray-bg/40 ${i % 7 !== 6 ? 'border-r border-gray-border/30' : ''}`} />
                   )
                   const amount      = dayAmountMap[day]
                   const orderAmount = dayOrderMap[day]
@@ -1248,20 +1417,20 @@ export default function Sales() {
                       key={day}
                       onClick={() => { if (isClickable) setSelectedDay(isSelected ? null : day) }}
                       className={[
-                        'min-h-[60px] p-1.5 border-b border-gray-border/30 flex flex-col transition-colors',
+                        'min-h-[60px] p-1.5 border-b border-[#E5E5E5]/30 flex flex-col transition-colors',
                         i % 7 !== 6 ? 'border-r border-gray-border/30' : '',
                         isClickable ? 'cursor-pointer' : '',
-                        isSelected ? 'bg-green-soft' : isClickable ? 'hover:bg-green-soft/40' : '',
+                        isSelected ? 'bg-[#E8E4E2]' : isClickable ? 'hover:bg-[#F2F2F2]' : '',
                       ].join(' ')}
                     >
                       {isToday ? (
-                        <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] bg-gray-200 text-[12px] font-semibold flex-shrink-0 ${dow === 0 ? 'text-danger' : dow === 6 ? 'text-blue-500' : 'text-ink'}`}>{day}</span>
+                        <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] bg-[#F2F2F2] text-[12px] font-semibold flex-shrink-0 ${dow === 0 ? 'text-[#FF676F]' : dow === 6 ? 'text-[#3374FF]' : 'text-ink'}`}>{day}</span>
                       ) : (
-                        <span className={`text-[12px] font-semibold leading-none flex-shrink-0 ${dow === 0 ? 'text-danger' : dow === 6 ? 'text-blue-500' : 'text-ink'}`}>{day}</span>
+                        <span className={`text-[12px] font-semibold leading-none flex-shrink-0 ${dow === 0 ? 'text-[#FF676F]' : dow === 6 ? 'text-[#3374FF]' : 'text-ink'}`}>{day}</span>
                       )}
                       {(amount || orderAmount) ? (
                         <div className="mt-auto space-y-0.5">
-                          {amount ? <div className="text-[10px] font-bold leading-tight text-green">+{won(amount)} <span className="font-normal opacity-70">({dayDepositCountMap[day] ?? 0})</span></div> : null}
+                          {amount ? <div className="text-[10px] font-medium leading-tight text-[#017333]">+{won(amount)} <span className="font-normal opacity-70">({dayDepositCountMap[day] ?? 0})</span></div> : null}
                           {orderAmount ? <div className="text-[10px] font-normal leading-tight text-gray-text">-{won(orderAmount)} <span className="opacity-70">({dayOrderCountMap[day] ?? 0})</span></div> : null}
                         </div>
                       ) : null}
@@ -1272,36 +1441,39 @@ export default function Sales() {
             </div>
 
             {/* ── 거래처별 정산 테이블 ── */}
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-3 py-2.5 border-b border-gray-border">
-                <div className="text-[13px] font-extrabold text-ink">거래처별 정산</div>
+            <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-[#E5E5E5]">
+                <div className="text-[13px] font-medium text-[#2C261F]">거래처별 정산</div>
                 <div className="text-[11px] text-gray-text mt-0.5">
-                  충전·주문액은 <strong className="text-ink">{monthLabel} 기준</strong>이며 현재 잔액은 <strong className="text-ink">실시간</strong> ({now.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} 기준)입니다. 행을 클릭하면 캘린더가 해당 거래처로 필터됩니다.
+                  충전·주문액은 <strong className="text-ink">{monthLabel} 기준</strong>이며 현재 잔액은 <strong className="text-ink">실시간</strong> ({now.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} 기준)입니다. <strong className="text-ink">비중</strong>은 이번 달 전체 주문액 중 그 거래처의 몫이에요. 행을 클릭하면 캘린더가 해당 거래처로 필터됩니다.
                 </div>
               </div>
               {accountStats.length === 0 ? (
                 <div className="px-5 py-10 text-center">
                   <div className="text-[28px] mb-2">📭</div>
-                  <div className="text-[13px] font-bold text-ink">거래 내역이 없습니다</div>
+                  <div className="text-[13px] font-medium text-ink">거래 내역이 없습니다</div>
                   <div className="text-[11px] text-gray-text mt-1">{monthLabel}에 충전하거나 주문한 거래처가 없고<br />잔액이 남은 거래처도 없습니다</div>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-border bg-gray-bg/50">
-                        <th className="px-5 py-2.5 text-left  text-[11px] font-bold text-gray-text">거래처</th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-bold text-gray-text whitespace-nowrap">{MONTH_NAMES[month]} 선결제 매출</th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-bold text-gray-text whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
-                        <th className="px-5 py-2.5 text-right text-[11px] font-bold text-gray-text whitespace-nowrap">현재 잔액</th>
+                      <tr className="bg-[#D7D2CE] border-b border-[#C1B7AA]">
+                        <th className="px-5 py-2.5 text-left  text-[11px] font-medium text-gray-text">거래처</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">{MONTH_NAMES[month]} 선결제 매출</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
+                        <th className="px-3 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap" title="이번 달 전체 주문액 중 이 거래처가 차지하는 몫">비중</th>
+                        <th className="px-3 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">주문수</th>
+                        <th className="px-5 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">현재 잔액</th>
+                        <th className="px-4 py-2.5 text-left  text-[11px] font-medium text-gray-text whitespace-nowrap">상태</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-border/40">
-                      {accountStats.map(({ acc, monthDeposit, monthOrder }) => {
+                    <tbody className="divide-y divide-[#E5E5E5]">
+                      {contribution.map(({ acc, monthDeposit, monthOrder, orderCount, share, lastOrderAt }) => {
                         const isFiltered  = filterAccount === acc.account_code
                         const isPanelOpen = panelAccount?.account_code === acc.account_code
                         const balNeg = acc.current_balance < 0
-                        const balLow = !balNeg && acc.current_balance < acc.warning_threshold
+                        const idle   = daysSinceIso(lastOrderAt)
                         return (
                           <tr
                             key={acc.account_code}
@@ -1317,7 +1489,7 @@ export default function Sales() {
                                 setHistoryMonths([])
                               }
                             }}
-                            className={`cursor-pointer transition-colors ${isPanelOpen ? 'bg-green-soft' : isFiltered ? 'bg-green-soft/50' : 'hover:bg-gray-bg'}`}
+                            className={`cursor-pointer transition-colors ${isPanelOpen ? 'bg-[#E8E4E2]' : isFiltered ? 'bg-[#F2F2F2]' : 'hover:bg-[#F2F2F2]'}`}
                           >
                             <td className="px-5 py-2.5">
                               <div className="flex items-center gap-2 flex-wrap">
@@ -1326,7 +1498,7 @@ export default function Sales() {
                               {acc.organization_name && acc.organization_name !== acc.account_name && <div className="text-[11px] text-gray-text">{acc.organization_name}</div>}
                             </td>
                             <td className="px-4 py-2.5 text-right">
-                              <span className={`text-[12px] font-semibold ${monthDeposit > 0 ? 'text-green' : 'text-gray-text'}`}>
+                              <span className={`text-[12px] font-semibold ${monthDeposit > 0 ? 'text-[#017333]' : 'text-gray-text'}`}>
                                 {monthDeposit > 0 ? won(monthDeposit) : '—'}
                               </span>
                             </td>
@@ -1335,23 +1507,54 @@ export default function Sales() {
                                 {monthOrder > 0 ? won(monthOrder) : '—'}
                               </span>
                             </td>
+                            <td className="px-3 py-2.5 text-right">
+                              {/* 막대 + 숫자 — 상위 몇 곳이 매출 대부분이라는 게 눈에 보여야 한다 */}
+                              {monthOrder > 0 ? (
+                                <div className="flex items-center justify-end gap-[6px]">
+                                  <span className="w-[34px] h-[4px] rounded-full bg-[#E5E5E5] overflow-hidden flex-shrink-0">
+                                    <span className="block h-full rounded-full bg-[#6A635E]" style={{ width: `${Math.min(100, share)}%` }} />
+                                  </span>
+                                  <span className="text-[12px] font-normal text-[#787878] tabular-nums w-[30px]">{Math.round(share)}%</span>
+                                </div>
+                              ) : <span className="text-[12px] text-gray-text">—</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <span className="text-[12px] font-normal text-[#787878]">
+                                {orderCount > 0 ? `${orderCount}건` : '—'}
+                              </span>
+                            </td>
                             <td className="px-5 py-2.5 text-right">
-                              <span className={`text-[12px] font-bold ${balNeg ? 'text-danger' : balLow ? 'text-orange-500' : 'text-ink'}`}>
+                              <span className={`text-[12px] font-medium ${balNeg ? 'text-danger' : 'text-ink'}`}>
                                 {won(acc.current_balance)}
                               </span>
-                              {balNeg && <div className="text-[10px] text-danger font-medium">다음 충전 시 정산</div>}
-                              {balLow && <div className="text-[10px] text-orange-500 font-medium">잔액 부족 임박</div>}
+                              {balNeg && <div className="text-[10px] text-danger font-normal">다음 충전 시 정산</div>}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {/* 상태 — 기획엔 '⚠ 잔액부족'이 있었지만 경고 기준 개념을 없앴으므로
+                                  '잔액 음수'와 '무주문'만 남긴다. 둘 다 아니면 정상. */}
+                              {balNeg ? (
+                                <StatusTag label="잔액 음수" color="#C92A2A" />
+                              ) : idle != null && idle >= 14 ? (
+                                <StatusTag label={`${idle}일 무주문`} color="#FF8418" />
+                              ) : (
+                                <span className="text-[11px] font-normal text-[#ADADAD]">정상</span>
+                              )}
                             </td>
                           </tr>
                         )
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-border bg-gray-bg/50">
-                        <td className="px-5 py-2.5 text-[11px] font-bold text-gray-text">합계 ({accountStats.length}개 거래처)</td>
-                        <td className="px-4 py-2.5 text-right text-[12px] font-extrabold text-green">{won(tableTotals.deposit)}</td>
-                        <td className="px-4 py-2.5 text-right text-[12px] font-extrabold text-ink">{won(tableTotals.order)}</td>
-                        <td className="px-5 py-2.5" />
+                      <tr className="border-t border-[#C1B7AA] bg-[#F2F2F2]">
+                        <td className="px-5 py-2.5 text-[11px] font-medium text-gray-text">합계 ({contribution.length}개 거래처)</td>
+                        <td className="px-4 py-2.5 text-right text-[12px] font-medium text-[#017333]">{won(tableTotals.deposit)}</td>
+                        <td className="px-4 py-2.5 text-right text-[12px] font-medium text-[#1E1E1E]">{won(tableTotals.order)}</td>
+                        <td className="px-3 py-2.5 text-right text-[11px] font-normal text-[#ADADAD]">100%</td>
+                        <td className="px-3 py-2.5 text-right text-[12px] font-normal text-[#787878]">
+                          {contribution.reduce((n, r) => n + r.orderCount, 0)}건
+                        </td>
+                        <td className="px-5 py-2.5 text-right text-[12px] font-medium text-[#1E1E1E]">{won(totalLiability)}</td>
+                        <td className="px-4 py-2.5" />
                       </tr>
                     </tfoot>
                   </table>
@@ -1365,14 +1568,14 @@ export default function Sales() {
           {/* ── 우측 패널 ── */}
           {panelAccount ? (
             /* ── 거래처 상세 패널 ── */
-            <div className="w-[280px] flex-shrink-0 border-l border-gray-border bg-white flex flex-col overflow-hidden">
+            <div className="w-[280px] flex-shrink-0 ml-3 rounded-[11px] border border-[#E5E5E5] bg-[#FCFCFC] flex flex-col overflow-hidden">
               {/* 헤더 */}
-              <div className="px-4 py-3 border-b border-gray-border flex items-start justify-between flex-shrink-0">
+              <div className="px-[14px] py-[12px] border-b border-[#E8E4E2] flex items-start justify-between flex-shrink-0">
                 <div className="min-w-0">
-                  <div className="text-[13px] font-extrabold text-ink truncate">{panelAccount.account_name}</div>
+                  <div className="text-[13px] font-semibold text-[#1E1E1E] truncate">{panelAccount.account_name}</div>
                   <div className="text-[11px] text-gray-text mt-0.5">
                     현재 잔액&nbsp;
-                    <span className="font-bold text-gray-text">
+                    <span className="font-medium text-gray-text">
                       {won(panelAccount.current_balance)}
                     </span>
                   </div>
@@ -1396,22 +1599,22 @@ export default function Sales() {
                     const isExpanded = expandedMonthKey === hm.key
                     const hmLabel   = `${hm.year}년 ${MONTH_NAMES[hm.month]}`
                     return (
-                      <div key={hm.key} className="border-b border-gray-border/50">
+                      <div key={hm.key} className="border-b border-[#E8E4E2]">
                         {/* 월 헤더 행 — 클릭으로 펼침/접음 */}
                         <button
                           onClick={() => setExpandedMonthKey(isExpanded ? null : hm.key)}
-                          className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-gray-bg transition-colors text-left"
+                          className="pressable-row w-full px-[14px] py-[10px] flex items-center justify-between hover:bg-[#F2F2F2] transition-colors text-left"
                         >
                           <div className="flex items-center gap-2">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                               className={`text-gray-text transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
                               <polyline points="9 18 15 12 9 6"/>
                             </svg>
-                            <span className="text-[12px] font-bold text-ink">{hmLabel}</span>
+                            <span className="text-[12px] font-medium text-[#1E1E1E]">{hmLabel}</span>
                           </div>
                           <div className="text-right flex-shrink-0 ml-2">
                             {hm.totalDeposit > 0 && (
-                              <div className="text-[11px] font-semibold text-green">+{won(hm.totalDeposit)}</div>
+                              <div className="text-[11px] font-semibold text-[#017333]">+{won(hm.totalDeposit)}</div>
                             )}
                             {hm.totalOrder > 0 && (
                               <div className="text-[11px] font-semibold text-gray-text">-{won(hm.totalOrder)}</div>
@@ -1421,7 +1624,7 @@ export default function Sales() {
 
                         {/* 일별 상세 — 펼쳐진 상태 */}
                         {isExpanded && (
-                          <div className="border-t border-gray-border/50 bg-gray-bg divide-y divide-gray-border/40">
+                          <div className="border-t border-[#E8E4E2] bg-[#F2F2F2] divide-y divide-[#E8E4E2]">
                             {hm.items.map((item, idx) => (
                               <div key={idx} className="px-4 py-2 flex items-center justify-between gap-2">
                                 <div className="min-w-0">
@@ -1440,7 +1643,7 @@ export default function Sales() {
                                   <div className="text-[10px] text-gray-text/70">{kstTimeStr(item.created_at)}</div>
                                 </div>
                                 <span className={`text-[11px] flex-shrink-0
-                                  ${item.type === 'deposit' ? 'font-bold text-green' : 'font-normal text-gray-text'}`}>
+                                  ${item.type === 'deposit' ? 'font-medium text-[#017333]' : 'font-normal text-[#787878]'}`}>
                                   {item.type === 'deposit' ? '+' : '-'}{won(item.amount)}
                                 </span>
                               </div>
@@ -1455,22 +1658,22 @@ export default function Sales() {
             </div>
           ) : selectedDay !== null ? (
             /* ── 날짜 상세 패널 ── */
-            <div className="w-[260px] flex-shrink-0 border-l border-gray-border bg-white flex flex-col overflow-hidden">
+            <div className="w-[260px] flex-shrink-0 border-l border-[#E8E4E2] bg-[#FCFCFC] flex flex-col overflow-hidden">
               {/* 헤더 */}
-              <div className="px-4 py-3 border-b border-gray-border flex items-start justify-between flex-shrink-0">
+              <div className="px-[14px] py-[12px] border-b border-[#E8E4E2] flex items-start justify-between flex-shrink-0">
                 <div>
-                  <div className="text-[14px] font-extrabold text-ink">{month + 1}월 {selectedDay}일</div>
+                  <div className="text-[14px] font-semibold text-[#1E1E1E]">{month + 1}월 {selectedDay}일</div>
                   <div className="mt-1 space-y-0.5">
                     {selectedDayDeposits.length > 0 && (
                       <div className="text-[11px] text-gray-text">
                         충전 {selectedDayDeposits.length}건&nbsp;
-                        <span className="text-green font-bold">{won(selectedDayDeposits.reduce((s, d) => s + d.amount, 0))}</span>
+                        <span className="text-[#017333] font-medium">{won(selectedDayDeposits.reduce((s, d) => s + d.amount, 0))}</span>
                       </div>
                     )}
                     {selectedDayOrders.length > 0 && (
                       <div className="text-[11px] text-gray-text">
                         주문 {selectedDayOrders.length}건&nbsp;
-                        <span className="font-bold text-ink">{won(selectedDayOrders.reduce((s, o) => s + o.total_amount, 0))}</span>
+                        <span className="font-medium text-ink">{won(selectedDayOrders.reduce((s, o) => s + o.total_amount, 0))}</span>
                       </div>
                     )}
                   </div>
@@ -1483,14 +1686,14 @@ export default function Sales() {
                 {selectedDayDeposits.length > 0 && (
                   <div>
                     <div className="mx-3 my-2.5 flex">
-                      <span className="text-[12px] font-bold text-ink bg-[#F3F4F6] rounded-md px-2.5 py-1">충전</span>
+                      <span className="text-[12px] font-medium text-ink bg-[#F2F2F2] rounded-[7px] px-2.5 py-1">충전</span>
                     </div>
-                    <div className="divide-y divide-gray-border/40">
+                    <div className="divide-y divide-[#E5E5E5]">
                       {selectedDayDeposits.map(d => (
                         <div key={d.deposit_id} className="px-4 py-2.5">
                           <div className="flex items-start justify-between gap-2 mb-0.5">
                             <span className="text-[11px] font-semibold text-ink leading-snug">{d.account_name}</span>
-                            <span className="text-[12px] font-bold text-green flex-shrink-0">+{won(d.amount)}</span>
+                            <span className="text-[12px] font-medium text-[#017333] flex-shrink-0">+{won(d.amount)}</span>
                           </div>
                           {d.note && <div className="text-[11px] text-gray-text">{d.note}</div>}
                           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
@@ -1509,14 +1712,14 @@ export default function Sales() {
                 {selectedDayOrders.length > 0 && (
                   <div>
                     <div className="mx-3 my-2.5 flex">
-                      <span className="text-[12px] font-bold text-ink bg-[#F3F4F6] rounded-md px-2.5 py-1">주문</span>
+                      <span className="text-[12px] font-medium text-ink bg-[#F2F2F2] rounded-[7px] px-2.5 py-1">주문</span>
                     </div>
-                    <div className="divide-y divide-gray-border/40">
+                    <div className="divide-y divide-[#E5E5E5]">
                       {selectedDayOrders.map(o => (
                         <div key={o.order_code} className="px-4 py-2.5">
                           <div className="flex items-start justify-between gap-2 mb-0.5">
                             <span className="text-[11px] font-semibold text-ink leading-snug">{o.account_name}</span>
-                            <span className="text-[12px] font-bold text-ink flex-shrink-0">{won(o.total_amount)}</span>
+                            <span className="text-[12px] font-medium text-ink flex-shrink-0">{won(o.total_amount)}</span>
                           </div>
                           <div className="text-[11px] text-gray-text">{o.orderer_name} · {o.method}</div>
                           <div className="text-[11px] text-gray-text mt-0.5">
@@ -1538,6 +1741,14 @@ export default function Sales() {
             </div>
           ) : null}
         </div>
+      )}
+
+      {balanceModalOpen && storeId && (
+        <MonthlyBalanceModal
+          storeId={storeId}
+          currentTotal={totalLiability}
+          onClose={() => setBalanceModalOpen(false)}
+        />
       )}
     </div>
   )

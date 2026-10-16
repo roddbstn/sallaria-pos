@@ -9,6 +9,8 @@
 
 import iconv from 'iconv-lite'
 import type { ReceiptSettings, OrderPayload } from './printer'
+import { maskName, maskPhone } from './mask'
+import type { ReceiptTextSize } from './printer'
 
 // ── ESC/POS 커맨드 ─────────────────────────────────────────────────────────
 
@@ -27,6 +29,21 @@ const CMD = {
   SIZE_MEDIUM:  Buffer.from([GS,  0x21, 0x11]),  // 2x2 (2배 폭+높이) ← '보통' 옵션
   SIZE_LARGE:   Buffer.from([GS,  0x21, 0x22]),  // 3x3 (3배 폭+높이) ← '크게' 옵션
   FEED_CUT:     Buffer.from([GS,  0x56, 0x42, 0x04]),
+}
+
+/**
+ * 설정값('작게'/'기본'/'크게') → ESC/POS 크기 명령.
+ *
+ * ⚠️ 폭(width)을 키우면 한 줄에 들어가는 글자 수가 42 → 21 → 14 로 줄어, 칼럼을
+ *    글자 수로 맞춰 둔 메뉴 표가 깨진다. 그래서 '높이만' 키우는 쪽으로 쓴다
+ *    (1x1 → 1x2). 감열 영수증에서는 높이만 키워도 가독성이 크게 올라간다.
+ */
+function sizeCmd(size: ReceiptTextSize | undefined): Buffer {
+  switch (size) {
+    case 'small':  return CMD.SIZE_NORMAL   // 1x1
+    case 'large':  return CMD.SIZE_SMALL    // 1x2 (2배 높이)
+    default:       return CMD.SIZE_SMALL    // 'normal' 기본값도 1x2 — 기존 동작 유지
+  }
 }
 
 // 실측: 이 프린터는 1배 폭 기준 42자 폭
@@ -125,6 +142,10 @@ const NAME_W    = MENU_W - QTY_W - COL_SEP - PRICE_W   // 26
 export function buildKitchenReceiptEscPos(order: OrderPayload, settings: ReceiptSettings): Buffer {
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
+  // 메뉴명 줄은 글자 수로 칼럼을 맞추므로 크기를 바꾸지 않는다(sizeCmd 주석 참고).
+  // 독립된 줄인 옵션·금액만 설정 크기를 따른다.
+  const optCmd = sizeCmd(settings.optionSize)
+  const amtCmd = sizeCmd(settings.amountSize)
 
   p(CMD.INIT)
 
@@ -145,8 +166,8 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   // 블록2: 이용방법 / 주문자 / 전화번호
   p(CMD.SIZE_SMALL)
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
-  p(enc('주문자   : ' + order.orderer_name), nl())
-  p(enc('전화번호 : ' + (order.orderer_phone || '없음')), nl())
+  p(enc('주문자   : ' + maskName(order.orderer_name)), nl())
+  p(enc('전화번호 : ' + (order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
     p(enc('거래처   : ' + order.account_name), nl())
   }
@@ -193,27 +214,37 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
       const optLabel = opt.extra_price > 0
         ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
         : `  > ${opt.option_name}`
-      p(CMD.SIZE_NORMAL, enc(clamp(optLabel, MENU_W)), nl())
+      p(optCmd, enc(clamp(optLabel, MENU_W)), nl())
     }
   }
 
   p(hrBuf(), nl())
 
   // 금액 요약
-  p(CMD.SIZE_SMALL)
+  p(amtCmd)
   p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
   if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
-  p(CMD.SIZE_SMALL, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
   p(hrBuf(), nl())
 
-  // 잔액
-  p(CMD.SIZE_SMALL)
-  p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
-  p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
-  if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
-  p(CMD.SIZE_NORMAL)
+  // 잔액 — 설정에서 끌 수 있다(기본 켬)
+  if (settings.showBalance !== false) {
+    p(amtCmd)
+    p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
+    p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
+    if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
+    p(CMD.SIZE_NORMAL)
+  }
+
+  // 점주가 설정한 하단 문구
+  if (settings.footerText?.trim()) {
+    p(hrBuf(), nl())
+    p(CMD.ALIGN_CENTER, CMD.SIZE_NORMAL)
+    for (const line of settings.footerText.trim().split('\n')) p(enc(clamp(line, BASE_W)), nl())
+    p(CMD.ALIGN_LEFT)
+  }
 
   p(CMD.FEED_CUT)
   return Buffer.concat(chunks)
@@ -223,6 +254,8 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
 export function buildCustomerReceiptEscPos(order: OrderPayload, settings: ReceiptSettings): Buffer {
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
+  const optCmd = sizeCmd(settings.customerOptionSize)
+  const amtCmd = sizeCmd(settings.amountSize)
 
   p(CMD.INIT)
 
@@ -243,8 +276,8 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   // 블록2: 이용방법 / 주문자 / 전화번호
   p(CMD.SIZE_SMALL)
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
-  p(enc('주문자   : ' + order.orderer_name), nl())
-  p(enc('전화번호 : ' + (order.orderer_phone || '없음')), nl())
+  p(enc('주문자   : ' + maskName(order.orderer_name)), nl())
+  p(enc('전화번호 : ' + (order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
     p(enc('거래처   : ' + order.account_name), nl())
   }
@@ -291,27 +324,37 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
       const optLabel = opt.extra_price > 0
         ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
         : `  > ${opt.option_name}`
-      p(CMD.SIZE_NORMAL, enc(clamp(optLabel, MENU_W)), nl())
+      p(optCmd, enc(clamp(optLabel, MENU_W)), nl())
     }
   }
 
   p(hrBuf(), nl())
 
   // 금액 요약
-  p(CMD.SIZE_SMALL)
+  p(amtCmd)
   p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
   if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
   p(CMD.SIZE_NORMAL)
   p(hrBuf(), nl())
-  p(CMD.SIZE_SMALL, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
+  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_NORMAL, nl())
   p(hrBuf(), nl())
 
-  // 잔액
-  p(CMD.SIZE_SMALL)
-  p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
-  p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
-  if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
-  p(CMD.SIZE_NORMAL)
+  // 잔액 — 설정에서 끌 수 있다(기본 켬)
+  if (settings.showBalance !== false) {
+    p(amtCmd)
+    p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
+    p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
+    if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
+    p(CMD.SIZE_NORMAL)
+  }
+
+  // 점주가 설정한 하단 문구
+  if (settings.footerText?.trim()) {
+    p(hrBuf(), nl())
+    p(CMD.ALIGN_CENTER, CMD.SIZE_NORMAL)
+    for (const line of settings.footerText.trim().split('\n')) p(enc(clamp(line, BASE_W)), nl())
+    p(CMD.ALIGN_LEFT)
+  }
 
   p(CMD.FEED_CUT)
   return Buffer.concat(chunks)
@@ -367,8 +410,8 @@ export function buildQrReceiptEscPos(p: QrReceiptPayload): Buffer {
     const L = 6  // 라벨 인쇄폭
     push(enc(padL(label, L) + '  ' + value), nl())
   }
-  row('고객명', p.accountName)
-  if (p.manager) row('담당자', p.manager)
+  row('계정',   p.accountName)
+  if (p.manager) row('관리자', p.manager)
   if (p.phone)   row('연락처', p.phone)
   row('PIN',     p.pin)
 

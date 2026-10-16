@@ -1,6 +1,6 @@
 {
   "name": "sunpos",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "선포스 앱",
   "main": "out/main/index.js",
   "scripts": {
@@ -30,6 +30,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
+    "@sentry/electron": "^8.1.0",
     "@serialport/bindings-cpp": "^12.0.1",
     "@supabase/supabase-js": "^2.44.2",
     "@types/qrcode": "^1.5.6",

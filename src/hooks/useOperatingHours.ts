@@ -7,6 +7,14 @@ type OperatingHours = Record<string, DayHours>
 export type DayBreak = { enabled: boolean; start: string; end: string }
 export type BreakTime = Record<string, DayBreak>
 
+/** 정기 휴무일 — stores.regular_holidays */
+export type RegularHolidaysValue = { cycle: 'weekly' | 'biweekly'; days: string[] }
+
+/** 토스트 문구용 — 저장 결과를 사람 말로 되돌려준다 */
+const DAY_KO: Record<string, string> = {
+  mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일',
+}
+
 export type VacationDay = {
   id?: string
   date: string        // 'YYYY-MM-DD'
@@ -58,13 +66,14 @@ export function useOperatingHours(
   // 휴가 예약
   const [vacationDays,    setVacationDays]    = useState<VacationDay[]>([])
   const [vacationOpen,    setVacationOpen]    = useState(false)
+  const [regularHolidays, setRegularHolidays] = useState<RegularHolidaysValue | null>(null)
 
   // ── DB에서 로드 ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!storeId) return
     supabase
       .from('stores')
-      .select('operating_hours, break_time, today_override, auto_open_enabled')
+      .select('operating_hours, break_time, today_override, auto_open_enabled, regular_holidays')
       .eq('id', storeId)
       .single()
       .then(({ data }) => {
@@ -72,6 +81,7 @@ export function useOperatingHours(
         setAutoOpenEnabled(data.auto_open_enabled ?? true)
         if (data.operating_hours) setOperatingHours(data.operating_hours as OperatingHours)
         if (data.break_time)      setBreakTime(data.break_time as BreakTime)
+        setRegularHolidays((data.regular_holidays as RegularHolidaysValue | null) ?? null)
 
         const ov = data.today_override as { date: string; type: string; time?: string } | null
         const today = new Date().toISOString().slice(0, 10)
@@ -82,15 +92,8 @@ export function useOperatingHours(
           if (t === 'holiday' || t === 'early') setClosureType(t as 'holiday' | 'early')
           if (ov.time) setClosureTime(ov.time)
         } else if (ov) {
-          if (ov.type === 'force_open') {
-            // force_open은 날짜가 지나도 오늘 날짜로 자동 갱신 (매장이 계속 열려있도록)
-            const renewed = { date: today, type: 'force_open' }
-            supabase.from('stores').update({ today_override: renewed }).eq('id', storeId)
-            setOverrideType('force_open')
-          } else {
-            // holiday / early 등 날짜 지난 오버라이드는 삭제
-            supabase.from('stores').update({ today_override: null }).eq('id', storeId)
-          }
+          // today_override는 타입 무관하게 당일만 유효 (force_open도 예외 아님) — 날짜 지나면 삭제
+          supabase.from('stores').update({ today_override: null }).eq('id', storeId)
         }
       })
 
@@ -113,89 +116,12 @@ export function useOperatingHours(
       })
   }, [storeId])
 
-  // ── 1분마다 스케줄 기반 자동 ON/OFF ──────────────────────────────────────────
-  useEffect(() => {
-    if (!autoOpenEnabled) return
-
-    function syncIsOpen() {
-      const now    = new Date()
-      const today  = now.toISOString().slice(0, 10)
-      const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()]
-      const day    = operatingHours[dayKey]
-      const brk    = breakTime[dayKey]
-
-      // 휴가 예약 체크
-      const vacation = vacationDays.find(v => v.date === today)
-      if (vacation) {
-        if (vacation.type === 'holiday') {
-          setIsOpen(prev => {
-            if (prev && storeId) supabase.from('stores').update({ is_open: false }).eq('id', storeId)
-            return false
-          })
-          return
-        }
-        // custom: 지정 시간 동안만 운영
-        if (vacation.type === 'custom' && vacation.openTime && vacation.closeTime) {
-          const cur  = now.getHours() * 60 + now.getMinutes()
-          const [oh, om] = vacation.openTime.split(':').map(Number)
-          const [ch, cm] = vacation.closeTime.split(':').map(Number)
-          const next = cur >= oh * 60 + om && cur < ch * 60 + cm
-          setIsOpen(prev => {
-            if (prev !== next && storeId) supabase.from('stores').update({ is_open: next }).eq('id', storeId)
-            return next
-          })
-          return
-        }
-      }
-
-      let shouldBeOpen = false
-      if (day?.enabled) {
-        const cur  = now.getHours() * 60 + now.getMinutes()
-        const [oh, om] = day.open.split(':').map(Number)
-        const [ch, cm] = day.close.split(':').map(Number)
-        shouldBeOpen = cur >= oh * 60 + om && cur < ch * 60 + cm
-
-        // 브레이크타임 체크
-        if (shouldBeOpen && brk?.enabled) {
-          const [bsh, bsm] = brk.start.split(':').map(Number)
-          const [beh, bem] = brk.end.split(':').map(Number)
-          if (cur >= bsh * 60 + bsm && cur < beh * 60 + bem) {
-            shouldBeOpen = false
-          }
-        }
-      }
-
-      // 오버라이드 적용
-      if (overrideType === 'force_open') {
-        shouldBeOpen = true                       // 운영시간 외 강제 열기
-      } else if (overrideType === 'holiday') {
-        shouldBeOpen = false                      // 오늘 전일 휴무
-      } else if (overrideType === 'early') {
-        const cur  = now.getHours() * 60 + now.getMinutes()
-        const [eh, em] = closureTime.split(':').map(Number)
-        if (cur >= eh * 60 + em) shouldBeOpen = false   // 조기 마감 시각 이후
-      }
-
-      setIsOpen(prev => {
-        if (prev !== shouldBeOpen && storeId) {
-          supabase.from('stores').update({ is_open: shouldBeOpen }).eq('id', storeId)
-        }
-        return shouldBeOpen
-      })
-    }
-
-    syncIsOpen()
-    let intervalId: ReturnType<typeof setInterval> | null = null
-    const msToNextMinute = 60_000 - (Date.now() % 60_000)
-    const timeoutId = setTimeout(() => {
-      syncIsOpen()
-      intervalId = setInterval(syncIsOpen, 60_000)
-    }, msToNextMinute)
-    return () => {
-      clearTimeout(timeoutId)
-      if (intervalId !== null) clearInterval(intervalId)
-    }
-  }, [autoOpenEnabled, operatingHours, breakTime, overrideType, closureTime, vacationDays, storeId])
+  // is_open의 진실 공급원은 서버 pg_cron(auto_close_stores_by_schedule, 매분 실행)이다.
+  // 이 훅은 더 이상 클라이언트에서 별도로 스케줄을 계산해 is_open을 쓰지 않는다 —
+  // 예전엔 클라이언트도 동일 로직을 중복 계산해 매분 DB에 썼는데, 서버와 판단이
+  // 어긋날 때마다(자정 넘은 오버라이드, 휴가 예약 등) 두 프로세스가 서로 값을
+  // 계속 덮어써서 홈 화면 토글이 뒤집히는 버그가 있었다.
+  // isOpen은 App.tsx에서 초기 로드(store.is_open)와 Realtime 구독으로만 갱신된다.
 
   // ── 헬퍼: is_open DB 업데이트 ────────────────────────────────────────────────
   async function pushIsOpen(next: boolean) {
@@ -288,6 +214,71 @@ export function useOperatingHours(
     if (error) showToast(`운영시간 저장 실패: ${error.message}`)
   }
 
+  /**
+   * 브레이크 타임 저장 — 매장 설정 화면의 전용 모달에서 바로 반영한다.
+   *
+   * 영업시간 모달(saveOperatingHours)의 draft 흐름을 타지 않는 이유: 그쪽은 7요일 영업시간과
+   * 브레이크를 한꺼번에 들고 다니는 큰 폼이고, 여기선 브레이크만 바꾸러 들어온다.
+   * 같은 draft 를 쓰면 브레이크만 고치려다 영업시간까지 덮어쓸 수 있다.
+   *
+   * 저장만 하면 끝이다 — 가게 문을 여닫는 건 DB cron(auto_close_stores_by_schedule)이
+   * 매분 돌면서 break_time 을 읽어 is_open 을 올리고 내린다. 요일별로 다른 값도 거기서 처리된다.
+   */
+  async function saveBreakTime(next: BreakTime) {
+    setBreakTime(next)
+    setBreakDraft(next)   // 영업시간 모달을 나중에 열어도 같은 값이 보이도록
+    if (!storeId) return
+    const { error } = await supabase.from('stores').update({ break_time: next }).eq('id', storeId)
+    if (error) showToast(`브레이크 타임 저장 실패: ${error.message}`)
+  }
+
+  // 매장 설정 화면에서 요일 하나의 오픈/마감 시각만 바로 바꿔 저장한다.
+  // (운영시간 모달의 draft 흐름을 타지 않고 단건 반영 — 드롭다운에서 고르면 즉시 저장)
+  async function setDayTime(day: string, field: 'open' | 'close', value: string) {
+    const prev = operatingHours[day] ?? { enabled: true, open: '09:00', close: '21:00' }
+    const next = { ...operatingHours, [day]: { ...prev, enabled: true, [field]: value } }
+    setOperatingHours(next)
+    if (!storeId) return
+    const { error } = await supabase.from('stores').update({ operating_hours: next }).eq('id', storeId)
+    if (error) showToast(`영업시간 저장 실패: ${error.message}`)
+  }
+
+  // 정기 휴무일 저장 — 주기+요일을 stores.regular_holidays에 기록한다.
+  // '매주'면 해당 요일을 영업시간에서도 꺼서 영업시간 그리드와 어긋나지 않게 맞춘다.
+  // '격주'는 매주 쉬는 게 아니라서 영업시간은 건드리지 않는다.
+  async function saveRegularHolidays(value: RegularHolidaysValue) {
+    setRegularHolidays(value)
+    const patch: Record<string, unknown> = { regular_holidays: value }
+
+    let nextHours = operatingHours
+    if (value.cycle === 'weekly') {
+      nextHours = { ...operatingHours }
+      for (const day of Object.keys(nextHours)) {
+        nextHours[day] = { ...nextHours[day], enabled: !value.days.includes(day) }
+      }
+      setOperatingHours(nextHours)
+      patch.operating_hours = nextHours
+    }
+
+    if (!storeId) return
+    const { error } = await supabase.from('stores').update(patch).eq('id', storeId)
+    if (error) { showToast(`정기 휴무일 저장 실패: ${error.message}`); return }
+
+    // 임시 휴무일과 같은 조작감 — 저장됐다는 신호가 없으면 눌렀는지 알 수 없다.
+    // 요일을 다 지운 건 "해제"라서 문구를 따로 준다.
+    if (value.days.length === 0) {
+      showToast('정기 휴무일이 해제되었습니다')
+    } else {
+      // 클릭한 순서가 아니라 주 순서로 — "토·화" 가 아니라 "화·토"
+      const label = Object.keys(DAY_KO)
+        .filter(d => value.days.includes(d))
+        .map(d => DAY_KO[d])
+        .join('·')
+      const cycle = value.cycle === 'weekly' ? '매주' : '격주'
+      showToast(`정기 휴무일이 ${cycle} ${label}요일로 저장되었습니다`)
+    }
+  }
+
   // 운영시간 설정 모달에서 "조기마감" 확정
   async function confirmClosure() {
     await applyOverride(closureType, closureType === 'early' ? closureTime : undefined)
@@ -343,6 +334,7 @@ export function useOperatingHours(
     hoursOpen,        setHoursOpen,
     operatingHours,
     breakTime,
+    saveBreakTime,
     hoursDraft,       setHoursDraft,
     breakDraft,       setBreakDraft,
     offHoursConfirm,  setOffHoursConfirm,
@@ -357,6 +349,9 @@ export function useOperatingHours(
     toggleAutoOpenEnabled,
     confirmForceOpen,
     saveOperatingHours,
+    setDayTime,
+    regularHolidays,
+    saveRegularHolidays,
     confirmClosure,
     cancelClosure,
     saveVacationDays,

@@ -1,0 +1,601 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { won } from '../lib/ipc'
+import { type MenuDetail, type Category } from '../lib/mock-data'
+import { mapMenuRow } from '../lib/mappers'
+
+// ── 구두주문 받기 — 전화/현장 구두주문을 POS에서 직접 입력해 create_order RPC로 제출 ──
+// 별도 "장바구니 화면" 없이 메뉴를 고르면 우측 주문요약에 바로 반영되는 단일 화면 구성.
+
+interface DbAccountLite {
+  account_code:    string
+  account_name:    string
+  account_type:    string
+  current_balance: number
+}
+
+interface CartOption { id: string; name: string; extra: number }
+interface CartItem {
+  key:      string
+  menuId:   string
+  menuName: string
+  unitPrice: number
+  qty:      number
+  options:  CartOption[]
+}
+
+const METHODS: { v: '포장' | '내점' | '배달'; l: string }[] = [
+  { v: '포장', l: '포장' },
+  { v: '내점', l: '매장 식사' },
+  { v: '배달', l: '배달' },
+]
+
+// DB row → MenuDetail 변환은 lib/mappers.ts의 mapMenuRow 공용 (Menus.tsx와 공유).
+// 구두주문은 고객에게 바로 노출되는 흐름이라 숨김 옵션은 제외.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapMenu(row: any): MenuDetail {
+  return mapMenuRow(row, { excludeHiddenOptions: true })
+}
+
+/** 거래처 구성원 — account_members 의 최소 필드 */
+interface MemberLite {
+  id:     string
+  name:   string
+  phone:  string | null
+  orders: number
+}
+
+export default function VerbalOrderModal({
+  storeId, onClose, onCreated,
+}: {
+  storeId: string
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [accountQuery,   setAccountQuery]   = useState('')
+  const [accountResults, setAccountResults] = useState<DbAccountLite[]>([])
+  const [searchingAcct,  setSearchingAcct]  = useState(false)
+  const [selectedAccount, setSelectedAccount] = useState<DbAccountLite | null>(null)
+
+  // 주문자는 **타이핑이 아니라 고르는 것**이다.
+  // 손으로 치면 "김민준 / 김민쥰 / 민준"처럼 같은 사람이 여러 이름으로 쌓이고,
+  // 그러면 고객 화면의 '이용자별 주문'과 재주문율이 전부 어긋난다.
+  // account_members 에 이미 명단이 있으므로 거기서 고르게 한다.
+  const [members,        setMembers]        = useState<MemberLite[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
+  const [memberName,     setMemberName]     = useState('')   // 선택된 이용자 이름
+  const [memberPhone,    setMemberPhone]    = useState('')
+  const [newMember,      setNewMember]      = useState('')   // 명단에 없을 때 직접 추가
+  const [method,        setMethod]      = useState<'포장' | '내점' | '배달'>('포장')
+  const [deliveryFee,   setDeliveryFee] = useState('0')
+
+  const [categories, setCategories] = useState<Category[]>([])
+  const [menus,      setMenus]      = useState<MenuDetail[]>([])
+  const [catId,      setCatId]      = useState<string>('all')
+  const [menuLoading, setMenuLoading] = useState(true)
+
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [optionPicker, setOptionPicker] = useState<MenuDetail | null>(null)
+  const [optionSel,    setOptionSel]    = useState<Record<string, string[]>>({})
+  const [optionQty,    setOptionQty]    = useState(1)
+
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMsg,   setErrorMsg]   = useState('')
+
+  // 거래처를 고르면 그 거래처의 이용자 명단을 연다. 많이 시킨 순 — 대부분 그 윗줄에서 끝난다
+  useEffect(() => {
+    if (!selectedAccount) { setMembers([]); setMemberName(''); setMemberPhone(''); return }
+    let cancelled = false
+    setMembersLoading(true)
+    supabase.from('account_members')
+      .select('id, name, phone, order_count')
+      .eq('account_code', selectedAccount.account_code)
+      .order('order_count', { ascending: false })
+      .then(({ data }) => {
+        if (cancelled) return
+        setMembers(((data ?? []) as { id: string; name: string; phone: string | null; order_count: number | null }[])
+          .map(m => ({ id: m.id, name: m.name, phone: m.phone, orders: m.order_count ?? 0 })))
+        setMembersLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [selectedAccount])
+
+  // ── 거래처 목록 — 검색어 없이도 바로 전체 목록을 보여주고(클릭해서 바로 선택),
+  // 입력하면 그 안에서 실시간으로 좁혀지는 방식(디바운스) ──────────────────────
+  useEffect(() => {
+    setSearchingAcct(true)
+    const id = setTimeout(async () => {
+      let q = supabase
+        .from('accounts')
+        .select('account_code, account_name, account_type, current_balance')
+        .eq('is_active', true)
+        .eq('store_id', storeId)
+        .order('account_name')
+        .limit(50)
+      if (accountQuery.trim()) q = q.ilike('account_name', `%${accountQuery.trim()}%`)
+      const { data } = await q
+      setAccountResults((data ?? []) as DbAccountLite[])
+      setSearchingAcct(false)
+    }, 200)
+    return () => clearTimeout(id)
+  }, [accountQuery, storeId])
+
+  // ── 메뉴/카테고리 조회 (거래처 선택 후) ──────────────────────────────────
+  useEffect(() => {
+    if (!selectedAccount) return
+    async function load() {
+      setMenuLoading(true)
+      const { data: cats } = await supabase
+        .from('categories').select('id, name, display_order')
+        .eq('store_id', storeId).eq('is_active', true).order('display_order')
+      const catList: Category[] = (cats ?? []).map(c => ({ id: c.id, name: c.name, displayOrder: c.display_order }))
+      setCategories(catList)
+
+      if (catList.length > 0) {
+        const { data: menuRows } = await supabase
+          .from('menus')
+          .select(`
+            id, category_id, name, description, base_price, image_url,
+            is_sold_out, sold_out_until, is_hidden, display_order, is_popular, is_recommended, is_new,
+            menu_option_groups (
+              display_order,
+              option_groups ( id, name, is_required, is_multi, max_select,
+                option_items ( id, name, extra_price, is_popular, is_sold_out, sold_out_until, is_hidden, display_order, max_quantity )
+              )
+            )
+          `)
+          .in('category_id', catList.map(c => c.id))
+          .eq('is_hidden', false)
+          .order('display_order')
+        setMenus((menuRows ?? []).map(mapMenu))
+      }
+      setMenuLoading(false)
+    }
+    load()
+  }, [selectedAccount, storeId])
+
+  function visibleMenus() {
+    return menus.filter(m => !m.soldOut && (catId === 'all' || m.categoryId === catId))
+  }
+
+  function addPlainItem(menu: MenuDetail) {
+    setCart(prev => {
+      const existing = prev.find(c => c.menuId === menu.code && c.options.length === 0)
+      if (existing) return prev.map(c => c === existing ? { ...c, qty: c.qty + 1 } : c)
+      return [...prev, { key: crypto.randomUUID(), menuId: menu.code, menuName: menu.name, unitPrice: menu.price, qty: 1, options: [] }]
+    })
+  }
+
+  /**
+   * 고를 게 없는 그룹은 **미리 선택해서 띄운다.**
+   *
+   * '가격(필수) - 파스타 샐러드' 처럼 선택지가 "10,400원" 하나뿐인 필수 그룹이 메뉴마다 붙어 있다.
+   * 그건 메뉴값일 뿐 손님이 고르는 게 아닌데, 안 눌러주면 담기에서 "필수 옵션을 선택해주세요"로
+   * 막힌다 — 피크타임에 점주가 매번 한 번씩 더 눌러야 했다.
+   *
+   * 조건을 "이름이 가격처럼 생겼으면"으로 잡지 않고 **선택지가 1개인 필수 단일선택 그룹**으로 잡았다.
+   * 침산점 가격(필수) 그룹은 전부 이 모양이고, 앞으로 생길 다른 1개짜리 필수 그룹에도 맞다.
+   * 선택지가 2개 이상인 필수 그룹(베이스·소스 등)은 **건드리지 않는다** — 임의로 하나 찍어두면
+   * 점주가 못 보고 넘겨서 엉뚱한 옵션으로 주문이 들어간다.
+   */
+  function autoSelect(menu: MenuDetail): Record<string, string[]> {
+    const sel: Record<string, string[]> = {}
+    for (const g of menu.optionGroups) {
+      const pickable = g.items.filter(it => !it.soldOut)
+      if (g.isRequired && !g.isMulti && pickable.length === 1) sel[g.id] = [pickable[0].id]
+    }
+    return sel
+  }
+
+  /** 선택지가 1개인 필수 그룹은 끌 수 없다 — 끄면 담기에서 막히는 길밖에 없다 */
+  function isLocked(g: MenuDetail['optionGroups'][number]): boolean {
+    return g.isRequired && !g.isMulti && g.items.filter(it => !it.soldOut).length === 1
+  }
+
+  function handleMenuTap(menu: MenuDetail) {
+    if (menu.optionGroups.length > 0) {
+      setOptionPicker(menu)
+      setOptionSel(autoSelect(menu))
+      setOptionQty(1)
+    } else {
+      addPlainItem(menu)
+    }
+  }
+
+  function toggleOption(groupId: string, itemId: string, isMulti: boolean, maxSelect: number | null, locked = false) {
+    if (locked) return
+    setOptionSel(prev => {
+      const cur = prev[groupId] ?? []
+      if (!isMulti) return { ...prev, [groupId]: cur.includes(itemId) ? [] : [itemId] }
+      if (cur.includes(itemId)) return { ...prev, [groupId]: cur.filter(id => id !== itemId) }
+      if (maxSelect != null && cur.length >= maxSelect) return prev
+      return { ...prev, [groupId]: [...cur, itemId] }
+    })
+  }
+
+  function confirmOptionPicker() {
+    if (!optionPicker) return
+    const missingRequired = optionPicker.optionGroups.some(g => g.isRequired && (optionSel[g.id]?.length ?? 0) === 0)
+    if (missingRequired) { setErrorMsg('필수 옵션을 선택해주세요.'); return }
+    const options: CartOption[] = optionPicker.optionGroups.flatMap(g =>
+      (optionSel[g.id] ?? []).map(itemId => {
+        const it = g.items.find(i => i.id === itemId)!
+        return { id: it.id, name: it.name, extra: it.extra }
+      })
+    )
+    setCart(prev => [...prev, {
+      key: crypto.randomUUID(), menuId: optionPicker.code, menuName: optionPicker.name,
+      unitPrice: optionPicker.price, qty: optionQty, options,
+    }])
+    setOptionPicker(null)
+    setOptionSel({})
+    setOptionQty(1)
+    setErrorMsg('')
+  }
+
+  function updateQty(key: string, delta: number) {
+    setCart(prev => prev
+      .map(c => c.key === key ? { ...c, qty: c.qty + delta } : c)
+      .filter(c => c.qty > 0))
+  }
+
+  function itemTotal(c: CartItem) { return (c.unitPrice + c.options.reduce((s, o) => s + o.extra, 0)) * c.qty }
+  const subtotal = cart.reduce((s, c) => s + itemTotal(c), 0)
+  const deliveryFeeNum = method === '배달' ? (parseInt(deliveryFee, 10) || 0) : 0
+  const total = subtotal + deliveryFeeNum
+
+  const canSubmit = !!selectedAccount && cart.length > 0 && memberName.trim().length > 0 && !submitting
+
+  async function handleSubmit() {
+    if (!canSubmit || !selectedAccount) return
+    setSubmitting(true)
+    setErrorMsg('')
+
+    const items = cart.map(c => ({
+      menu_id: c.menuId,
+      menu_name: c.menuName,
+      quantity: c.qty,
+      option_item_ids: c.options.map(o => o.id),
+      option_names: c.options.map(o => o.name),
+      option_prices: c.options.map(o => o.extra),
+    }))
+
+    const { error } = await supabase.rpc('create_order', {
+      p_account_code:  selectedAccount.account_code,
+      p_orderer_name:  memberName.trim(),
+      p_method:        method,
+      p_items:         items,
+      p_delivery_fee:  deliveryFeeNum,
+      p_orderer_phone: memberPhone.trim() || null,
+      p_note:          '구두주문 — POS 직접 입력',
+    })
+
+    if (error) {
+      console.error('구두주문 생성 실패:', error)
+      setErrorMsg(`주문 생성에 실패했습니다: ${error.message ?? '다시 시도해주세요.'}`)
+      setSubmitting(false)
+      return
+    }
+
+    setSubmitting(false)
+    onCreated()
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="modal-in bg-white rounded-2xl shadow-xl w-[90vw] max-w-[1100px] h-[85vh] flex flex-col overflow-hidden">
+
+        {/* 헤더 */}
+        <div className="flex-shrink-0 px-6 py-4 border-b border-gray-border flex items-center justify-between">
+          <div className="text-[17px] font-extrabold text-ink">구두주문 받기</div>
+          <button onClick={onClose} className="text-gray-text hover:text-ink text-[20px] leading-none">✕</button>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden">
+
+          {/* 좌측: 거래처 — 검색어 없이도 바로 전체 목록이 보이고, 클릭 한 번으로 선택 ── */}
+          <div className="w-[260px] flex-shrink-0 border-r border-gray-border flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 px-4 py-3 border-b border-gray-border">
+              <input
+                autoFocus
+                value={accountQuery}
+                onChange={e => setAccountQuery(e.target.value)}
+                placeholder="거래처 검색 (선택)"
+                className="w-full border border-gray-border rounded-lg px-3 py-2 text-[12px] outline-none focus:border-[#00DD67]"
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {searchingAcct && accountResults.length === 0 ? (
+                <div className="text-[12px] text-gray-text text-center py-6">불러오는 중...</div>
+              ) : accountResults.length === 0 ? (
+                <div className="text-[12px] text-gray-text text-center py-6">거래처가 없습니다.</div>
+              ) : accountResults.map(acc => (
+                <button
+                  key={acc.account_code}
+                  onClick={() => { if (selectedAccount?.account_code !== acc.account_code) { setSelectedAccount(acc); setCart([]) } }}
+                  className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-left border-b border-gray-border/60 transition-colors ${
+                    selectedAccount?.account_code === acc.account_code ? 'bg-gray-bg' : 'hover:bg-gray-bg/60'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-bold text-ink truncate">{acc.account_name}</div>
+                    <div className="text-[11px] text-gray-text">{acc.account_type}</div>
+                  </div>
+                  <div className={`text-[12px] font-semibold flex-shrink-0 ${acc.current_balance < 0 ? 'text-danger' : 'text-gray-text'}`}>
+                    {won(acc.current_balance)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 가운데: 이용자 선택 — 거래처를 고르면 열린다 */}
+          {selectedAccount && (
+            <div className="w-[200px] flex-shrink-0 border-r border-gray-border flex flex-col overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-border flex-shrink-0">
+                <div className="text-[12px] font-medium text-[#2C261F]">이용자</div>
+                <div className="text-[11px] font-normal text-[#ADADAD] mt-[2px]">누가 주문했는지 고르세요</div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {membersLoading ? (
+                  <div className="text-[12px] text-gray-text text-center py-6">불러오는 중…</div>
+                ) : members.length === 0 ? (
+                  <div className="text-[12px] text-[#ADADAD] text-center py-6 px-3 leading-relaxed">
+                    아직 등록된 이용자가 없어요.<br />아래에 이름을 적어 주세요
+                  </div>
+                ) : members.map(m => {
+                  const on = memberName === m.name
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => { setMemberName(m.name); setMemberPhone(m.phone ?? ''); setNewMember('') }}
+                      className={`w-full px-4 py-[10px] text-left border-b border-gray-border/60 transition-colors ${
+                        on ? 'bg-[#E8E4E2]' : 'hover:bg-gray-bg/60'
+                      }`}
+                    >
+                      <div className={`text-[13px] truncate ${on ? 'font-medium text-[#1E1E1E]' : 'text-[#414141]'}`}>
+                        {m.name}
+                      </div>
+                      <div className="text-[11px] text-[#ADADAD]">
+                        {m.orders > 0 ? `${m.orders}건` : '첫 주문'}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* 명단에 없는 사람 — 처음 오는 손님은 늘 있다 */}
+              <div className="flex-shrink-0 border-t border-gray-border p-3">
+                <input
+                  value={newMember}
+                  onChange={e => {
+                    setNewMember(e.target.value)
+                    setMemberName(e.target.value)   // 입력하는 순간 그 이름으로 주문된다
+                    setMemberPhone('')
+                  }}
+                  placeholder="명단에 없으면 입력"
+                  className="w-full border border-[#D9D9D9] rounded-[9px] px-[10px] py-[7px] text-[12px] outline-none focus:border-[#6A635E] transition-colors"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 우측: 카테고리별 메뉴 선택 + 우하단 고정 총액/주문하기 ── */}
+          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+            {!selectedAccount ? (
+              <div className="flex-1 flex items-center justify-center text-gray-text text-[13px]">
+                왼쪽에서 거래처를 선택해주세요
+              </div>
+            ) : (
+              <>
+                {/* 거래처/주문자/방법 */}
+                <div className="flex-shrink-0 px-5 py-3 border-b border-gray-border space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[14px] font-bold text-ink">{selectedAccount.account_name}</span>
+                    <span className={`text-[12px] font-semibold ${selectedAccount.current_balance < 0 ? 'text-danger' : 'text-gray-text'}`}>
+                      잔액 {won(selectedAccount.current_balance)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* 주문자는 가운데 이용자 열에서 고른다 — 여기선 고른 결과만 보여준다 */}
+                    <span className="text-[12px] font-normal text-[#787878]">
+                      주문자{' '}
+                      {memberName
+                        ? <span className="font-medium text-[#1E1E1E]">{memberName}</span>
+                        : <span className="text-[#C92A2A]">미선택</span>}
+                    </span>
+                    <div className="flex gap-1 ml-auto">
+                      {METHODS.map(m => (
+                        <button
+                          key={m.v}
+                          onClick={() => setMethod(m.v)}
+                          className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                            method === m.v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                          }`}
+                        >
+                          {m.l}
+                        </button>
+                      ))}
+                    </div>
+                    {method === '배달' && (
+                      <input
+                        type="number"
+                        value={deliveryFee}
+                        onChange={e => setDeliveryFee(e.target.value)}
+                        placeholder="배달료"
+                        className="w-24 border border-gray-border rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-[#00DD67]"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* 카테고리 탭 */}
+                <div className="flex-shrink-0 px-5 py-2 border-b border-gray-border flex gap-1.5 overflow-x-auto">
+                  <button
+                    onClick={() => setCatId('all')}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
+                      catId === 'all' ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                    }`}
+                  >
+                    전체
+                  </button>
+                  {categories.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setCatId(cat.id)}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
+                        catId === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                      }`}
+                    >
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 메뉴 그리드 — 옵션 없으면 바로 담김(연속 탭 = 수량+1), 있으면 옵션+수량 선택 모달 */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {menuLoading ? (
+                    <div className="h-full flex items-center justify-center text-gray-text text-[12px]">메뉴 불러오는 중...</div>
+                  ) : visibleMenus().length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-gray-text text-[12px]">표시할 메뉴가 없습니다.</div>
+                  ) : (
+                    <div className="grid grid-cols-3 xl:grid-cols-4 gap-2.5">
+                      {visibleMenus().map(menu => (
+                        <button
+                          key={menu.code}
+                          onClick={() => handleMenuTap(menu)}
+                          className="text-left bg-gray-bg hover:bg-gray-100 rounded-xl p-3 transition-colors"
+                        >
+                          <div className="text-[13px] font-bold text-ink leading-snug mb-1">{menu.name}</div>
+                          <div className="text-[12px] text-gray-text">{won(menu.price)}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 우하단 고정: 담긴 메뉴 요약 칩(제거 가능) + 총액 + 주문하기 CTA — 한 화면에서 바로 클릭 */}
+                <div className="flex-shrink-0 border-t border-gray-border bg-gray-bg">
+                  {cart.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto px-4 py-2.5">
+                      {cart.map(c => (
+                        <div key={c.key} className="flex-shrink-0 flex items-center gap-1.5 bg-white rounded-full pl-3 pr-1.5 py-1.5 border border-gray-border">
+                          <span className="text-[11px] font-semibold text-ink whitespace-nowrap">{c.menuName} ×{c.qty}</span>
+                          <button
+                            onClick={() => updateQty(c.key, -c.qty)}
+                            className="w-5 h-5 rounded-full bg-gray-100 text-gray-text text-[11px] flex items-center justify-center hover:bg-gray-200 transition-colors"
+                            title="빼기"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="px-4 pb-4 pt-1">
+                    {method === '배달' && deliveryFeeNum > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-gray-text mb-1">
+                        <span>배달료 포함</span><span>+{won(deliveryFeeNum)}</span>
+                      </div>
+                    )}
+                    {errorMsg && <div className="text-[11px] text-danger font-semibold mb-2">{errorMsg}</div>}
+                    <div className="flex items-center gap-3">
+                      <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">{won(total)}</div>
+                      <button
+                        onClick={handleSubmit}
+                        disabled={!canSubmit}
+                        className="flex-1 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors"
+                      >
+                        {submitting ? '주문 처리 중...' : '주문하기'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 옵션 선택 모달 */}
+        {optionPicker && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30" onClick={() => setOptionPicker(null)}>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[380px] max-h-[80%] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+              <div className="text-[15px] font-extrabold text-ink mb-3">{optionPicker.name}</div>
+              {optionPicker.optionGroups.map(g => (
+                <div key={g.id} className="mb-4">
+                  <div className="text-[12px] font-bold text-ink mb-1.5">
+                    {g.name} {g.isRequired && <span className="text-danger">*필수</span>}
+                  </div>
+                  <div className="space-y-1.5">
+                    {g.items.filter(it => !it.soldOut).map(it => {
+                      const checked = (optionSel[g.id] ?? []).includes(it.id)
+                      const locked  = isLocked(g)
+                      return (
+                        <button
+                          key={it.id}
+                          onClick={() => toggleOption(g.id, it.id, g.isMulti, g.maxSelect, locked)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] transition-colors ${
+                            checked ? 'border-ink bg-gray-bg font-semibold text-ink' : 'border-gray-border text-gray-text hover:bg-gray-bg'
+                          } ${locked ? 'cursor-default' : ''}`}
+                        >
+                          <span className="flex-1 text-left">{it.name}</span>
+                          {it.extra > 0 && <span className="tabular-nums">+{won(it.extra)}</span>}
+                          {/* 선택 표시는 **줄 맨 오른쪽**. 테두리 색만으로는 여러 줄이 섞였을 때
+                              뭐가 켜진 건지 한눈에 안 들어온다.
+                              단일선택은 원(라디오), 복수선택은 둥근 사각(체크박스) — 모양이 곧
+                              "하나만 고르는 건지 여러 개 고르는 건지"를 말해준다. */}
+                          <span
+                            className={`flex-shrink-0 w-[15px] h-[15px] flex items-center justify-center border-[1.5px] transition-colors ${
+                              g.isMulti ? 'rounded-[4px]' : 'rounded-full'
+                            } ${checked ? 'border-ink bg-ink' : 'border-gray-border bg-white'}`}
+                          >
+                            {checked && (g.isMulti
+                              ? <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.8 3.4 6.6 7.5 2.4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              : <span className="w-[5px] h-[5px] rounded-full bg-white" />
+                            )}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {/* 수량 */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[12px] font-bold text-ink">수량</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setOptionQty(q => Math.max(1, q - 1))}
+                    className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
+                  >
+                    −
+                  </button>
+                  <span className="text-[14px] font-bold text-ink w-5 text-center">{optionQty}</span>
+                  <button
+                    onClick={() => setOptionQty(q => q + 1)}
+                    className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {errorMsg && <div className="text-[11px] text-danger font-semibold mb-2">{errorMsg}</div>}
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => { setOptionPicker(null); setErrorMsg('') }} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]">
+                  취소
+                </button>
+                <button onClick={confirmOptionPicker} className="flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]">
+                  담기
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

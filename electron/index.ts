@@ -1,5 +1,12 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import * as Sentry from '@sentry/electron/main'
+
+// 메인 프로세스 크래시/미처리 예외 — 다른 import보다 먼저 초기화해야 그 아래 코드의 에러도 잡힘
+Sentry.init({
+  dsn:     import.meta.env.VITE_SENTRY_DSN as string ?? '',
+  release: `sunpos-pos@${app.getVersion()}`,
+})
 
 // Chromium 자동재생 차단 해제 — 주문 알림음이 사용자 클릭 없이도 재생되도록
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
@@ -42,7 +49,10 @@ const store = new Store<StoreSchema>({
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string ?? ''
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON as string ?? ''
 const supabase = SUPABASE_URL
-  ? createClient(SUPABASE_URL, SUPABASE_ANON, { realtime: { transport: ws } })
+  // ws 의 생성자 시그니처가 supabase-js 의 WebSocketLikeConstructor 와 미세하게 다르다.
+  // Node 에서 Realtime 을 쓰려면 이 주입이 필요하고 런타임은 정상이라 타입만 눌러준다.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ? createClient(SUPABASE_URL, SUPABASE_ANON, { realtime: { transport: ws as any } })
   : null
 
 let mainWindow: BrowserWindow | null = null
@@ -52,10 +62,13 @@ let currentStoreId: string | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width:          1024,
-    height:         768,
-    minWidth:       1024,
-    minHeight:      768,
+    // 화면 요소들은 이제 고정 실제 px(스케일 없음)라, 창을 너무 좁히면 고정폭 사이드 패널과
+    // 헤더/본문의 좌측 콘텐츠가 겹치거나 밀릴 공간이 없어진다. 최소 폭을 좁힐수록 위험하므로
+    // 기본 창 크기(1440)에 거의 근접한 값으로 최소폭을 넉넉히 잡는다(16:9 비율 유지).
+    width:          1440,
+    height:         810,
+    minWidth:       1400,
+    minHeight:      788,
     title:          '선포스',
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -85,15 +98,62 @@ function createWindow(): void {
 // ── ESC/POS 시리얼 출력 ───────────────────────────────────────────────────────
 
 function getPortName(): string {
-  const saved = store.get('printer') as Record<string, unknown>
-  return (saved?.portName as string) ?? ''
+  return store.get('printer')?.portName ?? ''
 }
+
+// printer:status의 connected는 "포트가 설정돼 있는지"가 아니라 "마지막으로 실제 open을
+// 시도했을 때 성공했는지"를 뜻해야 케이블 뽑힘/전원꺼짐을 제대로 반영한다.
+let printerReachable = true
 
 function notifyPrinterStatus(): void {
   mainWindow?.webContents.send('printer:status', {
-    connected:   !!getPortName(),
+    connected:   !!getPortName() && printerReachable,
     queueLength: 0,
   })
+}
+
+/** 운영 알림(Slack/Discord) — send-ops-alert Edge Function 호출. 실패해도 무시(알림은 best-effort). */
+async function sendOpsAlert(event: string, message: string): Promise<void> {
+  if (!SUPABASE_URL) return
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/send-ops-alert`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
+      body:    JSON.stringify({ event, storeId: currentStoreId, message }),
+    })
+  } catch (e) {
+    console.warn('[OpsAlert] 전송 실패 (무시):', e)
+  }
+}
+
+/** 실제 연결 가능 여부가 바뀌었을 때만 상태 갱신 + 운영 알림 (매 시도마다 스팸 방지) */
+async function setPrinterReachable(reachable: boolean): Promise<void> {
+  const changed = reachable !== printerReachable
+  printerReachable = reachable
+  notifyPrinterStatus()
+  if (!changed) return
+  await sendOpsAlert(
+    reachable ? 'printer_reconnected' : 'printer_disconnected',
+    reachable ? '프린터가 다시 연결됐어요' : '프린터 연결이 끊겼어요 — 주문이 와도 영수증이 안 나올 수 있어요',
+  )
+}
+
+/** 포트 open/close만 테스트 — 실제 출력 없이 생존 여부만 확인 (연결 버튼 + 주기적 헬스체크 공용) */
+async function testPrinterPort(): Promise<{ ok: boolean; error?: string }> {
+  const portName = getPortName()
+  if (!portName) return { ok: false, error: 'COM 포트를 먼저 선택해 주세요.' }
+  try {
+    const port = new SerialPort({ path: portName, baudRate: 9600, autoOpen: false })
+    await new Promise<void>((resolve, reject) => {
+      port.open(err => err ? reject(err) : resolve())
+    })
+    await new Promise<void>(resolve => port.close(() => resolve()))
+    await setPrinterReachable(true)
+    return { ok: true }
+  } catch (err) {
+    await setPrinterReachable(false)
+    return { ok: false, error: (err as Error).message }
+  }
 }
 
 async function printEscPos(data: Buffer): Promise<void> {
@@ -102,9 +162,14 @@ async function printEscPos(data: Buffer): Promise<void> {
 
   const port = new SerialPort({ path: portName, baudRate: 9600, autoOpen: false })
 
-  await new Promise<void>((resolve, reject) => {
-    port.open(err => err ? reject(err) : resolve())
-  })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      port.open(err => err ? reject(err) : resolve())
+    })
+  } catch (err) {
+    await setPrinterReachable(false)
+    throw err
+  }
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -113,75 +178,21 @@ async function printEscPos(data: Buffer): Promise<void> {
         port.drain(err2 => err2 ? reject(err2) : resolve())
       })
     })
+    await setPrinterReachable(true)
+  } catch (err) {
+    await setPrinterReachable(false)
+    throw err
   } finally {
     await new Promise<void>(resolve => port.close(() => resolve()))
   }
 }
 
+// 주문 없이도 끊김을 감지하도록 5분마다 생존 확인 (포트가 설정된 경우만)
+setInterval(() => {
+  if (getPortName()) testPrinterPort()
+}, 5 * 60 * 1000)
+
 // ── Supabase Realtime 구독 ────────────────────────────────────────────────────
-
-async function autoPrintOrder(orderCode: string): Promise<void> {
-  if (!supabase) return
-  try {
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        order_code, order_number, orderer_name, orderer_phone,
-        ordered_at, menu_subtotal, delivery_fee, total_amount,
-        balance_before, balance_after, method, note,
-        accounts ( account_name, account_type ),
-        order_items (
-          order_item_id, quantity, unit_price, subtotal,
-          menus ( name ),
-          order_item_options (
-            id, extra_price,
-            option_items ( name )
-          )
-        )
-      `)
-      .eq('order_code', orderCode)
-      .single()
-
-    if (error || !data) {
-      console.error('[AutoPrint] 주문 조회 실패:', error)
-      return
-    }
-
-    const orderPayload: OrderPayload = {
-      order_code:     data.order_code,
-      order_number:   (data as any).order_number ?? undefined,
-      account_name:   (data.accounts as any)?.account_name ?? '',
-      account_type:   (data.accounts as any)?.account_type ?? undefined,
-      orderer_name:   data.orderer_name,
-      orderer_phone:  (data as any).orderer_phone ?? null,
-      method:         data.method,
-      ordered_at:     data.ordered_at,
-      items: ((data.order_items as any[]) ?? []).map((item: any) => ({
-        menu_name:  item.menus?.name ?? '',
-        quantity:   item.quantity,
-        unit_price: item.unit_price,
-        subtotal:   item.subtotal,
-        options:    ((item.order_item_options as any[]) ?? []).map((o: any) => ({
-          option_name: o.option_items?.name ?? '',
-          extra_price: o.extra_price,
-        })),
-      })),
-      menu_subtotal:  data.menu_subtotal,
-      delivery_fee:   data.delivery_fee,
-      total_amount:   data.total_amount,
-      balance_before: data.balance_before,
-      balance_after:  data.balance_after,
-      note:           data.note ?? null,
-    }
-
-    const receipt = store.get('receipt')
-    await printEscPos(buildCustomerReceiptEscPos(orderPayload, receipt))
-    await printEscPos(buildKitchenReceiptEscPos(orderPayload, receipt))
-    console.log(`[AutoPrint] 영수증 출력 완료: ${orderCode}`)
-  } catch (err) {
-    console.error('[AutoPrint] 오류:', err)
-  }
-}
 
 function subscribeRealtime(): void {
   if (!supabase) {
@@ -300,9 +311,8 @@ ipcMain.handle('order:cancel', async (_e, { orderCode }: { orderCode: string }) 
 
 /** 설정 읽기 */
 ipcMain.handle('settings:get', async () => {
-  const savedPrinter = store.get('printer') as Record<string, unknown>
   return {
-    printer: { portName: (savedPrinter?.portName as string) ?? '' },
+    printer: { portName: store.get('printer')?.portName ?? '' },
     receipt: store.get('receipt'),
   }
 })
@@ -321,7 +331,8 @@ ipcMain.handle('printer:list-ports', async () => {
   return ports.map(p => ({
     path:         p.path,
     manufacturer: p.manufacturer ?? '',
-    friendlyName: p.friendlyName ?? p.path,
+    // friendlyName 은 Windows 전용 필드라 PortInfo 타입에 없다. 런타임엔 들어온다
+    friendlyName: (p as { friendlyName?: string }).friendlyName ?? p.path,
   }))
 })
 
@@ -338,22 +349,7 @@ ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload })
 })
 
 /** 프린터 연결 확인 (설정에서 "연결하기" 버튼) — COM 포트 열기 테스트 */
-ipcMain.handle('printer:connect', async () => {
-  const portName = getPortName()
-  if (!portName) return { ok: false, error: 'COM 포트를 먼저 선택해 주세요.' }
-
-  try {
-    const port = new SerialPort({ path: portName, baudRate: 9600, autoOpen: false })
-    await new Promise<void>((resolve, reject) => {
-      port.open(err => err ? reject(err) : resolve())
-    })
-    await new Promise<void>(resolve => port.close(() => resolve()))
-    notifyPrinterStatus()
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: (err as Error).message }
-  }
-})
+ipcMain.handle('printer:connect', () => testPrinterPort())
 
 /** 거래처 QR 영수증 출력 */
 ipcMain.handle('printer:qr-receipt', async (_e, payload: {
