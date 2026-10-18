@@ -117,10 +117,10 @@ export interface PaperSpec {
 }
 
 export const PAPER_OPTIONS: PaperSpec[] = [
-  { key: 'a4-1',    label: 'A4 1장',   note: '한 장에 하나 — 벽에 크게 붙일 때',           cols: 1, rows: 1 },
-  { key: 'a4-2',    label: 'A4 2등분', note: '위아래로 둘 — 반으로 잘라 두 곳에',          cols: 1, rows: 2 },
-  { key: 'a4-4',    label: 'A4 4등분', note: '한 장을 네 칸으로 - 잘라서 나눠주기 좋아요', cols: 2, rows: 2 },
-  { key: 'a4-8',    label: 'A4 8등분', note: '한 장에 여덟 — 거래처가 많을 때',            cols: 2, rows: 4 },
+  { key: 'a4-1',    label: 'A4 1장',   note: '한 장에 하나씩 크게 뽑아 벽에 붙일 때 좋아요',           cols: 1, rows: 1 },
+  { key: 'a4-2',    label: 'A4 2등분', note: '위아래로 둘씩 뽑아 반으로 잘라 두 곳에 붙일 때 좋아요',          cols: 1, rows: 2 },
+  { key: 'a4-4',    label: 'A4 4등분', note: '한 장을 네 칸으로 뽑아 잘라서 나눠주기 좋아요', cols: 2, rows: 2 },
+  { key: 'a4-8',    label: 'A4 8등분', note: '한 장에 여덟 칸으로 뽑아 거래처가 많을 때 좋아요',            cols: 2, rows: 4 },
   { key: 'receipt', label: '영수증',    note: '매장 프린터로 바로 나와요. 인쇄 대화상자가 뜨지 않습니다', cols: 1, rows: 1 },
 ]
 

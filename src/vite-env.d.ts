@@ -41,7 +41,8 @@ interface PosBridge {
   keepAwake:         (on: boolean) => Promise<{ active: boolean; platform: string }>
   diagnostics:       () => Promise<{
     version: string; electron: string; chrome: string; node: string
-    platform: string; arch: string; osRelease: string; logDir: string; keepAwake: boolean
+    platform: string; arch: string; osRelease: string; logDir: string
+    printerPort: string; printerConnected: boolean
   }>
   setStoreId:        (storeId: string) => Promise<unknown>
   getSettings:       () => Promise<unknown>

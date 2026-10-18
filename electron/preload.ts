@@ -37,7 +37,8 @@ const api = {
   keepAwake:   (on: boolean) => ipcRenderer.invoke('app:keep-awake', on) as Promise<{ active: boolean; platform: string }>,
   diagnostics: () => ipcRenderer.invoke('app:diagnostics') as Promise<{
     version: string; electron: string; chrome: string; node: string
-    platform: string; arch: string; osRelease: string; logDir: string; keepAwake: boolean
+    platform: string; arch: string; osRelease: string; logDir: string
+    printerPort: string; printerConnected: boolean
   }>,
 
   // ── 매장 세션 ────────────────────────────────────────────────────────────────

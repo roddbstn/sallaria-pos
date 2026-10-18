@@ -460,7 +460,15 @@ ipcMain.handle('app:keep-awake', (_e, on: boolean) => {
   }
 })
 
-/** 진단 리포트에 들어갈 메인 프로세스 쪽 정보 */
+/**
+ * 진단 리포트에 들어갈 메인 프로세스 쪽 정보.
+ *
+ * 무엇을 넣을지는 "실제로 들어오는 문의"로 정했다:
+ *   "영수증이 안 나와요"  → 프린터 포트·연결 상태
+ *   "주문이 안 들어와요"  → 앱 버전·플랫폼 (실시간 연결은 렌더러가 안다)
+ *   "소리가 안 나요"      → 알림음 설정 (렌더러 쪽)
+ * 사람이 되묻지 않고 원인을 좁힐 수 있는 것만 넣는다.
+ */
 ipcMain.handle('app:diagnostics', () => ({
   version:   app.getVersion(),
   electron:  process.versions.electron,
@@ -470,7 +478,8 @@ ipcMain.handle('app:diagnostics', () => ({
   arch:      process.arch,
   osRelease: os.release(),
   logDir:    app.getPath('logs'),
-  keepAwake: keepAwakeId !== null && powerSaveBlocker.isStarted(keepAwakeId),
+  printerPort:      getPortName() || '',
+  printerConnected: !!getPortName() && printerReachable,
 }))
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────

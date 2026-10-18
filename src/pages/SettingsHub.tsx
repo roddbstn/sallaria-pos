@@ -8,6 +8,7 @@ import { useStore } from '../lib/store-context'
 import ReceiptPreview, { DEFAULT_RECEIPT_CONFIG, type ReceiptPreviewConfig } from '../components/ui/ReceiptPreview'
 import PrinterDiagnosticModal, { buildDiagnosticText, type PrinterDiagnostic } from '../components/ui/PrinterDiagnosticModal'
 import DiagnosticReportModal, { type DiagnosticReport } from '../components/ui/DiagnosticReportModal'
+import * as Sentry from '@sentry/electron/renderer'
 
 // 햄버거 드로어 "설정" 그룹 — `선포스-전체메뉴-화면기획.md` §4~6의 기획을 와이어프레임으로 구현.
 // Figma 노드는 아직 없다. 기존 Settings.tsx의 기능을 옮겨오되, 토스 POS 벤치마크 결과를
@@ -43,7 +44,8 @@ type Api = {
   updaterCheck?:    () => Promise<{ state: 'latest' | 'available' | 'no-feed' | 'error'; current: string; latest?: string; message?: string }>
   diagnostics?:     () => Promise<{
     version: string; electron: string; chrome: string; node: string
-    platform: string; arch: string; osRelease: string; logDir: string; keepAwake: boolean
+    platform: string; arch: string; osRelease: string; logDir: string
+    printerPort: string; printerConnected: boolean
   }>
 }
 const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
@@ -393,7 +395,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
       },
     })
   }, [cfg])
-  const { menuSize, optionSize, amountSize, footerText: footer, showBalance } = cfg
+  const { menuSize, optionSize, amountSize, footerText: footer } = cfg
 
   return (
     <div>
@@ -420,9 +422,6 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
             placeholder="감사합니다. 또 오세요"
             className="h-[32px] w-[220px] px-[11px] rounded-[9px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E]"
           />
-        </Row>
-        <Row label="영수증에 선결제 잔액 찍기">
-          <Toggle on={showBalance} onChange={v => patch({ showBalance: v })} />
         </Row>
       </Group>
 
@@ -517,15 +516,24 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
     showToast('로그 폴더를 열었어요')
   }
 
-  /** 복사 전에 보여줄 내용을 만든다 — 화면에 보이는 것과 클립보드가 같아야 한다 */
+  /**
+   * 보내기 전에 보여줄 내용을 만든다.
+   *
+   * 무엇을 넣을지는 "실제로 들어오는 문의"로 정했다 —
+   * 되묻지 않고 원인을 좁힐 수 있는 것만 남긴다.
+   *   "영수증이 안 나와요" → 프린터 포트·연결 상태
+   *   "소리가 안 나요"     → 알림음 설정(볼륨 0, 횟수, 반복)
+   *   그 외 전부          → 버전·플랫폼
+   */
   async function buildReport() {
     const d = await api().diagnostics?.().catch(() => null)
     const now = new Date().toLocaleString('ko-KR')
+    const sound = `볼륨 ${volume} · ${alarmCount}회 · 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}`
     const rows = [
-      { label: '매장',      value: storeName || '(미설정)' },
-      { label: '앱 버전',   value: d ? `${d.version} (${d.platform} ${d.arch})` : appVersion },
-      { label: '화면 꺼짐 방지', value: keepAwake ? '켜짐' : '꺼짐' },
-      { label: '알림음',    value: `볼륨 ${volume} · ${alarmCount}회 · 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}` },
+      { label: '매장',    value: storeName || '(미설정)' },
+      { label: '앱 버전', value: d ? `${d.version} (${d.platform} ${d.arch})` : appVersion },
+      { label: '프린터',  value: d ? (d.printerConnected ? `연결됨 (${d.printerPort})` : '끊김') : '알 수 없음' },
+      { label: '알림음',  value: volume === 0 ? `${sound} — 볼륨이 0이에요` : sound },
     ]
     const text = [
       '[선포스 진단]',
@@ -535,13 +543,34 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
       ...(d ? [
         `플랫폼     ${d.platform} ${d.arch} (OS ${d.osRelease})`,
         `Electron   ${d.electron} / Chrome ${d.chrome} / Node ${d.node}`,
-        `화면유지   ${d.keepAwake ? '켜짐' : '꺼짐'}`,
+        `프린터     ${d.printerConnected ? '연결됨' : '끊김'} / 포트 ${d.printerPort || '(미설정)'}`,
         `로그폴더   ${d.logDir}`,
       ] : ['(메인 프로세스 정보를 읽지 못했어요)']),
       `알림음     볼륨 ${volume} / ${alarmCount}회 / 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}`,
       `UA         ${navigator.userAgent}`,
     ].join('\n')
     setReport({ text, rows })
+  }
+
+  /**
+   * 보내기 — 점주가 복사해서 어딘가에 붙여넣는 대신 Sentry 로 바로 올린다.
+   * 크래시는 이미 Sentry 가 자동으로 받고 있고(main.tsx 에서 init),
+   * 이건 "크래시는 아닌데 이상하다"를 점주가 직접 올리는 창구다.
+   *
+   * 접수번호(Sentry event id)를 돌려주는 게 중요하다 — 점주가 "보냈어요"만 보면
+   * 진짜 갔는지 알 수 없고, 나중에 어느 건인지 짚을 수도 없다.
+   */
+  async function sendReport(r: DiagnosticReport): Promise<string | null> {
+    const d = await api().diagnostics?.().catch(() => null)
+    return Sentry.captureMessage(`[진단 리포트] ${storeName || '매장 미설정'}`, {
+      level: 'info',
+      tags: {
+        kind: 'diagnostic-report',
+        store: storeName || 'unknown',
+        printer: d ? (d.printerConnected ? 'connected' : 'disconnected') : 'unknown',
+      },
+      extra: { report: r.text, volume, alarmCount, repeatAlarm, repeatSec, ...(d ?? {}) },
+    }) ?? null
   }
 
   return (
@@ -594,7 +623,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
       </Group>
 
       <Group title="데이터">
-        <Row label="진단 리포트" hint="문제가 생겼을 때 보낼 내용을 먼저 확인하고 복사해요">
+        <Row label="진단 리포트 보내기" hint="문제가 생겼을 때 눌러주세요. 무엇이 가는지 먼저 보여드려요">
           <SmallButton onClick={buildReport}>내용 보기</SmallButton>
         </Row>
         <Row label="앱 버전">
@@ -611,7 +640,13 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
         </Row>
       </Group>
 
-      {report && <DiagnosticReportModal report={report} onClose={() => setReport(null)} />}
+      {report && (
+        <DiagnosticReportModal
+          report={report}
+          onSend={() => sendReport(report)}
+          onClose={() => setReport(null)}
+        />
+      )}
     </div>
   )
 }

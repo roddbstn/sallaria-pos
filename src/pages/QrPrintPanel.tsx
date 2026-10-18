@@ -126,7 +126,6 @@ export default function QrPrintPanel() {
   const [picked,   setPicked]   = useState<Set<string>>(new Set())
   const [paper,    setPaper]    = useState<QrPaper>('a4-4')
   const [notice,   setNotice]   = useState(DEFAULT_QR_NOTICE)
-  const [showPin,  setShowPin]  = useState(false)
   const [printing, setPrinting] = useState(false)
   const [preview,  setPreview]  = useState('')
 
@@ -178,7 +177,7 @@ export default function QrPrintPanel() {
             accountName: a.account_name,
             manager:     a.contact_person ?? '',
             phone:       a.contact_phone  ?? '',
-            pin:         showPin ? a.pin_code : '',
+            pin:         '',   // PIN 은 종이에 찍지 않는다 — 아래 printQrSheet 주석 참고
             qrUrl:       qrUrlFor(a, storeId),
             storeName,
           })
@@ -190,10 +189,12 @@ export default function QrPrintPanel() {
         chosen.map(a => ({
           accountName: a.account_name,
           manager:     a.contact_person ?? '',
-          pin:         a.pin_code,
+          pin:         '',
           url:         qrUrlFor(a, storeId),
         })),
-        { paper, storeName, notice, showPin },
+        // PIN 은 더 이상 종이에 찍지 않는다. QR 종이는 사무실 벽에 붙는데,
+        // PIN 이 적혀 있으면 지나가는 누구나 그 거래처 잔액으로 주문할 수 있다.
+        { paper, storeName, notice, showPin: false },
       )
     } finally {
       setPrinting(false)
@@ -224,7 +225,7 @@ export default function QrPrintPanel() {
                 accountName={first?.account_name ?? '거래처'}
                 notice={notice || DEFAULT_QR_NOTICE}
                 qrImg={preview}
-                pin={showPin ? (first?.pin_code ?? null) : null}
+                pin={null}
                 filled={picked.size}
               />
             </div>
@@ -302,19 +303,6 @@ export default function QrPrintPanel() {
                 placeholder={DEFAULT_QR_NOTICE}
                 className="field-soft w-full h-[40px] px-[13px] rounded-[9px] border border-[#D9D9D9] text-[13px] text-[#1E1E1E] outline-none"
               />
-            </div>
-
-            {/* PIN 표기 */}
-            <div className="mb-[20px]">
-              <label className="flex items-center gap-[8px] cursor-pointer">
-                <input type="checkbox" checked={showPin} onChange={e => setShowPin(e.target.checked)} />
-                <span className="text-[13px] text-[#1E1E1E]">PIN 번호도 함께 인쇄</span>
-              </label>
-              {showPin && (
-                <div className="mt-[6px] text-[11px] font-normal text-danger">
-                  QR 종이는 사무실 벽에 붙습니다. PIN이 적혀 있으면 지나가는 누구나 그 거래처 잔액으로 주문할 수 있어요.
-                </div>
-              )}
             </div>
 
             {/* 대상 거래처 */}
