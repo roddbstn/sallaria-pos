@@ -1105,30 +1105,34 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               {selected.isDeleted ? (
                 <button
                   onClick={() => handleRestoreOrder(selected.code)}
-                  className="w-full h-[44px] rounded-[10px] text-[13px] font-medium text-[#017333] bg-[#E6F4EC] hover:opacity-90 transition-opacity">
+                  className="pressable w-full h-[44px] rounded-[10px] text-[13px] font-medium text-[#FCFCFC] bg-[#2C261F] hover:opacity-90 transition-opacity">
                   주문 복구
                 </button>
               ) : (
                 <>
                   {deleteConfirmCode === selected.code ? (
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="flex-1 text-[12px] text-danger font-semibold">정말 삭제할까요?</span>
-                      <button onClick={() => handleDeleteOrder(selected.code)}
-                        className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-danger text-white hover:bg-red-700 transition-colors">
-                        삭제
-                      </button>
+                    <div className="flex items-center gap-[8px]">
+                      <span className="flex-1 text-[13px] font-medium text-danger">정말 삭제할까요?</span>
                       <button onClick={() => setDeleteConfirmCode(null)}
-                        className="px-3 py-1.5 rounded-[9px] text-[12px] font-medium bg-[#E8E4E2] text-[#6A635E] hover:opacity-90 transition-opacity">
-                        취소
+                        className="pressable h-[38px] px-[14px] rounded-[9px] text-[13px] font-medium bg-[#E8E4E2] text-[#6A635E] hover:opacity-90 transition-opacity">
+                        아니요
+                      </button>
+                      <button onClick={() => handleDeleteOrder(selected.code)}
+                        className="pressable h-[38px] px-[16px] rounded-[9px] text-[13px] font-medium bg-[#C92A2A] text-[#FCFCFC] hover:opacity-90 transition-opacity">
+                        삭제
                       </button>
                     </div>
                   ) : (
-                    <div className="flex gap-2">
+                    /* 삭제와 재출력이 같은 크기로 나란히 있었다. 둘은 무게가 전혀 다르다 —
+                       재출력은 하루에도 몇 번 누르는 일이고, 삭제는 되돌릴 수 없다.
+                       삭제는 좌하단에 글자만, 재출력은 우하단 CTA 로 둔다
+                       (다른 모달들과 같은 배치: 약한 행동 왼쪽, 주 행동 오른쪽). */
+                    <div className="flex items-center">
                       <button onClick={() => setDeleteConfirmCode(selected.code)}
-                        className="flex-1 h-[44px] rounded-[10px] text-[13px] font-medium transition-opacity hover:opacity-90"
-                        style={{ backgroundColor: '#C92A2A1F', color: '#C92A2A' }}>
+                        className="text-[13px] font-normal text-[#ADADAD] hover:text-danger transition-colors">
                         삭제
                       </button>
+                      <div className="flex-1" />
                       <button
                         onClick={async () => {
                           setReprintMsg(null)
@@ -1141,14 +1145,14 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                           )
                           setTimeout(() => setReprintMsg(null), 3000)
                         }}
-                        className="flex-1 h-[44px] rounded-[10px] text-[13px] font-medium transition-opacity hover:opacity-90"
+                        className="pressable h-[44px] px-[20px] rounded-[10px] text-[13px] font-medium transition-opacity hover:opacity-90"
                         style={{ backgroundColor: '#E8E4E2', color: '#6A635E' }}>
                         영수증 재출력
                       </button>
                     </div>
                   )}
                   {reprintMsg && (
-                    <div className={`mt-2 text-center text-[11px] font-normal ${reprintMsg.ok ? 'text-[#017333]' : 'text-danger'}`}>
+                    <div className={`mt-2 text-center text-[11px] font-normal ${reprintMsg.ok ? 'text-[#2C261F]' : 'text-danger'}`}>
                       {reprintMsg.ok ? '✅' : '⚠️'} {reprintMsg.text}
                     </div>
                   )}
@@ -1215,9 +1219,13 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
         )
         return (
           <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelectedMenuName(null)}>
-            <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              <div className="p-6">
-                <div className="flex items-start justify-between mb-3">
+            {/* 스크롤은 **안쪽 영역에만** 건다.
+                전에는 overflow-y-auto 가 둥근 모서리를 가진 바깥 컨테이너에 걸려 있어
+                스크롤바가 모달 위쪽 모서리 밖으로 삐져나왔다.
+                머리말(제목·닫기)은 스크롤 밖에 고정 — 긴 목록에서 제목이 사라지지 않는다. */}
+            <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="px-6 pt-6 pb-3 flex-shrink-0 border-b border-gray-border">
+                <div className="flex items-start justify-between">
                   <div>
                     <div className="text-[15px] font-semibold text-[#1E1E1E]">{selectedMenuName}</div>
                     <div className="text-[11px] text-gray-text mt-0.5">총 {ms.qty}개 · {won(ms.total)}</div>
@@ -1225,7 +1233,8 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                   <button onClick={() => setSelectedMenuName(null)}
                     className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
                 </div>
-                <div className="border-t border-gray-border mb-3" />
+              </div>
+              <div className="px-6 pb-6 pt-4 flex-1 min-h-0 overflow-y-auto">
                 <div className="text-[12px] font-medium text-[#2C261F] mb-2.5">주문 내역 ({relatedOrders.length}건)</div>
                 <div className="space-y-2.5">
                   {relatedOrders.map(order => {
