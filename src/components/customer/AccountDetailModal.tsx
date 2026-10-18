@@ -14,6 +14,7 @@ import { downloadStatementCsv } from '../../lib/prepaid-statement'
 import DonutChart from '../DonutChart'
 import { DataTable, DataTableHead, DataTableRow, DataTableNotice, StatusTag } from '../ui/DataTable'
 import CustomerProfileModal from './CustomerProfileModal'
+import RevealText from '../ui/RevealText'
 
 // ── 계정 상세 모달 ──────────────────────────────────────────────────────────
 //
@@ -63,6 +64,8 @@ interface AccountInfo {
   accountNumber:  number | null
   memo:           string | null
   validity:       PrepayValidity
+  /** 선결제 비밀번호 — 기본은 가려두고 눈 버튼으로만 본다 */
+  pinCode:        string | null
 }
 
 interface OrderRow {
@@ -193,7 +196,7 @@ export default function AccountDetailModal({ target, onClose }: {
       setLoading(true)
       const [accRes, ordRes, depRes, memRes, adjRes] = await Promise.all([
         supabase.from('accounts')
-          .select('account_name, account_type, organization_name, contact_person, contact_phone, business_number, current_balance, created_at, qr_system, account_number, memo, prepay_validity')
+          .select('account_name, account_type, organization_name, contact_person, contact_phone, business_number, current_balance, created_at, qr_system, account_number, memo, prepay_validity, pin_code')
           .eq('account_code', target.code)
           .single(),
         supabase.from('orders')
@@ -221,6 +224,7 @@ export default function AccountDetailModal({ target, onClose }: {
         contact_person: string | null; contact_phone: string | null; business_number: string | null
         current_balance: number | null; created_at: string; qr_system: string | null
         account_number: number | null; memo: string | null; prepay_validity: PrepayValidity | null
+        pin_code: string | null
       } | null
 
       if (a) {
@@ -237,6 +241,7 @@ export default function AccountDetailModal({ target, onClose }: {
           accountNumber:  a.account_number,
           memo:           a.memo,
           validity:       (a.prepay_validity ?? 'none') as PrepayValidity,
+          pinCode:        a.pin_code ?? null,
         })
       }
 
@@ -293,9 +298,14 @@ export default function AccountDetailModal({ target, onClose }: {
   }, [target.code, reloadKey])
 
   // QR — 계정 관리 표·QR출력 화면과 같은 규칙(qr_system)으로 주소를 만든다
+  const [qrUrl,    setQrUrl]    = useState('')
+  const [urlShown, setUrlShown] = useState(false)
+  const [urlCopied, setUrlCopied] = useState(false)
+
   useEffect(() => {
     if (!info || !storeId) return
     const url = qrUrlFor({ account_code: target.code, qr_system: info.qrSystem }, storeId)
+    setQrUrl(url)
     QRCode.toDataURL(url, { width: 400, margin: 0, color: { dark: '#1E1E1E', light: '#FFFFFF' } })
       .then(setQrImg)
       .catch(() => setQrImg(''))
@@ -520,6 +530,19 @@ export default function AccountDetailModal({ target, onClose }: {
                     <Field label="기관명"     value={info?.organization ?? ''} />
                     <Field label="계정 번호"   value={info?.accountNumber != null ? `#${info.accountNumber}` : ''} mono />
                     <Field label="등록일시"    value={info ? fmtDateTime(info.createdAt) : ''} mono />
+                    {/* PIN 은 기본으로 가린다 — 이 모달이 열린 채 손님이 지나갈 수 있다.
+                        눈 버튼을 눌러야 보이고, 다른 화면의 이름·전화번호와 같은 방식이다 */}
+                    <div className="flex items-center gap-[8px] py-[7px] border-b border-[#F2F2F2] last:border-b-0">
+                      <span className="w-[72px] flex-shrink-0 text-[12px] font-normal text-[#787878]">선결제 PIN</span>
+                      {info?.pinCode
+                        ? <RevealText
+                            value={info.pinCode}
+                            masked={'•'.repeat(info.pinCode.length)}
+                            iconSize={12}
+                            className="text-[13px] font-medium text-[#1E1E1E] tabular-nums"
+                          />
+                        : <span className="text-[13px] font-normal text-[#ADADAD]">없음</span>}
+                    </div>
                     <Field label="비고"       value={info?.memo ?? ''} />
                   </div>
                 </div>
@@ -535,9 +558,35 @@ export default function AccountDetailModal({ target, onClose }: {
                         QR 생성 중…
                       </div>
                     )}
-                    {/* URL 은 띄우지 않는다. 손님이 읽을 주소가 아니라 QR 이 들고 있는 값일 뿐인데,
-                        10px 로 세 줄씩 깔려서 QR 자체보다 자리를 더 먹었다.
-                        (주소가 필요하면 QR출력 화면에서 종이로 뽑는다) */}
+                    {/* 주소는 기본으로 접어둔다 — 10px 로 세 줄씩 깔리면 QR 보다 자리를 더 먹는다.
+                        다만 카톡으로 보내거나 확인할 일이 있어서 복사·표시는 둔다 */}
+                    <div className="flex items-center gap-[6px] mt-[10px]">
+                      <button
+                        onClick={async () => {
+                          if (!qrUrl) return
+                          try {
+                            await navigator.clipboard.writeText(qrUrl)
+                            setUrlCopied(true); setTimeout(() => setUrlCopied(false), 1800)
+                          } catch { /* 복사 실패는 조용히 — 아래 '주소 보기'로 직접 가져갈 수 있다 */ }
+                        }}
+                        disabled={!qrUrl}
+                        className="pressable-tab h-[28px] px-[11px] rounded-[8px] bg-[#F2F2F2] text-[#1E1E1E] text-[12px] font-normal hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
+                      >
+                        {urlCopied ? '✓ 복사됨' : '링크 복사'}
+                      </button>
+                      <button
+                        onClick={() => setUrlShown(v => !v)}
+                        disabled={!qrUrl}
+                        className="pressable-tab h-[28px] px-[11px] rounded-[8px] bg-[#F2F2F2] text-[#1E1E1E] text-[12px] font-normal hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
+                      >
+                        {urlShown ? '주소 숨기기' : '주소 보기'}
+                      </button>
+                    </div>
+                    {urlShown && (
+                      <div className="mt-[8px] w-full rounded-[8px] bg-[#F2F2F2] px-[9px] py-[7px] text-[10px] font-normal text-[#6A635E] break-all leading-[1.5]">
+                        {qrUrl}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

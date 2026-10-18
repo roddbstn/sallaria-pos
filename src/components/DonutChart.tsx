@@ -9,12 +9,19 @@ export default function DonutChart({
   strokeWidth?: number
   onSegmentHover?: (index: number | null, e: React.MouseEvent) => void
 }) {
-  const radius = (size - strokeWidth) / 2
+  // ⚠️ 1px 안으로 들인다.
+  //
+  // (size - strokeWidth)/2 를 그대로 쓰면 스트로크 **바깥 가장자리가 viewBox 경계에
+  // 정확히 닿는다**: radius + strokeWidth/2 = size/2. 그러면 사방이 반 픽셀씩 잘리고,
+  // #root 에 zoom 이 걸려 있어 소수점 픽셀이 생기는 탓에 잘림이 고르지 않아
+  // 원이 찌그러져 보인다. 1px 만 들여도 잘림이 사라진다.
+  const INSET = 1
+  const radius = (size - strokeWidth) / 2 - INSET
   const circumference = 2 * Math.PI * radius
   const hasData = segments.some(s => s.pct > 0)
   let offset = 0
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} shapeRendering="geometricPrecision">
       {!hasData ? (
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#E5E5E5" strokeWidth={strokeWidth} />
       ) : segments
