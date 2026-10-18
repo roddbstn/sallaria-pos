@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { won } from '../../lib/ipc'
 import LoadingBlock from '../ui/LoadingBlock'
+import { NUM, NUM_STRONG, NUM_MUTED } from '../../lib/number-style'
 
 // 손님 한 명을 펼쳐 보는 화면.
 //
@@ -27,6 +28,8 @@ interface Profile {
   weekday_n:  number
   weekend_n:  number
   methods:    { method: string; n: number }[]
+  /** 최근 주문 20건 — '언제 왔나'는 월별 막대로는 답이 안 된다 */
+  recent:     { date: string; time: string; dow: string; method: string; amount: number; items: string | null }[]
 }
 
 const SLOT_ORDER = ['아침', '점심', '오후', '저녁'] as const
@@ -164,11 +167,32 @@ export default function CustomerProfileModal({
 
               {/* 이용방법 */}
               <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">이용방법</div>
-              <div className="flex gap-[8px]">
+              <div className="flex gap-[8px] mb-[20px]">
                 {p.methods.map(m => (
                   <span key={m.method} className="px-[11px] h-[28px] leading-[28px] rounded-[8px] bg-[#F2F2F2] text-[12px] font-normal text-[#414141]">
                     {m.method === '내점' ? '매장 식사' : m.method} {m.n}건
                   </span>
+                ))}
+              </div>
+
+              {/* 언제 주문했나 — 월별 막대는 흐름을 보여주지만
+                  "지난주에 왔나?"는 날짜가 있어야 답한다 */}
+              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">
+                최근 주문
+                <span className="ml-[6px] text-[11px] font-normal text-[#ADADAD]">
+                  {p.orders > p.recent.length ? `${p.recent.length}건 / 전체 ${p.orders}건` : `${p.recent.length}건`}
+                </span>
+              </div>
+              <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden">
+                {p.recent.map((r, i) => (
+                  <div key={i} className={`flex items-center px-[14px] py-[8px] gap-[10px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
+                    <span className={`w-[74px] flex-shrink-0 text-[12px] ${NUM}`}>
+                      {r.date}<span className="text-[#ADADAD]">({r.dow})</span>
+                    </span>
+                    <span className={`w-[38px] flex-shrink-0 text-[11px] ${NUM_MUTED}`}>{r.time}</span>
+                    <span className="flex-1 min-w-0 text-[12px] font-normal text-[#414141] truncate">{r.items ?? '—'}</span>
+                    <span className={`flex-shrink-0 text-[12px] ${NUM_STRONG}`}>{won(r.amount)}</span>
+                  </div>
                 ))}
               </div>
             </>

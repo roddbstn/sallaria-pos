@@ -26,6 +26,7 @@ import { useQrPrint } from '../hooks/useQrPrint'
 import LoadingTimer from '../components/ui/LoadingTimer'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import CustomerProfileModal from '../components/customer/CustomerProfileModal'
+import { NUM, NUM_STRONG, NUM_UP, NUM_DOWN, NUM_MUTED, deltaClass } from '../lib/number-style'
 
 const BASE_URL = 'https://sallaria.web.app'
 const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
@@ -202,6 +203,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [monthlyOrderCount, setMonthlyOrderCount] = useState<Record<string, number>>({}) // 이번달 주문건수 (가장 많이 주문한 고객 랭킹용)
   const [active30dCount, setActive30dCount] = useState(0)                           // 최근 30일 내 주문 1건 이상인 계정 수
   const [yearlyDeposits, setYearlyDeposits] = useState<number[]>(Array(12).fill(0))  // 선결제 추이 — 올해 1~12월 합계
+  const [yearlyOrders,   setYearlyOrders]   = useState<number[]>(Array(12).fill(0))  // 주문 추이 — 올해 1~12월 건수
   const [phoneRevealed, setPhoneRevealed] = useState(false) // 우측 패널 — 관리자 연락처 중간 4자리 공개 토글
   const [yearlyDepositRows, setYearlyDepositRows] = useState<{ account_code: string; amount: number; created_at: string }[]>([]) // 바 차트 호버 툴팁용 — 월별 합계의 원본 행
   const [barTooltip, setBarTooltip] = useState<{ monthIdx: number; x: number; y: number } | null>(null)
@@ -390,7 +392,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   async function fetchCustomerStats(accountCodes: string[]) {
     if (accountCodes.length === 0) {
       setMemberCounts({}); setMonthlyDeposits({}); setOrderTrend({})
-      setMonthlyOrderCount({}); setActive30dCount(0); setYearlyDeposits(Array(12).fill(0)); setYearlyDepositRows([])
+      setMonthlyOrderCount({}); setActive30dCount(0); setYearlyDeposits(Array(12).fill(0)); setYearlyOrders(Array(12).fill(0)); setYearlyDepositRows([])
       return
     }
     const now = new Date()
@@ -402,7 +404,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     const [membersRes, depositsRes, ordersRes] = await Promise.all([
       supabase.from('account_members').select('account_code').in('account_code', accountCodes),
       supabase.from('deposits').select('account_code, amount, created_at').in('account_code', accountCodes).gte('created_at', yearStart.toISOString()),
-      supabase.from('orders').select('account_code, ordered_at, status').in('account_code', accountCodes).gte('ordered_at', lastMonthStart.toISOString()),
+      // 올해 전체로 넓힌다 — 선결제 추이와 나란히 놓을 '주문 추이'를 그리려면
+      // 12개월치가 필요하다. orders 가 수백 행이라 범위를 넓혀도 부담이 없다.
+      supabase.from('orders').select('account_code, ordered_at, status').in('account_code', accountCodes).gte('ordered_at', yearStart.toISOString()),
     ])
 
     const mCounts: Record<string, number> = {}
@@ -423,13 +427,18 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     const thisCount: Record<string, number> = {}
     const lastCount: Record<string, number> = {}
     const active30d = new Set<string>()
+    const yOrders = Array(12).fill(0)
     for (const row of (ordersRes.data ?? [])) {
       if (row.status === '취소') continue
       const d = new Date(row.ordered_at)
+      yOrders[d.getMonth()] += 1
       if (d >= thisMonthStart) thisCount[row.account_code] = (thisCount[row.account_code] ?? 0) + 1
-      else lastCount[row.account_code] = (lastCount[row.account_code] ?? 0) + 1
+      // 범위를 올해 전체로 넓혔으므로 '지난달'을 명시적으로 가둬야 한다.
+      // 안 그러면 1월 주문까지 전부 '지난달'로 세어져 추이가 엉킨다.
+      else if (d >= lastMonthStart) lastCount[row.account_code] = (lastCount[row.account_code] ?? 0) + 1
       if (d >= d30) active30d.add(row.account_code)
     }
+    setYearlyOrders(yOrders)
     setMonthlyOrderCount(thisCount)
     setActive30dCount(active30d.size)
     const trend: Record<string, number> = {}
@@ -1288,14 +1297,14 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                           )
                         })()}
                       </span>
-                      <span style={{ width: 77 }} className={`text-right ${trend > 0 ? 'text-[#3374FF]' : trend < 0 ? 'text-[#FF676F]' : 'text-[#ADADAD]'}`}>
+                      <span style={{ width: 77 }} className={`text-right ${deltaClass(trend)}`}>
                         {trend > 0 ? `+${trend}건` : trend < 0 ? `${trend}건` : '-'}
                       </span>
-                      <span style={{ width: 97 }} className="text-right">{memberCounts[acc.account_code] ?? 0}명</span>
-                      <span style={{ width: 116 }} className={`text-right font-medium ${acc.current_balance < 0 ? 'text-danger' : ''}`}>
+                      <span style={{ width: 97 }} className={`text-right ${NUM}`}>{memberCounts[acc.account_code] ?? 0}명</span>
+                      <span style={{ width: 116 }} className={`text-right ${acc.current_balance < 0 ? NUM_DOWN : NUM_STRONG}`}>
                         {acc.current_balance < 0 ? `-${won(Math.abs(acc.current_balance))}` : won(acc.current_balance)}
                       </span>
-                      <span style={{ width: 141 }} className="text-right">
+                      <span style={{ width: 141 }} className={`text-right ${(monthlyDeposits[acc.account_code] ?? 0) > 0 ? NUM_UP : NUM_MUTED}`}>
                         {(monthlyDeposits[acc.account_code] ?? 0) > 0 ? `+${won(monthlyDeposits[acc.account_code])}` : won(0)}
                       </span>
                     </button>
@@ -1402,6 +1411,30 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             <div className="flex mt-[6px]" style={{ width: 323 }}>
               {Array.from({ length: 12 }, (_, i) => (
                 <div key={i} className="flex-1 text-center text-[10px] text-[#6A635E]">{i + 1}월</div>
+              ))}
+            </div>
+          </div>
+
+          {/* 주문 추이 — 선결제 추이와 **같은 모양**으로 바로 아래 둔다.
+              "충전은 늘었는데 주문은 그대로"처럼 두 줄을 겹쳐 읽으라고 나란히 놓는 것이다.
+              축(1~12월)과 막대 폭이 같아야 눈이 위아래로 바로 비교한다. */}
+          <div className="relative bg-[#F2F2F2] rounded-[13px] mt-[13px]" style={{ padding: 13 }}>
+            <div className="flex items-baseline justify-between">
+              <div className="text-[15px] font-semibold text-[#2C261F]">주문 추이</div>
+              <div className={`text-[11px] ${NUM_MUTED}`}>올해 {yearlyOrders.reduce((a, b) => a + b, 0)}건</div>
+            </div>
+            <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
+              {yearlyOrders.map((n, i) => (
+                <div
+                  key={i}
+                  className="flex-1 flex flex-col items-center justify-end h-full px-[1px] cursor-default"
+                  title={`${i + 1}월 ${n}건`}
+                >
+                  <div
+                    className="w-full bg-[#8C8379] rounded-t-[2px]"
+                    style={{ height: Math.max(2, (n / Math.max(1, ...yearlyOrders)) * 51) }}
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -2027,7 +2060,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       전체 기간
                     </button>
                   </div>
-                  <button onClick={downloadCSV} className="px-[12px] py-[6px] rounded-lg bg-ink text-white text-[9px] font-bold hover:opacity-90 transition-opacity">
+                  {/* 9px 굵은 글씨라 모달에서 거의 안 보였다. 이 모달에 들어온 목적이
+                      '내역을 받아가는 것'인데 그 버튼이 가장 작았다. */}
+                  <button onClick={downloadCSV} className="pressable h-[36px] px-[16px] rounded-[9px] bg-[#2C261F] text-[#FCFCFC] text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center gap-[6px]">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 2v8m0 0 3-3m-3 3L5 7M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                     CSV 다운로드
                   </button>
                 </div>
@@ -2209,6 +2247,19 @@ function CustomerDetailPanel({
   /** 구성원을 눌러 펼쳐 볼 손님 — 고객 현황에서 쓰는 모달과 같은 것 */
   const [profileOf, setProfileOf] = useState<{ name: string; code: string; account: string } | null>(null)
 
+  // 이 계정의 관리자 이름 — 구성원 목록에 왕관을 달기 위해.
+  // account_members 에 역할 컬럼이 없어서 이름으로 맞춘다(카카오 닉네임 = 구성원 이름일 때만).
+  const [adminNames, setAdminNames] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { data } = await supabase.rpc('account_admin_names', { p_account_code: selected.account_code })
+      if (cancelled) return
+      setAdminNames(new Set(((data ?? []) as { name: string }[]).map(r => r.name)))
+    })()
+    return () => { cancelled = true }
+  }, [selected.account_code])
+
   const phoneParts = (selected.contact_phone ?? '').split('-')
   const phoneMid = phoneParts.length === 3 ? phoneParts[1] : null
 
@@ -2363,8 +2414,8 @@ function CustomerDetailPanel({
                       <div className="text-[9px] text-[#787878]">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
                     </div>
                     <div className="text-right">
-                      <div className={`text-[12px] font-bold ${d.amount < 0 ? 'text-danger' : 'text-green'}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
-                      <div className="text-[9px] text-[#6A635E]">잔액 {won(d.balance_after)}</div>
+                      <div className={`text-[12px] ${deltaClass(d.amount)}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
+                      <div className={`text-[9px] text-[#6A635E] ${NUM}`}>잔액 {won(d.balance_after)}</div>
                     </div>
                   </div>
                 )
@@ -2390,11 +2441,23 @@ function CustomerDetailPanel({
                   })}
                   className="bg-[#F2F2F2] hover:bg-[#E8E4E2] cursor-pointer transition-colors rounded-[10px] px-[13px] py-[10px] flex items-center justify-between"
                 >
-                  <div className="flex flex-col items-start gap-[3px]">
-                    <RevealText
-                      value={m.name} masked={maskName(m.name)} iconSize={10}
-                      className="text-[10px] font-semibold text-ink"
-                    />
+                  <div className="flex flex-col items-start gap-[3px] min-w-0">
+                    {/* 이름은 10 → 13px. 이 카드에서 가장 먼저 읽어야 할 것이 이름인데
+                        전화번호(9px)와 거의 같은 크기라 훑기 어려웠다. */}
+                    <span className="flex items-center gap-[5px] min-w-0">
+                      {adminNames.has(m.name) && (
+                        /* 관리자 — 왕관. 등록을 마친 사람이 누구인지는 점주가
+                           문의를 어디로 보낼지 정할 때 쓰는 정보다 */
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" className="flex-shrink-0" aria-label="관리자">
+                          <path d="M3 17.5h18M4 7.5l4 3.5 4-6 4 6 4-3.5-1.6 8.5H5.6L4 7.5Z"
+                                fill="#E8B84B" stroke="#C99A2E" strokeWidth="1.3" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                      <RevealText
+                        value={m.name} masked={maskName(m.name)} iconSize={12}
+                        className="text-[13px] font-semibold text-ink"
+                      />
+                    </span>
                     {m.phone && (
                       <RevealText
                         value={m.phone} masked={maskPhone(m.phone)} iconSize={9}
