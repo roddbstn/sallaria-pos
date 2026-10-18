@@ -152,6 +152,18 @@ interface StoreOptionGroup {
 export default function Menus() {
   const { storeId } = useStore()
   const [previewCatId, setPreviewCatId] = useState<string>('all')
+  // 카테고리 빠른 선택 줄의 실제 높이 — 카드 그리드가 absolute 라 그만큼 아래로 밀어야 한다.
+  // 개수에 따라 줄 수가 달라지므로 추정하지 않고 잰다.
+  const pillBandRef = useRef<HTMLDivElement | null>(null)
+  const [pillBandH, setPillBandH] = useState(0)
+  useEffect(() => {
+    const el = pillBandRef.current
+    if (!el) { setPillBandH(0); return }
+    const ro = new ResizeObserver(() => setPillBandH(el.offsetHeight))
+    ro.observe(el)
+    setPillBandH(el.offsetHeight)
+    return () => ro.disconnect()
+  })
 
   // QR오더 미리보기(iframe)와 좌측 카테고리 선택을 양방향으로 동기화.
   // postMessage는 "이 특정 부모창 ↔ 이 특정 iframe" 사이에서만 오가므로, 손님이 QR코드를 찍어
@@ -1332,10 +1344,32 @@ export default function Menus() {
                    바로 붙어 보이지 않도록 padding-bottom 확보 */}
               <div className="absolute overflow-y-auto pb-[26px]" style={{ left: 0, top: 0, right: 0, bottom: 0 }}>
 
+              {/* 카테고리 빠른 선택 — 검색창 바로 아래.
+                  카드 그리드만 있으면 아래로 스크롤한 뒤에는 어느 분류를 보고 있는지,
+                  다른 분류로 어떻게 가는지가 안 보인다. 카드는 '개수·편집'용으로 두고
+                  전환은 이 줄에서 한다. 줄 수가 늘어도 카드가 겹치지 않도록 높이를 재서 민다. */}
+              {menuViewMode === 'category' && !menuEditMode && categories.length > 0 && (
+                <div ref={pillBandRef} className="absolute flex flex-wrap gap-[6px]" style={{ left: 26, right: 26, top: 62 }}>
+                  {[{ id: 'all', name: '전체' }, ...sortedCategories()].map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setPreviewCatId(c.id); setOptionPanelMenu(null) }}
+                      className={`pressable-tab h-[30px] px-[13px] rounded-[15px] text-[13px] whitespace-nowrap transition-colors ${
+                        previewCatId === c.id
+                          ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
+                          : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
+                      }`}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* 카테고리 모드 — 일반 보기(고정 그리드) */}
               {menuViewMode === 'category' && !menuEditMode && (
                 listForLeft.length === 0 ? (
-                  <div className="absolute text-[13px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
+                  <div className="absolute text-[13px] text-[#ADADAD]" style={{ left: 26, top: 71 + pillBandH }}>
                     아직 등록된 카테고리가 없습니다.
                   </div>
                 ) : listForLeft.map((cat, i) => {
@@ -1348,7 +1382,7 @@ export default function Menus() {
                       className={`absolute rounded-[13px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left transition-colors ${
                         previewCatId === cat.id ? 'bg-[#E5E5E5]' : 'bg-[#FCFCFC]'
                       }`}
-                      style={{ left: GRID_PAD + col * COL_STEP, top: 62 + row * 123, width: CARD_W, height: 117 }}
+                      style={{ left: GRID_PAD + col * COL_STEP, top: 62 + pillBandH + 12 + row * 123, width: CARD_W, height: 117 }}
                     >
                       <div className={`absolute ${catTextSizeClass} font-semibold text-ink leading-snug`} style={{ left: 10, top: 10, right: 10 }}>
                         {cat.name}
