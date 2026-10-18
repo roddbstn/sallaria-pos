@@ -15,7 +15,8 @@ interface HubLayoutProps<K extends string> {
   items:     HubNavItem<K>[]
   activeKey: K
   onChange:  (key: K) => void
-  onBack:    () => void
+  /** 더 이상 쓰지 않는다 — 호출부를 한꺼번에 고치지 않으려고 선택으로만 남겨둔다 */
+  onBack?:   () => void
   children:  ReactNode
   /**
    * 본문 여백·스크롤을 셸이 책임지지 않는 모드.
@@ -27,7 +28,7 @@ interface HubLayoutProps<K extends string> {
 }
 
 export default function HubLayout<K extends string>({
-  title, items, activeKey, onChange, onBack, children, bare = false,
+  title, items, activeKey, onChange, children, bare = false,
 }: HubLayoutProps<K>) {
   return (
     <div className="h-full flex bg-[#F9F9F9] overflow-hidden">
@@ -49,13 +50,9 @@ export default function HubLayout<K extends string>({
             </button>
           ))}
         </div>
-        {/* Figma에는 없는 버튼. 상단 전역 헤더(주문/메뉴/고객 탭)로도 나갈 수 있지만, 허브에
-            들어온 경로가 햄버거 드로어라 돌아갈 길을 하나는 남겨둔다. 본문 상단 좌표를
-            Figma와 맞추려고 네비 맨 아래로 내렸다. */}
-        <button onClick={onBack} className="mt-auto pt-[30px] text-[13px] text-[#C1B7AA] hover:text-[#FFEFEF] flex items-center gap-1 self-start transition-colors">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3.5L5.5 8L10 12.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          뒤로
-        </button>
+        {/* '뒤로' 버튼은 뺐다(2026-10-18). 상단 전역 헤더(홈·주문·메뉴·고객)와
+            햄버거 드로어 둘 다 늘 떠 있어서 나갈 길이 이미 두 개다.
+            세 번째 길은 안 쓰이면서 사이드패널 아래에 빈자리만 만들었다. */}
       </div>
 
       {/* ── 본문 (Figma: left 453 → 좌측 네비 353 + 100 = px 64, top 150 → pt 96) ── */}

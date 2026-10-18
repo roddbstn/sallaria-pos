@@ -1100,12 +1100,12 @@ export default function App() {
     { title: '매출 · 주문', items: [
       { label: '매출 리포트', onClick: () => goToSalesHub('report') },
       { label: '주문 리포트', onClick: () => goToSalesHub('analysis') },
-      { label: '주문 내역',   onClick: () => goToSalesHub('history') },
+      // '주문 내역'은 뺐다 — 상단 '주문' 탭이 같은 화면이다
     ] },
     { title: '상품', items: [
-      { label: '메뉴 상세',     onClick: () => goToProductHub('menus') },
-      { label: '옵션 상세',     onClick: () => goToProductHub('options') },
-      { label: '카테고리 상세', onClick: () => goToProductHub('categories') },
+      { label: '메뉴 정보',     onClick: () => goToProductHub('menus') },
+      { label: '옵션 정보',     onClick: () => goToProductHub('options') },
+      { label: '카테고리 정보', onClick: () => goToProductHub('categories') },
     ] },
     { title: '고객', items: [
       { label: '고객 현황',   onClick: () => goToCustomerHub('detail') },

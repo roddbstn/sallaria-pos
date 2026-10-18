@@ -9,6 +9,8 @@ import { useMenuForm, type MenuFormStoreGroup } from '../components/menu/use-men
 import { mapMenuRow } from '../lib/mappers'
 import type { MenuDetail } from '../lib/mock-data'
 import LoadingBlock from '../components/ui/LoadingBlock'
+import InfoTip from '../components/ui/InfoTip'
+import CategoryEditModal, { type CategoryTarget } from '../components/ui/CategoryEditModal'
 
 // 햄버거 드로어 "상품" 그룹 — Figma node 672:1120(메뉴 상세) · 682:204(옵션 상세) · 672:1358(카테고리 상세).
 // 세 프레임 모두 아직 비어 있어서, `선포스-전체메뉴-화면기획.md` §1~3의 기획을 와이어프레임으로
@@ -21,9 +23,9 @@ import LoadingBlock from '../components/ui/LoadingBlock'
 export type ProductHubTab = 'menus' | 'options' | 'categories'
 
 const NAV: HubNavItem<ProductHubTab>[] = [
-  { key: 'menus',      label: '메뉴 상세' },
-  { key: 'options',    label: '옵션 상세' },
-  { key: 'categories', label: '카테고리 상세' },
+  { key: 'menus',      label: '메뉴 정보' },
+  { key: 'options',    label: '옵션 정보' },
+  { key: 'categories', label: '카테고리 정보' },
 ]
 
 /** 30일 전 ISO */
@@ -379,7 +381,7 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
   return (
     <div>
       <HubSection
-        title="메뉴 상세"
+        title="메뉴 정보"
         action={
           <div className="flex items-center gap-[7px]">
             <SearchBox value={q} onChange={setQ} placeholder="메뉴명 검색" />
@@ -652,7 +654,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
   return (
     <div>
       <HubSection
-        title="옵션 상세"
+        title="옵션 정보"
         action={<PrimaryAction onClick={() => showToast('옵션 그룹 추가는 메뉴 화면에서 할 수 있어요')}>+ 옵션 그룹 추가</PrimaryAction>}
       />
 
@@ -760,10 +762,24 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                     )}
                   </div>
 
-                  {/* 항목 */}
+                  {/* 항목 — 메뉴 정보 표와 같은 머리글 디자인(#E8E4E2 바탕, 12px, #6A635E).
+                      전에는 머리글 없이 값만 늘어서 있어서 마지막 칸의 '30일 N회'가
+                      무슨 수인지 알 수 없었다. */}
                   {(group.option_items ?? []).length === 0 ? (
                     <div className="px-[20px] py-[16px] text-[11px] text-[#ADADAD]">항목이 없어요</div>
-                  ) : (group.option_items ?? [])
+                  ) : (<>
+                    <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[32px] text-[11px] font-normal text-[#6A635E]">
+                      <span className="flex-1 min-w-0">항목</span>
+                      {(group.option_items ?? []).some(it => itemQtyLabel((it as DbOptionItem & { max_quantity?: number | null }).max_quantity))
+                        && <span className="w-[100px]">수량</span>}
+                      <span className="w-[90px] text-right">추가 금액</span>
+                      <span className="w-[90px] text-right flex items-center justify-end gap-[4px]">
+                        선택 횟수
+                        <InfoTip text={'최근 30일 동안 손님이\n이 항목을 고른 횟수예요'} label="선택 횟수 설명" />
+                      </span>
+                    </div>
+                  </>)}
+                  {(group.option_items ?? []).length > 0 && (group.option_items ?? [])
                     .slice().sort((a, b) => a.display_order - b.display_order)
                     .map((item, idx) => {
                       const sold = data.soldByOption[item.id] ?? 0
@@ -782,7 +798,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                               : '+0원'}
                           </span>
                           <span className={`w-[90px] text-right ${sold === 0 ? 'text-[#ADADAD]' : 'text-[#787878]'}`}>
-                            30일 {sold}회
+                            {sold}회
                           </span>
                         </div>
                       )
@@ -811,7 +827,8 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
 
 // ── 3. 카테고리 상세 — Figma 672:1358 ──────────────────────────────────────
 
-function CategoryDetailPanel({ data, loading, showToast }: PanelProps) {
+function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
+  const [editing, setEditing] = useState<CategoryTarget | null>(null)
   // 카테고리별 메뉴 수와 30일 판매량
   const stats = useMemo(() => {
     const m: Record<string, { menus: number; sold: number }> = {}
@@ -828,7 +845,7 @@ function CategoryDetailPanel({ data, loading, showToast }: PanelProps) {
   return (
     <div>
       <HubSection
-        title="카테고리 상세"
+        title="카테고리 정보"
         action={<PrimaryAction onClick={() => showToast('카테고리 추가는 메뉴 화면에서 할 수 있어요')}>+ 카테고리 추가</PrimaryAction>}
       />
 
@@ -846,7 +863,11 @@ function CategoryDetailPanel({ data, loading, showToast }: PanelProps) {
             {data.categories.length === 0 ? <Empty note="등록된 카테고리가 없어요" /> : data.categories.map((c, i) => (
               <div
                 key={c.id}
-                className={`flex items-center px-[20px] h-[44px] bg-[#FCFCFC] hover:bg-[#F9F9F9] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                onClick={() => setEditing({
+                  id: c.id, name: c.name, isActive: c.is_active,
+                  menuCount: stats[c.id]?.menus ?? 0,
+                })}
+                className={`flex items-center px-[20px] h-[44px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
               >
                 <span className="w-[46px] flex items-center gap-[7px] text-[12px] text-[#ADADAD]">
                   {/* 드래그 핸들 — 순서 변경은 QR오더 노출 순서에 그대로 반영된다 */}
@@ -886,9 +907,38 @@ function CategoryDetailPanel({ data, loading, showToast }: PanelProps) {
 
           <div className="mt-[12px] text-[11px] font-normal text-[#ADADAD]">
             순서를 바꾸면 QR오더 고객 화면의 카테고리 노출 순서도 같이 바뀝니다.
-            카테고리를 지울 때는 그 안의 메뉴를 어디로 옮길지 먼저 물어봅니다.
+            분류를 눌러 이름을 고치거나 지울 수 있어요.
           </div>
         </>
+      )}
+
+      {editing && (
+        <CategoryEditModal
+          target={editing}
+          onClose={() => setEditing(null)}
+          onSave={async patch => {
+            const { error } = await supabase.from('categories')
+              .update({ name: patch.name, is_active: patch.isActive })
+              .eq('id', editing.id)
+            if (error) throw error
+            reload()
+            showToast('분류를 저장했어요')
+          }}
+          onDelete={async () => {
+            // ⚠️ 순서가 중요하다. 메뉴를 먼저 떼어내고(category_id = null) 그다음 분류를 지운다.
+            //    반대로 하면 외래키에 걸리거나, 설정에 따라 메뉴까지 함께 지워진다.
+            //    메뉴는 '분류 없음'으로 남아야 한다 — 분류를 정리하다 상품을 잃으면 안 된다.
+            const { error: unlinkErr } = await supabase.from('menus')
+              .update({ category_id: null }).eq('category_id', editing.id)
+            if (unlinkErr) throw unlinkErr
+            const { error } = await supabase.from('categories').delete().eq('id', editing.id)
+            if (error) throw error
+            reload()
+            showToast(editing.menuCount > 0
+              ? `분류를 지웠어요. 메뉴 ${editing.menuCount}개는 '분류 없음'에 있어요`
+              : '분류를 지웠어요')
+          }}
+        />
       )}
     </div>
   )

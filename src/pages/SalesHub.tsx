@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import HubLayout, { type HubNavItem } from '../components/hub/HubLayout'
 import Sales from './Sales'
-import Orders from './Orders'
 import OrderAnalysis from './OrderAnalysis'
 
 // 햄버거 드로어 "매출 · 주문" 그룹.
@@ -14,12 +13,13 @@ import OrderAnalysis from './OrderAnalysis'
 // HubLayout 은 bare 모드로 쓴다. 두 페이지 모두 h-full + 자체 스크롤 구조라,
 // 셸이 패딩과 스크롤을 또 걸면 스크롤바가 두 겹이 되고 안쪽이 높이를 못 잡는다.
 
-export type SalesHubTab = 'report' | 'analysis' | 'history'
+// 'history'(주문 내역)는 뺐다 — 상단 '주문' 탭에 같은 화면이 이미 있다.
+// 같은 것이 두 길로 나오면 점주가 "이 둘이 뭐가 다르지"를 매번 확인하게 된다.
+export type SalesHubTab = 'report' | 'analysis'
 
 const NAV: HubNavItem<SalesHubTab>[] = [
   { key: 'report',   label: '매출 리포트' },
   { key: 'analysis', label: '주문 리포트' },
-  { key: 'history',  label: '주문 내역' },
 ]
 
 export default function SalesHub({
@@ -39,9 +39,6 @@ export default function SalesHub({
           기존 Orders 의 '메뉴별매출' 탭은 품목 집계만 있어서, 요일·시간대와 거래처 주기를
           더한 전용 화면으로 갈아끼웠다. */}
       {tab === 'analysis' && <OrderAnalysis />}
-
-      {/* 내역은 "누가 언제 무엇을" — 건별 목록 */}
-      {tab === 'history' && <Orders key="history" initialTab="주문내역" />}
     </HubLayout>
   )
 }
