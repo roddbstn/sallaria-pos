@@ -202,7 +202,8 @@ export default function QrPrintPanel() {
   }
 
   const geo = paperGeometry(paper)
-  const pageCount = paper === 'receipt' ? picked.size : Math.max(1, Math.ceil(picked.size / geo.perPage))
+  // 고른 게 없으면 0장이다. 전에는 Math.max(1, …) 라 아무것도 안 골라도 '1장'이 떴다
+  const pageCount = paper === 'receipt' ? picked.size : Math.ceil(picked.size / geo.perPage)
   const allPicked = accounts.length > 0 && picked.size === accounts.length
 
   return (
@@ -276,14 +277,33 @@ export default function QrPrintPanel() {
                   </div>
                 </div>
                 <div className="w-px h-[28px] bg-[#D9D9D9]" />
-                <div>
-                  <div className="text-[11px] font-normal text-[#787878] mb-[3px]">
-                    {paper === 'receipt' ? '영수증' : '한 장에'}
+                {/* 성격이 다른 두 숫자를 한 라벨에 묶지 않는다.
+                    전에는 '한 장에 : 8곳 · 총 4장' 이라 "한 장에 4장"으로 읽혔다.
+                    '8곳'은 용지가 정하는 값이고, '4장'은 고른 거래처 수가 정하는 값이다. */}
+                {paper === 'receipt' ? (
+                  <div>
+                    <div className="text-[11px] font-normal text-[#787878] mb-[3px]">영수증</div>
+                    <div className="text-[15px] font-medium text-[#1E1E1E]">
+                      {picked.size > 0 ? `${picked.size}장` : '—'}
+                    </div>
                   </div>
-                  <div className="text-[15px] font-medium text-[#1E1E1E]">
-                    {paper === 'receipt' ? `${picked.size}장` : `${geo.perPage}곳 · 총 ${pageCount}장`}
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div>
+                      <div className="text-[11px] font-normal text-[#787878] mb-[3px]">한 장에</div>
+                      <div className="text-[15px] font-medium text-[#1E1E1E]">{geo.perPage}곳</div>
+                    </div>
+                    <div className="w-px h-[28px] bg-[#D9D9D9]" />
+                    <div>
+                      <div className="text-[11px] font-normal text-[#787878] mb-[3px]">
+                        {picked.size > 0 ? `${picked.size}곳 뽑으면` : '필요한 종이'}
+                      </div>
+                      <div className="text-[15px] font-medium text-[#1E1E1E]">
+                        {picked.size > 0 ? `종이 ${pageCount}장` : '—'}
+                      </div>
+                    </div>
+                  </>
+                )}
                 {geo.qrMM < 20 && (
                   <div className="text-[11px] font-normal text-danger ml-auto">
                     2cm 아래면 휴대폰이 잘 못 읽어요
