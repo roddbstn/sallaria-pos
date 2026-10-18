@@ -9,6 +9,7 @@ import { DataTable, DataTableHead, DataTableRow, DataTableNotice, StatusTag } fr
 import AccountDetailModal, { type AccountDetailTarget } from '../components/customer/AccountDetailModal'
 import { makeTypeColorOf, typeBadgeStyle } from '../lib/account-type-color'
 import InfoTip from '../components/ui/InfoTip'
+import LoadingBlock from '../components/ui/LoadingBlock'
 
 // 햄버거 드로어 "고객" 그룹에서 들어오는 전체메뉴 화면 — Figma node 532:3003(고객 현황) ·
 // 570:694(계정 관리) · 570:717(QR오더) · 570:673(문자 보내기).
@@ -116,7 +117,7 @@ interface DetailStats {
   repeatRate:        number | null
   repeatBase:        { repeat: number; total: number }
   typeRatio:         { label: string; count: number; color: string }[]
-  topCustomers:      { name: string; orders: number; amount: number }[]
+  topCustomers:      { name: string; orders: number; amount: number }[]   // (구) 거래처 단위 — 아래 topOrderers 로 대체됨
   /** 최근 6개월 월별 추이 — 두 차트가 같은 x축을 쓴다 */
   monthly:           MonthPoint[]
   /** 재주문자 비율을 창(window)만 바꿔 다시 잰 값들 */
@@ -148,6 +149,44 @@ interface RateBase {
  * 둘 다 0~100% 라 세로 축을 100 으로 고정한다. 최대값에 맞춰 늘리면 "35% 가 꽉 찬 막대"가
  * 돼서 좋아 보이는 착시가 생긴다. 비율 지표는 눈금이 고정이어야 달끼리 비교가 된다.
  */
+
+/** 주문 많은 손님 한 줄 — top_orderers() RPC 가 그대로 돌려주는 모양 */
+interface TopOrderer {
+  orderer_name:    string
+  account_code:    string
+  account_name:    string
+  orders:          number
+  amount:          number
+  share_pct:       number | null
+  account_members: number
+  top_menu:        string | null
+  top_menu_count:  number | null
+  cycle_days:      number | null
+  lapse_ratio:     number | null
+}
+
+/** 돌아오지 않은 단골 한 줄 — lapsed_regulars() RPC */
+interface LapsedRegular {
+  orderer_name:  string
+  account_name:  string
+  orders:        number
+  cycle_days:    number
+  days_since:    number
+  lapse_ratio:   number
+  contact_phone: string | null
+}
+
+/** 2.0 → '이틀에 한 번', 7.0 → '일주일에 한 번' — 숫자보다 말이 빨리 읽힌다 */
+function cycleWords(d: number): string {
+  if (d < 1.5) return '매일 오시던 분'
+  if (d < 2.5) return '이틀에 한 번 오시던 분'
+  if (d < 4)   return '사흘에 한 번 오시던 분'
+  if (d < 6)   return '닷새에 한 번 오시던 분'
+  if (d < 9)   return '일주일에 한 번 오시던 분'
+  if (d < 20)  return '보름에 한 번 오시던 분'
+  return '한 달에 한 번 오시던 분'
+}
+
 function RateBars({ title, hint, data, color }: {
   title: string
   /** 제목 옆 'i' 에 붙는 설명. 고객 화면 표의 '추이' 안내와 같은 방식 */
@@ -211,9 +250,24 @@ function CustomerDetailPanel() {
   const [stats,   setStats]   = useState<DetailStats | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // 단골 관리 두 묶음 — DB 에서 집계해 한 번에 받는다.
+  // 클라이언트에서 주문을 통째로 받아 계산하면 왕복과 페이로드가 늘어난다.
+  const [topOrderers, setTopOrderers] = useState<TopOrderer[]>([])
+  const [lapsed,      setLapsed]      = useState<LapsedRegular[]>([])
+
   useEffect(() => {
     if (!storeId) return
     let cancelled = false
+    // 두 집계는 위 통계와 독립이라 따로, 그리고 병렬로 받는다
+    void (async () => {
+      const [t, l] = await Promise.all([
+        supabase.rpc('top_orderers',     { p_store_id: storeId, p_from: null, p_limit: 5 }),
+        supabase.rpc('lapsed_regulars',  { p_store_id: storeId }),
+      ])
+      if (cancelled) return
+      setTopOrderers((t.data ?? []) as TopOrderer[])
+      setLapsed((l.data ?? []) as LapsedRegular[])
+    })()
 
     async function load() {
       setLoading(true)
@@ -416,7 +470,7 @@ function CustomerDetailPanel() {
         ? '최근 2주 주문 없음'
         : `주문자 ${stats.repeatBase.total}명 중 ${stats.repeatBase.repeat}명`,
       // 정의는 네 칸 중 첫 칸에만 단다 — 같은 지표라 한 번이면 충분하다
-      info: '단골 = 그 기간 이전에도 주문한 적 있는 손님\n\n주문자 이름 기준이고, 취소된 주문은 빼고 셉니다.',
+      info: '해당 기간 이전에도\n주문한 손님 비율이에요',
     },
     repeatCell('이번달 단골 비율',   stats.repeatThisMonth),
     repeatCell('저번달 단골 비율',   stats.repeatLastMonth),
@@ -452,8 +506,8 @@ function CustomerDetailPanel() {
       />
 
       {loading || !stats ? (
-        <div className="bg-[#F2F2F2] rounded-[20px] py-[66px] text-center text-[13px] font-normal text-[#787878]">
-          불러오는 중…
+        <div className="bg-[#F2F2F2] rounded-[20px]">
+          <LoadingBlock py={66} />
         </div>
       ) : (
         <div className="bg-[#F2F2F2] rounded-[20px] px-[46px] py-[36px] flex items-start gap-[40px]">
@@ -500,27 +554,104 @@ function CustomerDetailPanel() {
         </div>
       )}
 
-      {/* 주문 많은 손님 — 이번 달 주문 건수 상위 5팀 */}
+      {/* ── 주문 많은 손님 ──────────────────────────────────────────────────
+          전에는 순위·이름·건수·금액 네 칸이라 "장혜령님이 1등이구나"에서 끝났다.
+          단골 관리는 순위를 아는 일이 아니라 **행동을 고르는 일**이라, 모든 칸이
+          "그래서 뭘 하지"에 답하도록 바꿨다.
+          (전 버전은 사람이 아니라 거래처 단위로 세고 있었다 — 이름이 '주문 많은
+           손님'인데 실제로는 '주문 많은 거래처'였다. top_orderers() 로 교체.) */}
       <div className="mt-[46px]">
         <HubSection title="주문 많은 손님" />
-        {loading || !stats ? null : stats.topCustomers.length === 0 ? (
-          <HubPlaceholder note="이번 달 주문이 아직 없어요" />
+        {loading ? <LoadingBlock py={40} /> : topOrderers.length === 0 ? (
+          <HubPlaceholder note="아직 주문이 없어요" />
         ) : (
           <div className="rounded-[13px] overflow-hidden border border-[#E8E4E2]">
-            {stats.topCustomers.map((c, i) => (
+            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[11px] font-medium text-[#787878]">
+              <span className="w-[26px]" />
+              <span className="w-[96px]">주문자</span>
+              <span className="flex-1 min-w-0">거래처</span>
+              <span className="w-[58px] text-right">주문</span>
+              <span className="w-[96px] text-right">금액</span>
+              <span className="w-[62px] text-right flex items-center justify-end gap-[4px]">
+                비중
+                <InfoTip text={'그 거래처 주문 중\n이 분이 차지하는 몫이에요'} label="비중 설명" />
+              </span>
+              <span className="w-[150px] pl-[14px]">늘 시키는 것</span>
+              <span className="w-[84px] text-right">상태</span>
+            </div>
+            {topOrderers.map((c, i) => {
+              // 이용자가 1명뿐인 거래처는 비중이 늘 100%다 — 위험이 아니라 구조라서 칠하지 않는다
+              const heavy = (c.share_pct ?? 0) >= 45 && c.account_members > 1
+              const late  = (c.lapse_ratio ?? 0) > 3
+              return (
+                <div
+                  key={`${c.orderer_name}-${c.account_code}`}
+                  className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                >
+                  <span className="w-[26px] text-[12px] font-medium text-[#6A635E]">{i + 1}</span>
+                  <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
+                  <span className="flex-1 min-w-0 text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
+                  <span className="w-[58px] text-right text-[12px] font-normal text-[#787878] tabular-nums">{c.orders}건</span>
+                  <span className="w-[96px] text-right text-[13px] font-medium text-[#1E1E1E] tabular-nums">{won(c.amount)}</span>
+                  <span className={`w-[62px] text-right text-[12px] tabular-nums ${heavy ? 'text-danger font-medium' : 'text-[#787878] font-normal'}`}>
+                    {c.share_pct === null ? EMPTY : `${c.share_pct}%`}
+                  </span>
+                  <span className="w-[150px] pl-[14px] min-w-0 text-[12px] font-normal text-[#787878] truncate">
+                    {c.top_menu
+                      ? <>{c.top_menu}<span className="text-[#ADADAD]"> {c.top_menu_count}회</span></>
+                      : EMPTY}
+                  </span>
+                  <span className="w-[84px] text-right text-[12px] font-normal">
+                    {late
+                      ? <span className="text-danger font-medium">⚠ 발길 뜸</span>
+                      : <span className="text-[#ADADAD]">정상</span>}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {topOrderers.some(c => (c.share_pct ?? 0) >= 45 && c.account_members > 1) && (
+          <p className="mt-[8px] text-[11px] font-normal text-[#ADADAD]">
+            비중이 빨간 분은 그 거래처 주문의 절반 가까이를 혼자 맡고 있어요. 이 분이 빠지면 그 거래처 주문이 크게 줄어요.
+          </p>
+        )}
+      </div>
+
+      {/* ── 돌아오지 않은 단골 ──────────────────────────────────────────────
+          위 '주문 많은 손님'과 **따로** 둬야 한다. 이탈한 사람은 정의상 최근 주문이
+          없어서 상위 목록에 안 들어온다 — 지금 구조에서는 떠나는 사람이 조용히 사라진다.
+          기준은 '그 사람의 평소 주기 대비 3배 초과' + '최소 7일 경과'.
+          절대 일수만 쓰면 매일 오던 사람과 월 1회 오던 사람에게 '30일'이 같은 뜻이 돼버리고,
+          배수만 쓰면 주기 1일인 사람이 주말만 지나도 경고에 뜬다(실제로 그랬다). */}
+      {lapsed.length > 0 && (
+        <div className="mt-[46px]">
+          <HubSection title="돌아오지 않은 단골" />
+          <div className="rounded-[13px] overflow-hidden border border-[#E8E4E2]">
+            {lapsed.slice(0, 8).map((c, i) => (
               <div
-                key={c.name}
-                className={`flex items-center px-[26px] h-[46px] bg-[#FCFCFC] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                key={`${c.orderer_name}-${c.account_name}`}
+                className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
               >
-                <span className="w-[32px] text-[12px] font-medium text-[#6A635E]">{i + 1}</span>
-                <span className="flex-1 min-w-0 text-[13px] font-normal text-[#1E1E1E] truncate">{c.name}</span>
-                <span className="w-[100px] text-right text-[12px] font-normal text-[#787878]">{c.orders}건</span>
-                <span className="w-[140px] text-right text-[13px] font-medium text-[#1E1E1E]">{won(c.amount)}</span>
+                <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
+                <span className="w-[150px] text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
+                <span className="flex-1 min-w-0 text-[12px] font-normal text-[#6A635E] truncate">
+                  {cycleWords(c.cycle_days)}
+                </span>
+                <span className="w-[90px] text-right text-[13px] font-medium text-danger tabular-nums">
+                  {c.days_since}일째
+                </span>
+                <span className="w-[72px] text-right text-[11px] font-normal text-[#ADADAD] tabular-nums">
+                  {c.orders}건 주문
+                </span>
               </div>
             ))}
           </div>
-        )}
-      </div>
+          <p className="mt-[8px] text-[11px] font-normal text-[#ADADAD]">
+            평소 주기보다 3배 넘게 안 오신 분들이에요{lapsed.length > 8 && ` · 전체 ${lapsed.length}명 중 8명`}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -740,7 +871,7 @@ function AccountsPanel() {
       <HubSection title="계정 관리" />
 
       {loading ? (
-        <div className="py-[56px] text-center text-[13px] font-normal text-[#787878]">불러오는 중…</div>
+        <LoadingBlock py={56} />
       ) : rows.length === 0 ? (
         <div className="py-[56px] text-center text-[13px] font-normal text-[#ADADAD]">등록된 거래처가 없어요</div>
       ) : (

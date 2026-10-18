@@ -5,6 +5,7 @@ import { useStore } from '../lib/store-context'
 import { won } from '../lib/ipc'
 import { maskName, maskPhone } from '../lib/mask'
 import { SMS_TEMPLATES, fillTemplate, smsByteLength, SMS_BYTE_LIMIT, type SmsKind } from '../lib/sms-templates'
+import LoadingBlock from '../components/ui/LoadingBlock'
 
 // ── 문자 보내기 ─────────────────────────────────────────────────────────────
 //
@@ -195,7 +196,7 @@ export default function SmsPanel() {
       <HubSection title="문자 보내기" />
 
       {loading ? (
-        <div className="py-[56px] text-center text-[13px] font-normal text-[#787878]">불러오는 중…</div>
+        <LoadingBlock py={56} />
       ) : (
         <>
           {/* 어떤 상황인가 — 이게 대상을 정한다 */}

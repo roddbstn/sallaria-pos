@@ -1,60 +1,52 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import { rootZoom } from '../../lib/figma-scale'
 
-// 지표 이름 옆의 작은 'i' — 누르면 말풍선으로 정의를 보여준다.
+// 지표 이름 옆의 작은 'i' — 마우스를 올리면 말풍선이 뜬다.
 //
-// 왜 이렇게 바꿨나: 전에는 단골의 정의가 화면 아래 회색 두 줄로 상시 떠 있었다.
-// 그런데 그 설명이 필요한 사람은 처음 한 번뿐이고, 그 뒤로는 숫자를 가리는 잡음이 된다.
-// 반대로 title 속성(마우스 올리면 뜨는 회색 툴팁)은 터치 POS 에서 아예 안 뜬다.
-// 그래서 '눌러서 여는' 말풍선으로 간다 — 손가락으로도 열리고, 평소엔 숨어 있다.
+// 디자인·동작은 고객 화면 표의 '추이' i 와 **똑같이** 맞췄다(Customers.tsx).
+// 흰 카드 + 그림자, 요소 위쪽에 가운데 정렬, 호버로 열고 떠날 때 닫힌다.
+// 같은 뜻의 장치가 화면마다 다르게 생기면 점주가 매번 다시 배워야 한다.
+//
+// fixed 로 띄우는 이유: 지표 칸이 overflow 가 걸린 그리드 안에 있어서
+// absolute 로 두면 잘린다. 표 밖에서 그리고 좌표만 받아온다.
+// rootZoom() 으로 나누는 것도 같은 이유 — 앱 전체에 zoom 이 걸려 있어
+// getBoundingClientRect() 값과 fixed 좌표계의 단위가 다르다.
 
 export default function InfoTip({ text, label = '설명 보기' }: {
-  /** 말풍선에 넣을 문장. 줄바꿈은 \n 으로 */
+  /** 말풍선에 넣을 문장. \n 으로 줄을 나눈다 */
   text:   string
   label?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef<HTMLSpanElement | null>(null)
-
-  // 바깥을 누르면 닫는다 — 열어둔 채 다른 걸 누르면 말풍선이 따라다니는 것처럼 보인다
-  useEffect(() => {
-    if (!open) return
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null)
 
   return (
-    <span ref={wrapRef} className="relative inline-flex items-center align-middle">
-      <button
-        type="button"
+    <>
+      <span
+        role="img"
         aria-label={label}
-        onClick={e => { e.stopPropagation(); setOpen(v => !v) }}
-        className={`w-[14px] h-[14px] rounded-full flex items-center justify-center text-[10px] font-semibold leading-none transition-colors ${
-          open ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#E2E2E2] text-[#787878] hover:bg-[#D4D4D4]'
-        }`}
+        className="w-[13px] h-[13px] rounded-full bg-[#E8E4E2] text-[#787878] text-[9px] flex items-center justify-center cursor-default flex-shrink-0"
+        onMouseEnter={e => {
+          const r = e.currentTarget.getBoundingClientRect()
+          setAt({ x: r.left + r.width / 2, y: r.top })
+        }}
+        onMouseLeave={() => setAt(null)}
       >
         i
-      </button>
+      </span>
 
-      {open && (
-        <span
-          role="tooltip"
-          // 말풍선은 버튼 아래에 띄운다. 지표 칸이 그리드 맨 윗줄에도 오기 때문에
-          // 위로 띄우면 헤더에 잘린다.
-          className="absolute left-1/2 -translate-x-1/2 top-[20px] z-[70] w-[228px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[11.5px] font-normal leading-[1.6] px-[12px] py-[9px] shadow-[0_2px_10px_rgba(0,0,0,0.18)] whitespace-pre-line text-left"
+      {at && (
+        <div
+          className="fixed z-[75] pointer-events-none bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[8px] py-[8px] -translate-x-1/2"
+          style={{
+            left:   at.x / rootZoom(),
+            bottom: (window.innerHeight - at.y) / rootZoom() + 6,
+          }}
         >
-          {/* 꼬리 — 버튼을 가리키게 해서 어느 지표의 설명인지 분명히 한다 */}
-          <span className="absolute left-1/2 -translate-x-1/2 -top-[4px] w-[8px] h-[8px] rotate-45 bg-[#2C261F]" />
-          {text}
-        </span>
+          <span className="block text-[12px] font-semibold text-ink text-center leading-[1.2] whitespace-pre-line">
+            {text}
+          </span>
+        </div>
       )}
-    </span>
+    </>
   )
 }

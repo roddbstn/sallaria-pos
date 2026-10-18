@@ -4,6 +4,7 @@ import { supabase, type DbAccount } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { qrUrlFor, qrDataUrl, PAPER_OPTIONS, DEFAULT_QR_NOTICE, paperGeometry, fontSizesFor, mmToCm, CELL_GAP, type QrPaper } from '../lib/qr-order'
 import { printQrSheet } from '../components/ui/QrSheetPrinter'
+import LoadingBlock from '../components/ui/LoadingBlock'
 
 // 고객 허브에 있던 걸 설정으로 옮겼다 — QR 종이를 뽑는 건 "고객을 보는 일"이 아니라
 // "장비를 다루는 일"에 가깝다. 프린터 연결·영수증 설정과 같은 묶음에 있는 게 찾기 쉽다.
@@ -211,7 +212,7 @@ export default function QrPrintPanel() {
       <HubSection title="QR출력" />
 
       {loading ? (
-        <div className="py-[56px] text-center text-[13px] font-normal text-[#787878]">불러오는 중…</div>
+        <LoadingBlock py={56} />
       ) : accounts.length === 0 ? (
         <div className="py-[56px] text-center text-[13px] font-normal text-[#ADADAD]">등록된 거래처가 없어요</div>
       ) : (

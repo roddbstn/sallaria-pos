@@ -16,6 +16,7 @@ import { MenuTagBadges } from '../components/menu/tag-badges'
 
 type MenuTab      = 'menu' | 'option' | 'category'
 import type { SoldOutState } from '../components/menu/menu-form-types'
+import LoadingTimer from '../components/ui/LoadingTimer'
 
 // ── 품절 상태 헬퍼 ────────────────────────────────────────────────────────────
 function getSoldOutState(soldOut: boolean, soldOutUntil: string | null | undefined): SoldOutState {
@@ -1236,9 +1237,8 @@ export default function Menus() {
 
       {/* 로딩 */}
       {loading && (
-        <div className="flex-1 flex items-center justify-center text-gray-text text-[11px]">
-          <div className="w-6 h-6 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
-          불러오는 중...
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingTimer size={40} />
         </div>
       )}
 

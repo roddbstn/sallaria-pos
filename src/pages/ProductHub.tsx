@@ -8,6 +8,7 @@ import MenuFormModal from '../components/menu/MenuFormModal'
 import { useMenuForm, type MenuFormStoreGroup } from '../components/menu/use-menu-form'
 import { mapMenuRow } from '../lib/mappers'
 import type { MenuDetail } from '../lib/mock-data'
+import LoadingBlock from '../components/ui/LoadingBlock'
 
 // 햄버거 드로어 "상품" 그룹 — Figma node 672:1120(메뉴 상세) · 682:204(옵션 상세) · 672:1358(카테고리 상세).
 // 세 프레임 모두 아직 비어 있어서, `선포스-전체메뉴-화면기획.md` §1~3의 기획을 와이어프레임으로
@@ -89,7 +90,7 @@ function PrimaryAction({ onClick, children }: { onClick: () => void; children: R
 }
 
 function Loading() {
-  return <div className="py-[56px] text-center text-[13px] font-normal text-[#787878]">불러오는 중…</div>
+  return <LoadingBlock py={56} />
 }
 
 function Empty({ note }: { note: string }) {
@@ -282,8 +283,13 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
     showToast,
   })
   // 모달이 요구하는 { id, name, items } 형태로 — 저장 후 optionGroups 복원에 쓰인다
+  //
+  // ⚠️ 가격(필수) 그룹은 뺀다. 메뉴마다 DB 트리거가 1:1 로 만들어 붙여서 수백 개가 되는데,
+  //    그게 전부 모달의 옵션 목록에 뜨고 있었다. 메인 메뉴 화면은 쿼리에서
+  //    `.not('name','ilike','가격(필수)%')` 로 이미 걸러내고 있어서 두 화면이 달랐다.
+  //    모달은 이 그룹을 맨 앞 안내 칩으로 따로 보여주므로 목록에 또 있을 이유가 없다.
   const storeGroupsForForm: MenuFormStoreGroup[] = useMemo(
-    () => (data?.groups ?? []).map(g => ({
+    () => (data?.groups ?? []).filter(g => !isPriceGroup(g)).map(g => ({
       id: g.id, name: g.name,
       items: (g.option_items ?? []).map(it => ({
         id: it.id, name: it.name, extra: it.extra_price ?? 0,

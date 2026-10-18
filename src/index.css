@@ -435,3 +435,30 @@ button:not(:disabled):active,
 @media (prefers-reduced-motion: reduce) {
   .marching-dashes { animation: none; }
 }
+
+
+/* ── 로딩 타이머 ─────────────────────────────────────────────────────────────
+   QR웹(globals.css)과 같은 값. 점주와 손님이 같은 '기다림'을 본다.
+   몸통은 좌우로 기울었다 잦아들고, 바늘은 쉬지 않고 돈다.
+   한 주기 끝에 쉬는 구간(58~100%)을 둔 이유: 쉬지 않고 흔들면 눈이 피로하고
+   "에러로 떨고 있다"처럼 보인다. 울렸다 멈췄다 해야 알람으로 읽힌다. */
+@keyframes timerWobble {
+  0%   { transform: rotate(0deg); }
+  8%   { transform: rotate(-13deg); }
+  18%  { transform: rotate(11deg); }
+  28%  { transform: rotate(-8deg); }
+  38%  { transform: rotate(6deg); }
+  48%  { transform: rotate(-3deg); }
+  58%  { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes timerHand {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.timer-wobble { animation: timerWobble 1.8s ease-in-out infinite; transform-origin: 50% 60%; }
+.timer-hand   { animation: timerHand 1.2s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-wobble, .timer-hand { animation: none; }
+}

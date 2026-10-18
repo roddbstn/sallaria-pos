@@ -3,7 +3,7 @@ import { usePersistentState } from '../hooks/usePersistentState'
 import CountStepper from '../components/ui/CountStepper'
 import QrPrintPanel from './QrPrintPanel'
 import HubLayout, { HubSection, type HubNavItem } from '../components/hub/HubLayout'
-import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
+import { playOrderSound, startOrderAlarm, stopOrderAlarm, getSavedVolume, saveVolume } from '../lib/sound'
 import { useStore } from '../lib/store-context'
 import ReceiptPreview, { DEFAULT_RECEIPT_CONFIG, type ReceiptPreviewConfig } from '../components/ui/ReceiptPreview'
 import PrinterDiagnosticModal, { buildDiagnosticText, type PrinterDiagnostic } from '../components/ui/PrinterDiagnosticModal'
@@ -371,6 +371,9 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
 
 type TextSize = 'normal' | 'large'
 // '작게'는 뺐다 — 감열 영수증에서 1배 높이는 읽기 어렵고, 실제로 고르는 사람도 없었다
+/** 하단 문구 글자 수 상한 — 줄바꿈은 세지 않는다 */
+const FOOTER_MAX = 20
+
 const SIZE_OPTS: { v: TextSize; label: string }[] = [
   { v: 'normal', label: '보통' }, { v: 'large', label: '크게' },
 ]
@@ -416,13 +419,28 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
         <Row label="금액 글자 크기">
           <SegButtons value={amountSize} options={SIZE_OPTS} onChange={v => patch({ amountSize: v })} />
         </Row>
-        <Row label="하단 문구">
-          <input
-            value={footer}
-            onChange={e => patch({ footerText: e.target.value })}
-            placeholder="감사합니다. 또 오세요"
-            className="h-[32px] w-[220px] px-[11px] rounded-[9px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E]"
-          />
+        {/* input 이 아니라 textarea 다 — 전에는 한 줄짜리 input 이라
+            **줄바꿈을 아예 입력할 수 없었다.** 인쇄 쪽(escpos)은 처음부터
+            \n 으로 쪼개 가운데정렬로 찍고 있었는데 입력에서 막혀 있었다.
+            20자는 줄바꿈을 뺀 글자 수로 센다 — 줄을 나눴다고 쓸 수 있는 글자가
+            줄어들면 "두 줄로 쓰려니 글자가 모자라다"가 된다. */}
+        <Row label="하단 문구" hint="줄바꿈하면 영수증에도 그대로 줄이 나뉘고, 가운데로 찍혀요">
+          <div className="flex flex-col items-end gap-[4px]">
+            <textarea
+              value={footer}
+              onChange={e => {
+                const v = e.target.value
+                const len = v.replace(/\n/g, '').length
+                if (len <= FOOTER_MAX) patch({ footerText: v })
+              }}
+              rows={2}
+              placeholder={'감사합니다\n또 오세요'}
+              className="w-[220px] px-[11px] py-[7px] rounded-[9px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E] resize-none leading-[1.4]"
+            />
+            <span className="text-[11px] font-normal text-[#ADADAD] tabular-nums">
+              {footer.replace(/\n/g, '').length} / {FOOTER_MAX}자
+            </span>
+          </div>
         </Row>
       </Group>
 
@@ -478,7 +496,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   // 알림 방식은 **둘 중 하나**다. 전에는 'N회'와 '확인할 때까지 반복'이 따로 있어서
   // 둘 다 켜면 "3회면서 무한"이라는 말이 안 되는 상태가 됐다.
   const [alarmMode,    setAlarmMode]    = usePersistentState<'count' | 'until-ack'>('alarm_mode', 'count')
-  const [repeatSec,    setRepeatSec]    = usePersistentState('repeat_sec', 10)
+  const [repeatSec,    setRepeatSec]    = usePersistentState('repeat_sec', 1)
   const [alarmCount,   setAlarmCount]   = usePersistentState('alarm_count', 1)
   const [keepAwake,    setKeepAwake]    = usePersistentState('keep_awake', true)
 
@@ -494,6 +512,22 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   // 화면 꺼짐 방지는 저장만 하면 아무 일도 안 일어난다 — 메인 프로세스의
   // powerSaveBlocker 를 실제로 켜고 꺼야 한다. 토글이 바뀔 때마다 반영한다.
   useEffect(() => { api().keepAwake?.(keepAwake).catch(() => {}) }, [keepAwake])
+
+  // 미리 듣기 — **지금 고른 방식 그대로** 들려준다.
+  // 정해진 횟수면 그 횟수만큼, 확인할 때까지면 고른 간격으로 반복한다.
+  // 전에는 늘 1회만 울려서 "반복 간격을 0.5초로 했는데 왜 한 번만 나지"가 됐다.
+  const [previewing, setPreviewing] = useState(false)
+  function previewAlarm() {
+    if (previewing) { stopOrderAlarm(); setPreviewing(false); return }
+    if (alarmMode === 'until-ack') {
+      startOrderAlarm(volume, repeatSec)
+      setPreviewing(true)
+    } else {
+      playOrderSound(volume, alarmCount)
+    }
+  }
+  // 설정 화면을 떠날 때 미리 듣기가 계속 울리면 안 된다
+  useEffect(() => () => stopOrderAlarm(), [])
 
   async function checkUpdate() {
     setChecking(true); setUpdateMsg('')
@@ -592,7 +626,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
             style={{ background: `linear-gradient(to right, #6A635E 0%, #6A635E ${volume}%, #E5E7EB ${volume}%, #E5E7EB 100%)` }}
           />
           <span className="text-[12px] text-[#787878] w-[26px] text-right">{volume}</span>
-          <SmallButton onClick={() => playOrderSound(volume, alarmMode === 'count' ? alarmCount : 1)}>미리 듣기</SmallButton>
+          <SmallButton onClick={previewAlarm}>{previewing ? '멈추기' : '미리 듣기'}</SmallButton>
         </Row>
         <Row label="알림 방식" hint="피크타임에 주문음을 한 번 놓치면 그 주문은 증발해요">
           <SegButtons
@@ -613,10 +647,10 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
             <SegButtons
               value={String(repeatSec)}
               options={[
-                { v: '3',  label: '3초' },
-                { v: '5',  label: '5초' },
-                { v: '10', label: '10초' },
-                { v: '20', label: '20초' },
+                { v: '0.5', label: '0.5초' },
+                { v: '1',   label: '1초' },
+                { v: '2',   label: '2초' },
+                { v: '3',   label: '3초' },
               ]}
               onChange={v => setRepeatSec(Number(v))}
             />

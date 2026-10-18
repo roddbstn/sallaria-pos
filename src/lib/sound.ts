@@ -48,12 +48,18 @@ export function getAlarmCount(): number {
 
 let repeatTimer: ReturnType<typeof setInterval> | null = null
 
-/** 주문을 확인할 때까지 간격마다 다시 울린다. stopOrderAlarm() 으로만 멈춘다 */
+/**
+ * 주문을 확인할 때까지 간격마다 다시 울린다. stopOrderAlarm() 으로만 멈춘다.
+ *
+ * 간격 하한은 0.3초다. 0.5초 설정을 쓸 수 있어야 해서 1초로 막지 않았다
+ * (피크타임에 0.5초 간격을 고르는 매장이 있다). 그보다 짧으면 소리가
+ * 겹쳐 쌓이기만 하고 알람으로 안 들린다.
+ */
 export function startOrderAlarm(volume: number, intervalSec: number) {
   stopOrderAlarm()
   if (volume === 0) return
   playOrderSound(volume, 1)
-  repeatTimer = setInterval(() => playOrderSound(volume, 1), Math.max(1, intervalSec) * 1000)
+  repeatTimer = setInterval(() => playOrderSound(volume, 1), Math.max(0.3, intervalSec) * 1000)
 }
 
 export function stopOrderAlarm() {

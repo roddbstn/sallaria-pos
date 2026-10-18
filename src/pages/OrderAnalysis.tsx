@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { won } from '../lib/ipc'
 import { DB_METHOD_MAP } from '../lib/mappers'
+import LoadingBlock from '../components/ui/LoadingBlock'
 
 // ── 주문 리포트 ───────────────────────────────────────────────────────────────
 //
@@ -266,7 +267,7 @@ export default function OrderAnalysis() {
       </div>
 
       {loading ? (
-        <div className="py-[56px] text-center text-[13px] font-normal text-[#787878]">불러오는 중…</div>
+        <LoadingBlock py={56} />
       ) : (
         <>
           {rows.length === 0 ? (

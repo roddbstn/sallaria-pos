@@ -13,3 +13,20 @@ export const FIGMA_SCALE = 1440 / 2240 // ≈ 0.643
 export function fpx(figmaPx: number): number {
   return Math.round(figmaPx * FIGMA_SCALE)
 }
+
+
+/**
+ * #root 에 걸린 zoom 배율.
+ *
+ * index.css 가 #root 에 zoom 을 걸어 둬서, 그 안의 fixed 자식은 left/bottom 도
+ * 같은 비율로 확대된다. getBoundingClientRect() 가 주는 실제 뷰포트 좌표를
+ * 그대로 쓰면 그만큼 어긋나므로 나눠서 되돌린다.
+ *
+ * 화면 밖(fixed)에 띄우는 말풍선·드롭다운이 전부 이게 필요하다.
+ */
+export function rootZoom(): number {
+  const el = document.getElementById('root')
+  if (!el) return 1
+  const z = parseFloat((getComputedStyle(el) as unknown as { zoom?: string }).zoom ?? '1')
+  return Number.isFinite(z) && z > 0 ? z : 1
+}

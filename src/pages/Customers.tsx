@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { getCached, setCached } from '../lib/query-cache'
+import { rootZoom } from '../lib/figma-scale'
 import QRCode from 'qrcode'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
@@ -22,6 +23,8 @@ import ScrollHint from '../components/ui/ScrollHint'
 import RevealText from '../components/ui/RevealText'
 import StatCard from '../components/StatCard'
 import { useQrPrint } from '../hooks/useQrPrint'
+import LoadingTimer from '../components/ui/LoadingTimer'
+import LoadingBlock from '../components/ui/LoadingBlock'
 
 const BASE_URL = 'https://sallaria.web.app'
 const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
@@ -47,15 +50,6 @@ const TYPE_LABEL: Record<string, string> = {
 const TYPE_DONUT_COLORS = ['#FF676F', '#3374FF', '#ADADAD', '#F5A623', '#7ED321', '#9B59B6']
 
 
-
-// #root에 zoom이 걸려 있어서(index.css) fixed 자식의 left/bottom도 같은 비율로 확대된다 —
-// getBoundingClientRect()가 돌려주는 실제 뷰포트 좌표를 그대로 쓰면 그만큼 어긋나므로 되돌려 준다.
-function rootZoom(): number {
-  const el = document.getElementById('root')
-  if (!el) return 1
-  const z = parseFloat((getComputedStyle(el) as unknown as { zoom?: string }).zoom ?? '1')
-  return Number.isFinite(z) && z > 0 ? z : 1
-}
 
 // 우측 고객 상세 패널 — 관리자 이름 가운데 마스킹 (예: "김민준" → "김*준")
 
@@ -1258,7 +1252,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               </div>
 
               {loading ? (
-                <div className="flex items-center justify-center text-[#ADADAD] text-[13px]" style={{ height: 193 }}>불러오는 중...</div>
+                <div className="flex items-center justify-center" style={{ height: 193 }}><LoadingTimer size={36} /></div>
               ) : fetchError ? (
                 <div className="flex flex-col items-center justify-center gap-[8px] text-[#ADADAD] text-[13px]" style={{ height: 193 }}>
                   고객 목록을 불러오지 못했습니다
@@ -2039,10 +2033,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
               <div className="overflow-y-auto flex-1 px-[41px] pb-[26px]">
                 {stmtLoading ? (
-                  <div className="flex items-center justify-center py-[40px] text-gray-text text-[14px]">
-                    <div className="w-5 h-5 border-2 border-green border-t-transparent rounded-full animate-spin mr-2" />
-                    불러오는 중...
-                  </div>
+                  <LoadingBlock py={40} size={34} />
                 ) : (
                   <table className="text-[12px] border-collapse w-full">
                     <thead>
