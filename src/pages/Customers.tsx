@@ -25,6 +25,7 @@ import StatCard from '../components/StatCard'
 import { useQrPrint } from '../hooks/useQrPrint'
 import LoadingTimer from '../components/ui/LoadingTimer'
 import LoadingBlock from '../components/ui/LoadingBlock'
+import CustomerProfileModal from '../components/customer/CustomerProfileModal'
 
 const BASE_URL = 'https://sallaria.web.app'
 const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
@@ -1484,6 +1485,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             </div>
           ) : (
             <CustomerDetailPanel
+              storeId={storeId}
               selected={selected}
               accountOrders={accountOrders}
               deposits={deposits}
@@ -2183,9 +2185,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 function CustomerDetailPanel({
   selected, accountOrders, deposits, members, registeredAdmins, memberCounts,
   phoneRevealed, setPhoneRevealed, detailTab, setDetailTab, onQr, onOpenStatement,
-  showInactive, onEdit, onRestore, onResendAdmin, resendLoading,
+  showInactive, onEdit, onRestore, onResendAdmin, resendLoading, storeId,
 }: {
   selected: DbAccount
+  storeId: string
   accountOrders: Order[]
   deposits: DbDeposit[]
   members: { id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]
@@ -2203,6 +2206,9 @@ function CustomerDetailPanel({
   onResendAdmin: () => void
   resendLoading: boolean
 }) {
+  /** 구성원을 눌러 펼쳐 볼 손님 — 고객 현황에서 쓰는 모달과 같은 것 */
+  const [profileOf, setProfileOf] = useState<{ name: string; code: string; account: string } | null>(null)
+
   const phoneParts = (selected.contact_phone ?? '').split('-')
   const phoneMid = phoneParts.length === 3 ? phoneParts[1] : null
 
@@ -2372,8 +2378,18 @@ function CustomerDetailPanel({
             <div className="text-[10px] text-[#ADADAD] py-[13px]">이용자 정보가 없습니다.</div>
           ) : (
             <div className="space-y-[8px]">
+              {/* 구성원을 누르면 그 사람의 프로필(월별 흐름·늘 시키는 것·평일/주말 시간대)을 연다.
+                  이름이 곧 orders.orderer_name 이라 추가 연결 없이 그대로 맞물린다
+                  (침산점 실측: 구성원 98명 중 96명이 주문 이력이 있다).
+                  주문이 없는 사람은 모달이 '주문 기록이 없어요'로 받는다. */}
               {members.map(m => (
-                <div key={m.id} className="bg-[#F2F2F2] rounded-[10px] px-[13px] py-[10px] flex items-center justify-between">
+                <div
+                  key={m.id}
+                  onClick={() => selected && setProfileOf({
+                    name: m.name, code: selected.account_code, account: selected.account_name,
+                  })}
+                  className="bg-[#F2F2F2] hover:bg-[#E8E4E2] cursor-pointer transition-colors rounded-[10px] px-[13px] py-[10px] flex items-center justify-between"
+                >
                   <div className="flex flex-col items-start gap-[3px]">
                     <RevealText
                       value={m.name} masked={maskName(m.name)} iconSize={10}
@@ -2393,6 +2409,16 @@ function CustomerDetailPanel({
           )
         )}
       </div>
+
+      {profileOf && (
+        <CustomerProfileModal
+          storeId={storeId}
+          ordererName={profileOf.name}
+          accountCode={profileOf.code}
+          accountName={profileOf.account}
+          onClose={() => setProfileOf(null)}
+        />
+      )}
     </div>
   )
 }

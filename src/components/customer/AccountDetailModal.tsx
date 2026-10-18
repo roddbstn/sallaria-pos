@@ -13,6 +13,7 @@ import { rollUpLedger, type LedgerEvent } from '../../lib/prepaid-ledger'
 import { downloadStatementCsv } from '../../lib/prepaid-statement'
 import DonutChart from '../DonutChart'
 import { DataTable, DataTableHead, DataTableRow, DataTableNotice, StatusTag } from '../ui/DataTable'
+import CustomerProfileModal from './CustomerProfileModal'
 
 // ── 계정 상세 모달 ──────────────────────────────────────────────────────────
 //
@@ -155,6 +156,8 @@ export default function AccountDetailModal({ target, onClose }: {
   onClose: () => void
 }) {
   const { storeId } = useStore()
+  /** 구성원을 눌러 펼쳐 볼 손님 — 이름만 들고 간다(거래처는 이 모달이 이미 안다) */
+  const [profileOf, setProfileOf] = useState<string | null>(null)
   const [tab,      setTab]      = useState<Tab>('overview')
   const [loading,  setLoading]  = useState(true)
   const [info,     setInfo]     = useState<AccountInfo | null>(null)
@@ -669,7 +672,14 @@ export default function AccountDetailModal({ target, onClose }: {
                 {members.length === 0 ? (
                   <DataTableNotice>등록된 구성원이 없어요</DataTableNotice>
                 ) : members.map((m, i, arr) => (
-                  <DataTableRow key={m.id} last={i === arr.length - 1}>
+                  /* 구성원을 누르면 그 사람의 프로필(월별 흐름·늘 시키는 것·평일/주말 시간대)을
+                     연다 — 고객 현황에서 쓰는 모달과 같은 것이다.
+                     구성원 이름이 곧 orders.orderer_name 이라 그대로 맞물린다. */
+                  <DataTableRow
+                    key={m.id}
+                    last={i === arr.length - 1}
+                    onClick={() => setProfileOf(m.name)}
+                  >
                     <span className="flex-1 truncate">{revealed ? m.name : maskName(m.name)}</span>
                     <span className="w-[150px] text-[#787878] tabular-nums">
                       {m.phone ? (revealed ? m.phone : maskPhone(m.phone)) : '—'}
@@ -811,6 +821,18 @@ export default function AccountDetailModal({ target, onClose }: {
           </div>
         )}
       </div>
+
+      {/* 구성원 프로필 — 고객 현황에서 쓰는 모달과 같은 것.
+          z-[70] 끼리 겹치지만 나중에 그려지는 쪽이 위로 온다 */}
+      {profileOf && storeId && (
+        <CustomerProfileModal
+          storeId={storeId}
+          ordererName={profileOf}
+          accountCode={target.code}
+          accountName={target.name}
+          onClose={() => setProfileOf(null)}
+        />
+      )}
     </div>
   )
 }
