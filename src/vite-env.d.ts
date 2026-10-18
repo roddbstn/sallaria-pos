@@ -28,6 +28,21 @@ interface PosBridge {
   offRealtimeStatus: () => void
   onUpdaterStatus:   (cb: (info: { type: string; version: string }) => void) => void
   updaterInstall:    () => Promise<unknown>
+  updaterCheck:      () => Promise<{
+    state: 'latest' | 'available' | 'no-feed' | 'error'
+    current: string
+    latest?: string
+    message?: string
+  }>
+  onUpdaterProgress:  (cb: (p: { percent: number }) => void) => void
+  offUpdaterProgress: () => void
+  appVersion:        () => Promise<string>
+  openLogs:          () => Promise<{ ok: boolean; dir: string; error?: string }>
+  keepAwake:         (on: boolean) => Promise<{ active: boolean; platform: string }>
+  diagnostics:       () => Promise<{
+    version: string; electron: string; chrome: string; node: string
+    platform: string; arch: string; osRelease: string; logDir: string; keepAwake: boolean
+  }>
   setStoreId:        (storeId: string) => Promise<unknown>
   getSettings:       () => Promise<unknown>
   updateSettings:    (p: unknown) => Promise<unknown>

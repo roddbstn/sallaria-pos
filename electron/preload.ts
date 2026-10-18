@@ -21,6 +21,24 @@ const api = {
   onUpdaterStatus: (cb: (info: { type: string; version: string }) => void) =>
     ipcRenderer.on('updater:status', (_e, v) => cb(v)),
   updaterInstall: () => ipcRenderer.invoke('updater:install'),
+  updaterCheck:   () => ipcRenderer.invoke('updater:check') as Promise<{
+    state: 'latest' | 'available' | 'no-feed' | 'error'
+    current: string
+    latest?: string
+    message?: string
+  }>,
+  onUpdaterProgress: (cb: (p: { percent: number }) => void) =>
+    ipcRenderer.on('updater:progress', (_e, v) => cb(v)),
+  offUpdaterProgress: () => ipcRenderer.removeAllListeners('updater:progress'),
+
+  // ── 앱 정보 · 기타 설정 ──────────────────────────────────────────────────────
+  appVersion:  () => ipcRenderer.invoke('app:version') as Promise<string>,
+  openLogs:    () => ipcRenderer.invoke('app:open-logs') as Promise<{ ok: boolean; dir: string; error?: string }>,
+  keepAwake:   (on: boolean) => ipcRenderer.invoke('app:keep-awake', on) as Promise<{ active: boolean; platform: string }>,
+  diagnostics: () => ipcRenderer.invoke('app:diagnostics') as Promise<{
+    version: string; electron: string; chrome: string; node: string
+    platform: string; arch: string; osRelease: string; logDir: string; keepAwake: boolean
+  }>,
 
   // ── 매장 세션 ────────────────────────────────────────────────────────────────
   setStoreId: (storeId: string) => ipcRenderer.invoke('store:setStoreId', storeId),

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { HubSection } from '../components/hub/HubLayout'
 import { supabase, type DbAccount } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
-import { qrUrlFor, qrDataUrl, PAPER_OPTIONS, DEFAULT_QR_NOTICE, paperGeometry, mmToCm, CELL_GAP, type QrPaper } from '../lib/qr-order'
+import { qrUrlFor, qrDataUrl, PAPER_OPTIONS, DEFAULT_QR_NOTICE, paperGeometry, fontSizesFor, mmToCm, CELL_GAP, type QrPaper } from '../lib/qr-order'
 import { printQrSheet } from '../components/ui/QrSheetPrinter'
 
 // 고객 허브에 있던 걸 설정으로 옮겼다 — QR 종이를 뽑는 건 "고객을 보는 일"이 아니라
@@ -33,6 +33,7 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
 }) {
   const spec = PAPER_OPTIONS.find(p => p.key === paper)!
   const geo  = paperGeometry(paper)
+  const f    = fontSizesFor(geo.qrMM)
   const isReceipt = paper === 'receipt'
 
   // 종이 실치수(mm)와 인쇄 여백 — QrSheetPrinter 의 @page margin 과 같은 값
@@ -73,15 +74,18 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
                 style={{
                   border: `${Math.max(1, mm(0.3))}px dashed ${on ? '#ADADAD' : '#E5E5E5'}`,
                   borderRadius: mm(3),
-                  gap: mm(3),
-                  padding: `${mm(6)}px ${mm(4)}px`,
+                  gap: mm(f.gap),
+                  padding: `${mm(f.padY)}px ${mm(4)}px`,
                   opacity: on ? 1 : 0.45,
                 }}
               >
-                <div style={{ fontSize: Math.max(4, mm(3)), color: '#787878' }}>{storeName} 선결제</div>
+                {/* 글자 크기는 QrSheetPrinter 와 같은 fontSizesFor() 를 쓴다.
+                    미리보기만 따로 계산하면 "화면과 인쇄물이 다르다"가 생긴다.
+                    Math.max(4, …) 하한은 화면에서만 — 종이에서는 안 쓰는 값이다 */}
+                <div style={{ fontSize: Math.max(4, mm(f.store)), color: '#787878' }}>{storeName} 선결제</div>
                 <div
-                  className="font-semibold text-center leading-tight"
-                  style={{ fontSize: Math.max(5, mm(5)), color: '#1E1E1E' }}
+                  className="font-bold text-center"
+                  style={{ fontSize: Math.max(5, mm(f.name)), lineHeight: 1.15, color: '#1E1E1E' }}
                 >
                   {accountName}
                 </div>
@@ -89,13 +93,13 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
                   ? <img src={qrImg} alt="" style={{ width: mm(geo.qrMM), height: mm(geo.qrMM) }} />
                   : <div style={{ width: mm(geo.qrMM), height: mm(geo.qrMM), background: '#F2F2F2' }} />}
                 <div
-                  className="text-center leading-tight"
-                  style={{ fontSize: Math.max(4, mm(3.5)), color: '#414141' }}
+                  className="text-center"
+                  style={{ fontSize: Math.max(4, mm(f.notice)), lineHeight: 1.25, color: '#414141' }}
                 >
                   {notice}
                 </div>
                 {pin && (
-                  <div style={{ fontSize: Math.max(4, mm(3.5)), fontWeight: 600, letterSpacing: mm(1), color: '#6A635E' }}>
+                  <div style={{ fontSize: Math.max(4, mm(f.notice)), fontWeight: 600, letterSpacing: mm(f.notice * 0.25), color: '#6A635E' }}>
                     PIN {pin}
                   </div>
                 )}
@@ -125,7 +129,6 @@ export default function QrPrintPanel() {
   const [showPin,  setShowPin]  = useState(false)
   const [printing, setPrinting] = useState(false)
   const [preview,  setPreview]  = useState('')
-  const [copied,   setCopied]   = useState('')
 
   useEffect(() => {
     if (!storeId) return
@@ -197,13 +200,6 @@ export default function QrPrintPanel() {
     }
   }
 
-  async function copyLink() {
-    if (!firstUrl) return
-    await navigator.clipboard.writeText(firstUrl)
-    setCopied(firstUrl)
-    setTimeout(() => setCopied(''), 1500)
-  }
-
   const geo = paperGeometry(paper)
   const pageCount = paper === 'receipt' ? picked.size : Math.max(1, Math.ceil(picked.size / geo.perPage))
   const allPicked = accounts.length > 0 && picked.size === accounts.length
@@ -232,6 +228,17 @@ export default function QrPrintPanel() {
                 filled={picked.size}
               />
             </div>
+
+            {/* 인쇄 버튼은 미리보기 바로 아래, 그 박스와 같은 폭으로 둔다.
+                "이걸 뽑는다"와 "뽑기" 사이에 눈이 움직일 거리가 없는 게 맞다.
+                높이는 폭(260) 대비 약 1/5 — 오른쪽 설정 칼럼의 버튼보다 크다 */}
+            <button
+              onClick={handlePrint}
+              disabled={picked.size === 0 || printing}
+              className="pressable w-full h-[52px] mt-[12px] rounded-[11px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+            >
+              {printing ? '출력 중…' : `${picked.size}곳 인쇄하기`}
+            </button>
           </div>
 
           {/* ── 우: 발급 설정 ── */}
@@ -313,7 +320,7 @@ export default function QrPrintPanel() {
             {/* 대상 거래처 */}
             <div className="mb-[16px]">
               <div className="flex items-center justify-between mb-[8px]">
-                <span className="text-[12px] font-medium text-[#2C261F]">대상 거래처 ({picked.size}곳)</span>
+                <span className="text-[12px] font-medium text-[#2C261F]">출력 대상: {picked.size}곳</span>
                 <button
                   onClick={() => setPicked(allPicked ? new Set() : new Set(accounts.map(a => a.account_code)))}
                   className="text-[12px] font-normal text-[#6A635E] hover:text-ink transition-colors"
@@ -339,22 +346,6 @@ export default function QrPrintPanel() {
               </div>
             </div>
 
-            <div className="flex items-center gap-[8px]">
-              <button
-                onClick={handlePrint}
-                disabled={picked.size === 0 || printing}
-                className="h-[40px] px-[18px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[14px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
-              >
-                {printing ? '출력 중…' : `${picked.size}곳 인쇄하기`}
-              </button>
-              <button
-                onClick={copyLink}
-                disabled={!firstUrl}
-                className="h-[40px] px-[16px] rounded-[10px] bg-[#F2F2F2] text-[#1E1E1E] text-[14px] font-normal hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
-              >
-                {copied ? '복사됨' : '링크 복사'}
-              </button>
-            </div>
           </div>
         </div>
       )}

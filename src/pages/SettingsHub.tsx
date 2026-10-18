@@ -7,6 +7,7 @@ import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 import { useStore } from '../lib/store-context'
 import ReceiptPreview, { DEFAULT_RECEIPT_CONFIG, type ReceiptPreviewConfig } from '../components/ui/ReceiptPreview'
 import PrinterDiagnosticModal, { buildDiagnosticText, type PrinterDiagnostic } from '../components/ui/PrinterDiagnosticModal'
+import DiagnosticReportModal, { type DiagnosticReport } from '../components/ui/DiagnosticReportModal'
 
 // 햄버거 드로어 "설정" 그룹 — `선포스-전체메뉴-화면기획.md` §4~6의 기획을 와이어프레임으로 구현.
 // Figma 노드는 아직 없다. 기존 Settings.tsx의 기능을 옮겨오되, 토스 POS 벤치마크 결과를
@@ -35,6 +36,15 @@ type Api = {
   updateSettings?:  (p: unknown) => Promise<{ ok: boolean }>
   onPrinterStatus?: (cb: (s: { connected: boolean; queueLength: number }) => void) => void
   offPrinterStatus?:() => void
+  // 기타 설정이 쓰는 창구 — 전체 정의는 src/vite-env.d.ts 의 PosBridge 에 있다
+  appVersion?:      () => Promise<string>
+  openLogs?:        () => Promise<{ ok: boolean; dir: string; error?: string }>
+  keepAwake?:       (on: boolean) => Promise<{ active: boolean; platform: string }>
+  updaterCheck?:    () => Promise<{ state: 'latest' | 'available' | 'no-feed' | 'error'; current: string; latest?: string; message?: string }>
+  diagnostics?:     () => Promise<{
+    version: string; electron: string; chrome: string; node: string
+    platform: string; arch: string; osRelease: string; logDir: string; keepAwake: boolean
+  }>
 }
 const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
 
@@ -334,9 +344,6 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
         <Row label="QR 안내증" hint="거래처 QR·PIN 안내">
           <Stepper value={copies.qr} onChange={n => setCopies(c => ({ ...c, qr: n }))} />
         </Row>
-        <Row label="영수증 글자 크기 등 세부 설정">
-          <NotYet>영수증 · 증빙 화면에서 설정해요</NotYet>
-        </Row>
       </Group>
 
       {/* 어떤 문서가 어떻게 찍히는지 — 매수를 정하기 전에 모양부터 보여준다 */}
@@ -472,24 +479,69 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   const [repeatSec,    setRepeatSec]    = usePersistentState('repeat_sec', 10)
   const [alarmCount,   setAlarmCount]   = usePersistentState('alarm_count', 1)
   const [keepAwake,    setKeepAwake]    = usePersistentState('keep_awake', true)
-  const [autoAccept,   setAutoAccept]   = usePersistentState('auto_accept', true)
-  const [hideAfterHr,  setHideAfterHr]  = usePersistentState('hide_after_hr', 1)
-  const [cancelUntil,  setCancelUntil]  = usePersistentState<'before-cooking' | 'anytime'>('cancel_until', 'before-cooking')
 
-  async function copyDiagnostics() {
-    const lines = [
-      '[선포스 진단]',
-      `시각     ${new Date().toLocaleString('ko-KR')}`,
-      `매장     ${storeName || '(미설정)'}`,
-      `OS       ${navigator.userAgent}`,
-      `알림음   볼륨 ${volume} / ${alarmCount}회 / 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}`,
-    ]
+  const [appVersion,  setAppVersion]  = useState('—')
+  const [checking,    setChecking]    = useState(false)
+  const [updateMsg,   setUpdateMsg]   = useState('')
+  const [report,      setReport]      = useState<DiagnosticReport | null>(null)
+
+  // 버전은 package.json 이 아니라 메인 프로세스(app.getVersion())에서 받는다.
+  // 전에는 '1.0.1' 이 화면에 박혀 있어서 실제 버전과 달랐다.
+  useEffect(() => { api().appVersion?.().then(setAppVersion).catch(() => setAppVersion('—')) }, [])
+
+  // 화면 꺼짐 방지는 저장만 하면 아무 일도 안 일어난다 — 메인 프로세스의
+  // powerSaveBlocker 를 실제로 켜고 꺼야 한다. 토글이 바뀔 때마다 반영한다.
+  useEffect(() => { api().keepAwake?.(keepAwake).catch(() => {}) }, [keepAwake])
+
+  async function checkUpdate() {
+    setChecking(true); setUpdateMsg('')
     try {
-      await navigator.clipboard.writeText(lines.join('\n'))
-      showToast('진단 리포트를 복사했어요')
+      const r = await api().updaterCheck?.()
+      // Electron 밖(브라우저 미리보기)에서는 창구가 없다
+      if (!r) { setUpdateMsg('이 환경에서는 확인할 수 없어요'); return }
+      if (r.state === 'available')     setUpdateMsg(`새 버전 ${r.latest} 이 있어요. 받는 중이에요`)
+      else if (r.state === 'latest')   setUpdateMsg(`최신 버전이에요 (${r.current})`)
+      else if (r.state === 'no-feed')  setUpdateMsg('지금은 자동 업데이트가 준비되지 않았어요. 새 버전은 설치파일로 전달드려요')
+      else                             setUpdateMsg('확인에 실패했어요. 인터넷 연결을 확인해 주세요')
     } catch {
-      showToast('복사에 실패했어요')
+      setUpdateMsg('확인에 실패했어요')
+    } finally {
+      setChecking(false)
     }
+  }
+
+  async function openLogs() {
+    const r = await api().openLogs?.()
+    if (!r)        { showToast('이 환경에서는 열 수 없어요'); return }
+    if (!r.ok)     { showToast('로그 폴더를 열지 못했어요'); return }
+    showToast('로그 폴더를 열었어요')
+  }
+
+  /** 복사 전에 보여줄 내용을 만든다 — 화면에 보이는 것과 클립보드가 같아야 한다 */
+  async function buildReport() {
+    const d = await api().diagnostics?.().catch(() => null)
+    const now = new Date().toLocaleString('ko-KR')
+    const rows = [
+      { label: '매장',      value: storeName || '(미설정)' },
+      { label: '앱 버전',   value: d ? `${d.version} (${d.platform} ${d.arch})` : appVersion },
+      { label: '화면 꺼짐 방지', value: keepAwake ? '켜짐' : '꺼짐' },
+      { label: '알림음',    value: `볼륨 ${volume} · ${alarmCount}회 · 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}` },
+    ]
+    const text = [
+      '[선포스 진단]',
+      `시각       ${now}`,
+      `매장       ${storeName || '(미설정)'}`,
+      `앱 버전    ${d?.version ?? appVersion}`,
+      ...(d ? [
+        `플랫폼     ${d.platform} ${d.arch} (OS ${d.osRelease})`,
+        `Electron   ${d.electron} / Chrome ${d.chrome} / Node ${d.node}`,
+        `화면유지   ${d.keepAwake ? '켜짐' : '꺼짐'}`,
+        `로그폴더   ${d.logDir}`,
+      ] : ['(메인 프로세스 정보를 읽지 못했어요)']),
+      `알림음     볼륨 ${volume} / ${alarmCount}회 / 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}`,
+      `UA         ${navigator.userAgent}`,
+    ].join('\n')
+    setReport({ text, rows })
   }
 
   return (
@@ -531,55 +583,35 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
         )}
       </Group>
 
+      {/* '시작 화면'은 뺐다 — 고르게 해놓고 실제로는 아무 데도 안 쓰이고 있었다.
+          '주문 처리' 묶음(자동 접수·완료 숨기기·취소 가능 단계)도 통째로 뺐다.
+          셋 다 localStorage 에 값만 쌓고 읽는 곳이 한 군데도 없었다 — 켜도 꺼도
+          동작이 같은 스위치는 점주에게 "설정했는데 왜 그대로지"만 남긴다. */}
       <Group title="화면">
-        <Row label="영업 중 화면 꺼짐 방지" hint="모니터가 절전으로 꺼지지 않아요">
+        <Row label="영업 중 화면 꺼짐 방지" hint="주문을 보는 동안 모니터가 절전으로 꺼지지 않아요">
           <Toggle on={keepAwake} onChange={setKeepAwake} />
-        </Row>
-        <Row label="시작 화면">
-          <SegButtons
-            value="dashboard"
-            options={[{ v: 'dashboard', label: '주문' }, { v: 'menus', label: '메뉴' }, { v: 'customers', label: '고객' }]}
-            onChange={() => showToast('시작 화면 설정은 준비 중이에요')}
-          />
-        </Row>
-      </Group>
-
-      <Group title="주문 처리">
-        <Row label="주문 자동 접수" hint="끄면 주문마다 '접수'를 눌러야 해요">
-          <Toggle on={autoAccept} onChange={setAutoAccept} />
-        </Row>
-        <Row label="완료된 주문 숨기기">
-          <SegButtons
-            value={String(hideAfterHr)}
-            options={[{ v: '1', label: '1시간 후' }, { v: '3', label: '3시간 후' }, { v: '24', label: '하루 후' }]}
-            onChange={v => setHideAfterHr(Number(v))}
-          />
-        </Row>
-        <Row label="주문 취소 가능 단계" hint="조리가 시작된 뒤에도 취소를 허용할지 정해요">
-          <SegButtons
-            value={cancelUntil}
-            options={[{ v: 'before-cooking' as const, label: '조리중 이전까지' }, { v: 'anytime' as const, label: '언제든' }]}
-            onChange={setCancelUntil}
-          />
         </Row>
       </Group>
 
       <Group title="데이터">
-        <Row label="진단 리포트 복사" hint="문제가 생겼을 때 이 내용을 그대로 보내주세요">
-          <SmallButton onClick={copyDiagnostics}>복사</SmallButton>
+        <Row label="진단 리포트" hint="문제가 생겼을 때 보낼 내용을 먼저 확인하고 복사해요">
+          <SmallButton onClick={buildReport}>내용 보기</SmallButton>
         </Row>
         <Row label="앱 버전">
-          <span className="text-[13px] text-[#1E1E1E]">1.0.1</span>
-          <SmallButton onClick={() => showToast('업데이트 확인은 준비 중이에요')}>업데이트 확인</SmallButton>
+          <span className="text-[13px] text-[#1E1E1E] tabular-nums">{appVersion}</span>
+          <SmallButton onClick={checkUpdate} disabled={checking}>
+            {checking ? '확인 중…' : '업데이트 확인'}
+          </SmallButton>
         </Row>
-        <Row label="로그 폴더 열기">
-          <SmallButton onClick={() => showToast('로그 폴더 열기는 준비 중이에요')}>열기</SmallButton>
+        {updateMsg && (
+          <div className="pl-[2px] pb-[10px] text-[12px] font-normal text-[#6A635E]">{updateMsg}</div>
+        )}
+        <Row label="로그 폴더 열기" hint="문제가 생긴 시각의 기록이 들어 있어요">
+          <SmallButton onClick={openLogs}>열기</SmallButton>
         </Row>
       </Group>
 
-      <div className="text-[11px] font-normal text-[#ADADAD]">
-        이 화면의 설정은 아직 저장되지 않아요. 와이어프레임 확인 후 저장 경로를 붙입니다.
-      </div>
+      {report && <DiagnosticReportModal report={report} onClose={() => setReport(null)} />}
     </div>
   )
 }

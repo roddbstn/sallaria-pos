@@ -1,4 +1,4 @@
-import { qrDataUrl, paperGeometry, PAPER_OPTIONS, CELL_GAP, type QrPaper } from '../../lib/qr-order'
+import { qrDataUrl, paperGeometry, PAPER_OPTIONS, CELL_GAP, type QrPaper, fontSizesFor } from '../../lib/qr-order'
 
 // 여러 거래처 QR을 한 번에 종이로 뽑는다.
 //
@@ -41,6 +41,8 @@ export async function printQrSheet(
       ${opts.showPin && it.pin ? `<div class="pin">PIN ${esc(it.pin)}</div>` : ''}
     </div>`).join('')
 
+  const f = fontSizesFor(geo.qrMM)
+
   const isReceipt = opts.paper === 'receipt'
   const pageSize  = isReceipt ? '58mm auto' : 'A4'
   // 칸 높이를 고정해야 "4등분"이 실제로 4등분이 된다. 내용에 따라 늘어나면 칸이 밀린다
@@ -63,16 +65,19 @@ export async function printQrSheet(
     break-inside: avoid;
     border: 0.3mm dashed #ADADAD;
     border-radius: 3mm;
-    padding: 6mm 4mm;
+    padding: ${f.padY.toFixed(2)}mm 4mm;
     text-align: center;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3mm;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: ${f.gap.toFixed(2)}mm;
   }
-  .store  { font-size: 3mm; color: #787878; }
-  .name   { font-size: 5mm; font-weight: 600; }
+  /* 글자 크기는 QR 에 비례한다 — fontSizesFor() 한 곳에서만 계산해서
+     미리보기(PaperPreview)와 실제 인쇄가 어긋나지 않게 한다 */
+  .store  { font-size: ${f.store.toFixed(2)}mm; color: #787878; }
+  .name   { font-size: ${f.name.toFixed(2)}mm; font-weight: 700; line-height: 1.15; }
   .qr     { width: ${geo.qrMM}mm; height: ${geo.qrMM}mm; }
-  .notice { font-size: 3.5mm; color: #414141; }
+  .notice { font-size: ${f.notice.toFixed(2)}mm; color: #414141; line-height: 1.25; }
   /* PIN 은 기본으로 안 찍는다. 종이가 사무실 벽에 붙으므로 — 켤 때만 보인다 */
-  .pin    { font-size: 3.5mm; font-weight: 600; letter-spacing: 1mm; color: #6A635E; }
+  .pin    { font-size: ${f.notice.toFixed(2)}mm; font-weight: 600; letter-spacing: ${(f.notice*0.25).toFixed(2)}mm; color: #6A635E; }
 </style></head><body>${cells}</body></html>`
 
   const iframe = document.createElement('iframe')

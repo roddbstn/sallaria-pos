@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker } from 'electron'
+import os from 'node:os'
 import { autoUpdater } from 'electron-updater'
 import * as Sentry from '@sentry/electron/main'
 
@@ -395,6 +396,82 @@ autoUpdater.on('error', (err) => {
 ipcMain.handle('updater:install', () => {
   autoUpdater.quitAndInstall()
 })
+
+// 설정 > 기타 > '업데이트 확인' 이 부르는 수동 확인.
+//
+// 앱 시작 10초 뒤의 자동 확인과 같은 autoUpdater 를 쓰지만, 이쪽은 **결과를 돌려준다** —
+// 자동 확인은 조용히 실패해도 되지만 버튼은 누른 사람에게 답을 줘야 한다.
+//
+// ⚠️ 지금 GitHub 릴리즈에 latest.yml 피드가 없어서 'error' 가 돌아온다.
+//    v* 태그를 한 번 밀어 release.yml 이 피드를 올리면 그때부터 제대로 답한다.
+//    그래서 에러를 숨기지 않고 'no-feed' 로 구분해 돌려준다 — 화면에서
+//    "확인할 수 없어요"와 "최신이에요"를 다르게 말해야 하기 때문이다.
+ipcMain.handle('updater:check', async () => {
+  const current = app.getVersion()
+  try {
+    const r = await autoUpdater.checkForUpdates()
+    const latest = r?.updateInfo?.version
+    if (!latest) return { state: 'latest' as const, current }
+    return latest !== current
+      ? { state: 'available' as const, current, latest }
+      : { state: 'latest' as const, current }
+  } catch (err) {
+    const msg = (err as Error).message ?? ''
+    // 피드 파일이 없을 때 electron-updater 가 내는 전형적인 메시지들
+    const noFeed = /404|Cannot find|latest.*\.yml|ENOTFOUND|No published versions/i.test(msg)
+    return { state: noFeed ? ('no-feed' as const) : ('error' as const), current, message: msg }
+  }
+})
+
+// ── 기타 설정이 쓰는 것들 ─────────────────────────────────────────────────────
+
+ipcMain.handle('app:version', () => app.getVersion())
+
+/** 로그 폴더 열기 — 점주가 문제를 보낼 때 파일을 찾아갈 수 있게 */
+ipcMain.handle('app:open-logs', async () => {
+  const dir = app.getPath('logs')
+  const err = await shell.openPath(dir)
+  return err ? { ok: false, dir, error: err } : { ok: true, dir }
+})
+
+/**
+ * 영업 중 화면 꺼짐 방지.
+ *
+ * Electron 의 powerSaveBlocker 는 Windows · macOS · Linux 셋 다 지원한다.
+ * 다만 Linux 는 데스크톱 환경이 org.freedesktop.ScreenSaver 를 제공해야 먹는다.
+ * 침산점 POS 는 Windows x64 라 실사용 경로에서는 문제가 없다.
+ *
+ * 'prevent-display-sleep' 은 화면까지 켜 둔다('prevent-app-suspension' 은
+ * 시스템만 깨우고 모니터는 꺼진다 — 주문을 눈으로 봐야 하므로 전자가 맞다).
+ */
+let keepAwakeId: number | null = null
+ipcMain.handle('app:keep-awake', (_e, on: boolean) => {
+  if (on) {
+    if (keepAwakeId === null || !powerSaveBlocker.isStarted(keepAwakeId)) {
+      keepAwakeId = powerSaveBlocker.start('prevent-display-sleep')
+    }
+  } else if (keepAwakeId !== null && powerSaveBlocker.isStarted(keepAwakeId)) {
+    powerSaveBlocker.stop(keepAwakeId)
+    keepAwakeId = null
+  }
+  return {
+    active: keepAwakeId !== null && powerSaveBlocker.isStarted(keepAwakeId),
+    platform: process.platform,
+  }
+})
+
+/** 진단 리포트에 들어갈 메인 프로세스 쪽 정보 */
+ipcMain.handle('app:diagnostics', () => ({
+  version:   app.getVersion(),
+  electron:  process.versions.electron,
+  chrome:    process.versions.chrome,
+  node:      process.versions.node,
+  platform:  process.platform,
+  arch:      process.arch,
+  osRelease: os.release(),
+  logDir:    app.getPath('logs'),
+  keepAwake: keepAwakeId !== null && powerSaveBlocker.isStarted(keepAwakeId),
+}))
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────
 
