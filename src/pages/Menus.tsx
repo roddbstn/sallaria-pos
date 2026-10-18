@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { getCached, setCached } from '../lib/query-cache'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { formatPriceDisplay, FloatingCellInput, FloatingCellTextarea, GhostButton, ModalCTAButton, StepperButton } from '../components/ModalFormControls'
 import { type MenuDetail, type Category, type OptionGroup, type OptionItem } from '../lib/mock-data'
@@ -569,14 +570,20 @@ export default function Menus() {
     return cats
   }
 
-  // ── 메뉴 조회 (카테고리 IDs로 필터) ──────────────────────────────────────
-  async function fetchMenus(catIds: string[]) {
-    if (catIds.length === 0) { setMenus([]); return }
+  // ── 메뉴 조회 ────────────────────────────────────────────────────────────
+  //
+  // 전에는 fetchCategories() 가 끝나야 그 id 들로 메뉴를 받았다(2단 웨이터폴).
+  // 왕복 한 번이 90~120ms, 가끔 1초가 넘으므로 단계를 하나 줄이는 게 그대로 체감이 된다.
+  // categories!inner 로 매장을 직접 걸면 카테고리를 기다릴 필요가 없다
+  // — 건수가 같은 것을 확인했다(155건).
+  async function fetchMenus() {
+    if (!storeId) { setMenus([]); return }
     const { data } = await supabase
       .from('menus')
       .select(`
         id, category_id, name, description, base_price, image_url,
         is_sold_out, sold_out_until, is_hidden, display_order, is_popular, is_recommended, is_new,
+        categories!inner ( store_id ),
         menu_option_groups (
           display_order,
           option_groups (
@@ -587,9 +594,11 @@ export default function Menus() {
           )
         )
       `)
-      .in('category_id', catIds)
+      .eq('categories.store_id', storeId)
       .order('display_order')
-    setMenus((data ?? []).map(row => mapMenuRow(row)))
+    const mapped = (data ?? []).map(row => mapMenuRow(row))
+    setMenus(mapped)
+    return mapped
   }
 
   // ── 스토어 옵션 그룹 조회 (옵션 탭) ─────────────────────────────────────
@@ -637,18 +646,45 @@ export default function Menus() {
 
   // ── 마운트 및 storeId 변경 시 로딩 ──────────────────────────────────────
   useEffect(() => {
+    if (!storeId) return
+    const key = `menus:${storeId}`
+
     async function load() {
-      setLoading(true)
-      const cats = await fetchCategories()
-      await Promise.all([
-        fetchMenus(cats.map(c => c.id)),
+      // 캐시가 있으면 **먼저 그려놓고** 뒤에서 갱신한다.
+      // 탭을 옮길 때마다 화면이 언마운트돼 매번 처음부터 받던 걸 없앤다.
+      const hit = getCached<{ cats: Category[]; menus: MenuDetail[] }>(key)
+      if (hit) {
+        setCategories(hit.data.cats)
+        setMenus(hit.data.menus)
+        setLoading(false)
+        if (!hit.stale) return   // 충분히 최신이면 왕복 자체를 생략
+      } else {
+        setLoading(true)
+      }
+
+      // 셋 다 서로를 기다리지 않는다 — 한 웨이브로 끝낸다
+      const [cats, menus] = await Promise.all([
+        fetchCategories(),
+        fetchMenus(),
         fetchStoreGroups(),
         fetchMenuDisplayPrefs(),
       ])
+      if (cats && menus) setCached(key, { cats, menus })
       setLoading(false)
     }
-    if (storeId) load()
+    load()
   }, [storeId])
+
+  // 캐시를 화면 상태와 자동으로 맞춘다.
+  //
+  // 메뉴를 고치는 지점이 열 군데가 넘는데(이름 수정·품절·순서·카테고리 이동·삭제…)
+  // 그 하나하나에 invalidate() 를 붙이면 언젠가 하나를 빠뜨린다. 그러면 탭을 돌아왔을 때
+  // 방금 고친 게 사라진 것처럼 보인다 — 가장 나쁜 종류의 버그다.
+  // 상태가 곧 최신이므로 상태를 그대로 캐시에 흘려보낸다.
+  useEffect(() => {
+    if (!storeId || loading) return
+    setCached(`menus:${storeId}`, { cats: categories, menus })
+  }, [storeId, loading, categories, menus])
 
   function sortedCategories() {
     return [...categories].sort((a, b) => a.displayOrder - b.displayOrder)

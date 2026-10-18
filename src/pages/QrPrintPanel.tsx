@@ -295,11 +295,9 @@ export default function QrPrintPanel() {
                     </div>
                     <div className="w-px h-[28px] bg-[#D9D9D9]" />
                     <div>
-                      <div className="text-[11px] font-normal text-[#787878] mb-[3px]">
-                        {picked.size > 0 ? `${picked.size}곳 뽑으면` : '필요한 종이'}
-                      </div>
+                      <div className="text-[11px] font-normal text-[#787878] mb-[3px]">용지 수</div>
                       <div className="text-[15px] font-medium text-[#1E1E1E]">
-                        {picked.size > 0 ? `종이 ${pageCount}장` : '—'}
+                        {picked.size > 0 ? `${pageCount}장` : '—'}
                       </div>
                     </div>
                   </>

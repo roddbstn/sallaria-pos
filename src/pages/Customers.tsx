@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { getCached, setCached } from '../lib/query-cache'
 import QRCode from 'qrcode'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
@@ -665,12 +666,30 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
   // ── 마운트 / showInactive 변경 시 목록 재조회 ────────────────────────────────
   useEffect(() => {
+    const key = `accounts:${storeId}:${showInactive ? 'inactive' : 'active'}`
+
     async function load() {
-      setLoading(true)
       setFetchError(false)
       setSelected(null)
+
+      // 캐시가 있으면 먼저 그려놓고 뒤에서 갱신한다 — 탭을 옮길 때마다
+      // 화면이 언마운트돼 매번 처음부터 받던 걸 없앤다 (Menus 와 같은 방식)
+      const hit = getCached<DbAccount[]>(key)
+      if (hit) {
+        setAccounts(hit.data)
+        setLoading(false)
+        if (!hit.stale) {
+          // 집계는 가벼우니 최신이어도 뒤에서 한 번 갱신해 둔다
+          fetchCustomerStats(hit.data.map(a => a.account_code)).catch(() => {})
+          return
+        }
+      } else {
+        setLoading(true)
+      }
+
       try {
         const [fetchedAccounts] = await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages(), fetchRegisteredAdmins()])
+        setCached(key, fetchedAccounts)
         fetchCustomerStats(fetchedAccounts.map(a => a.account_code)).catch(() => {})
       } catch {
         setFetchError(true)
@@ -680,6 +699,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     }
     load()
   }, [showInactive, retryCount])
+
+  // 캐시를 화면 상태와 맞춘다 — 거래처를 추가·수정·충전하면 상태가 먼저 바뀐다
+  useEffect(() => {
+    if (!storeId || loading || accounts.length === 0) return
+    setCached(`accounts:${storeId}:${showInactive ? 'inactive' : 'active'}`, accounts)
+  }, [storeId, loading, showInactive, accounts])
 
   // ── 선택 거래처 변경 시 이력 로딩 ─────────────────────────────────────────────
   useEffect(() => {
