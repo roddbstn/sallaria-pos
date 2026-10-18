@@ -201,7 +201,10 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
   const BTN = 'h-[58px] rounded-[13px] text-[18px] font-medium flex items-center justify-center transition-colors disabled:opacity-50'
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
+    // z-[65] — 헤더 바깥에 따로 떠 있는 햄버거·알림벨(z-[60])까지 덮어야 한다.
+    // z-50 이었을 때는 그 둘이 블러 위로 올라와 호버·클릭이 됐다.
+    // 레이어 순서: 50 화면 내부 오버레이 < 60 헤더 앵커 < 65 신규 주문 < 70 사용자가 연 모달
+    <div className="fixed inset-0 z-[65] bg-black/50 backdrop-blur-sm">
       {/* 슬라이드 스트립 — card1 중앙 고정, card2는 오른쪽 끝에 반만 노출 */}
       <div
         style={{

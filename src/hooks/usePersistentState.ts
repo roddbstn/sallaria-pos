@@ -40,3 +40,20 @@ export function usePersistentState<T>(key: string, initial: T) {
 
   return [value, setValue] as const
 }
+
+
+/**
+ * 훅 밖에서 같은 설정을 한 번 읽는다 (usePersistentState 와 같은 키·같은 형식).
+ *
+ * App.tsx 의 '새 주문' effect 처럼 **그 순간의 값만** 필요한 곳에서 쓴다.
+ * 거기서 usePersistentState 를 쓰면 설정이 바뀔 때마다 effect 가 다시 돌아
+ * 알림이 두 번 울리는 식의 사고가 난다.
+ */
+export function readSetting<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(`pos_setting_${key}`)
+    return raw === null ? fallback : (JSON.parse(raw) as T)
+  } catch {
+    return fallback
+  }
+}

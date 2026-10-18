@@ -5,7 +5,8 @@ import { supabase } from './lib/supabase'
 import { checkPhoneLoginState, PASSWORD_MIN_LEN } from './lib/auth-helpers'
 import { track } from './lib/firebase'
 import { StoreContext, type StoreSession } from './lib/store-context'
-import { playOrderSound } from './lib/sound'
+import { playOrderSound, startOrderAlarm, stopOrderAlarm, getSavedVolume } from './lib/sound'
+import { readSetting } from './hooks/usePersistentState'
 
 import storeIcon from './assets/icons/store.svg'
 import { HeaderSlotContext } from './lib/header-slot'
@@ -707,12 +708,27 @@ export default function App() {
   }, [phase, session?.storeId])
 
   // ── 새 주문 소리 알림 ────────────────────────────────────────────────────────
+  //
+  // 설정의 '알림 방식'에 따라 둘 중 하나로 동작한다(설정 > 기타 참고).
+  //   정해진 횟수   : N회 울리고 끝
+  //   확인할 때까지 : 주문 팝업이 닫힐 때까지 간격마다 계속 울린다
+  // 후자는 그동안 설정값만 저장되고 아무 일도 하지 않았다.
   const prevQueueLen = useRef(0)
   useEffect(() => {
     if (queue.length > prevQueueLen.current) {
-      playOrderSound()
+      const mode = readSetting<'count' | 'until-ack'>('alarm_mode', 'count')
+      if (mode === 'until-ack') {
+        startOrderAlarm(getSavedVolume(), readSetting('repeat_sec', 10))
+      } else {
+        playOrderSound()
+      }
     }
     prevQueueLen.current = queue.length
+  }, [queue.length])
+
+  // 팝업이 사라지면(= 점주가 주문을 봤다) 반복 알림을 멈춘다
+  useEffect(() => {
+    if (queue.length === 0) stopOrderAlarm()
   }, [queue.length])
 
   function showToast(msg: string) {

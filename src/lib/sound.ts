@@ -37,6 +37,29 @@ export function getAlarmCount(): number {
  * 왜 한 Audio 를 재사용하지 않나: 소리가 끝나기 전에 다시 play() 하면 처음으로 되감겨
  * 두 번 울린 티가 안 난다. 끝난 뒤에 다음 걸 트는 게 "두 번 울렸다"로 들린다.
  */
+// ── 무한 반복 알림 ──────────────────────────────────────────────────────────
+//
+// 전에는 설정 화면에 '알림 횟수 N회'와 '주문 확인할 때까지 반복'이 **따로** 있었다.
+// 둘 다 켜면 무슨 뜻인지 알 수 없다 — 3회면서 무한인가?
+// 이제 둘 중 하나만 고른다(mode: 'count' | 'until-ack').
+//
+// 그리고 '주문 확인할 때까지 반복'은 그동안 값만 저장되고 아무 일도 하지 않았다.
+// 실제로 반복시키려면 멈출 방법이 있어야 한다 — 주문 팝업이 닫히면 멈춘다.
+
+let repeatTimer: ReturnType<typeof setInterval> | null = null
+
+/** 주문을 확인할 때까지 간격마다 다시 울린다. stopOrderAlarm() 으로만 멈춘다 */
+export function startOrderAlarm(volume: number, intervalSec: number) {
+  stopOrderAlarm()
+  if (volume === 0) return
+  playOrderSound(volume, 1)
+  repeatTimer = setInterval(() => playOrderSound(volume, 1), Math.max(1, intervalSec) * 1000)
+}
+
+export function stopOrderAlarm() {
+  if (repeatTimer !== null) { clearInterval(repeatTimer); repeatTimer = null }
+}
+
 export function playOrderSound(volumeOverride?: number, count?: number) {
   const volume = (volumeOverride ?? getSavedVolume()) / 100  // 0~1
   if (volume === 0) return

@@ -475,7 +475,9 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
 function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   const { storeName } = useStore()
   const [volume,       setVolume]       = useState(getSavedVolume)
-  const [repeatAlarm,  setRepeatAlarm]  = usePersistentState('repeat_alarm', false)
+  // 알림 방식은 **둘 중 하나**다. 전에는 'N회'와 '확인할 때까지 반복'이 따로 있어서
+  // 둘 다 켜면 "3회면서 무한"이라는 말이 안 되는 상태가 됐다.
+  const [alarmMode,    setAlarmMode]    = usePersistentState<'count' | 'until-ack'>('alarm_mode', 'count')
   const [repeatSec,    setRepeatSec]    = usePersistentState('repeat_sec', 10)
   const [alarmCount,   setAlarmCount]   = usePersistentState('alarm_count', 1)
   const [keepAwake,    setKeepAwake]    = usePersistentState('keep_awake', true)
@@ -529,7 +531,9 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   async function buildReport() {
     const d = await api().diagnostics?.().catch(() => null)
     const now = new Date().toLocaleString('ko-KR')
-    const sound = `볼륨 ${volume} · ${alarmCount}회 · 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}`
+    const sound = alarmMode === 'until-ack'
+      ? `볼륨 ${volume} · 확인할 때까지 ${repeatSec}초 간격`
+      : `볼륨 ${volume} · ${alarmCount}회`
     const rows = [
       { label: '매장',    value: storeName || '(미설정)' },
       { label: '앱 버전', value: d ? `${d.version} (${d.platform} ${d.arch})` : appVersion },
@@ -547,7 +551,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
         `프린터     ${d.printerConnected ? '연결됨' : '끊김'} / 포트 ${d.printerPort || '(미설정)'}`,
         `로그폴더   ${d.logDir}`,
       ] : ['(메인 프로세스 정보를 읽지 못했어요)']),
-      `알림음     볼륨 ${volume} / ${alarmCount}회 / 반복 ${repeatAlarm ? `${repeatSec}초` : '끔'}`,
+      `알림음     ${sound}`,
       `UA         ${navigator.userAgent}`,
     ].join('\n')
     setReport({ text, rows })
@@ -570,7 +574,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
         store: storeName || 'unknown',
         printer: d ? (d.printerConnected ? 'connected' : 'disconnected') : 'unknown',
       },
-      extra: { report: r.text, volume, alarmCount, repeatAlarm, repeatSec, ...(d ?? {}) },
+      extra: { report: r.text, volume, alarmMode, alarmCount, repeatSec, ...(d ?? {}) },
     }) ?? null
   }
 
@@ -588,24 +592,31 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
             style={{ background: `linear-gradient(to right, #6A635E 0%, #6A635E ${volume}%, #E5E7EB ${volume}%, #E5E7EB 100%)` }}
           />
           <span className="text-[12px] text-[#787878] w-[26px] text-right">{volume}</span>
-          <SmallButton onClick={() => playOrderSound(volume, alarmCount)}>미리 듣기</SmallButton>
+          <SmallButton onClick={() => playOrderSound(volume, alarmMode === 'count' ? alarmCount : 1)}>미리 듣기</SmallButton>
         </Row>
-        <Row label="알림 횟수" hint="새 주문이 들어올 때 소리를 몇 번 낼지">
-          <CountStepper value={alarmCount} min={1} max={10} suffix="회" onChange={setAlarmCount} />
+        <Row label="알림 방식" hint="피크타임에 주문음을 한 번 놓치면 그 주문은 증발해요">
+          <SegButtons
+            value={alarmMode}
+            options={[
+              { v: 'count' as const,     label: '정해진 횟수' },
+              { v: 'until-ack' as const, label: '확인할 때까지' },
+            ]}
+            onChange={setAlarmMode}
+          />
         </Row>
-        <Row label="주문을 확인할 때까지 알림 반복" hint="피크타임에 주문음을 한 번 놓치면 그 주문은 증발해요">
-          <Toggle on={repeatAlarm} onChange={setRepeatAlarm} />
-        </Row>
-        {repeatAlarm && (
-          <Row label="반복 간격">
+        {alarmMode === 'count' ? (
+          <Row label="알림 횟수" hint="새 주문이 들어올 때 소리를 몇 번 낼지">
+            <CountStepper value={alarmCount} min={1} max={10} suffix="회" onChange={setAlarmCount} />
+          </Row>
+        ) : (
+          <Row label="반복 간격" hint="주문 카드를 열 때까지 이 간격으로 계속 울려요">
             <SegButtons
               value={String(repeatSec)}
               options={[
-                { v: '1',  label: '1초' },
-                { v: '2',  label: '2초' },
                 { v: '3',  label: '3초' },
                 { v: '5',  label: '5초' },
                 { v: '10', label: '10초' },
+                { v: '20', label: '20초' },
               ]}
               onChange={v => setRepeatSec(Number(v))}
             />

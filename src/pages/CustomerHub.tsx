@@ -8,6 +8,7 @@ import SmsPanelImpl from './SmsPanel'
 import { DataTable, DataTableHead, DataTableRow, DataTableNotice, StatusTag } from '../components/ui/DataTable'
 import AccountDetailModal, { type AccountDetailTarget } from '../components/customer/AccountDetailModal'
 import { makeTypeColorOf, typeBadgeStyle } from '../lib/account-type-color'
+import InfoTip from '../components/ui/InfoTip'
 
 // 햄버거 드로어 "고객" 그룹에서 들어오는 전체메뉴 화면 — Figma node 532:3003(고객 현황) ·
 // 570:694(계정 관리) · 570:717(QR오더) · 570:673(문자 보내기).
@@ -395,7 +396,7 @@ function CustomerDetailPanel() {
 
   // 4열 그리드에 흘린다. 9번째(재주문자 비율)는 자연히 3행 첫 칸으로 간다 —
   // 행을 손으로 쪼개 두면 지표를 하나 더할 때마다 레이아웃을 다시 짜게 된다.
-  const cells: { label: string; value: string; sub?: string; link?: boolean }[] = stats ? [
+  const cells: { label: string; value: string; sub?: string; link?: boolean; info?: string }[] = stats ? [
     { label: '이번달 주문액',   value: won(stats.monthOrderAmount),   link: true },
     { label: '이번달 선결제액', value: won(stats.monthDepositAmount), link: true },
     { label: '총계정수',        value: `${stats.accountCount}팀` },
@@ -414,6 +415,8 @@ function CustomerDetailPanel() {
       sub:   stats.repeatBase.total === 0
         ? '최근 2주 주문 없음'
         : `주문자 ${stats.repeatBase.total}명 중 ${stats.repeatBase.repeat}명`,
+      // 정의는 네 칸 중 첫 칸에만 단다 — 같은 지표라 한 번이면 충분하다
+      info: '단골 = 그 기간 이전에도 주문한 적 있는 손님\n\n주문자 이름 기준이고, 취소된 주문은 빼고 셉니다.',
     },
     repeatCell('이번달 단골 비율',   stats.repeatThisMonth),
     repeatCell('저번달 단골 비율',   stats.repeatLastMonth),
@@ -458,7 +461,14 @@ function CustomerDetailPanel() {
             {cells.map(stat => (
               <div key={stat.label}>
                 <div className="flex items-center gap-[4px] text-[13px] font-normal text-[#6A635E] mb-[10px]">
-                  {stat.label}
+                  {/* i 는 '단골' 바로 뒤에 붙인다 — 라벨 끝(…비율)에 달면 무엇의 설명인지 흐려진다 */}
+                  {stat.info
+                    ? <>
+                        {stat.label.split('단골')[0]}단골
+                        <InfoTip text={stat.info} label="단골 설명" />
+                        {stat.label.split('단골')[1]}
+                      </>
+                    : stat.label}
                   {stat.link && (
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   )}
@@ -486,12 +496,6 @@ function CustomerDetailPanel() {
               data={stats.monthly.map(m => ({ label: m.label, value: m.repeatRate }))}
             />
 
-            {/* 단골의 정의는 여기 한 줄로 끝낸다. 네 칸에 각각 넣으면 같은 말이 네 번
-                반복되면서 칸을 넘치고, 정작 숫자가 안 보인다. */}
-            <p className="text-[11px] font-normal text-[#ADADAD] text-right leading-relaxed">
-              단골 = 그 기간 이전에도 주문한 적 있는 손님<br />
-              주문자 이름 기준 · 취소 주문 제외
-            </p>
           </div>
         </div>
       )}
