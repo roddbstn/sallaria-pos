@@ -7,14 +7,15 @@ import MonthlyBalanceModal from '../components/customer/MonthlyBalanceModal'
 import { useHeaderSlot } from '../lib/header-slot'
 import { PLAN_LIMITS } from '../lib/plans'
 import type { PlanTier } from '../lib/plans'
+import InfoTip from '../components/ui/InfoTip'
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 const MONTH_NAMES   = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
 const DAY_NAMES     = ['일','월','화','수','목','금','토']
-// 도넛·막대 공용 팔레트. 첫 색은 선결제 액센트(#017333), 나머지는 Dashboard 의 베스트셀러
+// 도넛·막대 공용 팔레트. 첫 색은 앱 강조색(#2C261F), 나머지는 베스트셀러
 // 팔레트와 같은 색 — 같은 거래처가 화면마다 다른 색이면 색이 정보가 아니라 장식이 된다.
-const CHART_COLORS  = ['#017333','#3374FF','#F5A623','#FF676F','#9B59B6','#1ABC9C','#E67E22','#FF8418','#7ED321','#ADADAD']
+const CHART_COLORS  = ['#2C261F','#3374FF','#F5A623','#FF676F','#9B59B6','#1ABC9C','#E67E22','#FF8418','#7ED321','#ADADAD']
 
 // ── KST 헬퍼 ─────────────────────────────────────────────────────────────────
 function monthRangeUtc(year: number, month: number) {
@@ -66,7 +67,7 @@ function DeltaBadge({ current, previous, goodWhenUp = true }: {
   const up   = pct > 0
   const good = up === goodWhenUp
   return (
-    <span className={`text-[11px] font-normal ${good ? 'text-[#017333]' : 'text-danger'}`}>
+    <span className={`text-[11px] font-normal ${good ? 'text-[#2C261F]' : 'text-danger'}`}>
       {up ? '▲' : '▼'} 지난달 {up ? '+' : ''}{pct}%
     </span>
   )
@@ -426,7 +427,7 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
             <div className="flex items-center gap-1.5 mb-1">
               <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#34D060' }} />
               <span className="text-gray-text">선결제</span>
-              <span className="ml-auto font-medium text-[#017333]">{hoverDepAmt > 0 ? `+${hoverDepAmt.toLocaleString()}원` : '—'}</span>
+              <span className="ml-auto font-medium text-[#2C261F]">{hoverDepAmt > 0 ? `+${hoverDepAmt.toLocaleString()}원` : '—'}</span>
             </div>
           )}
           {showOrder && (
@@ -463,7 +464,7 @@ const UPGRADE_FEATURE_TABLE: { label: string; free: FVal; basic: FVal; pro: FVal
 ]
 function UpgradeCheck() {
   return (
-    <span style={{ display:'inline-flex', width:16, height:16, borderRadius:'50%', background:'#017333', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+    <span style={{ display:'inline-flex', width:16, height:16, borderRadius:'50%', background:'#2C261F', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
       <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.2 5.7L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </span>
   )
@@ -471,7 +472,7 @@ function UpgradeCheck() {
 function UpgradeFCell({ v, isSelected }: { v: FVal; isSelected: boolean }) {
   if (v === false) return <span style={{ color:'#D1D5DB', fontSize:13 }}>—</span>
   if (v === true) return (
-    <span style={{ display:'inline-flex', width:18, height:18, borderRadius:'50%', background: isSelected ? '#017333' : '#E5E5E5', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+    <span style={{ display:'inline-flex', width:18, height:18, borderRadius:'50%', background: isSelected ? '#2C261F' : '#E5E5E5', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
       <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.2 5.7L8 1" stroke={isSelected ? '#fff' : '#9CA3AF'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </span>
   )
@@ -538,10 +539,10 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
               <style>{`
                 #upg-teamCount { -webkit-appearance:none; appearance:none; width:100%; height:26px; background:transparent; cursor:pointer; outline:none; display:block; }
-                #upg-teamCount::-webkit-slider-runnable-track { height:5px; border-radius:99px; background:linear-gradient(to right,#017333 ${fillPct}%,#E5E5E5 ${fillPct}%); }
-                #upg-teamCount::-moz-range-track { height:5px; border-radius:99px; background:linear-gradient(to right,#017333 ${fillPct}%,#E5E5E5 ${fillPct}%); }
-                #upg-teamCount::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #017333; box-shadow:0 2px 6px rgba(4,64,32,.16); margin-top:-7.5px; }
-                #upg-teamCount::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #017333; }
+                #upg-teamCount::-webkit-slider-runnable-track { height:5px; border-radius:99px; background:linear-gradient(to right,#2C261F ${fillPct}%,#E5E5E5 ${fillPct}%); }
+                #upg-teamCount::-moz-range-track { height:5px; border-radius:99px; background:linear-gradient(to right,#2C261F ${fillPct}%,#E5E5E5 ${fillPct}%); }
+                #upg-teamCount::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #2C261F; box-shadow:0 2px 6px rgba(4,64,32,.16); margin-top:-7.5px; }
+                #upg-teamCount::-moz-range-thumb { width:20px; height:20px; border-radius:50%; background:#fff; border:3px solid #2C261F; }
               `}</style>
               <input type="range" id="upg-teamCount" min={1} max={25} value={teamCount} step={1} onChange={handleRange} />
               <div style={{ display:'flex', justifyContent:'space-between', fontFamily:'"IBM Plex Mono",monospace', fontSize:10, color:'#79837C', marginTop:2 }}>
@@ -561,10 +562,10 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
                     <button
                       key={p.id}
                       onClick={() => setSelectedPlan(p.id)}
-                      style={{ border:`2px solid ${isSelected ? '#017333' : '#E5E5E5'}`, borderRadius:12, padding:'14px 13px', background: isSelected ? '#E6F4EC' : '#FCFCFC', textAlign:'left', cursor:'pointer', transition:'border-color 0.15s,background 0.15s', position:'relative', display:'flex', flexDirection:'column' }}
+                      style={{ border:`2px solid ${isSelected ? '#2C261F' : '#E5E5E5'}`, borderRadius:12, padding:'14px 13px', background: isSelected ? '#E8E4E2' : '#FCFCFC', textAlign:'left', cursor:'pointer', transition:'border-color 0.15s,background 0.15s', position:'relative', display:'flex', flexDirection:'column' }}
                     >
                       {isMatch && !isCurrent && (
-                        <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#017333', color:'#FCFCFC', fontSize:10, fontWeight:500, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>추천</span>
+                        <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#2C261F', color:'#FCFCFC', fontSize:10, fontWeight:500, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>추천</span>
                       )}
                       {isCurrent && (
                         <span style={{ position:'absolute', top:-10, left:'50%', transform:'translateX(-50%)', background:'#1A1A1A', color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99, whiteSpace:'nowrap' }}>현 요금제</span>
@@ -1122,6 +1123,24 @@ export default function Sales() {
 
   // 거래처별 기여도 — 비중·주문수·상태. 거래처 몇 곳이 매출 대부분을 만들기 때문에
   // "상위 몇 곳이 몇 %"가 보여야 한 곳을 잃는 게 어떤 의미인지 알 수 있다.
+  // 계정별 평균 선결제 주기 — DB 에서 한 번에 받는다(account_deposit_cycle).
+  // 전체 충전 이력을 클라이언트로 내리면 왕복과 페이로드가 늘어난다.
+  const [depCycle, setDepCycle] = useState<Record<string, number | null>>({})
+  useEffect(() => {
+    if (!storeId) return
+    let cancelled = false
+    void (async () => {
+      const { data } = await supabase.rpc('account_deposit_cycle', { p_store_id: storeId })
+      if (cancelled) return
+      const m: Record<string, number | null> = {}
+      for (const r of (data ?? []) as { account_code: string; cycle_days: number | null }[]) {
+        m[r.account_code] = r.cycle_days
+      }
+      setDepCycle(m)
+    })()
+    return () => { cancelled = true }
+  }, [storeId])
+
   const contribution = useMemo(() => {
     const cntByAcc: Record<string, number> = {}
     const lastByAcc: Record<string, string> = {}
@@ -1162,7 +1181,7 @@ export default function Sales() {
       {/* ── 본문 ── */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="w-8 h-8 border-4 border-green border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-4 border-[#6A635E] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : error ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-text">
@@ -1206,7 +1225,7 @@ export default function Sales() {
                       {filterName && (
                         <>
                           <span className="text-gray-border">·</span>
-                          <span className="text-[#017333]">{filterName}</span>
+                          <span className="text-[#2C261F]">{filterName}</span>
                           <button onClick={() => setFilterAccount(null)} className="text-[10px] text-gray-text hover:text-ink bg-gray-100 rounded px-1.5 py-0.5">필터 해제</button>
                         </>
                       )}
@@ -1223,7 +1242,7 @@ export default function Sales() {
                       const total   = visibleAccounts.length
                       if (total === 0) return null
                       if (charged === 0) return <div className="text-[11px] text-gray-text mt-1">{MONTH_NAMES[month]} 충전 거래처 없음</div>
-                      if (charged === total) return <div className="text-[11px] text-[#017333] font-semibold mt-1">전체 {total}곳 모두 충전</div>
+                      if (charged === total) return <div className="text-[11px] text-[#2C261F] font-semibold mt-1">전체 {total}곳 모두 충전</div>
                       return <div className="text-[11px] text-gray-text mt-1">전체 {total}곳 중 {charged}곳 충전</div>
                     })()}
                   </div>
@@ -1241,11 +1260,11 @@ export default function Sales() {
                               .map(([day, amt]) => (
                                 <div key={day} className="flex justify-between gap-4 text-[10px]">
                                   <span className="text-gray-text">{month + 1}월 {day}일</span>
-                                  <span className="font-medium text-[#017333]">+{won(amt)}</span>
+                                  <span className="font-medium text-[#2C261F]">+{won(amt)}</span>
                                 </div>
                               ))}
                             <div className="border-t border-[#E5E5E5] pt-1 mt-1 flex justify-between text-[10px] font-medium">
-                              <span>합계</span><span className="text-[#017333]">+{won(d.total)}</span>
+                              <span>합계</span><span className="text-[#2C261F]">+{won(d.total)}</span>
                             </div>
                           </div>
                         ),
@@ -1262,7 +1281,7 @@ export default function Sales() {
                       {filterName && (
                         <>
                           <span className="text-gray-border">·</span>
-                          <span className="text-[#017333]">{filterName}</span>
+                          <span className="text-[#2C261F]">{filterName}</span>
                         </>
                       )}
                     </div>
@@ -1430,7 +1449,7 @@ export default function Sales() {
                       )}
                       {(amount || orderAmount) ? (
                         <div className="mt-auto space-y-0.5">
-                          {amount ? <div className="text-[10px] font-medium leading-tight text-[#017333]">+{won(amount)} <span className="font-normal opacity-70">({dayDepositCountMap[day] ?? 0})</span></div> : null}
+                          {amount ? <div className="text-[10px] font-medium leading-tight text-[#2C261F]">+{won(amount)} <span className="font-normal opacity-70">({dayDepositCountMap[day] ?? 0})</span></div> : null}
                           {orderAmount ? <div className="text-[10px] font-normal leading-tight text-gray-text">-{won(orderAmount)} <span className="opacity-70">({dayOrderCountMap[day] ?? 0})</span></div> : null}
                         </div>
                       ) : null}
@@ -1443,9 +1462,9 @@ export default function Sales() {
             {/* ── 거래처별 정산 테이블 ── */}
             <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
               <div className="px-3 py-2.5 border-b border-[#E5E5E5]">
-                <div className="text-[13px] font-medium text-[#2C261F]">거래처별 정산</div>
+                <div className="text-[15px] font-semibold text-[#2C261F]">계정별 선결제 주기</div>
                 <div className="text-[11px] text-gray-text mt-0.5">
-                  충전·주문액은 <strong className="text-ink">{monthLabel} 기준</strong>이며 현재 잔액은 <strong className="text-ink">실시간</strong> ({now.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} 기준)입니다. <strong className="text-ink">비중</strong>은 이번 달 전체 주문액 중 그 거래처의 몫이에요. 행을 클릭하면 캘린더가 해당 거래처로 필터됩니다.
+                  충전·주문액은 <strong className="text-ink">{monthLabel} 기준</strong>, 현재 잔액은 <strong className="text-ink">실시간</strong>입니다. 행을 클릭하면 캘린더가 그 계정으로 좁혀져요.
                 </div>
               </div>
               {accountStats.length === 0 ? (
@@ -1459,13 +1478,19 @@ export default function Sales() {
                   <table className="w-full">
                     <thead>
                       <tr className="bg-[#D7D2CE] border-b border-[#C1B7AA]">
-                        <th className="px-5 py-2.5 text-left  text-[11px] font-medium text-gray-text">거래처</th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">{MONTH_NAMES[month]} 선결제 매출</th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
-                        <th className="px-3 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap" title="이번 달 전체 주문액 중 이 거래처가 차지하는 몫">비중</th>
-                        <th className="px-3 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">주문수</th>
-                        <th className="px-5 py-2.5 text-right text-[11px] font-medium text-gray-text whitespace-nowrap">현재 잔액</th>
-                        <th className="px-4 py-2.5 text-left  text-[11px] font-medium text-gray-text whitespace-nowrap">상태</th>
+                        <th className="px-5 h-[36px] text-left  text-[12px] font-normal text-[#6A635E]">계정</th>
+                        <th className="px-4 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">평균 선결제 주기</th>
+                        <th className="px-4 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 선결제 매출</th>
+                        <th className="px-4 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
+                        <th className="px-3 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">
+                          <span className="inline-flex items-center gap-[4px]">
+                            비중
+                            <InfoTip text={'이번 달 전체 주문액 중\n이 계정이 차지하는 몫이에요'} label="비중 설명" />
+                          </span>
+                        </th>
+                        <th className="px-3 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">주문수</th>
+                        <th className="px-5 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">현재 잔액</th>
+                        <th className="px-4 h-[36px] text-left  text-[12px] font-normal text-[#6A635E] whitespace-nowrap">상태</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#E5E5E5]">
@@ -1497,8 +1522,14 @@ export default function Sales() {
                               </div>
                               {acc.organization_name && acc.organization_name !== acc.account_name && <div className="text-[11px] text-gray-text">{acc.organization_name}</div>}
                             </td>
+                            {/* 평균 선결제 주기 — 충전이 1건뿐이면 주기를 말할 수 없어 '—' */}
+                            <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                              {depCycle[acc.account_code] != null
+                                ? <span className="text-[12px] font-medium text-ink tabular-nums">{depCycle[acc.account_code]}일</span>
+                                : <span className="text-[12px] text-[#ADADAD]">—</span>}
+                            </td>
                             <td className="px-4 py-2.5 text-right">
-                              <span className={`text-[12px] font-semibold ${monthDeposit > 0 ? 'text-[#017333]' : 'text-gray-text'}`}>
+                              <span className={`text-[12px] font-semibold ${monthDeposit > 0 ? 'text-[#2C261F]' : 'text-gray-text'}`}>
                                 {monthDeposit > 0 ? won(monthDeposit) : '—'}
                               </span>
                             </td>
@@ -1547,7 +1578,7 @@ export default function Sales() {
                     <tfoot>
                       <tr className="border-t border-[#C1B7AA] bg-[#F2F2F2]">
                         <td className="px-5 py-2.5 text-[11px] font-medium text-gray-text">합계 ({contribution.length}개 거래처)</td>
-                        <td className="px-4 py-2.5 text-right text-[12px] font-medium text-[#017333]">{won(tableTotals.deposit)}</td>
+                        <td className="px-4 py-2.5 text-right text-[12px] font-medium text-[#2C261F]">{won(tableTotals.deposit)}</td>
                         <td className="px-4 py-2.5 text-right text-[12px] font-medium text-[#1E1E1E]">{won(tableTotals.order)}</td>
                         <td className="px-3 py-2.5 text-right text-[11px] font-normal text-[#ADADAD]">100%</td>
                         <td className="px-3 py-2.5 text-right text-[12px] font-normal text-[#787878]">
@@ -1590,7 +1621,7 @@ export default function Sales() {
               <div className="flex-1 overflow-y-auto">
                 {historyLoading ? (
                   <div className="flex items-center justify-center py-10">
-                    <div className="w-6 h-6 border-3 border-green border-t-transparent rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-3 border-[#6A635E] border-t-transparent rounded-full animate-spin" />
                   </div>
                 ) : historyMonths.length === 0 ? (
                   <div className="px-4 py-10 text-center text-[11px] text-gray-text">거래 내역이 없습니다</div>
@@ -1614,7 +1645,7 @@ export default function Sales() {
                           </div>
                           <div className="text-right flex-shrink-0 ml-2">
                             {hm.totalDeposit > 0 && (
-                              <div className="text-[11px] font-semibold text-[#017333]">+{won(hm.totalDeposit)}</div>
+                              <div className="text-[11px] font-semibold text-[#2C261F]">+{won(hm.totalDeposit)}</div>
                             )}
                             {hm.totalOrder > 0 && (
                               <div className="text-[11px] font-semibold text-gray-text">-{won(hm.totalOrder)}</div>
@@ -1643,7 +1674,7 @@ export default function Sales() {
                                   <div className="text-[10px] text-gray-text/70">{kstTimeStr(item.created_at)}</div>
                                 </div>
                                 <span className={`text-[11px] flex-shrink-0
-                                  ${item.type === 'deposit' ? 'font-medium text-[#017333]' : 'font-normal text-[#787878]'}`}>
+                                  ${item.type === 'deposit' ? 'font-medium text-[#2C261F]' : 'font-normal text-[#787878]'}`}>
                                   {item.type === 'deposit' ? '+' : '-'}{won(item.amount)}
                                 </span>
                               </div>
@@ -1667,7 +1698,7 @@ export default function Sales() {
                     {selectedDayDeposits.length > 0 && (
                       <div className="text-[11px] text-gray-text">
                         충전 {selectedDayDeposits.length}건&nbsp;
-                        <span className="text-[#017333] font-medium">{won(selectedDayDeposits.reduce((s, d) => s + d.amount, 0))}</span>
+                        <span className="text-[#2C261F] font-medium">{won(selectedDayDeposits.reduce((s, d) => s + d.amount, 0))}</span>
                       </div>
                     )}
                     {selectedDayOrders.length > 0 && (
@@ -1693,7 +1724,7 @@ export default function Sales() {
                         <div key={d.deposit_id} className="px-4 py-2.5">
                           <div className="flex items-start justify-between gap-2 mb-0.5">
                             <span className="text-[11px] font-semibold text-ink leading-snug">{d.account_name}</span>
-                            <span className="text-[12px] font-medium text-[#017333] flex-shrink-0">+{won(d.amount)}</span>
+                            <span className="text-[12px] font-medium text-[#2C261F] flex-shrink-0">+{won(d.amount)}</span>
                           </div>
                           {d.note && <div className="text-[11px] text-gray-text">{d.note}</div>}
                           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
