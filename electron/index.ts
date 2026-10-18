@@ -41,7 +41,10 @@ interface StoreSchema {
 const store = new Store<StoreSchema>({
   defaults: {
     printer: { portName: '' },
-    receipt: { menuSize: 'small', optionSize: 'small', customerMenuSize: 'small', customerOptionSize: 'small' },
+    // 기본값이 'small' 이었다 — 점주가 설정을 건드리기 전까지 가장 작은 크기로 찍혔다.
+    // 화면 기본값('보통')과도 어긋나 있었다. 이미 저장된 'small' 은 sizeCmd 의
+    // default 로 떨어져 '보통'으로 처리된다(타입에서 'small' 을 없앴다).
+    receipt: { menuSize: 'normal', optionSize: 'normal', customerMenuSize: 'normal', customerOptionSize: 'normal' },
   },
 })
 

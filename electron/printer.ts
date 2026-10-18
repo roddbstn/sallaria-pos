@@ -10,7 +10,8 @@ export interface PrinterSettings {
   portName: string   // COM 포트 이름 (예: "COM1")
 }
 
-export type ReceiptTextSize = 'small' | 'normal' | 'large'
+// '작게'는 뺐다 — 감열 영수증에서 1배 높이는 읽기 어렵고, 보통/크게면 충분하다
+export type ReceiptTextSize = 'normal' | 'large'
 
 export interface ReceiptSettings {
   menuSize:           ReceiptTextSize

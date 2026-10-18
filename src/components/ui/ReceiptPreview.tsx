@@ -12,7 +12,7 @@ import { useState, Fragment } from 'react'
 // 폭(58mm ≈ 220px)과 글자 크기 비율만 실제와 맞춰 뒀다.
 
 export type ReceiptKind = 'kitchen' | 'customer'
-export type TextSize = 'small' | 'normal' | 'large'
+export type TextSize = 'normal' | 'large'
 
 export interface ReceiptPreviewConfig {
   menuSize:    TextSize
@@ -28,7 +28,8 @@ export const DEFAULT_RECEIPT_CONFIG: ReceiptPreviewConfig = {
 }
 
 // 58mm 용지에 ESC/POS 기본 폰트로 찍히는 크기를 화면 px로 옮긴 값
-const PX: Record<TextSize, number> = { small: 10, normal: 12, large: 15 }
+// 실제 인쇄는 높이 배수다(보통 2배, 크게 3배). 미리보기도 그 비율로 둔다 — 12 : 18
+const PX: Record<TextSize, number> = { normal: 12, large: 18 }
 
 const TABS: { kind: ReceiptKind; label: string }[] = [
   { kind: 'kitchen',  label: '주방 주문서' },
@@ -153,7 +154,14 @@ function KitchenReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
   )
 }
 
-/** 고객용 — 주방용과 같은 주문, 조리 지시(가게요청·배달요청)는 빼고 금액 중심 */
+/**
+ * 고객용 — electron/escpos.ts buildCustomerReceiptEscPos 와 같은 순서·같은 라벨.
+ *
+ * 2026-10-18: 전화번호·배달주소·가게요청·배달요청이 미리보기에만 빠져 있었다.
+ * 실제 인쇄는 처음부터 이 넷을 다 찍고 있었는데 미리보기가 '금액 중심'이라며
+ * 생략해서, 화면만 보면 고객 영수증에 그 정보가 없는 것처럼 보였다.
+ * 미리보기는 실제와 같아야 한다 — 다르면 미리보기가 아니다.
+ */
 function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
   const menuPx = PX[cfg.menuSize]
   const optPx  = PX[cfg.optionSize]
@@ -169,6 +177,12 @@ function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <div style={{ fontSize: 11 }}>이용방법 : <b>{SAMPLE.method}</b></div>
       <div style={{ fontSize: 11 }}>주문자&nbsp;&nbsp; : {SAMPLE.orderer}</div>
       <div style={{ fontSize: 11 }}>거래처&nbsp;&nbsp; : {SAMPLE.account}</div>
+      <div style={{ fontSize: 11 }}>전화번호 : {SAMPLE.phone}</div>
+      <Line />
+      {/* 배달이면 주소·배달요청까지, 아니면 가게요청만 — escpos 와 같은 분기 */}
+      <div style={{ fontSize: 11 }}>배달주소 : {SAMPLE.address}</div>
+      <div style={{ fontSize: 11 }}>가게요청 : {SAMPLE.storeNote}</div>
+      <div style={{ fontSize: 11 }}>배달요청 : {SAMPLE.deliveryNote}</div>
       <Line />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', rowGap: 2, columnGap: 10 }}>

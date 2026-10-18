@@ -369,9 +369,10 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
 
 // ── §5. 영수증 · 증빙 ──────────────────────────────────────────────────────
 
-type TextSize = 'small' | 'normal' | 'large'
+type TextSize = 'normal' | 'large'
+// '작게'는 뺐다 — 감열 영수증에서 1배 높이는 읽기 어렵고, 실제로 고르는 사람도 없었다
 const SIZE_OPTS: { v: TextSize; label: string }[] = [
-  { v: 'small', label: '작게' }, { v: 'normal', label: '보통' }, { v: 'large', label: '크게' },
+  { v: 'normal', label: '보통' }, { v: 'large', label: '크게' },
 ]
 
 function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
