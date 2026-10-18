@@ -10,6 +10,7 @@ import AccountDetailModal, { type AccountDetailTarget } from '../components/cust
 import { makeTypeColorOf, typeBadgeStyle } from '../lib/account-type-color'
 import InfoTip from '../components/ui/InfoTip'
 import LoadingBlock from '../components/ui/LoadingBlock'
+import CustomerProfileModal from '../components/customer/CustomerProfileModal'
 
 // 햄버거 드로어 "고객" 그룹에서 들어오는 전체메뉴 화면 — Figma node 532:3003(고객 현황) ·
 // 570:694(계정 관리) · 570:717(QR오더) · 570:673(문자 보내기).
@@ -168,6 +169,7 @@ interface TopOrderer {
 /** 돌아오지 않은 단골 한 줄 — lapsed_regulars() RPC */
 interface LapsedRegular {
   orderer_name:  string
+  account_code:  string
   account_name:  string
   orders:        number
   cycle_days:    number
@@ -253,6 +255,8 @@ function CustomerDetailPanel() {
   // 단골 관리 두 묶음 — DB 에서 집계해 한 번에 받는다.
   // 클라이언트에서 주문을 통째로 받아 계산하면 왕복과 페이로드가 늘어난다.
   const [topOrderers, setTopOrderers] = useState<TopOrderer[]>([])
+  /** 펼쳐 볼 손님 — 표에서 이름을 누르면 설정된다. 모달에 필요한 세 값만 들고 간다 */
+  const [profileOf, setProfileOf] = useState<{ name: string; code: string; account: string } | null>(null)
   const [lapsed,      setLapsed]      = useState<LapsedRegular[]>([])
 
   useEffect(() => {
@@ -586,7 +590,8 @@ function CustomerDetailPanel() {
               return (
                 <div
                   key={`${c.orderer_name}-${c.account_code}`}
-                  className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                  onClick={() => setProfileOf({ name: c.orderer_name, code: c.account_code, account: c.account_name })}
+                  className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
                 >
                   <span className="w-[26px] text-[12px] font-medium text-[#6A635E]">{i + 1}</span>
                   <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
@@ -631,7 +636,8 @@ function CustomerDetailPanel() {
             {lapsed.slice(0, 8).map((c, i) => (
               <div
                 key={`${c.orderer_name}-${c.account_name}`}
-                className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                onClick={() => setProfileOf({ name: c.orderer_name, code: c.account_code, account: c.account_name })}
+                className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
               >
                 <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
                 <span className="w-[150px] text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
@@ -651,6 +657,16 @@ function CustomerDetailPanel() {
             평소 주기보다 3배 넘게 안 오신 분들이에요{lapsed.length > 8 && ` · 전체 ${lapsed.length}명 중 8명`}
           </p>
         </div>
+      )}
+
+      {profileOf && storeId && (
+        <CustomerProfileModal
+          storeId={storeId}
+          ordererName={profileOf.name}
+          accountCode={profileOf.code}
+          accountName={profileOf.account}
+          onClose={() => setProfileOf(null)}
+        />
       )}
     </div>
   )
