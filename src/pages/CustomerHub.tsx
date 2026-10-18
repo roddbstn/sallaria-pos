@@ -184,7 +184,7 @@ function RateBars({ title, hint, data, color }: {
           </div>
         ))}
       </div>
-      <div className="h-px bg-[#D9D1C3] mt-[1px]" />
+      <div className="h-px bg-canvas-line mt-[1px]" />
       <div className="flex gap-[8px] mt-[6px]">
         {data.map(d => (
           <span key={d.label} className="flex-1 text-center text-[10px] text-[#6A635E]">{d.label}</span>

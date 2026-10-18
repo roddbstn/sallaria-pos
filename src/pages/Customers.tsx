@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import QRCode from 'qrcode'
-import logoWithText from '../assets/logo-with-text-transparent.png'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
@@ -21,6 +20,7 @@ import { StatusTag as PillTag } from '../components/ui/DataTable'
 import ScrollHint from '../components/ui/ScrollHint'
 import RevealText from '../components/ui/RevealText'
 import StatCard from '../components/StatCard'
+import { useQrPrint } from '../hooks/useQrPrint'
 
 const BASE_URL = 'https://sallaria.web.app'
 const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
@@ -296,124 +296,24 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     : ''
   const selectedQrDataUrl    = useQrDataUrl(selectedQrUrl)
 
-  // ⚠️ handlePrintQr / handlePrintQrReceipt 는 지금 화면에서 호출되지 않는다.
-  // 고객 > QR오더 화면(기획 완료, 미구현)이 이 둘을 그대로 재사용할 예정이라 남겨둔다.
-  // 그 화면을 붙일 때 여기서 훅으로 빼서 공용으로 쓸 것.
-  const handlePrintQr = useCallback(() => {
-    if (!selected || !selectedQrDataUrl) return
-
-    // Electron에서는 window.open 팝업이 차단되므로 숨겨진 iframe으로 인쇄
-    const iframe = document.createElement('iframe')
-    iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:0;visibility:hidden;'
-    document.body.appendChild(iframe)
-
-    const doc = iframe.contentDocument ?? iframe.contentWindow?.document
-    if (!doc) { document.body.removeChild(iframe); return }
-
-    doc.open()
-    doc.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>${selected.account_name} QR</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100vh; }
-    body {
-      font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
-      background: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    .header {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-    }
-    h1 {
-      font-size: 56px;
-      font-weight: 900;
-      color: #1E1E1E;
-      text-align: center;
-      line-height: 1.2;
-      letter-spacing: -1px;
-    }
-    .subtitle {
-      font-size: 20px;
-      font-weight: 500;
-      color: #727272;
-      text-align: center;
-    }
-    img.qr { width: 420px; height: 420px; }
-    .footer {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      margin-right: 16px;
-    }
-    .logo-row {
-      display: flex;
-      align-items: flex-end;
-      gap: 12px;
-    }
-    img.logo { width: 210px; object-fit: contain; }
-    .collab {
-      font-size: 22px;
-      font-weight: 600;
-      color: #1E1E1E;
-      white-space: nowrap;
-      margin-bottom: 35px;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>${selected.account_name}</h1>
-    <p class="subtitle">${storeName} 선결제 주문</p>
-  </div>
-  <img class="qr" src="${selectedQrDataUrl}" alt="QR"/>
-  <div class="footer">
-    <div class="logo-row">
-      <img class="logo" src="${logoWithText}" alt="logo"/>
-      <span class="collab">×&nbsp;&nbsp;&nbsp;${storeName}</span>
-    </div>
-  </div>
-</body>
-</html>`)
-    doc.close()
-
-    // 이미지 로드 후 인쇄
-    setTimeout(() => {
-      iframe.contentWindow?.print()
-      setTimeout(() => { document.body.removeChild(iframe) }, 1000)
-    }, 400)
-  }, [selected, selectedQrDataUrl])
-
-  const handlePrintQrReceipt = useCallback(async () => {
-    if (!selected) return
-    try {
-      await window.api?.printQrReceipt({
-        accountName: selected.account_name,
-        manager:     selected.contact_person ?? '',
-        phone:       selected.contact_phone  ?? '',
-        pin:         selected.pin_code,
-        qrUrl:       selectedQrUrl,
-        storeName,
-      })
-    } catch (err) {
-      const msg = (err as Error).message ?? '영수증 출력에 실패했어요'
+  // QR 인쇄(A4 종이 / 영수증) 두 동작은 src/hooks/useQrPrint.ts 로 옮겼다.
+  // 이 화면에는 아직 그 버튼이 없다 — 고객 > QR오더 화면(기획 완료, 미구현)이
+  // 이 훅을 그대로 쓸 예정이다. 그 화면을 붙일 때 printQrSheet / printQrReceipt 를
+  // 버튼에 연결하면 끝이다.
+  //
+  // 버튼이 없는데도 여기서 한 번 호출해 두는 이유: selected·storeName 같은 입력이
+  // 바뀌면 타입 에러로 바로 드러나게 하려고. 안 부르고 두면 훅이 조용히 썩는다.
+  const qrPrint = useQrPrint({
+    account:   selected,
+    qrDataUrl: selectedQrDataUrl,
+    qrUrl:     selectedQrUrl,
+    storeName,
+    onError:   msg => {
       setPrinterToast(msg)
       setTimeout(() => setPrinterToast(''), 3500)
-    }
-  }, [selected, selectedQrUrl, storeName])
+    },
+  })
+  void qrPrint   // 버튼이 붙기 전까지 의도적 미사용
 
   const [addOpen,      setAddOpen]      = useState(false)
   const [newForm,      setNewForm]      = useState({

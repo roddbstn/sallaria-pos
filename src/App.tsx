@@ -1155,7 +1155,7 @@ export default function App() {
                  고객 화면은 아직 400px 고객현황 패널이 있어 그대로 끊는다.
                  전체메뉴(허브) 화면은 좌측 네비가 헤더 바로 아래에서 시작해 겹치므로 숨긴다. */}
             {!HUB_TABS.includes(tab) && (
-              // 색은 --canvas-line(#D9D1C3) — 베이지 바탕(#EAE4D9) 위에 긋는 선의 시스템 값.
+              // 색은 --canvas-line(#E5E5E5) — 바탕(#F2F2F2) 위에 긋는 선의 시스템 값.
               // #C1B7AA 는 추이 차트 막대에 쓰는 색이라 선으로는 한 단계 진했다.
               <div className={`absolute bg-canvas-line h-px left-[26px] bottom-0 ${
                 tab === 'customers' ? 'right-[426px]' : 'right-[26px]'

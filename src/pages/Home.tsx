@@ -191,7 +191,7 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
             {(['active', 'done'] as const).map((t, i) => (
               <Fragment key={t}>
                 {/* 두 탭 사이 세로선 — 둘 다 큰 글자라 간격만으로는 한 덩어리로 읽혔다 */}
-                {i > 0 && <span className="w-px h-[18px] bg-[#D9D1C3]" />}
+                {i > 0 && <span className="w-px h-[18px] bg-canvas-line" />}
                 <button
                   onClick={() => { setTab(t); setPicked(null) }}
                   className={`pressable-text text-[22px] leading-none transition-colors ${

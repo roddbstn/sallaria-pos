@@ -145,7 +145,7 @@ function FilterSelect({ value, onChange, allLabel, options }: {
  *
  * 그림자에서 **spread(네 번째 값) 1px 를 뺐다.** spread 는 블러 전에 그림자를 사방으로
  * 1px 키우는 값이라, 모서리에 흐릿하지 않은 회색 테두리가 한 겹 생긴다 — 흰 배경에선
- * 티가 안 나는데 베이지(#EAE4D9) 위에선 "이상한 회색 선"으로 보였다.
+ * 티가 안 나는데 바탕색(#F2F2F2) 위에선 "이상한 회색 선"으로 보였다.
  * 색도 순수 검정 대신 잉크(#2C261F) 계열로 바꿨다. 따뜻한 바탕 위의 중성 검정 그림자는
  * 푸르스름하게 뜬다.
  */
@@ -641,7 +641,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                   </div>
                 ))}
               </div>
-              <div className="h-px bg-[#D9D1C3] mt-[1px] mx-auto" style={{ width: 140 }} />
+              <div className="h-px bg-canvas-line mt-[1px] mx-auto" style={{ width: 140 }} />
               <div className="flex justify-center gap-[22px] mt-[7px]">
                 {accountBars.map(b2 => (
                   <span key={b2.label} className="text-[12px] text-ink text-center" style={{ width: 20 }}>{b2.label}</span>
@@ -655,7 +655,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
       {/* ── 오른쪽: 주문 내역 표만 ──────────────────────────────────────────
            탭·필터 칩이 다시 흰 면(#FCFCFC) 위에 올라간다. 베이지 바탕 위에서는
            #F2F2F2 칩이 명도 8단계 차이라 버튼으로 안 읽혔다.
-           면 순서: 바탕 #EAE4D9 → 카드 #FCFCFC → 표 #F2F2F2 */}
+           면 순서: 바탕 #F2F2F2 → 카드 #FCFCFC → 표 #F9F9F9(--canvas-soft) */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#FCFCFC] rounded-[13px] p-3 gap-3">
 
         {/* 탭 + 우측 아이콘 두 개(삭제된 주문 · 거래처 필터) */}

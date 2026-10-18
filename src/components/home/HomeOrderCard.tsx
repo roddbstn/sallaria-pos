@@ -34,7 +34,7 @@ export default function HomeOrderCard({ order, selected, onClick, now }: {
     <button
       onClick={onClick}
       className={`pressable w-full text-left rounded-[14px] px-[20px] py-[16px] flex items-center gap-[16px] transition-colors ${
-        selected ? 'bg-[#FCFCFC] shadow-[0_2px_10px_rgba(0,0,0,0.10)]' : 'bg-canvas-soft hover:bg-[#F8F5F0]'
+        selected ? 'bg-[#FCFCFC] shadow-[0_2px_10px_rgba(0,0,0,0.10)]' : 'bg-canvas-soft hover:bg-[#FCFCFC]'
       }`}
     >
       <div className="flex-1 min-w-0">

@@ -54,12 +54,12 @@ export function DataTableHead({
   )
 }
 
-// 행 바탕은 --canvas-soft(#F3EFE8).
+// 행 바탕은 --canvas-soft(#F9F9F9).
 //
 // #FCFCFC(거의 흰색)였다가 → #F2F2F2(중립 회색) → 지금 값으로 두 번 옮겼다.
 //   · #FCFCFC: 흰 카드 위에서 표가 카드에 녹아 경계가 사라졌다
 //   · #F2F2F2: 경계는 생겼는데 이 앱의 커피 계열 바탕 옆에서 회색이 탁하게 보였다
-// --canvas-soft 는 바탕(#EAE4D9)과 같은 색조를 밝기만 올린 값이라, 흰 카드 위에서
+// --canvas-soft 는 바탕(#F2F2F2)에서 밝기만 올린 값이라, 흰 카드 위에서
 // 한 단계 눌리면서도 화면 전체와 같은 계열로 읽힌다.
 export function DataTableRow({
   density = 'compact', onClick, last = false, children,
