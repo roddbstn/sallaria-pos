@@ -4,6 +4,7 @@ import { useStore } from '../lib/store-context'
 import { won } from '../lib/ipc'
 import { DB_METHOD_MAP } from '../lib/mappers'
 import LoadingBlock from '../components/ui/LoadingBlock'
+import { rootZoom } from '../lib/figma-scale'
 
 // ── 주문 리포트 ───────────────────────────────────────────────────────────────
 //
@@ -32,8 +33,13 @@ interface WindowRow {
   hour:   number
   /** 'MM.DD' (KST) — 칸을 눌렀을 때 "어느 날의 그 시간인지" 보여주기 위해 */
   date:   string
+  /** 'HH:MM' — 칸 안에서 몇 시 몇 분이었는지 */
+  time:   string
   method: string
   deliveryFee: number
+  /** 그 주문에 담겼던 메뉴 요약 — 칸을 눌렀을 때 "무슨 주문이었나"를 보여준다 */
+  items:  string
+  amount: number
 }
 
 interface MenuRow { name: string; qty: number; amount: number }
@@ -55,14 +61,24 @@ function toKst(iso: string) {
     dow:  d.getUTCDay(),
     hour: d.getUTCHours(),
     date: `${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())}`,
+    time: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`,
   }
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+// 타이틀은 13 → 15px. 영역이 넷이라 제목이 작으면 어디가 어디인지 훑기 어렵다.
+// hint(서브텍스트)는 전부 뺐다 — 설명이 필요한 건 i 로 붙이고, 아니면 제목이 설명을 겸한다.
+function Section({ title, right, children }: {
+  title:    string
+  /** 제목 줄 오른쪽에 붙일 것(요약 문장 등) */
+  right?:   React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <div className="mb-[30px]">
-      <div className="text-[13px] font-medium text-[#2C261F] mb-[2px]">{title}</div>
-      {hint && <div className="text-[11px] font-normal text-[#ADADAD] mb-[10px]">{hint}</div>}
+      <div className="flex items-end justify-between gap-[16px] mb-[10px]">
+        <div className="text-[15px] font-semibold text-[#2C261F]">{title}</div>
+        {right}
+      </div>
       {children}
     </div>
   )
@@ -85,7 +101,13 @@ export default function OrderAnalysis() {
   const [cycles,  setCycles]  = useState<CycleRow[]>([])
   const [dormant, setDormant] = useState<CycleRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [days,    setDays]    = useState(30)
+  // 0 = 전체 기간. 점주가 "처음부터 통째로" 보고 싶다는 요구가 있었다 —
+  // 7/30/90 만 있으면 작년 흐름을 볼 길이 없다.
+  const [days,    setDays]    = useState<number>(30)
+  /** 히트맵에서 마우스를 올린 칸 */
+  const [hover,   setHover]   = useState<{ key: string; x: number; y: number } | null>(null)
+  /** 히트맵에서 눌러 펼친 칸 */
+  const [picked,  setPicked]  = useState<string | null>(null)
 
   // ── 창(window) 집계: 히트맵 · 메뉴 · 옵션 · 이용방법 ──
   useEffect(() => {
@@ -94,7 +116,10 @@ export default function OrderAnalysis() {
 
     async function load() {
       setLoading(true)
-      const since = new Date(Date.now() - days * 86_400_000).toISOString()
+      // days === 0 이면 전체 기간 — 시작점을 서비스 개시 전으로 둔다
+      const since = days === 0
+        ? new Date('2020-01-01').toISOString()
+        : new Date(Date.now() - days * 86_400_000).toISOString()
 
       // orders 에 store_id 가 있어 조인 없이 바로 좁혀진다
       const { data } = await supabase
@@ -123,7 +148,14 @@ export default function OrderAnalysis() {
 
       for (const o of (data ?? []) as unknown as O[]) {
         const k = toKst(o.ordered_at)
-        built.push({ dow: k.dow, hour: k.hour, date: k.date, method: o.method, deliveryFee: o.delivery_fee ?? 0 })
+        const names = (o.order_items ?? []).map(it =>
+          (it.quantity ?? 1) > 1 ? `${it.menu_name} ${it.quantity}개` : it.menu_name)
+        built.push({
+          dow: k.dow, hour: k.hour, date: k.date, time: k.time,
+          method: o.method, deliveryFee: o.delivery_fee ?? 0,
+          items:  names.join(', '),
+          amount: (o.order_items ?? []).reduce((a, it) => a + (it.subtotal ?? 0), 0) + (o.delivery_fee ?? 0),
+        })
 
         for (const it of o.order_items ?? []) {
           const m = menuMap.get(it.menu_name) ?? { name: it.menu_name, qty: 0, amount: 0 }
@@ -218,14 +250,17 @@ export default function OrderAnalysis() {
   // 칸마다 건수와 **그 칸을 만든 날짜들**을 같이 센다.
   // 날짜가 없으면 "토요일 9시가 왜 칠해졌지?"를 확인할 길이 없다 — 히트맵은 기간 전체를
   // 겹쳐 본 그림이라, 특정 날짜 하나와 비교하면 늘 안 맞는 것처럼 보인다.
-  const grid = new Map<string, { n: number; dates: string[] }>()
+  // 칸이 주문 행 자체를 들고 있게 바꿨다. 전엔 날짜 문자열만 모아서
+  // "그 시간에 무슨 주문이 들어왔나"는 끝내 볼 수 없었다.
+  const grid = new Map<string, { n: number; dates: string[]; orders: WindowRow[] }>()
   let maxCell = 0
   for (const r of rows) {
     if (r.hour < HOURS[0] || r.hour > HOURS[HOURS.length - 1]) continue
     const key = `${r.dow}-${r.hour}`
-    const cur = grid.get(key) ?? { n: 0, dates: [] }
+    const cur = grid.get(key) ?? { n: 0, dates: [], orders: [] }
     cur.n += 1
     if (!cur.dates.includes(r.date)) cur.dates.push(r.date)
+    cur.orders.push(r)
     grid.set(key, cur)
     if (cur.n > maxCell) maxCell = cur.n
   }
@@ -252,15 +287,15 @@ export default function OrderAnalysis() {
       <div className="flex items-center justify-between mb-[20px]">
         <div className="text-[18px] font-semibold text-[#1E1E1E]">주문 리포트</div>
         <div className="flex gap-[6px]">
-          {[7, 30, 90].map(d => (
+          {[7, 30, 90, 0].map(d => (
             <button
               key={d}
-              onClick={() => setDays(d)}
+              onClick={() => { setDays(d); setPicked(null) }}
               className={`pressable-tab h-[30px] px-[12px] rounded-[9px] text-[13px] font-normal ${
                 days === d ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878]'
               }`}
             >
-              최근 {d}일
+              {d === 0 ? '전체' : `최근 ${d}일`}
             </button>
           ))}
         </div>
@@ -272,14 +307,28 @@ export default function OrderAnalysis() {
         <>
           {rows.length === 0 ? (
             <div className="bg-[#FCFCFC] rounded-[11px] py-[48px] mb-[30px] text-center">
-              <div className="text-[13px] font-normal text-[#787878]">최근 {days}일 주문이 없어요</div>
-              <div className="text-[11px] font-normal text-[#ADADAD] mt-[4px]">기간을 늘리면 지난 주문을 볼 수 있어요</div>
+              <div className="text-[13px] font-normal text-[#787878]">{days === 0 ? '아직 주문이 없어요' : `최근 ${days}일 주문이 없어요`}</div>
+              {days !== 0 && <div className="text-[11px] font-normal text-[#ADADAD] mt-[4px]">기간을 늘리면 지난 주문을 볼 수 있어요</div>}
             </div>
           ) : (
             <>
-              {/* 1. 언제 몰리나 */}
-              <Section title="언제 몰리나" hint={`한국 시간 기준 · 최근 ${days}일을 요일·시간대로 겹쳐 본 그림이에요. 칸에 마우스를 올리면 실제 날짜가 나와요`}>
-                <div className="bg-[#FCFCFC] rounded-[11px] p-[14px] overflow-x-auto">
+              {/* 1. 주문 시간대 ─────────────────────────────────────────────
+                  전엔 title 속성(네이티브 툴팁)을 썼는데, 뜨기까지 1~2초가 걸려서
+                  "마우스를 올려도 안 나온다"가 됐다. 직접 그리는 말풍선으로 바꿨다.
+                  그리고 칸을 누르면 그 요일·시간에 실제로 들어왔던 주문을 아래에
+                  좌우 스크롤로 펼친다 — 히트맵은 겹쳐 본 그림이라, 진짜 주문을
+                  보여주지 않으면 "그래서 뭐가 팔렸는데"에 답할 수 없다. */}
+              <Section
+                title="주문 시간대"
+                right={peak && peakDow != null && peakHour != null && (
+                  <div className="text-[13px] font-normal text-[#6A635E] text-right leading-snug">
+                    가장 바쁜 때는{' '}
+                    <span className="text-[15px] font-semibold text-[#1E1E1E]">{DOW[peakDow]}요일 {peakHour}시</span>
+                    <span className="text-[#ADADAD]"> · {peakCount}건</span>
+                  </div>
+                )}
+              >
+                <div className="bg-[#FCFCFC] rounded-[11px] p-[14px] overflow-x-auto relative">
                   <div className="inline-grid gap-[2px]" style={{ gridTemplateColumns: `28px repeat(${HOURS.length}, 26px)` }}>
                     <div />
                     {HOURS.map(h => (
@@ -289,17 +338,23 @@ export default function OrderAnalysis() {
                       <Fragment key={di}>
                         <div className="text-[11px] font-normal text-[#787878] flex items-center">{d}</div>
                         {HOURS.map(h => {
-                          const cell = grid.get(`${di}-${h}`)
-                          const n = cell?.n ?? 0
+                          const key   = `${di}-${h}`
+                          const cell  = grid.get(key)
+                          const n     = cell?.n ?? 0
                           const ratio = maxCell ? n / maxCell : 0
-                          const dates = cell?.dates ?? []
+                          const on    = picked === key
                           return (
                             <div
                               key={h}
-                              title={n === 0
-                                ? `${d}요일 ${h}시 · 주문 없음`
-                                : `${d}요일 ${h}시 · ${n}건 (${dates.slice(0, 6).join(', ')}${dates.length > 6 ? ` 외 ${dates.length - 6}일` : ''})`}
-                              className="h-[26px] rounded-[4px]"
+                              onMouseEnter={e => {
+                                const r = e.currentTarget.getBoundingClientRect()
+                                setHover({ key, x: r.left + r.width / 2, y: r.top })
+                              }}
+                              onMouseLeave={() => setHover(null)}
+                              onClick={() => n > 0 && setPicked(on ? null : key)}
+                              className={`h-[26px] rounded-[4px] transition-all ${n > 0 ? 'cursor-pointer' : ''} ${
+                                on ? 'ring-2 ring-[#2C261F] ring-offset-1' : ''
+                              }`}
                               style={{ backgroundColor: n === 0 ? '#F2F2F2' : `rgba(106,99,94,${0.15 + ratio * 0.85})` }}
                             />
                           )
@@ -308,19 +363,74 @@ export default function OrderAnalysis() {
                     ))}
                   </div>
                 </div>
-                {peak && peakDow != null && peakHour != null && (
-                  <Insight>
-                    가장 바쁜 때는 <span className="font-medium">{DOW[peakDow]}요일 {peakHour}시</span>예요 ({peakCount}건).
-                    {' '}그 시간 30분 전에 준비를 마쳐두면 밀리지 않아요.
-                  </Insight>
-                )}
+
+                {/* 호버 말풍선 — 고객 화면 '추이' i 와 같은 모양 */}
+                {hover && (() => {
+                  const c  = grid.get(hover.key)
+                  const di = Number(hover.key.split('-')[0])
+                  const h  = Number(hover.key.split('-')[1])
+                  return (
+                    <div
+                      className="fixed z-[75] pointer-events-none bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[10px] py-[8px] -translate-x-1/2"
+                      style={{ left: hover.x / rootZoom(), bottom: (window.innerHeight - hover.y) / rootZoom() + 6 }}
+                    >
+                      <div className="text-[12px] font-semibold text-ink text-center leading-[1.3] whitespace-nowrap">
+                        {DOW[di]}요일 {h}시
+                      </div>
+                      <div className="text-[11px] font-normal text-[#787878] text-center mt-[2px] whitespace-nowrap">
+                        {!c || c.n === 0 ? '주문 없음' : (
+                          <>{c.n}건 · {c.dates.slice(0, 4).join(', ')}{c.dates.length > 4 ? ` 외 ${c.dates.length - 4}일` : ''}</>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* 고른 칸의 실제 주문 — 좌우 스크롤 */}
+                {picked && (() => {
+                  const c  = grid.get(picked)
+                  const di = Number(picked.split('-')[0])
+                  const h  = Number(picked.split('-')[1])
+                  if (!c) return null
+                  return (
+                    <div className="mt-[12px]">
+                      <div className="flex items-center gap-[8px] mb-[8px]">
+                        <span className="text-[13px] font-medium text-[#1E1E1E]">
+                          {DOW[di]}요일 {h}시에 들어온 주문 {c.n}건
+                        </span>
+                        <button
+                          onClick={() => setPicked(null)}
+                          className="text-[12px] font-normal text-[#6A635E] hover:underline"
+                        >
+                          닫기
+                        </button>
+                      </div>
+                      <div className="flex gap-[10px] overflow-x-auto pb-[6px]">
+                        {c.orders.slice().reverse().map((o, i) => (
+                          <div
+                            key={i}
+                            className="flex-shrink-0 w-[196px] rounded-[11px] bg-[#FCFCFC] border border-[#E8E4E2] px-[13px] py-[11px]"
+                          >
+                            <div className="flex items-baseline justify-between mb-[5px]">
+                              <span className="text-[12px] font-medium text-[#1E1E1E] tabular-nums">{o.date} {o.time}</span>
+                              <span className="text-[11px] font-normal text-[#787878]">{o.method}</span>
+                            </div>
+                            <div className="text-[12px] font-normal text-[#414141] leading-snug line-clamp-2 min-h-[32px]">
+                              {o.items || '메뉴 정보 없음'}
+                            </div>
+                            <div className="text-[13px] font-medium text-[#1E1E1E] mt-[6px] tabular-nums">{won(o.amount)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
               </Section>
 
               {/* 2. 많이 나간 메뉴 · 옵션 */}
               <div className="flex gap-[20px] mb-[30px]">
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-[#2C261F] mb-[2px]">많이 나간 메뉴</div>
-                  <div className="text-[11px] font-normal text-[#ADADAD] mb-[10px]">발주량을 정하는 기준</div>
+                  <div className="text-[15px] font-semibold text-[#2C261F] mb-[10px]">많이 나간 메뉴</div>
                   <div className="bg-[#FCFCFC] rounded-[11px] p-[13px] flex flex-col gap-[9px]">
                     {menus.map((m, i) => (
                       <div key={m.name} className="flex items-center gap-[10px]">
@@ -333,8 +443,7 @@ export default function OrderAnalysis() {
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-[#2C261F] mb-[2px]">많이 고른 옵션</div>
-                  <div className="text-[11px] font-normal text-[#ADADAD] mb-[10px]">가격 선택(필수)은 메뉴값이라 제외</div>
+                  <div className="text-[15px] font-semibold text-[#2C261F] mb-[10px]">많이 고른 옵션</div>
                   <div className="bg-[#FCFCFC] rounded-[11px] p-[13px] flex flex-col gap-[9px]">
                     {opts.length === 0 ? (
                       <div className="py-[14px] text-center text-[12px] font-normal text-[#ADADAD]">선택된 옵션이 없어요</div>
@@ -350,7 +459,7 @@ export default function OrderAnalysis() {
               </div>
 
               {/* 3. 이용방법 */}
-              <Section title="이용방법" hint="배달이 늘면 배달료가 매출에 섞입니다">
+              <Section title="이용방법">
                 <div className="flex gap-[10px]">
                   {/* DB 값('내점')으로 세고 표시만 앱 공통 라벨('매장 식사')로 — 다른 화면과
                       용어가 어긋나면 같은 숫자를 다른 이름으로 두 번 설명하게 된다 */}
@@ -375,19 +484,17 @@ export default function OrderAnalysis() {
             </>
           )}
 
-          {/* 4. 거래처별 주문 주기 — 창과 무관하게 180일 */}
-          <Section
-            title="거래처별 주문 주기"
-            hint={`최근 ${CYCLE_DAYS}일 기준 · 기간 선택과 무관합니다. 뜸해진 곳이 기간 밖으로 사라지면 안 되니까요`}
-          >
+          {/* 4. 계정별 주문 주기 — 기간 선택과 무관하게 180일.
+              창 안의 주문만으로 주기를 재면 정작 뜸해진 계정이 기간 밖으로 사라진다 */}
+          <Section title="계정별 주문 주기">
             {cycles.length === 0 ? (
               <div className="bg-[#FCFCFC] rounded-[11px] py-[40px] text-center text-[13px] font-normal text-[#ADADAD]">
-                주문 기록이 있는 거래처가 없어요
+                주문 기록이 있는 계정이 없어요
               </div>
             ) : (
               <div className="rounded-[11px] overflow-hidden">
                 <div className="flex items-center bg-[#D7D2CE] border-b border-[#C1B7AA] px-[15px] h-[36px] text-[12px] font-normal text-[#6A635E]">
-                  <span className="flex-1">거래처</span>
+                  <span className="flex-1">계정</span>
                   <span className="w-[70px] text-right">주문</span>
                   <span className="w-[90px] text-right">평균 간격</span>
                   <span className="w-[95px] text-right">마지막 주문</span>
