@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../lib/store-context'
 import { supabase } from '../lib/supabase'
+import { formatPhone, isValidPhone } from '../lib/phone-format'
 import { useDeliveryInfo } from '../hooks/useDeliveryInfo'
 import DaumPostcodeEmbed from '../components/DaumPostcodeEmbed'
 import HubLayout, { type HubNavItem } from '../components/hub/HubLayout'
@@ -13,6 +14,7 @@ import { PLAN_NAMES, type PlanTier } from '../lib/plans'
 import { UpgradeModal } from './Sales'
 import { DAY_LABELS, DAY_ORDER, type DayHours, type BreakHours } from './Settings'
 import BreakTimeModal from '../components/ui/BreakTimeModal'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import type { VacationDay } from '../hooks/useOperatingHours'
 
 // Figma node 664:541 "매장 정보 - 매장 설정" — 2240px 캔버스 원본 px × 0.643(FIGMA_SCALE, 앱 기본
@@ -22,11 +24,16 @@ import type { VacationDay } from '../hooks/useOperatingHours'
 
 const BUSINESS_TYPES_ROW1 = ['한식 · 분식', '카페 · 디저트', '샐러드 · 포케']
 const BUSINESS_TYPES_ROW2 = ['샌드위치 · 베이커리', '치킨 · 버거', '기타']
-const CUSTOMER_TYPES: { value: '부서' | '기업' | '개인'; label: string }[] = [
-  { value: '부서', label: '부서' },
-  { value: '기업', label: '기업' },
-  { value: '개인', label: '개인' },
-]
+/**
+ * 매장을 새로 열면 주어지는 기본 고객유형.
+ *
+ * ⚠️ **이게 전부가 아니다.** 점주는 고객 화면에서 유형을 직접 만들 수 있고(최대 6개),
+ *    그 값은 stores.customer_types 에 들어간다. 전엔 이 화면이 이 배열만 보고 칩을 그려서
+ *    직접 만든 유형("관공서" 등)이 **여기서는 아예 안 보였다** — 계정 추가 모달에는
+ *    잘 나오는데 매장 정보에만 없어서 "저장이 안 됐나" 로 읽혔다.
+ *    (데이터가 지워지진 않았다. 칩만 없었다.)
+ */
+const DEFAULT_CUSTOMER_TYPES = ['부서', '기업', '개인'] as const
 
 // Figma 수치(×0.643) 기준에서 본문 전체를 두 번 줄였다. 현재 타입 스케일:
 //   좌상단 메인 제목 18/semibold(유일한 semibold) · 필드 라벨 16/medium
@@ -48,6 +55,45 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 }
 
 // Figma: label 32/600 #414141. label↔값 간격은 43→28(=25px)로 모든 라벨 공통
+/**
+ * 입력칸 오른쪽 끝의 작은 i — 호버하면 설명이 뜬다.
+ *
+ * title 속성을 안 쓰는 이유: 줄바꿈이 무시되고, 뜨기까지 1초쯤 걸려서
+ * "왜 못 고치지?" 하는 순간에 답이 안 나온다. 바로 뜨는 말풍선을 직접 그린다.
+ *
+ * 모양은 **고객 화면 '추이' 옆 i 말풍선과 같은 것**이다(Customers.tsx 의 trendInfoTooltip) —
+ * 밝은 카드(#FCFCFC) + 연한 그림자 + 가운데 정렬 semibold 12px.
+ * 전엔 여기만 검은 말풍선이라 같은 역할의 안내가 화면마다 달라 보였다.
+ */
+function InfoDot({ lines }: { lines: [string, string] }) {
+  const [on, setOn] = useState(false)
+  return (
+    // ⚠️ 아이콘 자체는 **글의 흐름 안에** 둔다(inline-flex).
+    //    전엔 `absolute right-[14px]` 였다 — 입력칸 오른쪽 끝에 붙이려고 쓴 값인데,
+    //    매장명을 입력칸에서 글자로 바꾸면서 좁은 래퍼 안에 들어가자 14px 왼쪽으로
+    //    밀려 이름 글자를 덮었다. 위치를 바깥에 맡기면 쓰는 자리마다 깨진다.
+    //    relative 는 말풍선(아래 absolute)의 기준으로만 쓴다.
+    <span
+      className="relative inline-flex flex-shrink-0 align-middle"
+      onMouseEnter={() => setOn(true)}
+      onMouseLeave={() => setOn(false)}
+    >
+      <span className="w-[18px] h-[18px] rounded-full bg-[#D7D2CE] text-[#6A635E] text-[12px] font-semibold flex items-center justify-center cursor-help select-none">
+        i
+      </span>
+      {on && (
+        // 두 줄 고정 — 줄바꿈을 글자 수에 맡기면 창 폭에 따라 들쭉날쭉해진다.
+        // 기준 말풍선처럼 폭을 고정하고 <br/> 로 직접 끊는다.
+        <span className="absolute left-1/2 -translate-x-1/2 bottom-[26px] z-20 w-[150px] rounded-[10px] bg-[#FCFCFC] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[8px] py-[8px] pointer-events-none">
+          <span className="block text-[12px] font-semibold text-ink text-center leading-[1.35]">
+            {lines[0]}<br />{lines[1]}
+          </span>
+        </span>
+      )}
+    </span>
+  )
+}
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-[16px] font-medium leading-[19px] text-[#414141] mb-[25px]">
@@ -201,20 +247,55 @@ function StoreSettingsPanel({
 
   const [businessTypes, setBusinessTypes] = useState<string[]>([])
   const [customerTypes, setCustomerTypes] = useState<string[]>([])
+  /** 쓰고 있는 유형을 끄려 할 때 한 번 묻는다 */
+  const [removeTypeConfirm, setRemoveTypeConfirm] = useState<{ name: string; count: number } | null>(null)
   const [loaded, setLoaded] = useState(false)
+
+  // 매장 전화번호 — stores.phone. 손님에게 나가는 번호다(영수증·QR 안내지에 찍힌다).
+  // 안심번호(0507 등)를 쓰는 매장이 많아 포맷은 lib/phone-format.ts 가 맡는다.
+  const [phone, setPhone] = useState('')
+  const [phoneSaved, setPhoneSaved] = useState('')   // 마지막으로 저장된 값 — 바뀐 게 없으면 저장을 안 한다
+  const [phoneSaving, setPhoneSaving] = useState(false)
+  /** [변경] 을 눌러 입력칸을 연 상태인가 — 대표자 정보 탭과 같은 조작 */
+  const [editingPhone, setEditingPhone] = useState(false)
 
   useEffect(() => {
     async function load() {
       const [{ data: client }, { data: store }] = await Promise.all([
         supabase.from('clients').select('business_type').eq('id', clientId).maybeSingle(),
-        supabase.from('stores').select('customer_types').eq('id', storeId).maybeSingle(),
+        supabase.from('stores').select('customer_types, phone').eq('id', storeId).maybeSingle(),
       ])
       setBusinessTypes(client?.business_type ? client.business_type.split(',').filter(Boolean) : [])
       setCustomerTypes(store?.customer_types ?? [])
+      const p0 = formatPhone(store?.phone ?? '')
+      setPhone(p0)
+      setPhoneSaved(p0)
       setLoaded(true)
     }
     if (storeId && clientId) load()
   }, [storeId, clientId])
+
+  /**
+   * 전화번호 저장 — [저장] 을 눌렀을 때(또는 Enter).
+   *
+   * 글자마다 저장하면 "010" 처럼 미완성 번호가 DB 에 들어간다.
+   * 대표자 정보 탭처럼 [변경] → 입력 → [저장] 으로 끊는다 — 언제 저장됐는지가 분명하다.
+   */
+  async function savePhone() {
+    const next = formatPhone(phone)
+    if (next === phoneSaved) { setEditingPhone(false); return }   // 바뀐 게 없다
+    if (next && !isValidPhone(next)) {                            // 지우는 건 허용, 틀린 건 막는다
+      showToast('전화번호 자릿수를 확인해 주세요')
+      return
+    }
+    setPhoneSaving(true)
+    const { error } = await supabase.from('stores').update({ phone: next || null }).eq('id', storeId)
+    setPhoneSaving(false)
+    if (error) { showToast('매장 전화번호 저장에 실패했습니다'); return }
+    setPhoneSaved(next)
+    setEditingPhone(false)
+    showToast(next ? '매장 전화번호를 저장했어요' : '매장 전화번호를 지웠어요')
+  }
 
   async function saveBusinessTypes(next: string[]) {
     setBusinessTypes(next)
@@ -225,6 +306,25 @@ function StoreSettingsPanel({
     setCustomerTypes(next)
     const { error } = await supabase.from('stores').update({ customer_types: next }).eq('id', storeId)
     if (error) showToast('선결제 고객유형 저장에 실패했습니다')
+  }
+
+  /**
+   * 칩 토글. **끄는 쪽만** 한 번 묻는다 — 쓰고 있는 고객이 있으면.
+   *
+   * 고객 화면의 유형 삭제는 이미 같은 확인을 받는다. 이 화면에서만 조용히 꺼지면
+   * 같은 일을 하는데 한쪽만 안전망이 있는 꼴이 된다(여기서 끄면 그 유형을 쓰던
+   * 고객들의 유형 표시가 목록에서 사라진다).
+   */
+  async function toggleCustomerType(t: string) {
+    if (!customerTypes.includes(t)) { saveCustomerTypes([...customerTypes, t]); return }
+    if (customerTypes.length <= 1) { showToast('고객유형은 하나 이상 있어야 합니다'); return }
+
+    // 활성/비활성을 가리지 않고 **직접 센다** — 어느 쪽이든 그 유형을 달고 있다
+    const { count } = await supabase.from('accounts')
+      .select('account_code', { count: 'exact', head: true })
+      .eq('store_id', storeId).eq('account_type', t)
+    if (!count) { saveCustomerTypes(customerTypes.filter(x => x !== t)); return }
+    setRemoveTypeConfirm({ name: t, count })
   }
 
   async function handleSaveLocation() {
@@ -286,15 +386,81 @@ function StoreSettingsPanel({
           "행 정렬"해 뒀다. grid를 쓰면 좌우 높이가 달라도 2행 시작선이 자동으로 맞는다.
           열 간격 102→66. 행 간격은 섹션 간격(56px)과 동일하게 맞춤 */}
       <div className="grid grid-cols-2 gap-x-[60px] gap-y-[56px] mb-[56px]">
-        {/* 매장명 */}
+        {/* 매장명 + 매장 전화번호 — '대표자 정보' 탭과 **같은 모양**이다.
+            라벨 아래 값을 글자로 두고, 고칠 수 있는 것만 옆에 작은 [변경] 버튼을 단다.
+            전엔 둘 다 입력칸이었는데, 칸이 두 개 쌓이니 설정 화면이 폼처럼 무거워 보였고
+            매장명은 못 고치는데도 입력칸이라 고칠 수 있는 것처럼 읽혔다. */}
         <div>
           <FieldLabel>매장명</FieldLabel>
-          {/* Figma 664:541에 매장명 옆 버튼이 없어 제거했다. 매장명 변경은 프로필 모달에서 한다. */}
-          <div className="text-[17px] font-medium leading-[21px] text-[#1E1E1E] truncate">{storeName || '매장명 미설정'}</div>
+          {/* 값 + i — 매장명은 [변경] 이 없다. 왜 없는지를 i 가 말한다. */}
+          <div className="flex items-center gap-[8px]">
+            <span className="text-[17px] font-medium leading-[21px] text-[#1E1E1E] truncate">
+              {storeName || '매장명 미설정'}
+            </span>
+            <InfoDot lines={['매장명 수정은', '서비스에 문의해주세요']} />
+          </div>
+
+          <div className="mt-[56px]">
+            <FieldLabel>매장 전화번호</FieldLabel>
+            {!editingPhone ? (
+              <div className="flex items-center gap-[12px]">
+                <span className={`text-[17px] font-medium leading-[21px] ${
+                  phoneSaved ? 'text-[#1E1E1E]' : 'text-[#ADADAD]'
+                }`}>
+                  {loaded ? (phoneSaved || '미등록') : '\u2014'}
+                </span>
+                <button
+                  onClick={() => { setPhone(phoneSaved); setEditingPhone(true) }}
+                  className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[14px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
+                >
+                  {phoneSaved ? '변경' : '등록'}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-[8px]">
+                <input
+                  autoFocus
+                  value={phone}
+                  onChange={e => setPhone(formatPhone(e.target.value))}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter')  void savePhone()
+                    if (e.key === 'Escape') { setPhone(phoneSaved); setEditingPhone(false) }
+                  }}
+                  inputMode="numeric"
+                  /* 안심번호(0507-1484-4222)도 그대로 들어간다 — lib/phone-format.ts */
+                  placeholder="053-123-4567"
+                  disabled={phoneSaving}
+                  className="h-[42px] flex-1 min-w-0 px-[16px] rounded-[9px] border border-[#D9D9D9] bg-transparent text-[15px] leading-[18px] font-normal text-[#1E1E1E] placeholder:text-[#C4C4C4] outline-none focus:border-[#6A635E] transition-colors disabled:opacity-50"
+                />
+                <button
+                  onClick={() => void savePhone()}
+                  disabled={phoneSaving}
+                  className="h-[32px] px-[11px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[14px] leading-[17px] font-medium hover:opacity-90 transition-opacity flex-shrink-0 disabled:opacity-40"
+                >
+                  저장
+                </button>
+                <button
+                  onClick={() => { setPhone(phoneSaved); setEditingPhone(false) }}
+                  disabled={phoneSaving}
+                  className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[14px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
+                >
+                  취소
+                </button>
+              </div>
+            )}
+            <div className="text-[13px] font-normal text-[#ADADAD] mt-[8px]">
+              손님에게 나가는 번호예요. 영수증과 QR 안내지에 찍힙니다.
+            </div>
+          </div>
         </div>
 
-        {/* 업종 유형 */}
-        <div>
+        {/* 업종 유형 — 라벨 높이를 왼쪽 '매장 전화번호' 라벨에 맞춘다.
+            왼쪽 칸이 매장명 아래에 전화번호를 또 쌓으면서 두 열의 라벨 줄이 어긋났다.
+            아래 121px 은 그 차이다:
+              매장명 라벨 19(leading) + 25(mb) + 값 21(leading) + 칸 사이 56 = 121
+            ⚠️ FieldLabel 이나 값 글자 크기를 바꾸면 이 값도 같이 고쳐야 한다.
+               (입력칸이던 시절엔 114였다 — 대표자 정보 탭 모양으로 바꾸며 다시 쟀다) */}
+        <div className="mt-[121px]">
           <FieldLabel>업종유형</FieldLabel>
           {!loaded ? (
             <div className="text-[14px] leading-[17px] font-normal text-[#787878]">불러오는 중…</div>
@@ -394,9 +560,14 @@ function StoreSettingsPanel({
         <div>
           <FieldLabel>선결제 고객유형</FieldLabel>
           <div className="flex flex-wrap gap-[10px]">
-            {CUSTOMER_TYPES.map(t => (
-              <Chip key={t.value} active={customerTypes.includes(t.value)} onClick={() => saveCustomerTypes(customerTypes.includes(t.value) ? customerTypes.filter(x => x !== t.value) : [...customerTypes, t.value])}>
-                {t.label}
+            {/* 기본 3종 + 점주가 직접 만든 유형. 중복 없이, 저장된 순서를 지킨다 */}
+            {[...DEFAULT_CUSTOMER_TYPES, ...customerTypes.filter(t => !DEFAULT_CUSTOMER_TYPES.includes(t as typeof DEFAULT_CUSTOMER_TYPES[number]))].map(t => (
+              <Chip
+                key={t}
+                active={customerTypes.includes(t)}
+                onClick={() => toggleCustomerType(t)}
+              >
+                {t}
               </Chip>
             ))}
           </div>
@@ -432,6 +603,23 @@ function StoreSettingsPanel({
             initial={breakTime}
             onConfirm={next => { onSaveBreakTime(next); setBreakOpen(false) }}
             onClose={() => setBreakOpen(false)}
+          />
+        )}
+
+        {/* 쓰고 있는 고객유형 끄기 확인 — 고객 화면의 유형 삭제와 같은 약속:
+            분류만 사라지고 고객은 그대로 남는다 */}
+        {removeTypeConfirm && (
+          <ConfirmDialog
+            title={`'${removeTypeConfirm.name}' 유형을 빼시겠어요?`}
+            description={`이 유형을 쓰는 고객 ${removeTypeConfirm.count}곳은 그대로 남아요. 유형 표시만 목록에서 사라지니, 각 고객에서 다른 유형으로 바꿔주세요.`}
+            confirmLabel="빼기"
+            cancelLabel="그대로 두기"
+            tone="danger"
+            onConfirm={() => {
+              saveCustomerTypes(customerTypes.filter(x => x !== removeTypeConfirm.name))
+              setRemoveTypeConfirm(null)
+            }}
+            onCancel={() => setRemoveTypeConfirm(null)}
           />
         )}
         {/* mb-[52px] — 아래 '휴무일' 라벨과 충분히 떨어뜨린다.
@@ -686,7 +874,7 @@ function RepresentativePanel({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setSignOutConfirmOpen(false)}>
           {/* 다른 모달과 같은 시스템 — #FCFCFC · rounded-14 · 하단 구분선 + 우측 CTA */}
           <div
-            className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[420px] max-w-[92vw] flex flex-col overflow-hidden"
+            className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[420px] max-w-[92vw] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             <div className="px-[28px] pt-[28px] pb-[22px]">
@@ -695,7 +883,7 @@ function RepresentativePanel({
                 다시 사용하려면 비밀번호로 로그인해야 해요.
               </div>
             </div>
-            <div className="border-t border-[#E8E4E2] px-[28px] py-[16px] flex justify-end gap-[10px]">
+            <div className="px-[28px] py-[16px] flex justify-end gap-[10px] modal-footer">
               <button
                 onClick={() => setSignOutConfirmOpen(false)}
                 className="h-[50px] px-[26px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all"

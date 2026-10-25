@@ -1,5 +1,6 @@
 import { won, orderToPayload, parseNote } from '../../lib/ipc'
 import { maskName, maskPhone } from '../../lib/mask'
+import RevealText from '../ui/RevealText'
 import type { Order } from '../../lib/mock-data'
 
 // 홈 우측의 주문 상세.
@@ -28,11 +29,9 @@ function isPriceOption(name: string): boolean {
 }
 
 export default function HomeOrderDetail({
-  order, revealed, onToggleReveal, onComplete, onCancel, onReprint, busy,
+  order, onComplete, onCancel, onReprint, busy,
 }: {
   order:      Order
-  revealed:   boolean
-  onToggleReveal: () => void
   onComplete: () => void
   onCancel:   () => void
   onReprint:  () => void
@@ -41,21 +40,25 @@ export default function HomeOrderDetail({
   const qty  = order.items.reduce((s, it) => s + it.qty, 0)
   const note = parseNote(order.remarks)
   const isDelivery = order.method === '배달'
+  /** 이미 끝난 주문 — 완료·취소. 더 할 수 있는 게 없다(영수증 재출력만 남는다) */
+  const isSettled  = order.status === '완료' || order.status === '취소'
 
   return (
     <div className="h-full bg-[#FCFCFC] rounded-[14px] flex flex-col overflow-hidden">
       {/* 헤더 — 주문번호 + 영수증 재출력 */}
       <div className="flex-shrink-0 px-[28px] pt-[22px] pb-[16px] flex items-center justify-between gap-[16px]">
-        {/* 카드와 같은 표기 — #번호 | 이용방법 */}
-        <span className="flex items-baseline min-w-0">
-          <span className="text-[34px] leading-none font-semibold text-[#1E1E1E] tabular-nums">
+        {/* 카드와 같은 표기 — #번호 | 이용방법.
+            이용방법에 truncate 를 걸지 않는 이유는 HomeOrderCard 와 같다 —
+            '배..' 는 아무 뜻도 없다. 자를 거면 번호를 자른다. */}
+        <span className="flex items-baseline min-w-0 overflow-hidden">
+          <span className="text-[34px] leading-none font-semibold text-[#1E1E1E] tabular-nums truncate">
             #{order.orderNumber ?? order.code.slice(0, 5)}
           </span>
           {/* 글자 | 대신 1px 막대. font-light 로는 더 얇아지지 않고, 글꼴마다 굵기가 달라진다.
               실제 선으로 그리면 두께를 정확히 잡을 수 있다(baseline 정렬이라 self-center 로 가운데). */}
-          <span className="self-center w-px h-[24px] bg-[#1E1E1E] mx-[10px] flex-shrink-0" />
+          <span className="self-center w-px h-[24px] bg-[#1E1E1E] mx-[8px] flex-shrink-0" />
           {/* 카드와 같은 규칙 — 이용방법도 주문번호와 같은 색 */}
-          <span className="text-[34px] leading-none font-semibold text-[#1E1E1E] truncate">
+          <span className="text-[34px] leading-none font-semibold text-[#1E1E1E] flex-shrink-0 whitespace-nowrap">
             {METHOD_SHORT[order.method] ?? order.method}
           </span>
         </span>
@@ -73,7 +76,7 @@ export default function HomeOrderDetail({
             '요청사항' 라벨은 뺐다. 주황 박스가 이 화면에 하나뿐이라 박스 자체가 라벨 역할을 한다. */}
         {(note.customerNote || note.deliveryNote) && (
           <div className="mb-[16px] rounded-[10px] bg-[#FFF4E8] px-[14px] py-[11px]">
-            <div className="text-[15px] font-medium text-[#2C261F] leading-relaxed">
+            <div className="text-[17px] font-medium text-[#2C261F] leading-relaxed">
               {[note.customerNote, note.deliveryNote].filter(Boolean).join(' / ')}
             </div>
           </div>
@@ -82,7 +85,7 @@ export default function HomeOrderDetail({
         {/* 메뉴 표 */}
         {/* 머리글 밑줄도 아래 행 구분선과 같은 #E5E5E5. 잉크색(#2C261F)으로 그었더니
             머리글만 표에서 떨어져 나와 보였다 — 여기 글자는 13px 회색이라 굵은 선이 과하다. */}
-        <div className="flex items-end border-b border-[#E5E5E5] pb-[8px] text-[13px] font-normal text-[#787878]">
+        <div className="flex items-end border-b border-[#E5E5E5] pb-[8px] text-[15px] font-normal text-[#787878]">
           <span className="flex-1">메뉴</span>
           <span className="w-[64px] text-center">수량</span>
           <span className="w-[100px] text-right">금액</span>
@@ -93,19 +96,20 @@ export default function HomeOrderDetail({
           return (
             <div key={i} className="py-[12px] border-b border-[#E5E5E5]">
               <div className="flex items-start">
-                <span className="flex-1 text-[17px] font-medium text-[#1E1E1E] pr-[8px]">{it.name}</span>
-                <span className="w-[64px] text-center text-[17px] font-medium text-[#1E1E1E] tabular-nums">{it.qty}</span>
-                <span className="w-[100px] text-right text-[17px] font-medium text-[#1E1E1E] tabular-nums">
+                <span className="flex-1 text-[19px] font-medium text-[#1E1E1E] pr-[8px]">{it.name}</span>
+                <span className="w-[64px] text-center text-[19px] font-medium text-[#1E1E1E] tabular-nums">{it.qty}</span>
+                <span className="w-[100px] text-right text-[19px] font-medium text-[#1E1E1E] tabular-nums">
                   {won(it.price * it.qty)}
                 </span>
               </div>
+              {/* 옵션 추가가격은 **옵션 이름 바로 뒤**에 괄호로 붙인다.
+                  전엔 오른쪽 금액 칸에 세워서 메뉴 금액 바로 아래 줄에 '+500원'이 찍혔다.
+                  그런데 위 금액은 이미 옵션값이 더해진 값이라, 한 번 더 더해야 하는 것처럼
+                  읽혔다. 이름 뒤에 붙이면 "이 옵션 때문에 500원"으로 읽힌다. */}
               {opts.map((o, j) => (
-                <div key={j} className="flex items-start mt-[4px]">
-                  <span className="flex-1 text-[15px] font-normal text-[#787878] pl-[14px]">{o.name}</span>
-                  <span className="w-[64px]" />
-                  <span className="w-[100px] text-right text-[15px] font-normal text-[#787878] tabular-nums">
-                    {o.extraPrice ? `+${won(o.extraPrice)}` : ''}
-                  </span>
+                <div key={j} className="mt-[4px] text-[17px] font-normal text-[#787878] pl-[14px]">
+                  {o.name}
+                  {o.extraPrice ? <span className="text-[#ADADAD]"> (+{won(o.extraPrice)})</span> : null}
                 </div>
               ))}
             </div>
@@ -115,20 +119,20 @@ export default function HomeOrderDetail({
         {/* 배달료는 메뉴가 아니라 별도 줄 — 영수증과 같은 규칙 */}
         {isDelivery && (order.deliveryFee ?? 0) > 0 && (
           <div className="flex items-center py-[12px] border-b border-[#E5E5E5]">
-            <span className="flex-1 text-[15px] font-normal text-[#787878]">배달료</span>
+            <span className="flex-1 text-[17px] font-normal text-[#787878]">배달료</span>
             <span className="w-[64px]" />
-            <span className="w-[100px] text-right text-[15px] font-normal text-[#787878] tabular-nums">
+            <span className="w-[100px] text-right text-[17px] font-normal text-[#787878] tabular-nums">
               {won(order.deliveryFee ?? 0)}
             </span>
           </div>
         )}
 
         {/* 최종금액 */}
-        {/* 메뉴 줄과 같은 크기·굵기(17/medium) — 표의 마지막 줄로 읽히게 */}
+        {/* 메뉴 줄과 같은 크기·굵기(19/medium) — 표의 마지막 줄로 읽히게 */}
         <div className="flex items-center py-[16px]">
-          <span className="flex-1 text-[17px] font-medium text-[#1E1E1E]">최종금액</span>
-          <span className="w-[64px] text-center text-[17px] font-medium text-[#1E1E1E] tabular-nums">{qty}</span>
-          <span className="w-[100px] text-right text-[17px] font-medium text-[#1E1E1E] tabular-nums">
+          <span className="flex-1 text-[19px] font-medium text-[#1E1E1E]">최종금액</span>
+          <span className="w-[64px] text-center text-[19px] font-medium text-[#1E1E1E] tabular-nums">{qty}</span>
+          <span className="w-[100px] text-right text-[19px] font-medium text-[#1E1E1E] tabular-nums">
             {won(order.total)}
           </span>
         </div>
@@ -138,24 +142,32 @@ export default function HomeOrderDetail({
             그 자리는 **주문 일시**가 쓴다 — 블록에서 유일하게 가려지지 않는 값이고,
             전화를 걸기 전에 "언제 시킨 건지"를 먼저 봐야 한다. */}
         <div className="rounded-[10px] bg-[#F7F7F7] px-[14px] py-[12px] mb-[16px]">
-          <div className="flex items-center justify-between mb-[6px]">
+          <div className="mb-[6px]">
             <span className="text-[13px] font-normal text-[#787878] tabular-nums">
               {orderedAtLabel(order.createdAt)} 주문
             </span>
-            <button
-              onClick={onToggleReveal}
-              className="text-[11px] font-normal text-[#ADADAD] hover:text-[#787878] underline underline-offset-2"
-            >
-              {revealed ? '가리기' : '보기'}
-            </button>
           </div>
-          <div className="text-[15px] font-normal text-[#1E1E1E]">
-            {order.accountName}
-            <span className="text-[#787878]"> · {revealed ? order.orderer : maskName(order.orderer)}</span>
+          {/* 눈 버튼은 값 바로 옆에 붙는다 — 주문 팝업·고객 패널과 같은 RevealText 다.
+              전엔 박스 오른쪽 위에 '보기' 글자 하나가 떨어져 있어서, 무엇을 여는 버튼인지
+              가려진 값과 떨어져 보였다.
+              key 를 주는 이유: 이 패널은 주문을 바꿔도 다시 그려지지 않아서, key 가 없으면
+              A 를 열어둔 상태가 B 로 넘어간다. */}
+          <div className="flex items-center gap-[4px] text-[15px] font-normal text-[#1E1E1E] min-w-0">
+            <span className="truncate">{order.accountName}</span>
+            <span className="text-[#787878] flex-shrink-0">·</span>
+            <RevealText
+              key={`n-${order.code}`}
+              value={order.orderer} masked={maskName(order.orderer)}
+              className="text-[#787878] flex-shrink-0" iconSize={13}
+            />
           </div>
           {order.phone && (
-            <div className="text-[14px] font-normal text-[#787878] tabular-nums mt-[2px]">
-              {revealed ? order.phone : maskPhone(order.phone)}
+            <div className="mt-[2px]">
+              <RevealText
+                key={`p-${order.code}`}
+                value={order.phone} masked={maskPhone(order.phone)}
+                className="text-[14px] font-normal text-[#787878] tabular-nums" iconSize={13}
+              />
             </div>
           )}
           {isDelivery && note.deliveryAddress && (
@@ -169,23 +181,30 @@ export default function HomeOrderDetail({
 
       {/* 액션 — 준비완료가 가장 크고 유일하게 색을 쓴다.
           전엔 버튼에 mr-[24px] 를 더 줘서 오른쪽 끝이 28+24=52px 였는데, 위 메뉴표·고객정보는
-          모두 28px 선에서 끝난다. 세로로 내려오는 오른쪽 끝선이 버튼에서만 안쪽으로 꺾였다. */}
-      <div className="flex-shrink-0 px-[28px] py-[18px] flex gap-[12px]">
-        <button
-          onClick={onCancel}
-          disabled={busy}
-          className="pressable w-[140px] h-[88px] rounded-[12px] border border-[#D9D9D9] bg-[#FCFCFC] text-[19px] font-medium text-[#414141] hover:bg-[#F2F2F2] disabled:opacity-40"
-        >
-          주문 취소
-        </button>
-        <button
-          onClick={onComplete}
-          disabled={busy}
-          className="pressable flex-1 h-[88px] rounded-[12px] bg-[#E8836F] text-[#FCFCFC] text-[24px] font-semibold hover:opacity-90 disabled:opacity-40"
-        >
-          {isDelivery ? '배달 출발' : '준비 완료'}
-        </button>
-      </div>
+          모두 28px 선에서 끝난다. 세로로 내려오는 오른쪽 끝선이 버튼에서만 안쪽으로 꺾였다.
+
+          **이미 끝난 주문에는 안 보인다.** 완료·취소된 건에 '준비 완료'와 '주문 취소'가
+          그대로 떠 있으면 아직 할 일이 남은 것처럼 읽히고, 피크타임에 잘못 누르면
+          끝난 주문을 다시 건드린다. 탭이 아니라 **주문 자체의 상태**로 판단한다 —
+          같은 주문을 어느 목록에서 열었든 결론은 같아야 한다. */}
+      {!isSettled && (
+        <div className="flex-shrink-0 px-[28px] py-[18px] flex gap-[12px]">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="pressable w-[140px] h-[88px] rounded-[12px] border border-[#D9D9D9] bg-[#FCFCFC] text-[19px] font-medium text-[#414141] hover:bg-[#F2F2F2] disabled:opacity-40"
+          >
+            주문 취소
+          </button>
+          <button
+            onClick={onComplete}
+            disabled={busy}
+            className="pressable flex-1 h-[88px] rounded-[12px] bg-[#E15D43] text-[#FCFCFC] text-[24px] font-semibold hover:opacity-90 disabled:opacity-40"
+          >
+            {isDelivery ? '배달 출발' : '준비 완료'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

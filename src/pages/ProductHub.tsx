@@ -1,16 +1,19 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import HubLayout, { HubSection, type HubNavItem } from '../components/hub/HubLayout'
-import { supabase, type DbMenu, type DbCategory, type DbOptionGroup, type DbOptionItem } from '../lib/supabase'
+import { supabase, type DbMenu, type DbCategory, type DbOptionGroup } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { won } from '../lib/ipc'
 import OptionGroupEditModal from '../components/ui/OptionGroupEditModal'
+import OptionBadge from '../components/ui/OptionBadge'
 import MenuFormModal from '../components/menu/MenuFormModal'
+import OptionGroupAddModal from '../components/menu/OptionGroupAddModal'
 import { useMenuForm, type MenuFormStoreGroup } from '../components/menu/use-menu-form'
 import { mapMenuRow } from '../lib/mappers'
 import type { MenuDetail } from '../lib/mock-data'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import InfoTip from '../components/ui/InfoTip'
 import CategoryEditModal, { type CategoryTarget } from '../components/ui/CategoryEditModal'
+import CategoryAddModal from '../components/ui/CategoryAddModal'
 
 // 햄버거 드로어 "상품" 그룹 — Figma node 672:1120(메뉴 상세) · 682:204(옵션 상세) · 672:1358(카테고리 상세).
 // 세 프레임 모두 아직 비어 있어서, `선포스-전체메뉴-화면기획.md` §1~3의 기획을 와이어프레임으로
@@ -266,6 +269,9 @@ const SORT_LABEL: Record<SortBy, string> = {
 }
 
 function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
+  const { storeId } = useStore()
+  /** 메뉴 상세 모달의 '+ 옵션 추가' — 옵션 상세 화면과 같은 마법사를 띄운다 */
+  const [addingOptGroup, setAddingOptGroup] = useState(false)
   const [catTab,  setCatTab]  = useState<string>('all')   // 'all' | categoryId | 'none'
   const [filter,  setFilter]  = useState<MenuFilter>('all')
   const [sortBy,  setSortBy]  = useState<SortBy>('order')
@@ -567,13 +573,35 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
           selectedGroupIds={menuForm.selectedGroupIds}
           onToggleGroup={menuForm.toggleGroup}
           onAddCategory={() => showToast('카테고리 추가는 카테고리 상세 화면에서 할 수 있어요')}
-          onAddOptionGroup={() => showToast('옵션 그룹 추가는 옵션 상세 화면에서 할 수 있어요')}
+          onAddOptionGroup={() => setAddingOptGroup(true)}
           onDelete={() => showToast('메뉴 삭제는 메뉴 화면에서 할 수 있어요')}
           onClose={menuForm.close}
           onSave={() => menuForm.save(
             storeGroupsForForm,
             (data?.menus.reduce((m, mn) => Math.max(m, mn.display_order ?? 0), 0) ?? 0) + 1,
           )}
+        />
+      )}
+
+      {/* 옵션 추가 마법사 — 메뉴 상세 모달에서 열린다.
+          수정 중인 메뉴가 있으면 2단계에서 그 메뉴를 미리 체크해 둔다. 추가 모드는
+          메뉴가 아직 DB 에 없어 붙일 대상이 없고, 저장 직후 toggleGroup 이 대신 처리한다. */}
+      {addingOptGroup && storeId && data && (
+        <OptionGroupAddModal
+          storeId={storeId}
+          menus={data.menus.map(m => ({
+            code: m.id, name: m.name, categoryId: m.category_id, soldOut: m.is_sold_out,
+          }))}
+          categories={data.categories.map(c => ({ id: c.id, name: c.name }))}
+          displayOrder={data.groups.length}
+          preselectMenuCodes={menuForm.mode === 'edit' && menuForm.editing ? [menuForm.editing.code] : undefined}
+          onClose={() => setAddingOptGroup(false)}
+          onCreated={(g) => {
+            // 지금 열려 있는 메뉴 폼에도 새 그룹을 선택 처리 — 모달을 닫지 않고 이어서 저장할 수 있다
+            if (menuForm.mode) menuForm.toggleGroup(g.id)
+            showToast('옵션을 추가했어요')
+            reload()
+          }}
         />
       )}
     </div>
@@ -602,17 +630,14 @@ function kindOf(g: DbOptionGroup): OptionKind {
   return g.is_required ? 'required' : 'optional'
 }
 
-const QTY_UNLIMITED = 999
-function itemQtyLabel(q: number | null | undefined): string | null {
-  if (q === null || q === undefined) return null
-  return q >= QTY_UNLIMITED ? '수량 제한없음' : `최대 ${q}개`
-}
-
 function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
+  const { storeId } = useStore()
   const [kind,      setKind]      = useState<OptionKind>('required')
   const [selected,  setSelected]  = useState<string | null>(null)
   const [q,         setQ]         = useState('')
   const [editing,   setEditing]   = useState<DbOptionGroup | null>(null)
+  /** 옵션 추가 마법사 — 메뉴 상세 모달의 '+ 옵션 추가'와 **같은 모달**이다 */
+  const [adding,    setAdding]    = useState(false)
 
   // 옵션 그룹 → 이 그룹을 쓰는 메뉴 (역참조). 코드엔 메뉴→옵션 방향밖에 없다.
   const menusByGroup = useMemo(() => {
@@ -655,7 +680,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
     <div>
       <HubSection
         title="옵션 정보"
-        action={<PrimaryAction onClick={() => showToast('옵션 그룹 추가는 메뉴 화면에서 할 수 있어요')}>+ 옵션 그룹 추가</PrimaryAction>}
+        action={<PrimaryAction onClick={() => setAdding(true)}>옵션 추가</PrimaryAction>}
       />
 
       {loading || !data ? <Loading /> : (
@@ -729,9 +754,20 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                 <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden bg-[#FCFCFC]">
                   <div className="flex items-center px-[20px] h-[52px] border-b border-[#F2F2F2]">
                     <span className="text-[14px] font-medium text-[#1E1E1E] truncate">{group.name}</span>
-                    <span className="ml-[12px] text-[11px] text-[#787878] whitespace-nowrap">
-                      {group.is_multi ? '여러 개' : '한 개만'} · {group.is_required ? '필수' : '선택'}
-                      {group.is_multi && ` · ${group.min_select ?? 0}~${group.max_select ?? '제한없음'}개`}
+                    {/* 전엔 '한 개만 · 필수 · 0~3개' 를 11px 회색 한 줄로 흘렸다. 셋 다 성격이
+                        다른 값인데 가운뎃점으로 이어붙이니 어디서 끊어 읽을지가 안 보였다.
+                        '몇 개까지'와 '필수/선택' 두 배지로 쪼갠다. */}
+                    <span className="ml-[12px] flex items-center gap-[6px]">
+                      <OptionBadge tone="solid">
+                        {!group.is_multi
+                          ? '1개까지'
+                          : group.max_select
+                            ? `${group.max_select}개까지`
+                            : '제한없음'}
+                      </OptionBadge>
+                      <OptionBadge tone={group.is_required ? 'solid' : 'soft'}>
+                        {group.is_required ? '필수' : '선택'}
+                      </OptionBadge>
                     </span>
                     <div className="ml-auto">
                       <button
@@ -770,8 +806,6 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                   ) : (<>
                     <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[32px] text-[11px] font-normal text-[#6A635E]">
                       <span className="flex-1 min-w-0">항목</span>
-                      {(group.option_items ?? []).some(it => itemQtyLabel((it as DbOptionItem & { max_quantity?: number | null }).max_quantity))
-                        && <span className="w-[100px]">수량</span>}
                       <span className="w-[90px] text-right">추가 금액</span>
                       <span className="w-[90px] text-right flex items-center justify-end gap-[4px]">
                         선택 횟수
@@ -783,7 +817,6 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                     .slice().sort((a, b) => a.display_order - b.display_order)
                     .map((item, idx) => {
                       const sold = data.soldByOption[item.id] ?? 0
-                      const qty  = itemQtyLabel((item as DbOptionItem & { max_quantity?: number | null }).max_quantity)
                       const base = isPriceGroup(group) && item.extra_price === 0 && idx === 0
                       return (
                         <div key={item.id} className="flex items-center px-[20px] h-[38px] text-[12px] border-t border-[#F9F9F9]">
@@ -791,7 +824,6 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                             {item.name}
                             {base && <span className="ml-[6px] text-[10px] text-[#ADADAD]">기본</span>}
                           </span>
-                          {qty && <span className="w-[100px] text-[11px] text-[#787878]">{qty}</span>}
                           <span className="w-[90px] text-right text-[#1E1E1E]">
                             {item.extra_price > 0 ? `+${won(item.extra_price)}`
                               : item.extra_price < 0 ? `-${won(Math.abs(item.extra_price))}`
@@ -821,6 +853,21 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
           )}
         </>
       )}
+
+      {/* 옵션 추가 — 메뉴 상세 모달의 '+ 옵션 추가'와 같은 2단계 마법사.
+          data 가 아직 없을 땐 2단계(메뉴 선택)에 넣을 재료가 없어 띄우지 않는다. */}
+      {adding && storeId && data && (
+        <OptionGroupAddModal
+          storeId={storeId}
+          menus={data.menus.map(m => ({
+            code: m.id, name: m.name, categoryId: m.category_id, soldOut: m.is_sold_out,
+          }))}
+          categories={data.categories.map(c => ({ id: c.id, name: c.name }))}
+          displayOrder={data.groups.length}
+          onClose={() => setAdding(false)}
+          onCreated={() => { showToast('옵션을 추가했어요'); reload() }}
+        />
+      )}
     </div>
   )
 }
@@ -828,7 +875,66 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
 // ── 3. 카테고리 상세 — Figma 672:1358 ──────────────────────────────────────
 
 function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
+  const { storeId } = useStore()
   const [editing, setEditing] = useState<CategoryTarget | null>(null)
+  const [adding,  setAdding]  = useState(false)
+
+  /**
+   * 드래그로 바꾼 순서를 화면에 먼저 반영한다(저장은 손을 뗄 때 한 번).
+   *
+   * 전엔 행 왼쪽에 점 여섯 개 핸들이 **그림으로만** 있었다. cursor-grab 까지 걸려 있어
+   * 잡으면 움직일 것처럼 보이는데 draggable 속성도 핸들러도 없어서 아무 일도 안 났다.
+   *
+   * null 이면 data.categories 를 그대로 쓴다 — 서버가 준 순서가 기본이다.
+   */
+  const [order,  setOrder]  = useState<string[] | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
+  /** 핸들을 눌렀을 때만 행이 끌린다. 행 전체를 draggable 로 두면 열어보려다 순서가 바뀐다 */
+  const [armed,  setArmed]  = useState(false)
+  const [saving, setSaving] = useState(false)
+  /** 드래그로 끝난 클릭은 상세를 열지 않는다 — 놓는 순간 편집 모달이 뜨면 당황스럽다 */
+  const draggedRef = useRef(false)
+
+  const categories = useMemo(() => {
+    if (!data) return []
+    if (!order) return data.categories
+    const byId = new Map(data.categories.map(c => [c.id, c]))
+    const sorted = order.map(id => byId.get(id)).filter((c): c is typeof data.categories[number] => !!c)
+    // 드래그 중에 새 카테고리가 생겼을 수도 있다 — 빠진 건 뒤에 붙인다
+    for (const c of data.categories) if (!order.includes(c.id)) sorted.push(c)
+    return sorted
+  }, [data, order])
+
+  function handleDragOver(e: React.DragEvent, overId: string) {
+    e.preventDefault()
+    if (!dragId || dragId === overId) return
+    draggedRef.current = true
+    const ids = categories.map(c => c.id)
+    const from = ids.indexOf(dragId)
+    const to   = ids.indexOf(overId)
+    if (from === -1 || to === -1) return
+    ids.splice(to, 0, ...ids.splice(from, 1))
+    setOrder(ids)
+  }
+
+  async function commitOrder() {
+    setDragId(null)
+    setArmed(false)
+    if (!draggedRef.current || !order) return
+    setSaving(true)
+    const { error } = await supabase.rpc('reorder_categories', { category_ids: order })
+    setSaving(false)
+    if (error) {
+      // 실패하면 **되돌린다.** 화면만 바뀐 채 두면 다음에 열었을 때 조용히 제자리로
+      // 돌아가 있어서, 점주는 저장된 줄 알고 넘어간다.
+      setOrder(null)
+      showToast(`순서를 저장하지 못했어요: ${error.message}`)
+      return
+    }
+    showToast('카테고리 순서를 바꿨어요')
+    reload()
+  }
+
   // 카테고리별 메뉴 수와 30일 판매량
   const stats = useMemo(() => {
     const m: Record<string, { menus: number; sold: number }> = {}
@@ -846,7 +952,7 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
     <div>
       <HubSection
         title="카테고리 정보"
-        action={<PrimaryAction onClick={() => showToast('카테고리 추가는 메뉴 화면에서 할 수 있어요')}>+ 카테고리 추가</PrimaryAction>}
+        action={<PrimaryAction onClick={() => setAdding(true)}>+ 카테고리 추가</PrimaryAction>}
       />
 
       {loading || !data ? <Loading /> : (
@@ -860,18 +966,39 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
               <span className="w-[80px] text-right">노출</span>
             </div>
 
-            {data.categories.length === 0 ? <Empty note="등록된 카테고리가 없어요" /> : data.categories.map((c, i) => (
+            {categories.length === 0 ? <Empty note="등록된 카테고리가 없어요" /> : categories.map((c, i) => (
               <div
                 key={c.id}
-                onClick={() => setEditing({
-                  id: c.id, name: c.name, isActive: c.is_active,
-                  menuCount: stats[c.id]?.menus ?? 0,
-                })}
-                className={`flex items-center px-[20px] h-[44px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                draggable={armed}
+                onDragStart={() => setDragId(c.id)}
+                onDragOver={e => handleDragOver(e, c.id)}
+                onDragEnd={commitOrder}
+                onDrop={e => { e.preventDefault(); commitOrder() }}
+                onClick={() => {
+                  // 드래그가 끝난 직후의 클릭은 흘린다
+                  if (draggedRef.current) { draggedRef.current = false; return }
+                  setEditing({
+                    id: c.id, name: c.name, isActive: c.is_active,
+                    // 숫자 대신 **목록**을 넘긴다 — 분류를 지울지는 뭐가 들었는지 보고 정한다
+                    menus: data.menus
+                      .filter(m => m.category_id === c.id)
+                      .map(m => ({ id: m.id, name: m.name, price: m.base_price, isSoldOut: m.is_sold_out, isHidden: m.is_hidden })),
+                  })
+                }}
+                className={`pressable-row flex items-center px-[20px] h-[44px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${
+                  i > 0 ? 'border-t border-[#F2F2F2]' : ''
+                } ${dragId === c.id ? 'opacity-40' : ''} ${saving ? 'pointer-events-none' : ''}`}
               >
                 <span className="w-[46px] flex items-center gap-[7px] text-[12px] text-[#ADADAD]">
-                  {/* 드래그 핸들 — 순서 변경은 QR오더 노출 순서에 그대로 반영된다 */}
-                  <svg width="9" height="13" viewBox="0 0 9 13" fill="none" className="cursor-grab">
+                  {/* 드래그 핸들 — 여기를 누르고 있는 동안만 행이 끌린다(armed).
+                      순서 변경은 QR오더 노출 순서에 그대로 반영된다. */}
+                  <svg
+                    width="9" height="13" viewBox="0 0 9 13" fill="none"
+                    className="cursor-grab active:cursor-grabbing flex-shrink-0"
+                    onMouseDown={() => setArmed(true)}
+                    onMouseUp={() => setArmed(false)}
+                    onClick={e => e.stopPropagation()}
+                  >
                     <circle cx="2" cy="2" r="1.1" fill="#ADADAD"/><circle cx="7" cy="2" r="1.1" fill="#ADADAD"/>
                     <circle cx="2" cy="6.5" r="1.1" fill="#ADADAD"/><circle cx="7" cy="6.5" r="1.1" fill="#ADADAD"/>
                     <circle cx="2" cy="11" r="1.1" fill="#ADADAD"/><circle cx="7" cy="11" r="1.1" fill="#ADADAD"/>
@@ -912,6 +1039,29 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
         </>
       )}
 
+      {adding && data && (
+        <CategoryAddModal
+          menus={data.menus.map(m => ({ code: m.id, name: m.name, soldOut: m.is_sold_out }))}
+          onClose={() => setAdding(false)}
+          onCreate={async (name, codes) => {
+            // 메뉴 화면의 addCategoryWithMenus 와 같은 순서·같은 결과.
+            // display_order 는 맨 뒤로 — 새 분류가 손님 화면 맨 앞에 끼어들면 안 된다.
+            const maxOrder = data.categories.reduce((m, c) => Math.max(m, c.display_order), 0)
+            const { data: created, error } = await supabase.from('categories')
+              .insert({ store_id: storeId, name, display_order: maxOrder + 1 })
+              .select('id').single()
+            if (error || !created) throw error ?? new Error('카테고리를 만들지 못했어요')
+            if (codes.size > 0) {
+              const { error: moveErr } = await supabase.from('menus')
+                .update({ category_id: created.id }).in('id', [...codes])
+              if (moveErr) throw moveErr
+            }
+            reload()
+            showToast(codes.size > 0 ? `분류를 만들고 메뉴 ${codes.size}개를 넣었어요` : '분류를 만들었어요')
+          }}
+        />
+      )}
+
       {editing && (
         <CategoryEditModal
           target={editing}
@@ -934,8 +1084,8 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
             const { error } = await supabase.from('categories').delete().eq('id', editing.id)
             if (error) throw error
             reload()
-            showToast(editing.menuCount > 0
-              ? `분류를 지웠어요. 메뉴 ${editing.menuCount}개는 '분류 없음'에 있어요`
+            showToast(editing.menus.length > 0
+              ? `분류를 지웠어요. 메뉴 ${editing.menus.length}개는 '분류 없음'에 있어요`
               : '분류를 지웠어요')
           }}
         />

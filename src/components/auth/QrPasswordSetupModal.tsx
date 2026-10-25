@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
+import ModalOverlay from '../ui/ModalOverlay'
 
 interface QrPasswordSetupModalProps {
   open: boolean
@@ -26,7 +27,7 @@ export default function QrPasswordSetupModal({ open, onClose }: QrPasswordSetupM
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
+    <ModalOverlay onClose={onClose} z={300} backdropClassName="bg-black/50">
       <div className="modal-in bg-white rounded-2xl shadow-xl w-[360px] px-8 py-9 flex flex-col items-center relative">
         <h2 className="text-[17px] font-bold text-ink mb-1.5 text-center">휴대폰으로 QR을 찍어주세요</h2>
         <p className="text-[13px] text-center mb-6" style={{ color: 'var(--gray-text)' }}>
@@ -50,6 +51,6 @@ export default function QrPasswordSetupModal({ open, onClose }: QrPasswordSetupM
           닫기
         </button>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }

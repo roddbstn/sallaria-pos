@@ -33,7 +33,16 @@ export function parseNote(raw: string | null | undefined): {
 
 // 창구 타입은 src/vite-env.d.ts 의 PosBridge 가 들고 있다(위 주석 참고).
 // Electron 밖(브라우저 미리보기)에서는 window.api 가 없으므로 호출부가 ?. 로 방어한다.
-export const api = window.api as PosBridge
+//
+// ⚠️ `typeof window` 검사가 꼭 필요하다. 전엔 `window.api` 를 모듈 최상단에서 바로
+//    읽어서, window 가 **아예 없는** 환경(Node — 즉 단위 테스트)에서는 import 만 해도
+//    ReferenceError 로 터졌다. 그래서 이 파일의 순수 함수들(won·parseNote)을
+//    테스트할 수가 없었다.
+//
+// 타입은 그대로 PosBridge 로 둔다 — 호출부 절반이 `api.foo` 로(옵셔널 없이) 쓰고 있어서
+// 타입을 `| undefined` 로 바꾸면 그 9곳이 전부 타입 에러가 난다. 그건 따로 정리할 일이고,
+// 여기서 고치는 건 "import 자체가 터지는 것"까지다.
+export const api = (typeof window !== 'undefined' ? window.api : undefined) as PosBridge
 
 export const won = (n: number) =>
   n.toLocaleString('ko-KR') + '원'
@@ -96,5 +105,23 @@ export function orderToPayload(o: Order, storeName?: string) {
     delivery_address: deliveryAddress,
     delivery_detail:  deliveryDetail,
     delivery_note:    deliveryNote,
+  }
+}
+
+/**
+ * 앱 버전 — 진단·문의에 붙여 보내는 값.
+ *
+ * ⚠️ 하드코딩하지 말 것. 전엔 SupportModal 이 '1.0.0', 프린터 진단이 '1.0.1' 을
+ * 손으로 적어 보냈다. 실제 배포 버전은 1.1.0 이었다. "어느 버전 쓰고 계세요?"가
+ * 원격 지원의 첫 질문인데 그 답이 늘 틀려 있으면 진단 정보를 붙이는 의미가 없다.
+ *
+ * 진실은 메인 프로세스의 app.getVersion()(= package.json) 하나뿐이다.
+ * Electron 밖(브라우저 미리보기)에서는 창구가 없어 'unknown' 을 돌려준다.
+ */
+export async function getAppVersion(): Promise<string> {
+  try {
+    return (await api?.appVersion?.()) ?? 'unknown'
+  } catch {
+    return 'unknown'
   }
 }

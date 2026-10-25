@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { won } from '../../lib/ipc'
+import { ledgerMonthKey } from '../../lib/prepaid-ledger'
+import { signColor } from '../../lib/sign-color'
 
 // 월별 충전 · 주문 · 월말 잔액 막대 — 계정 상세 모달과 월별 잔액 모달이 같이 쓴다.
 //
@@ -20,6 +22,15 @@ export interface TrendMonth {
   balance: number
   /** 그 달에 실제 거래가 있었는지 — 없으면 잔액은 직전 달에서 이어진 값이다 */
   active:  boolean
+  /**
+   * 그 달의 수기 조정 합계(구두주문 차감 등). 0이면 안 보여준다.
+   *
+   * 없으면 안 되는 이유: 월말 잔액은 `충전 − 주문 + 조정` 누적인데, 말풍선에
+   * 조정을 안 적으면 "6월 충전 X, 주문 Y 인데 월말이 X−Y 가 아니네?" 가 된다.
+   * 실제로 그 질문을 받았다 — 침산점 6월의 −69,100(6/30 구두주문 3건 수기 차감)이
+   * 안 보였기 때문이다.
+   */
+  adjust?: number
 }
 
 const BARS = [
@@ -27,6 +38,20 @@ const BARS = [
   { key: 'order'   as const, label: '주문',      color: '#8C8379' },
   { key: 'balance' as const, label: '월말 잔액', color: '#C1B7AA' },
 ]
+
+/**
+ * 잔액 막대의 이름 — 이번 달만 '현재 잔액'.
+ *
+ * 아직 안 끝난 달에 '월말 잔액'이라고 적으면 거짓말이다. 10월 23일에 보는 10월 값은
+ * 10월 31일의 잔액이 아니라 **지금 이 순간의 잔액**이다. 달이 바뀌면(11/1) 그 10월 값은
+ * 더 이상 변하지 않으므로 그때부터 '월말 잔액'이 맞는 말이 된다.
+ *
+ * 기준 월은 KST — 막대의 key 도 ledgerMonthKey(KST)로 만들어지므로 같은 시간대를 써야
+ * 자정 전후로 한 달이 어긋나지 않는다.
+ */
+function balanceLabel(monthKey: string): string {
+  return monthKey === ledgerMonthKey(new Date().toISOString()) ? '현재 잔액' : '월말 잔액'
+}
 
 export default function PrepaidTrendChart({ months, height = 140, barWidth = 9 }: {
   months:    TrendMonth[]
@@ -40,12 +65,14 @@ export default function PrepaidTrendChart({ months, height = 140, barWidth = 9 }
 
   return (
     <div>
-      {/* 범례 — 가운데 위. 차트를 읽기 전에 색이 뭘 뜻하는지 먼저 보여야 한다 */}
+      {/* 범례 — 가운데 위. 차트를 읽기 전에 색이 뭘 뜻하는지 먼저 보여야 한다.
+          잔액은 그냥 '잔액' 이다 — 지난 달들은 월말 값이고 이번 달은 지금 값이라,
+          범례 한 줄로는 둘 다 맞는 말이 '잔액' 뿐이다. 정확한 이름은 말풍선이 댄다. */}
       <div className="flex items-center justify-center gap-[16px] mb-[14px]">
         {BARS.map(b => (
           <span key={b.key} className="flex items-center gap-[5px] text-[11px] font-normal text-[#787878]">
             <i className="w-[6px] h-[11px] rounded-full" style={{ backgroundColor: b.color }} />
-            {b.label}
+            {b.key === 'balance' ? '잔액' : b.label}
           </span>
         ))}
       </div>
@@ -79,7 +106,8 @@ export default function PrepaidTrendChart({ months, height = 140, barWidth = 9 }
           const i = months.findIndex(m => m.key === hover)
           const m = months[i]
           if (!m) return null
-          const net = m.deposit - m.order
+          // 조정까지 더해야 월말 잔액 변화와 맞는다
+          const net = m.deposit - m.order + (m.adjust ?? 0)
           // 가장자리 달이면 말풍선이 잘리므로 안쪽으로 당긴다
           const pct = ((i + 0.5) / months.length) * 100
           const shift = pct < 22 ? '0%' : pct > 78 ? '-100%' : '-50%'
@@ -96,14 +124,27 @@ export default function PrepaidTrendChart({ months, height = 140, barWidth = 9 }
                 {BARS.map(b => (
                   <div key={b.key} className="flex items-center gap-[8px] text-[11px] leading-[17px]">
                     <i className="w-[5px] h-[9px] rounded-full flex-shrink-0" style={{ backgroundColor: b.color }} />
-                    <span className="text-[#ADADAD] w-[48px]">{b.label}</span>
+                    {/* 이번 달이면 '현재 잔액' — 아직 안 끝난 달을 월말이라 부르지 않는다 */}
+                    <span className="text-[#ADADAD] w-[48px]">
+                      {b.key === 'balance' ? balanceLabel(m.key) : b.label}
+                    </span>
                     <span className="text-[#FCFCFC] tabular-nums ml-auto">{won(m[b.key])}</span>
                   </div>
                 ))}
+                {/* 수기 조정이 있는 달만 한 줄 더 — 없는 달에 0원을 적으면 읽을 게 늘기만 한다 */}
+                {!!m.adjust && (
+                  <div className="flex items-center gap-[8px] text-[11px] leading-[17px]">
+                    <i className="w-[5px] h-[9px] rounded-full flex-shrink-0 bg-[#8C8379] opacity-40" />
+                    <span className="text-[#ADADAD] w-[48px]">수기 조정</span>
+                    <span className="text-[#FCFCFC] tabular-nums ml-auto">
+                      {m.adjust > 0 ? '+' : '−'}{Math.abs(m.adjust).toLocaleString('ko-KR')}원
+                    </span>
+                  </div>
+                )}
                 <div className="border-t border-[#6A635E] mt-[7px] pt-[7px] text-[11px] leading-[17px] tabular-nums">
-                  <span className="text-[#ADADAD]">충전 − 주문 = </span>
-                  {/* 한국 회계 관습: 플러스 빨강, 마이너스 파랑 */}
-                  <span className="font-medium" style={{ color: net >= 0 ? '#FF676F' : '#6AA8FF' }}>
+                  {/* 조정이 있으면 식에도 같이 적는다 — 말풍선 안에서 월말 잔액이 계산되게 */}
+                  <span className="text-[#ADADAD]">충전 − 주문{m.adjust ? ' + 조정' : ''} = </span>
+                  <span className="font-medium" style={{ color: signColor(net) }}>
                     {net >= 0 ? '+' : '−'}{Math.abs(net).toLocaleString('ko-KR')}원
                   </span>
                 </div>

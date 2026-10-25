@@ -52,7 +52,7 @@ export default function RegularHolidayModal({ initial, onConfirm, onClose }: Pro
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[560px] max-w-[92vw] max-h-[82vh] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[560px] max-w-[92vw] max-h-[82vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* 본문 — Figma: 좌측 패딩 120→77, 제목 top 139→89 */}
@@ -110,7 +110,7 @@ export default function RegularHolidayModal({ initial, onConfirm, onClose }: Pro
         </div>
 
         {/* 하단 바 — Figma 664:775: 윗방향 그림자가 있는 구분선 + 닫기/확인 */}
-        <div className="flex-shrink-0 border-t border-[#ADADAD] shadow-[0px_-5px_24.3px_4px_rgba(0,0,0,0.06)] px-[34px] py-[16px] flex justify-end gap-[10px]">
+        <div className="flex-shrink-0 modal-footer px-[34px] py-[16px] flex justify-end gap-[10px]">
           <button
             type="button"
             onClick={onClose}

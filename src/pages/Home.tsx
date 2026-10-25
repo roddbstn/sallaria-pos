@@ -9,6 +9,7 @@ import HomeOrderCard from '../components/home/HomeOrderCard'
 import HomeOrderDetail from '../components/home/HomeOrderDetail'
 import VerbalOrderModal from '../components/VerbalOrderModal'
 import CancelReasonModal from '../components/ui/CancelReasonModal'
+import BottomToast from '../components/BottomToast'
 
 // ── 홈 ───────────────────────────────────────────────────────────────────────
 //
@@ -32,7 +33,6 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
   const [loading, setLoading] = useState(true)
   const [tab,     setTab]     = useState<'active' | 'done'>('active')
   const [picked,  setPicked]  = useState<string | null>(null)
-  const [revealed, setRevealed] = useState(false)
   const [busy,    setBusy]    = useState(false)
   const [toast,   setToast]   = useState('')
   const [verbalOpen, setVerbalOpen] = useState(false)
@@ -53,7 +53,7 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
   const SELECT = `
     order_code, order_number, account_code, orderer_name, orderer_phone,
     ordered_at, menu_subtotal, delivery_fee, total_amount, balance_before, balance_after,
-    method, status, note, is_deleted, requested_pickup_minutes, prep_minutes, accepted_at,
+    method, status, note, is_deleted, requested_pickup_minutes, prep_minutes, accepted_at, completed_at,
     delivery_departed_at,
     accounts ( account_name, account_type ),
     order_items ( menu_name, quantity, unit_price, subtotal,
@@ -107,8 +107,10 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
       const ry = remainingTime(y.acceptedAt, y.prepMins, now)
       if (rx.tone === 'pending' && ry.tone !== 'pending') return -1
       if (ry.tone === 'pending' && rx.tone !== 'pending') return 1
-      const mx = rx.tone === 'over' ? -(rx.value ?? 0) : (rx.value ?? 0)
-      const my = ry.tone === 'over' ? -(ry.value ?? 0) : (ry.value ?? 0)
+      // 화면에 찍히는 value 는 60분이 넘으면 '시간'으로 접힌다. 정렬은 접기 전 분으로 —
+      // value 로 비교하면 2시간 초과(2)가 59분 초과(59)보다 덜 급해진다.
+      const mx = rx.tone === 'over' ? -(rx.minutes ?? 0) : (rx.minutes ?? 0)
+      const my = ry.tone === 'over' ? -(ry.minutes ?? 0) : (ry.minutes ?? 0)
       return mx - my
     })
   }, [tab, active, done, now])
@@ -118,7 +120,6 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     () => list.find(o => o.code === picked) ?? list[0] ?? null,
     [list, picked],
   )
-  useEffect(() => { setRevealed(false) }, [selected?.code])
 
   // 헤더 한 줄 — 오늘 몇 건·얼마. 취소는 뺀다
   const todayStat = useMemo(() => {
@@ -191,16 +192,23 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
             {(['active', 'done'] as const).map((t, i) => (
               <Fragment key={t}>
                 {/* 두 탭 사이 세로선 — 둘 다 큰 글자라 간격만으로는 한 덩어리로 읽혔다 */}
-                {i > 0 && <span className="w-px h-[18px] bg-canvas-line" />}
+                {i > 0 && <span className="w-px h-[22px] bg-canvas-line" />}
                 <button
                   onClick={() => { setTab(t); setPicked(null) }}
-                  className={`pressable-text text-[22px] leading-none transition-colors ${
+                  /* inline-flex + items-center — 개수 배지를 글자 **중간 높이**에 맞추려면
+                     baseline 이 아니라 가운데 정렬이어야 한다. */
+                  className={`pressable-text inline-flex items-center gap-[7px] text-[28px] leading-none transition-colors ${
                     tab === t ? 'font-semibold text-[#1E1E1E]' : 'font-normal text-[#ADADAD]'
                   }`}
                 >
-                  {t === 'active' ? '대기중' : '완료'}
-                  {t === 'active' && active.length > 0 && (
-                    <span className="ml-[6px] text-[18px] font-medium text-[#6A635E]">{active.length}</span>
+                  <span>{t === 'active' ? '대기중' : '완료'}</span>
+                  {/* 개수 배지 — 두 탭 모두. 전엔 '대기중' 에만 맨글자로 붙어 있어서
+                      완료 건수는 목록을 열어 세어야 했다.
+                      min-w + px 로 두 자리 이상도 알약 모양으로 늘어난다(원이 찌그러지지 않게). */}
+                  {(t === 'active' ? active.length : done.length) > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[26px] h-[26px] px-[7px] rounded-full bg-[#6A635E] text-[15px] font-semibold leading-none text-[#FCFCFC]">
+                      {t === 'active' ? active.length : done.length}
+                    </span>
                   )}
                 </button>
               </Fragment>
@@ -215,15 +223,19 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
           </button>
         </div>
 
-        {/* 오늘 한 줄 — 눌러서 주문 탭으로 */}
+        {/* 오늘 한 줄 — 눌러서 주문 탭으로.
+            14px 로는 옆의 버튼들(15px)보다도 작아서 묻혔다. 하루 종일 켜두고
+            1.5~2m 밖에서 흘끗 보는 화면이라, 이 줄은 '오늘 얼마 벌었나'를 답하는
+            유일한 자리다. 같은 줄의 '대기중 / 완료' 탭과 **같은 28px** 로 맞춘다 —
+            이 줄에서 제일 중요한 둘이 같은 무게로 서야 눈이 둘 사이를 오간다. */}
         <button
           onClick={onOpenOrders}
-          className="pressable-text ml-auto text-[14px] font-normal text-[#6A635E] tabular-nums"
+          className="pressable-text ml-auto text-[28px] leading-none font-normal text-[#6A635E] tabular-nums"
         >
-          오늘 <span className="font-medium text-[#2C261F]">{todayStat.count}건</span>
-          <span className="mx-[6px] text-[#C1B7AA]">·</span>
-          <span className="font-medium text-[#2C261F]">{won(todayStat.amount)}</span>
-          <span className="ml-[6px] text-[#ADADAD]">›</span>
+          오늘 <span className="font-semibold text-[#2C261F]">{todayStat.count}건</span>
+          <span className="mx-[8px] text-[#C1B7AA]">·</span>
+          <span className="font-semibold text-[#2C261F]">{won(todayStat.amount)}</span>
+          <span className="ml-[8px] text-[#ADADAD]">›</span>
         </button>
       </div>
 
@@ -256,8 +268,6 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
           {selected ? (
             <HomeOrderDetail
               order={selected}
-              revealed={revealed}
-              onToggleReveal={() => setRevealed(v => !v)}
               onComplete={() => handleComplete(selected)}
               onCancel={() => setConfirmCancel(selected)}
               onReprint={() => handleReprint(selected)}
@@ -289,11 +299,8 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
         />
       )}
 
-      {toast && (
-        <div className="fixed bottom-[28px] left-1/2 -translate-x-1/2 z-50 bg-[#2C261F] text-[#FCFCFC] text-[14px] font-normal px-[20px] py-[12px] rounded-[10px] shadow-[0_4px_16px_rgba(0,0,0,0.2)]">
-          {toast}
-        </div>
-      )}
+      {/* 메뉴 화면 모드 전환 토스트와 같은 박스 — components/BottomToast.tsx */}
+      <BottomToast message={toast} />
     </div>
   )
 }

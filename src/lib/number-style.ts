@@ -7,9 +7,9 @@
 // 기준은 **고객 화면의 계정 표**다. 이 앱에서 숫자를 가장 오래 들여다보는 곳이고,
 // 거기 맞춰두면 나머지가 따라온다.
 //
-// 색 규칙 (이 앱의 기존 '추이' 칸이 쓰던 것을 그대로 가져왔다):
-//   늘어난 것(충전·증가)  → 파랑 #3374FF
-//   줄어든 것(음수 잔액)  → 빨강 danger
+// 색 규칙 — **한국 회계·증시 관습: 양수 빨강 / 음수 파랑** (sign-color.ts 가 기준):
+//   늘어난 것(충전·증가)  → 빨강 SIGN_UP
+//   줄어든 것(음수 잔액)  → 파랑 SIGN_DOWN
 //   변화 없음·보조        → 회색 #ADADAD
 //   그 외 일반 금액       → 먹색(text-ink)
 //
@@ -22,11 +22,15 @@ export const NUM = 'tabular-nums text-ink'
 /** 강조할 금액(잔액 등) */
 export const NUM_STRONG = 'tabular-nums text-ink font-medium'
 
-/** 늘어난 것 — 충전, 증가 */
-export const NUM_UP = 'tabular-nums text-[#3374FF] font-medium'
+// ⚠️ 색 리터럴은 sign-color.ts 의 SIGN_UP/SIGN_DOWN 과 **같은 값을 직접 적는다.**
+//    템플릿 리터럴(`text-[${SIGN_UP}]`)로 쓰면 Tailwind 가 소스를 정적으로 훑을 때
+//    클래스를 못 찾아 CSS 가 아예 생성되지 않는다(색이 사라진다).
 
-/** 줄어든 것 — 음수 잔액, 감소 */
-export const NUM_DOWN = 'tabular-nums text-danger font-medium'
+/** 늘어난 것 — 충전, 증가 (SIGN_UP) */
+export const NUM_UP = 'tabular-nums text-[#FF676F] font-medium'
+
+/** 줄어든 것 — 음수 잔액, 감소 (SIGN_DOWN) */
+export const NUM_DOWN = 'tabular-nums text-[#3374FF] font-medium'
 
 /** 보조·없음 */
 export const NUM_MUTED = 'tabular-nums text-[#ADADAD]'

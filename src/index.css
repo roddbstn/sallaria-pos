@@ -18,6 +18,19 @@
   --canvas:      #F2F2F2;  /* 화면 바탕 — 중립 회색 */
   --canvas-soft: #F9F9F9;  /* 바탕 위의 한 단계 밝은 면(빈 영역·비활성 카드) */
   --canvas-line: #E5E5E5;  /* 바탕 위의 경계선 */
+
+  /* 금액 부호 색 — 한국 회계·증시 관습: 양수 빨강 / 음수 파랑.
+     JS 쪽 기준값은 src/lib/sign-color.ts 이고 여기와 같은 값을 쓴다. */
+  --sign-up:   #FF676F;
+  --sign-down: #3374FF;
+
+  /* 상단 바 — canvas 와 **같은 밝기**인데 색온도만 따뜻한 쪽.
+     L*: 95.5→95.2 / 90.9→90.8 로 거의 그대로고, R−B 가 0 → +5/+6 으로 올라간다.
+     바탕(#F2F2F2 중립)과 상단 바가 미묘하게 다른 온도를 갖게 되는 게 노림수다 —
+     어둡게 만들지 않고도 "우리 색"으로 읽힌다. */
+  --topbar:      #F3F1EE;
+  --topbar-deep: #E8E4E2;  /* 허브 화면에서 한 단계 눌린 상단 바 (기존 웜 라인색과 동일) */
+  --topbar-hover:#EDEAE6;  /* 탭 호버 — 바보다 L* 2.4 낮아 눌린 게 보인다 */
   --green:       #008F42;
   --green-soft:  rgba(0,221,103,0.12);
   /* 메인 버튼(#00DD67)과 같은 색상 계열이되, 텍스트로 쓸 때도 잘 보이도록 더 어둡게 —
@@ -98,6 +111,30 @@ body {
 .dashboard-orders-scroll::-webkit-scrollbar-track { background: transparent; }
 .dashboard-orders-scroll::-webkit-scrollbar-thumb { background: var(--gray-border); border-radius: 9999px; }
 
+/* 스크롤바 자리를 늘 비워두는 세로 스크롤 영역.
+   내용이 짧아지는 순간(로딩 중, 빈 상태) 스크롤바가 사라지면 안쪽 폭이 6px 넓어지고,
+   내용이 돌아오면 다시 좁아진다 — 화면 전체가 오른쪽으로 갔다 왼쪽으로 돌아오는 것처럼
+   보인다. 기간 버튼(최근 7/30/90일·전체)처럼 누를 때마다 로딩이 끼는 화면에서 특히 눈에 띈다.
+   .dashboard-orders-scroll 이 같은 이유로 쓰던 처방을 이름만 일반화한 것이다. */
+.scroll-stable { scrollbar-gutter: stable; }
+
+/* 모달 하단에 고정된 CTA 푸터 — 위 스크롤 영역과의 경계.
+   이 클래스는 네 군데에서 이미 쓰이고 있었는데 **정의가 없었다.** 그래서 각 모달이
+   제각각 border-t 를 직접 그렸고, 색이 #ADADAD · #E8E4E2 · #ADADAD/30 · --gray-border
+   네 가지로 갈렸다. 어떤 건 선이 너무 진해 영역을 자르는 것처럼 보였다.
+
+   경계는 **그림자만으로** 말한다. 선은 넣지 않는다 — 푸터가 위 내용 앞으로 살짝
+   떠 있는 느낌이라 "여기서부터 고정 영역"이 선 없이도 읽힌다. 선과 그림자를 같이
+   쓰면 같은 말을 두 번 하는 셈이고, 모달 바탕(#FCFCFC) 위에서 1px 선이 어중간하게
+   보여 오히려 지저분했다.
+   퍼짐(spread)을 음수로 둬서 경계 바로 위에서 번지지 않고 위로 갈수록 자연스럽게 사라진다
+   (전에 쓰던 `0 -5px 24.3px 4px` 는 spread 가 +4px 라 선 주변이 띠처럼 뭉쳤다). */
+.modal-footer {
+  box-shadow:
+    0 -10px 22px -10px rgba(44, 38, 31, 0.07),
+    0 -3px  8px  -4px rgba(44, 38, 31, 0.045);
+}
+
 /* 플레이스홀더는 입력된 값보다 한 단계 얇게.
    입력창의 font-weight 를 그대로 물려받으면(기본 400) 실제 값과 구분이 안 되고,
    모달마다 placeholder 색만 다르게 손보던 걸 굵기로 한 번에 정리한다.
@@ -143,6 +180,25 @@ input[type="checkbox"]:checked::after {
 
 input[type="checkbox"]:focus {
   outline: none;
+}
+
+/* 진행 중 점 세 개 — '출력 중…' 처럼 기다리는 버튼에 쓴다.
+   '…' 글자만 두면 멈춘 것처럼 보인다(프린터가 몇 초 걸려서 더 그렇다).
+   점이 차례로 튀면 "살아 있다"가 글자 없이 전해진다. */
+@keyframes dot-bounce {
+  0%, 70%, 100% { transform: translateY(0);     opacity: 0.45; }
+  35%           { transform: translateY(-4px);  opacity: 1; }
+}
+.dot-bounce > span {
+  display: inline-block;
+  animation: dot-bounce 1s ease-in-out infinite;
+}
+.dot-bounce > span:nth-child(2) { animation-delay: 0.15s; }
+.dot-bounce > span:nth-child(3) { animation-delay: 0.30s; }
+
+/* 움직임을 줄여달라고 한 사용자에겐 가만히 둔다 */
+@media (prefers-reduced-motion: reduce) {
+  .dot-bounce > span { animation: none; opacity: 1; }
 }
 
 /* 모달 등장 애니메이션 */
@@ -335,13 +391,29 @@ button:not(:disabled):active,
 }
 
 /* 목록의 한 행처럼 가로로 긴 요소는 0.95로 줄이면 좌우 40px씩 움직여서 "덜컹"거린다.
-   눌린 느낌은 배경색이 더 많이 전달하므로, 행은 아주 살짝만 줄이고 회색을 깐다. */
+   눌린 느낌은 배경색이 더 많이 전달하므로, 행은 아주 살짝만 줄이고 회색을 깐다.
+
+   ⚠️ **긴 행이 <button> 이면 반드시 이 클래스를 붙일 것.** 안 붙이면 위의 전역
+      `button:active { scale: .95 }` 가 그대로 먹어서 표 한 줄이 좌우로 수십 px 씩
+      빨려들어간다(고객 표에서 실제로 지적받았다). 특이도는 이쪽이 이긴다 —
+      `.pressable-row:active:not(:disabled)` 0-3-0 > `button:not(:disabled):active` 0-2-1.
+      div 로 만든 행(DataTableRow)은 전역 규칙이 애초에 안 걸리지만, 같은 클래스를 쓴다. */
 .pressable-row {
   transition: scale 90ms ease-out, background-color 90ms ease-out;
 }
 .pressable-row:active:not(:disabled) {
   scale: 0.985;
   background-color: #F2F2F2;
+}
+
+/* 행 안에 들어가는 **가로로 긴 인라인 버튼**(표의 이름 칸 등).
+   .pressable-row 를 그대로 쓰면 눌린 동안 #F2F2F2 가 깔려서, 배경이 없던 글자 버튼
+   자리에만 회색 막대가 생긴다. 줄어드는 느낌만 가져오고 배경은 행에 맡긴다. */
+.pressable-soft {
+  transition: scale 90ms ease-out;
+}
+.pressable-soft:active:not(:disabled) {
+  scale: 0.985;
 }
 
 /* 상단 헤더의 햄버거·탭 버튼 전용.

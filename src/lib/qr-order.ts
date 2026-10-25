@@ -117,11 +117,11 @@ export interface PaperSpec {
 }
 
 export const PAPER_OPTIONS: PaperSpec[] = [
+  { key: 'receipt', label: '영수증',    note: '매장 프린터로 바로 나와요. 인쇄 대화상자가 뜨지 않습니다', cols: 1, rows: 1 },
   { key: 'a4-1',    label: 'A4 1장',   note: '한 장에 하나씩 크게 뽑아 벽에 붙일 때 좋아요',           cols: 1, rows: 1 },
   { key: 'a4-2',    label: 'A4 2등분', note: '위아래로 둘씩 뽑아 반으로 잘라 두 곳에 붙일 때 좋아요',          cols: 1, rows: 2 },
   { key: 'a4-4',    label: 'A4 4등분', note: '한 장을 네 칸으로 뽑아 잘라서 나눠주기 좋아요', cols: 2, rows: 2 },
   { key: 'a4-8',    label: 'A4 8등분', note: '한 장에 여덟 칸으로 뽑아 거래처가 많을 때 좋아요',            cols: 2, rows: 4 },
-  { key: 'receipt', label: '영수증',    note: '매장 프린터로 바로 나와요. 인쇄 대화상자가 뜨지 않습니다', cols: 1, rows: 1 },
 ]
 
 export interface PaperGeometry {
@@ -133,16 +133,21 @@ export interface PaperGeometry {
   perPage: number
 }
 
+/** 영수증 기본 인쇄폭(mm) — 설정이 없을 때. 80mm 감열지의 인쇄 가능 폭 */
+export const DEFAULT_RECEIPT_MM = 72
+
 /**
  * 용지별 실제 치수 계산.
  *
- * 영수증은 58mm 감열지 기준(좌우 4mm 여백 → 50mm). A4 는 위 상수에서 역산한다.
- * QR 은 정사각형이라 칸의 가로·세로 중 좁은 쪽에 맞춘다.
+ * 영수증 인쇄폭은 **프린터 설정에서 들어온다** — 58mm 감열지는 50mm, 80mm 는 72mm.
+ * 예전엔 50mm 로 박혀 있어서, 80mm 프린터에 꽂아도 QR 이 종이 가운데 작게 찍혔다.
+ * A4 는 위 상수에서 역산한다. QR 은 정사각형이라 칸의 가로·세로 중 좁은 쪽에 맞춘다.
  */
-export function paperGeometry(paper: QrPaper): PaperGeometry {
+export function paperGeometry(paper: QrPaper, receiptMM: number = DEFAULT_RECEIPT_MM): PaperGeometry {
   if (paper === 'receipt') {
-    // 영수증은 폭이 고정(50mm)이라 QR 을 먼저 정하고 글자 높이를 거기에 맞춘다
-    const w = 50
+    // 영수증은 폭이 고정이라 QR 을 먼저 정하고 글자 높이를 거기에 맞춘다.
+    // 좌우 2mm씩 띄운다 — 감열지는 가장자리가 롤러에 눌려 잘 안 찍힌다.
+    const w = Math.max(40, Math.min(80, receiptMM))
     const qrMM = w - 4
     return { cellW: w, cellH: qrMM + textHeightFor(qrMM), qrMM, perPage: 1 }
   }

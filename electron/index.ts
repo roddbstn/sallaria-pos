@@ -17,11 +17,20 @@ import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
 import Store from 'electron-store'
 import { SerialPort } from 'serialport'
+import net from 'node:net'
+import { spawn } from 'node:child_process'
+import { writeFile, unlink } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 
 import {
   type PrinterSettings,
   type ReceiptSettings,
   type OrderPayload,
+  resolveLineChars,
+  resolveQrPrintMM,
+  DEFAULT_TCP_PORT,
+  normalizePaperWidth,
 } from './printer'
 
 import {
@@ -105,13 +114,47 @@ function getPortName(): string {
   return store.get('printer')?.portName ?? ''
 }
 
+function printerCfg(): PrinterSettings {
+  return store.get('printer') ?? { portName: '' }
+}
+
+/** LAN 프린터로 설정돼 있고 IP 가 채워져 있을 때만 TCP 경로를 쓴다 */
+function lanTarget(): { host: string; port: number } | null {
+  const c = printerCfg()
+  if (c.link !== 'lan') return null
+  const host = (c.host ?? '').trim()
+  if (!host) return null
+  return { host, port: c.tcpPort && c.tcpPort > 0 ? c.tcpPort : DEFAULT_TCP_PORT }
+}
+
+/**
+ * OS 프린터(스풀러·CUPS)로 보내야 하는 설정인지.
+ *
+ * link 가 'usb' 인데 COM 포트가 없고 osPrinter 가 골라져 있으면 이 길로 간다.
+ * 윈도우에서 USB 프린터가 COM 으로 잡히는 경우(가상 COM 드라이버)는 portName 이
+ * 채워지므로 기존 시리얼 길을 그대로 쓴다 — 그게 더 빠르고 검증된 경로다.
+ */
+function osPrinterTarget(): string | null {
+  const c = printerCfg()
+  const name = (c.osPrinter ?? '').trim()
+  if (!name) return null
+  if (c.link === 'lan') return null          // 랜이 우선
+  if (getPortName()) return null             // COM 이 잡혀 있으면 시리얼이 우선
+  return name
+}
+
+/** 지금 설정으로 출력할 대상이 하나라도 있는지 — COM 포트 · LAN IP · OS 프린터 */
+function hasTarget(): boolean {
+  return !!lanTarget() || !!getPortName() || !!osPrinterTarget()
+}
+
 // printer:status의 connected는 "포트가 설정돼 있는지"가 아니라 "마지막으로 실제 open을
 // 시도했을 때 성공했는지"를 뜻해야 케이블 뽑힘/전원꺼짐을 제대로 반영한다.
 let printerReachable = true
 
 function notifyPrinterStatus(): void {
   mainWindow?.webContents.send('printer:status', {
-    connected:   !!getPortName() && printerReachable,
+    connected:   hasTarget() && printerReachable,
     queueLength: 0,
   })
 }
@@ -144,14 +187,39 @@ async function setPrinterReachable(reachable: boolean): Promise<void> {
 
 /** 포트 open/close만 테스트 — 실제 출력 없이 생존 여부만 확인 (연결 버튼 + 주기적 헬스체크 공용) */
 async function testPrinterPort(): Promise<{ ok: boolean; error?: string }> {
-  const portName = getPortName()
-  if (!portName) return { ok: false, error: 'COM 포트를 먼저 선택해 주세요.' }
+  const lan = lanTarget()
   try {
-    const port = new SerialPort({ path: portName, baudRate: 9600, autoOpen: false })
-    await new Promise<void>((resolve, reject) => {
-      port.open(err => err ? reject(err) : resolve())
-    })
-    await new Promise<void>(resolve => port.close(() => resolve()))
+    if (lan) {
+      await tcpProbe(lan.host, lan.port)
+    } else if (osPrinterTarget()) {
+      // OS 프린터는 "열어보기"가 없다. 스풀러/CUPS 에 그 이름이 **여전히 있는지**만 본다 —
+      // 프린터를 뽑으면 목록에서 사라지므로 그게 사실상의 생존 확인이다.
+      // (여기서 시험 출력을 하면 5분마다 종이가 나온다)
+      const name = osPrinterTarget()!
+      const found = mainWindow
+        ? (await mainWindow.webContents.getPrintersAsync()).find(x => x.name === name)
+        : undefined
+      if (mainWindow && !found) {
+        throw new Error(`'${name}' 프린터를 더 이상 찾을 수 없어요. 케이블을 확인해 주세요.`)
+      }
+      // ⚠️ 이름이 목록에 있다고 연결된 게 아니다.
+      //    USB 프린터를 뽑아도 CUPS/스풀러의 **큐는 남아 있어서** 목록에는 계속 보인다.
+      //    상태를 안 보면 "연결됨"이라고 거짓말하게 된다(실제로 그랬다).
+      const reasons = String(
+        ((found?.options ?? {}) as Record<string, unknown>)['printer-state-reasons'] ?? '',
+      ).toLowerCase()
+      if (reasons.includes('offline') || reasons.includes('shutdown')) {
+        throw new Error(`'${name}' 가 꺼져 있거나 케이블이 빠져 있어요.`)
+      }
+    } else {
+      const portName = getPortName()
+      if (!portName) return { ok: false, error: '프린터를 먼저 선택해 주세요.' }
+      const port = new SerialPort({ path: portName, baudRate: printerCfg().baudRate ?? 9600, autoOpen: false })
+      await new Promise<void>((resolve, reject) => {
+        port.open(err => err ? reject(err) : resolve())
+      })
+      await new Promise<void>(resolve => port.close(() => resolve()))
+    }
     await setPrinterReachable(true)
     return { ok: true }
   } catch (err) {
@@ -160,11 +228,48 @@ async function testPrinterPort(): Promise<{ ok: boolean; error?: string }> {
   }
 }
 
-async function printEscPos(data: Buffer): Promise<void> {
-  const portName = getPortName()
-  if (!portName) throw new Error('COM 포트가 설정되지 않았습니다. 설정 탭에서 포트를 선택해 주세요.')
+/** LAN 프린터 생존 확인 — 연결만 해 보고 바로 끊는다 */
+function tcpProbe(host: string, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const sock = net.createConnection({ host, port })
+    // 네트워크 프린터는 꺼져 있어도 TCP SYN 에 응답이 없을 뿐이라 타임아웃이 꼭 필요하다.
+    // 없으면 OS 기본값(수십 초)까지 매달려 설정 화면이 멈춘 것처럼 보인다.
+    sock.setTimeout(3000)
+    sock.once('connect', () => { sock.destroy(); resolve() })
+    sock.once('timeout', () => { sock.destroy(); reject(new Error(`${host}:${port} 에 응답이 없어요`)) })
+    sock.once('error',   err => { sock.destroy(); reject(err) })
+  })
+}
 
-  const port = new SerialPort({ path: portName, baudRate: 9600, autoOpen: false })
+async function printEscPos(data: Buffer): Promise<void> {
+  const lan = lanTarget()
+  if (lan) { await printOverTcp(data, lan.host, lan.port); return }
+
+  // USB 로 꽂아 OS 가 '프린터'로 등록한 경우 — 시리얼 포트가 없으니 스풀러/CUPS 로 보낸다.
+  // 순서가 중요하다: LAN > 시리얼(COM) > OS 프린터. 앞의 둘이 더 빠르고 더 검증돼 있다.
+  const osName = osPrinterTarget()
+  if (osName) {
+    try {
+      await printToOsPrinter(data, osName)
+    } catch (err) {
+      // ⚠️ setPrinterReachable 은 try 밖에서 부른다. 안에 두면 그 안의 운영알림이
+      //    실패할 때 "출력 실패" 로 뒤바뀐다 — 영수증은 이미 나왔는데도.
+      console.error('[Print] OS 프린터 출력 실패:', err)
+      await setPrinterReachable(false)
+      throw err
+    }
+    await setPrinterReachable(true)
+    return
+  }
+
+  const portName = getPortName()
+  if (!portName) {
+    throw new Error(
+      '출력할 프린터가 설정되지 않았습니다. 설정 > 프린터 연결에서 프린터를 골라주세요.',
+    )
+  }
+
+  const port = new SerialPort({ path: portName, baudRate: printerCfg().baudRate ?? 9600, autoOpen: false })
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -191,9 +296,177 @@ async function printEscPos(data: Buffer): Promise<void> {
   }
 }
 
-// 주문 없이도 끊김을 감지하도록 5분마다 생존 확인 (포트가 설정된 경우만)
+/** LAN(RJ45) 프린터 — ESC/POS 를 TCP 9100 으로 그대로 흘려보낸다 */
+function printOverTcp(data: Buffer, host: string, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const sock = net.createConnection({ host, port })
+    sock.setTimeout(5000)
+    const fail = (err: Error) => { sock.destroy(); setPrinterReachable(false); reject(err) }
+    sock.once('connect', () => {
+      sock.write(data, err => {
+        if (err) { fail(err); return }
+        // end() 로 FIN 을 보낸 뒤 close 를 기다린다 — 바로 destroy 하면 버퍼가 비기 전에
+        // 소켓이 닫혀 영수증이 중간에서 끊긴다.
+        sock.end()
+      })
+    })
+    sock.once('close',   () => { setPrinterReachable(true); resolve() })
+    sock.once('timeout', () => fail(new Error(`${host}:${port} 에 응답이 없어요`)))
+    sock.once('error',   err => fail(err))
+  })
+}
+
+/**
+ * 운영체제에 등록된 프린터로 **원시 ESC/POS** 를 보낸다.
+ *
+ * 왜 필요한가: 영수증 프린터를 USB 로 꽂으면 시리얼 포트(COM)가 아니라
+ * '프린터'로 등록되는 일이 흔하다. 그러면 SerialPort 로는 보낼 길이 없다.
+ * 실제 사례(2026-10-22): BIXOLON SRP-B300II 를 맥에 USB 로 꽂으면
+ *   lpstat -v → usb://BIXOLON/SRP-B300II?serial=00000001
+ *   SerialPort.list() → 이 프린터 없음
+ * 이 경로가 없으면 "프린터가 눈앞에 꽂혀 있는데 출력 못 하는" 상태가 된다.
+ *
+ * ⚠️ 핵심은 **드라이버가 변환하지 않게** 하는 것이다. 평범하게 인쇄하면 OS 가
+ *    그림으로 만들어 보내서 ESC/POS 명령(절단·굵게)이 글자로 찍히거나 무시된다.
+ *    그래서 양쪽 다 "raw(원시)" 모드를 명시한다.
+ *
+ * macOS/Linux : lp -d <이름> -o raw  — stdin 으로 바이트를 그대로 흘린다.
+ *               2026-10-22 맥 + SRP-B300II 에서 동작 확인(절단까지).
+ * Windows     : 스풀러에 datatype "RAW" 로 넣어야 한다. PowerShell 에서
+ *               winspool.drv 를 P/Invoke 한다 — 네이티브 모듈을 안 쓰는 이유는
+ *               electron-rebuild 가 배포 파이프라인을 복잡하게 만들기 때문이다.
+ *               ⚠️ 윈도우 실기 검증은 아직 못 했다(설치 때 확인 필요).
+ */
+async function printToOsPrinter(data: Buffer, printerName: string): Promise<void> {
+  if (process.platform === 'win32') {
+    await printToOsPrinterWindows(data, printerName)
+  } else {
+    await printToOsPrinterCups(data, printerName)
+  }
+}
+
+/**
+ * lp 실행 파일 경로.
+ *
+ * PATH 에 의존하지 않는다 — 개발 중엔 셸 환경을 물려받아 'lp' 로도 잡히지만,
+ * **패키징한 .app 을 Finder/독에서 띄우면 PATH 가 `/usr/bin:/bin:/usr/sbin:/sbin`
+ * 정도로 줄거나 비어서** spawn 이 ENOENT 로 죽는다. 절대경로를 먼저 본다.
+ */
+function lpBinary(): string {
+  for (const c of ['/usr/bin/lp', '/bin/lp', '/usr/local/bin/lp']) {
+    if (existsSync(c)) return c
+  }
+  return 'lp'   // 마지막 수단 — PATH 에 맡긴다
+}
+
+function printToOsPrinterCups(data: Buffer, printerName: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // -o raw : 드라이버 변환을 끈다. -o document-format 을 쓰지 않는 게 중요하다.
+    const bin = lpBinary()
+    console.log(`[Print] CUPS raw → ${printerName} (${bin}, ${data.length} bytes)`)
+    const lp = spawn(bin, ['-d', printerName, '-o', 'raw'], { stdio: ['pipe', 'pipe', 'pipe'] })
+    let stderr = ''
+    lp.stderr.on('data', c => { stderr += String(c) })
+    lp.once('error', err => {
+      console.error('[Print] lp 실행 실패:', err)
+      reject(new Error(`lp 실행 실패: ${err.message}`))
+    })
+    lp.once('close', code => {
+      if (code === 0) { console.log('[Print] CUPS 전송 완료'); resolve(); return }
+      console.error(`[Print] lp 종료코드 ${code}`, stderr)
+      reject(new Error(`lp 가 ${code} 로 끝났어요${stderr ? `: ${stderr.trim()}` : ''}`))
+    })
+    lp.stdin.on('error', err => reject(err))
+    lp.stdin.end(data)
+  })
+}
+
+async function printToOsPrinterWindows(data: Buffer, printerName: string): Promise<void> {
+  // 임시 파일을 거친다 — PowerShell 표준입력으로 바이너리를 넘기면 인코딩이 끼어든다.
+  const tmp = join(tmpdir(), `sunpos-raw-${Date.now()}.bin`)
+  await writeFile(tmp, data)
+
+  // winspool.drv P/Invoke — StartDocPrinter 의 datatype 을 "RAW" 로 지정하는 게 핵심.
+  // 이 문자열이 없으면 스풀러가 텍스트로 해석해 ESC/POS 가 그대로 찍힌다.
+  const ps = `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+public static class RawPrint {
+  [StructLayout(LayoutKind.Sequential)]
+  public class DOCINFOA {
+    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+    [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+  }
+  [DllImport("winspool.drv", CharSet=CharSet.Ansi, SetLastError=true)]
+  public static extern bool OpenPrinterA(string src, out IntPtr hPrinter, IntPtr pd);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool ClosePrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", CharSet=CharSet.Ansi, SetLastError=true)]
+  public static extern bool StartDocPrinterA(IntPtr hPrinter, int level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool EndDocPrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool StartPagePrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool EndPagePrinter(IntPtr hPrinter);
+  [DllImport("winspool.drv", SetLastError=true)]
+  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+
+  public static void Send(string printer, string file) {
+    byte[] bytes = File.ReadAllBytes(file);
+    IntPtr h;
+    if (!OpenPrinterA(printer, out h, IntPtr.Zero))
+      throw new Exception("OpenPrinter 실패: " + Marshal.GetLastWin32Error());
+    try {
+      DOCINFOA di = new DOCINFOA();
+      di.pDocName = "SUNPOS Receipt";
+      di.pDataType = "RAW";
+      if (!StartDocPrinterA(h, 1, di)) throw new Exception("StartDocPrinter 실패: " + Marshal.GetLastWin32Error());
+      try {
+        if (!StartPagePrinter(h)) throw new Exception("StartPagePrinter 실패: " + Marshal.GetLastWin32Error());
+        IntPtr p = Marshal.AllocHGlobal(bytes.Length);
+        try {
+          Marshal.Copy(bytes, 0, p, bytes.Length);
+          int written;
+          if (!WritePrinter(h, p, bytes.Length, out written))
+            throw new Exception("WritePrinter 실패: " + Marshal.GetLastWin32Error());
+        } finally { Marshal.FreeHGlobal(p); }
+        EndPagePrinter(h);
+      } finally { EndDocPrinter(h); }
+    } finally { ClosePrinter(h); }
+  }
+}
+"@
+[RawPrint]::Send(${JSON.stringify(printerName)}, ${JSON.stringify(tmp)})
+`.trim()
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+        { windowsHide: true },
+      )
+      let stderr = ''
+      child.stderr.on('data', c => { stderr += String(c) })
+      child.once('error', err => reject(new Error(`PowerShell 실행 실패: ${err.message}`)))
+      child.once('close', code => {
+        if (code === 0) resolve()
+        else reject(new Error(`스풀러 출력 실패(code ${code})${stderr ? `: ${stderr.trim().slice(0, 300)}` : ''}`))
+      })
+    })
+  } finally {
+    await unlink(tmp).catch(() => {})
+  }
+}
+
+// 주문 없이도 끊김을 감지하도록 5분마다 생존 확인 (출력 대상이 설정된 경우만)
 setInterval(() => {
-  if (getPortName()) testPrinterPort()
+  if (hasTarget()) testPrinterPort()
 }, 5 * 60 * 1000)
 
 // ── Supabase Realtime 구독 ────────────────────────────────────────────────────
@@ -264,8 +537,8 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
   // 수락 시 영수증 출력
   const receipt = store.get('receipt')
   try {
-    await printEscPos(buildCustomerReceiptEscPos(order, receipt))
-    await printEscPos(buildKitchenReceiptEscPos(order, receipt))
+    await printEscPos(buildCustomerReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
+    await printEscPos(buildKitchenReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
     console.log(`[IPC] 영수증 출력 완료: ${order.order_code}`)
   } catch (err) {
     console.error('[IPC] 영수증 출력 실패 (무시):', err)
@@ -274,46 +547,20 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
   return { ok: true }
 })
 
-ipcMain.handle('order:reject', async (_e, { orderCode, reason }: { orderCode: string; reason: string }) => {
-  console.log(`[IPC] order:reject — ${orderCode}, 사유: ${reason}`)
-  if (supabase) {
-    await supabase.rpc('cancel_order', {
-      p_order_code: orderCode,
-      p_allow_after_cooking: true,
-      p_note: reason,
-    })
-    try {
-      const ch = supabase.channel(`orders:order_code=${orderCode}`)
-      ch.subscribe((s) => {
-        if (s === 'SUBSCRIBED') {
-          ch.send({ type: 'broadcast', event: 'ORDER_REJECTED', payload: { reason } })
-            .then(() => setTimeout(() => supabase!.removeChannel(ch), 1500))
-        }
-      })
-    } catch (e) {
-      console.warn('[IPC] broadcast 실패 (무시):', e)
-    }
-  }
-  return { ok: true }
-})
-
-ipcMain.handle('order:complete', async (_e, { orderCode }: { orderCode: string }) => {
-  console.log(`[IPC] order:complete — ${orderCode}`)
-  if (supabase) {
-    await supabase.from('orders').update({ status: '완료' }).eq('order_code', orderCode)
-  }
-  return { ok: true }
-})
-
-ipcMain.handle('order:cancel', async (_e, { orderCode }: { orderCode: string }) => {
-  console.log(`[IPC] order:cancel — ${orderCode}`)
-  if (supabase) {
-    await supabase.rpc('cancel_order', { p_order_code: orderCode, p_allow_after_cooking: true })
-  }
-  return { ok: true }
-})
-
 /** 설정 읽기 */
+// ── 주문 상태 조작 IPC 는 전부 지웠다 (2026-10-22) ───────────────────────────
+//
+// order:reject / order:complete / order:cancel 세 개가 있었는데:
+//   · order:complete, order:cancel 은 renderer 에서 아무도 안 불렀다 (죽은 코드).
+//     게다가 이 프로세스의 supabase 는 **anon 키 + 세션 없음**(위 createClient)이라
+//     orders RLS(authenticated 전용)에 걸려 0행 UPDATE 로 조용히 실패하는 코드였다.
+//   · order:reject 는 OrderPopup 이 불렀지만, 하는 일이 renderer 가 이미 한 것과
+//     똑같았다 — cancel_order 는 'Order already cancelled' 로 늘 터지고,
+//     ORDER_REJECTED broadcast 는 손님 화면에 두 번 갔다.
+//
+// 주문 상태를 바꾸는 일은 **세션이 있는 renderer 에서만** 한다. 그래야
+// cancel_order 같은 함수를 anon 에서 회수할 수 있다(supabase/migrations/0013).
+
 ipcMain.handle('settings:get', async () => {
   return {
     printer: { portName: store.get('printer')?.portName ?? '' },
@@ -332,20 +579,83 @@ ipcMain.handle('settings:update', async (_e, patch: Partial<StoreSchema>) => {
 /** 시스템에 연결된 COM 포트 목록 */
 ipcMain.handle('printer:list-ports', async () => {
   const ports = await SerialPort.list()
-  return ports.map(p => ({
-    path:         p.path,
-    manufacturer: p.manufacturer ?? '',
-    // friendlyName 은 Windows 전용 필드라 PortInfo 타입에 없다. 런타임엔 들어온다
-    friendlyName: (p as { friendlyName?: string }).friendlyName ?? p.path,
-  }))
+  return ports.map(p => {
+    const x = p as {
+      friendlyName?: string; vendorId?: string; productId?: string; pnpId?: string
+    }
+    return {
+      path:         p.path,
+      manufacturer: p.manufacturer ?? '',
+      // ⚠️ 여기서 path 로 폴백하지 않는다.
+      //
+      // 전엔 `friendlyName ?? p.path` 였다. friendlyName 은 **Windows 전용** 필드라
+      // macOS 에선 늘 undefined → path 가 들어갔고, 화면의 guessModel() 이 그걸
+      // 제품명으로 알고 그대로 찍어서 "/dev/tty.Bluetooth-Incoming-Port" 가
+      // 프린터 이름처럼 보였다. 비워서 보내면 화면이 자기 폴백('알 수 없는 프린터')을
+      // 쓸 수 있다.
+      friendlyName: x.friendlyName ?? '',
+      // 식별에 쓸 추가 단서. Windows 는 대개 다 채워주고, macOS 는 USB 장치만 채운다.
+      // 문자열 매칭보다 VID/PID 가 정확하다 — 같은 모델이 드라이버에 따라 이름이 달라진다.
+      vendorId:     x.vendorId  ?? '',
+      productId:    x.productId ?? '',
+      pnpId:        x.pnpId     ?? '',
+    }
+  })
+})
+
+/**
+ * 운영체제가 알고 있는 프린터 목록 (Windows 스풀러 · macOS CUPS).
+ *
+ * 왜 필요한가: 영수증 프린터를 USB 로 꽂으면 **시리얼 포트가 아니라 "프린터"로**
+ * 등록되는 경우가 많다. 그러면 SerialPort.list() 에 아예 안 잡히고, 화면은
+ * "찾은 프린터 0개" 라고 말한다 — 프린터가 눈앞에 꽂혀 있는데도.
+ *
+ * 실제로 확인한 사례(2026-10-22, 개발용 맥):
+ *   lpstat -v → BIXOLON_SRP_B300II   usb://BIXOLON/SRP-B300II?serial=00000001
+ *   SerialPort.list() → 맥 기본 포트 3개뿐, 프린터 없음
+ *
+ * ⚠️ 이 목록은 **알려주기 위한 것**이고, 여기로 출력하지는 못한다.
+ *    printEscPos 는 시리얼과 LAN(TCP 9100) 두 길만 가진다. OS 프린터로 보내려면
+ *    스풀러/CUPS 경로를 새로 붙여야 한다(아직 없음).
+ *    그래도 "0개"라고 거짓말하는 것보다 "이렇게 꽂혀 있는데 이 길로는 못 보낸다"가 낫다.
+ */
+ipcMain.handle('printer:list-os', async () => {
+  if (!mainWindow) return []
+  try {
+    const list = await mainWindow.webContents.getPrintersAsync()
+    return list.map(p => {
+      const opt = (p.options ?? {}) as Record<string, unknown>
+      // CUPS/스풀러가 알려주는 상태. 케이블을 뽑으면 여기에 'offline-report' 가 들어온다.
+      //   lpstat -l -p <name>  →  "경고: offline-report"
+      // 이걸 안 보면 **뽑아놔도 목록에 그대로 남는다** — 큐는 지워지지 않으니까.
+      const reasons = String(opt['printer-state-reasons'] ?? '').toLowerCase()
+      // printer-state: 3 idle · 4 processing · 5 stopped
+      const state = String(opt['printer-state'] ?? '')
+      return {
+        name:        p.name,
+        displayName: p.displayName || p.name,
+        description: p.description ?? '',
+        // options 는 플랫폼별 자유 필드다. macOS/CUPS 는 device-uri 를 담아주는데
+        // 그 값으로 "USB 로 꽂혔는지 / 랜인지"를 사람에게 설명할 수 있다.
+        // (예: usb://BIXOLON/SRP-B300II?serial=00000001)
+        deviceUri:   String(opt['device-uri'] ?? ''),
+        /** 지금 실제로 쓸 수 있는 상태인가 — 꽂혀 있고 멈춰 있지 않은가 */
+        offline:     reasons.includes('offline') || reasons.includes('shutdown') || state === '5',
+        stateReason: reasons,
+      }
+    })
+  } catch (err) {
+    console.warn('[IPC] printer:list-os 실패:', err)
+    return []
+  }
 })
 
 /** 영수증 재출력 */
 ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload }) => {
   const receipt = store.get('receipt')
   try {
-    await printEscPos(buildCustomerReceiptEscPos(order, receipt))
-    await printEscPos(buildKitchenReceiptEscPos(order, receipt))
+    await printEscPos(buildCustomerReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
+    await printEscPos(buildKitchenReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
@@ -358,11 +668,11 @@ ipcMain.handle('printer:connect', () => testPrinterPort())
 /** 거래처 QR 영수증 출력 */
 ipcMain.handle('printer:qr-receipt', async (_e, payload: {
   accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string
+  storePhone?: string; notice?: string
 }) => {
-  const portName = getPortName()
-  if (!portName) throw new Error('프린터기가 연결되어 있지 않아요')
+  if (!hasTarget()) throw new Error('프린터기가 연결되어 있지 않아요')
   try {
-    await printEscPos(buildQrReceiptEscPos(payload))
+    await printEscPos(buildQrReceiptEscPos(payload, resolveLineChars(printerCfg()), resolveQrPrintMM(printerCfg())))
     return { ok: true }
   } catch (err) {
     throw new Error((err as Error).message)
@@ -371,10 +681,18 @@ ipcMain.handle('printer:qr-receipt', async (_e, payload: {
 
 /** 테스트 출력 */
 ipcMain.handle('printer:test', async () => {
+  const cfg = printerCfg()
+  const lineChars = resolveLineChars(cfg)
+  // 실패했을 때 "어떤 설정으로 어느 길로 갔나"를 알 수 있어야 원격 지원이 된다.
+  console.log('[Print] 테스트 출력 요청', {
+    link: cfg.link, portName: cfg.portName, osPrinter: cfg.osPrinter,
+    paperWidth: cfg.paperWidth, lineChars,
+  })
   try {
-    await printEscPos(buildTestReceiptEscPos())
+    await printEscPos(buildTestReceiptEscPos(lineChars))
     return { ok: true }
   } catch (err) {
+    console.error('[Print] 테스트 출력 실패:', err)
     return { ok: false, error: (err as Error).message }
   }
 })
@@ -482,7 +800,13 @@ ipcMain.handle('app:diagnostics', () => ({
   osRelease: os.release(),
   logDir:    app.getPath('logs'),
   printerPort:      getPortName() || '',
-  printerConnected: !!getPortName() && printerReachable,
+  printerConnected: hasTarget() && printerReachable,
+  // 영수증이 깨져 나온다는 문의의 90%는 용지 넓이/글자수 불일치라, 진단에 꼭 들어가야 한다
+  paperWidth:       normalizePaperWidth(printerCfg().paperWidth),
+  lineChars:        resolveLineChars(printerCfg()),
+  link:             printerCfg().link ?? 'serial',
+  baudRate:         printerCfg().baudRate ?? 9600,
+  lanHost:          printerCfg().link === 'lan' ? (printerCfg().host ?? '') : '',
 }))
 
 // ── 앱 생명주기 ───────────────────────────────────────────────────────────────

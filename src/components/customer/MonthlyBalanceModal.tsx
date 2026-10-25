@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { won } from '../../lib/ipc'
 import PrepaidTrendChart, { type TrendMonth } from '../ui/PrepaidTrendChart'
 import { rollUpLedger, monthsFrom, type LedgerEvent } from '../../lib/prepaid-ledger'
+import { signColor } from '../../lib/sign-color'
 
 // ── 월별 선결제 잔액 ─────────────────────────────────────────────────────────
 //
@@ -102,7 +103,10 @@ export default function MonthlyBalanceModal({ storeId, currentTotal, onClose }: 
       const built  = rollUpLedger(events, months)
 
       if (cancelled) return
-      setRows(built.map(m => ({ key: m.key, deposit: m.deposit, order: m.order, balance: m.balance, active: m.active })))
+      // adjust 를 같이 넘긴다 — 말풍선에서 월말 잔액이 스스로 설명되게 (PrepaidTrendChart)
+      setRows(built.map(m => ({
+        key: m.key, deposit: m.deposit, order: m.order, balance: m.balance, active: m.active, adjust: m.adjust,
+      })))
       setAdjustTotal(built.reduce((s2, m) => s2 + m.adjust, 0))
       setLoading(false)
     }
@@ -129,7 +133,7 @@ export default function MonthlyBalanceModal({ storeId, currentTotal, onClose }: 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-[20px]" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[660px] max-w-full flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[660px] max-w-full flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-[28px] pt-[26px] pb-[20px]">
@@ -161,13 +165,13 @@ export default function MonthlyBalanceModal({ storeId, currentTotal, onClose }: 
                   <div className="text-[11px] font-normal text-[#787878] mb-[5px]">
                     {picked ? '이 거래처 잔액' : '현재 잔액'}
                   </div>
-                  <div className={`text-[20px] font-medium ${shownBalance < 0 ? 'text-danger' : 'text-[#2C261F]'}`}>
+                  <div className={`text-[20px] font-medium ${shownBalance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
                     {won(shownBalance)}
                   </div>
                 </div>
                 <div className="flex-1 bg-[#F2F2F2] rounded-[10px] px-[14px] py-[12px]">
                   <div className="text-[11px] font-normal text-[#787878] mb-[5px]">이번 달 순증감</div>
-                  <div className={`text-[20px] font-medium ${netThisMonth >= 0 ? 'text-[#017333]' : 'text-danger'}`}>
+                  <div className="text-[20px] font-medium" style={{ color: signColor(netThisMonth) }}>
                     {netThisMonth >= 0 ? '+' : '−'}{Math.abs(netThisMonth).toLocaleString('ko-KR')}원
                   </div>
                 </div>
@@ -209,7 +213,9 @@ export default function MonthlyBalanceModal({ storeId, currentTotal, onClose }: 
               {/* 계산 근거와 남은 차이를 숨기지 않는다 */}
               {latest && (
                 <div className="mt-[14px] text-[11px] font-normal text-[#ADADAD] leading-relaxed">
-                  월말 잔액은 충전 − 주문{adjustTotal !== 0 && <> + 수기 조정({adjustTotal > 0 ? '+' : '−'}{Math.abs(adjustTotal).toLocaleString('ko-KR')}원)</>} 을 누적한 값이에요.
+                  {/* 이번 달은 아직 안 끝났으니 '월말'이라 부르지 않는다 (PrepaidTrendChart 와 같은 규칙) */}
+                  잔액은 충전 − 주문{adjustTotal !== 0 && <> + 수기 조정({adjustTotal > 0 ? '+' : '−'}{Math.abs(adjustTotal).toLocaleString('ko-KR')}원)</>} 을 누적한 값이에요.
+                  이번 달 막대는 월말이 아니라 <span className="font-medium">지금 잔액</span>이고요.
                   {!picked && Math.abs(currentTotal - latest.balance) > 0 && (
                     <> 지금 거래처 잔액 합계({won(currentTotal)})와는 {won(Math.abs(currentTotal - latest.balance))} 차이가 있는데,
                     거래 기록 없이 잔액이 설정된 초기 데이터 때문이에요.</>
@@ -220,7 +226,7 @@ export default function MonthlyBalanceModal({ storeId, currentTotal, onClose }: 
           )}
         </div>
 
-        <div className="flex-shrink-0 border-t border-[#ADADAD] shadow-[0px_-5px_24.3px_4px_rgba(0,0,0,0.06)] px-[28px] py-[14px] flex justify-end items-center gap-[8px]">
+        <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex justify-end items-center gap-[8px]">
           {/* 거래처 필터 — 위로 펼친다(푸터라 아래가 없다) */}
           <div className="relative">
             <button

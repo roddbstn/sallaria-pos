@@ -5,6 +5,7 @@ import { useStore } from '../lib/store-context'
 import { won } from '../lib/ipc'
 import { maskName } from '../lib/mask'
 import SmsPanelImpl from './SmsPanel'
+import type { SmsKind } from '../lib/sms-templates'
 import { DataTable, DataTableHead, DataTableRow, DataTableNotice, StatusTag } from '../components/ui/DataTable'
 import AccountDetailModal, { type AccountDetailTarget } from '../components/customer/AccountDetailModal'
 import { makeTypeColorOf, typeBadgeStyle } from '../lib/account-type-color'
@@ -37,10 +38,12 @@ function monthStartISO(): string {
 }
 
 export default function CustomerHub({
-  initialTab, onBack,
+  initialTab, onBack, smsKind,
 }: {
   initialTab: CustomerHubTab
   onBack: () => void
+  /** 문자 보내기 탭으로 바로 들어올 때 미리 골라줄 상황 (주문 리포트 → 문자 보내기) */
+  smsKind?: SmsKind
 }) {
   const [tab, setTab] = useState<CustomerHubTab>(initialTab)
 
@@ -54,7 +57,7 @@ export default function CustomerHub({
     >
       {tab === 'detail'   && <CustomerDetailPanel />}
       {tab === 'accounts' && <AccountsPanel />}
-      {tab === 'sms'      && <SmsPanel />}
+      {tab === 'sms'      && <SmsPanel initialKind={smsKind} />}
     </HubLayout>
   )
 }
@@ -159,6 +162,8 @@ interface TopOrderer {
   orders:          number
   amount:          number
   share_pct:       number | null
+  /** 그 거래처의 전체 주문수 — 비중의 분모. share_pct 에서 역산하면 반올림 때문에 틀어진다 */
+  account_orders:  number
   account_members: number
   top_menu:        string | null
   top_menu_count:  number | null
@@ -181,9 +186,9 @@ interface LapsedRegular {
 /** 2.0 → '이틀에 한 번', 7.0 → '일주일에 한 번' — 숫자보다 말이 빨리 읽힌다 */
 function cycleWords(d: number): string {
   if (d < 1.5) return '매일 오시던 분'
-  if (d < 2.5) return '이틀에 한 번 오시던 분'
-  if (d < 4)   return '사흘에 한 번 오시던 분'
-  if (d < 6)   return '닷새에 한 번 오시던 분'
+  if (d < 2.5) return '2일에 한 번 오시던 분'
+  if (d < 4)   return '3일에 한 번 오시던 분'
+  if (d < 6)   return '5일에 한 번 오시던 분'
   if (d < 9)   return '일주일에 한 번 오시던 분'
   if (d < 20)  return '보름에 한 번 오시던 분'
   return '한 달에 한 번 오시던 분'
@@ -573,14 +578,16 @@ function CustomerDetailPanel() {
             <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[11px] font-medium text-[#787878]">
               <span className="w-[26px]" />
               <span className="w-[96px]">주문자</span>
-              <span className="flex-1 min-w-0">거래처</span>
+              {/* 거래처는 고정폭으로 줄였다 — 과 이름은 길어봐야 한 줄이라 flex-1 로
+                  남는 폭을 다 먹을 이유가 없었다. 남는 자리는 메뉴 칸이 쓴다. */}
+              <span className="w-[132px] min-w-0">거래처</span>
               <span className="w-[58px] text-right">주문</span>
               <span className="w-[96px] text-right">금액</span>
-              <span className="w-[62px] text-right flex items-center justify-end gap-[4px]">
-                비중
-                <InfoTip text={'그 거래처 주문 중\n이 분이 차지하는 몫이에요'} label="비중 설명" />
+              <span className="w-[112px] text-right flex items-center justify-end gap-[4px]">
+                주문 비중
+                <InfoTip text={'그 거래처 주문 중\n이 분이 차지하는 몫이에요'} label="주문 비중 설명" />
               </span>
-              <span className="w-[150px] pl-[14px]">늘 시키는 것</span>
+              <span className="flex-1 min-w-0 pl-[14px]">자주 시킨 메뉴</span>
               <span className="w-[84px] text-right">상태</span>
             </div>
             {topOrderers.map((c, i) => {
@@ -591,24 +598,28 @@ function CustomerDetailPanel() {
                 <div
                   key={`${c.orderer_name}-${c.account_code}`}
                   onClick={() => setProfileOf({ name: c.orderer_name, code: c.account_code, account: c.account_name })}
-                  className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                  className={`pressable-row flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
                 >
                   <span className="w-[26px] text-[12px] font-medium text-[#6A635E]">{i + 1}</span>
                   <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
-                  <span className="flex-1 min-w-0 text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
+                  <span className="w-[132px] min-w-0 text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
                   <span className="w-[58px] text-right text-[12px] font-normal text-[#787878] tabular-nums">{c.orders}건</span>
                   <span className="w-[96px] text-right text-[13px] font-medium text-[#1E1E1E] tabular-nums">{won(c.amount)}</span>
-                  <span className={`w-[62px] text-right text-[12px] tabular-nums ${heavy ? 'text-danger font-medium' : 'text-[#787878] font-normal'}`}>
-                    {c.share_pct === null ? EMPTY : `${c.share_pct}%`}
+                  {/* 퍼센트만으로는 '100%'가 19건 중 19건인지 2건 중 2건인지 모른다.
+                      분자·분모를 같이 보여줘야 그 비중을 믿을지 말지 판단이 선다. */}
+                  <span className={`w-[112px] text-right text-[12px] tabular-nums ${heavy ? 'text-danger font-medium' : 'text-[#787878] font-normal'}`}>
+                    {c.share_pct === null ? EMPTY : (
+                      <>{c.share_pct}%<span className="text-[#ADADAD] font-normal"> ({c.orders}/{c.account_orders})</span></>
+                    )}
                   </span>
-                  <span className="w-[150px] pl-[14px] min-w-0 text-[12px] font-normal text-[#787878] truncate">
+                  <span className="flex-1 pl-[14px] min-w-0 text-[12px] font-normal text-[#787878] truncate">
                     {c.top_menu
                       ? <>{c.top_menu}<span className="text-[#ADADAD]"> {c.top_menu_count}회</span></>
                       : EMPTY}
                   </span>
                   <span className="w-[84px] text-right text-[12px] font-normal">
                     {late
-                      ? <span className="text-danger font-medium">⚠ 발길 뜸</span>
+                      ? <span className="text-danger font-medium">⚠ 뜸한 손님</span>
                       : <span className="text-[#ADADAD]">정상</span>}
                   </span>
                 </div>
@@ -618,7 +629,7 @@ function CustomerDetailPanel() {
         )}
         {topOrderers.some(c => (c.share_pct ?? 0) >= 45 && c.account_members > 1) && (
           <p className="mt-[8px] text-[11px] font-normal text-[#ADADAD]">
-            비중이 빨간 분은 그 거래처 주문의 절반 가까이를 혼자 맡고 있어요. 이 분이 빠지면 그 거래처 주문이 크게 줄어요.
+            주문 비중이 빨간 분은 그 거래처 주문의 절반 가까이를 혼자 맡고 있어요. 이 분이 빠지면 그 거래처 주문이 크게 줄어요.
           </p>
         )}
       </div>
@@ -633,11 +644,20 @@ function CustomerDetailPanel() {
         <div className="mt-[46px]">
           <HubSection title="돌아오지 않은 단골" />
           <div className="rounded-[13px] overflow-hidden border border-[#E8E4E2]">
-            {lapsed.slice(0, 8).map((c, i) => (
+            {/* 위 표와 같은 머리 줄. 전엔 없어서 '12.2' 같은 숫자가 무슨 값인지
+                행을 눌러보기 전엔 알 수 없었다. */}
+            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[11px] font-medium text-[#787878]">
+              <span className="w-[96px]">주문자</span>
+              <span className="w-[150px]">거래처</span>
+              <span className="flex-1 min-w-0">평소 주기</span>
+              <span className="w-[90px] text-right">안 온 기간</span>
+              <span className="w-[72px] text-right">주문</span>
+            </div>
+            {lapsed.slice(0, 8).map(c => (
               <div
                 key={`${c.orderer_name}-${c.account_name}`}
                 onClick={() => setProfileOf({ name: c.orderer_name, code: c.account_code, account: c.account_name })}
-                className={`flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
+                className="pressable-row flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer border-t border-[#F2F2F2]"
               >
                 <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
                 <span className="w-[150px] text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
@@ -645,7 +665,7 @@ function CustomerDetailPanel() {
                   {cycleWords(c.cycle_days)}
                 </span>
                 <span className="w-[90px] text-right text-[13px] font-medium text-danger tabular-nums">
-                  {c.days_since}일째
+                  +{c.days_since}일째
                 </span>
                 <span className="w-[72px] text-right text-[11px] font-normal text-[#ADADAD] tabular-nums">
                   {c.orders}건 주문
@@ -654,7 +674,7 @@ function CustomerDetailPanel() {
             ))}
           </div>
           <p className="mt-[8px] text-[11px] font-normal text-[#ADADAD]">
-            평소 주기보다 3배 넘게 안 오신 분들이에요{lapsed.length > 8 && ` · 전체 ${lapsed.length}명 중 8명`}
+            평소 주기보다 3배 넘게 안 오신 분들이에요 · 오래 안 오신 순{lapsed.length > 8 && ` · 전체 ${lapsed.length}명 중 8명`}
           </p>
         </div>
       )}
@@ -1012,7 +1032,7 @@ function AccountsPanel() {
                       code: r.code, name: r.name, type: r.type,
                       typeColor: typeColorOf(r.type), adminPending: r.adminPending,
                     })}
-                    className="flex-1 min-w-0 text-left flex items-center gap-[7px] hover:underline underline-offset-2 decoration-[#D7D7D7]"
+                    className="pressable-soft flex-1 min-w-0 text-left flex items-center gap-[7px] hover:underline underline-offset-2 decoration-[#D7D7D7]"
                   >
                     <span className="text-[13px] text-[#1E1E1E] truncate">{r.name}</span>
                     <span
@@ -1086,6 +1106,7 @@ function exportBalanceCsv(rows: AccountRow[]) {
   URL.revokeObjectURL(url)
 }
 
-function SmsPanel() {
-  return <SmsPanelImpl />
+// 얇은 래퍼 — 상황(initialKind)만 그대로 흘려보낸다.
+function SmsPanel({ initialKind }: { initialKind?: SmsKind }) {
+  return <SmsPanelImpl initialKind={initialKind} />
 }

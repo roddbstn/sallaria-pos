@@ -38,7 +38,7 @@ export default function CancelReasonModal({ orderNumber, onClose, onConfirm, bus
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[440px] px-[28px] pt-[24px] pb-[22px]"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[440px] px-[28px] pt-[24px] pb-[22px]"
         onClick={e => e.stopPropagation()}
       >
         <div className="text-[18px] font-semibold text-[#1E1E1E]">주문을 취소할까요?</div>

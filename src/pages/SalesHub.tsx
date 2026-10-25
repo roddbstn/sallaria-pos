@@ -2,6 +2,7 @@ import { useState } from 'react'
 import HubLayout, { type HubNavItem } from '../components/hub/HubLayout'
 import Sales from './Sales'
 import OrderAnalysis from './OrderAnalysis'
+import type { SmsKind } from '../lib/sms-templates'
 
 // 햄버거 드로어 "매출 · 주문" 그룹.
 //
@@ -23,10 +24,12 @@ const NAV: HubNavItem<SalesHubTab>[] = [
 ]
 
 export default function SalesHub({
-  initialTab, onBack,
+  initialTab, onBack, onOpenSms,
 }: {
   initialTab: SalesHubTab
   onBack: () => void
+  /** 주문 리포트의 '문자 보내기' CTA — 고객 > 문자 보내기로 상황까지 지정해 넘어간다 */
+  onOpenSms?: (kind: SmsKind) => void
 }) {
   const [tab, setTab] = useState<SalesHubTab>(initialTab)
 
@@ -38,7 +41,7 @@ export default function SalesHub({
       {/* 분석은 "언제·누가·무엇을 얼마나" — 다음 주를 준비하는 화면.
           기존 Orders 의 '메뉴별매출' 탭은 품목 집계만 있어서, 요일·시간대와 거래처 주기를
           더한 전용 화면으로 갈아끼웠다. */}
-      {tab === 'analysis' && <OrderAnalysis />}
+      {tab === 'analysis' && <OrderAnalysis onOpenSms={onOpenSms} />}
     </HubLayout>
   )
 }

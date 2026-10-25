@@ -21,9 +21,8 @@ interface PosBridge {
   offOrderNew:       () => void
   approveOrder:      (p: { order: Record<string, unknown>; prepMins: number }) => Promise<unknown>
   reprintOrder:      (p: { order: Record<string, unknown> }) => Promise<unknown>
-  rejectOrder:       (p: { orderCode: string; reason: string }) => Promise<unknown>
-  completeOrder:     (p: { orderCode: string }) => Promise<unknown>
-  cancelOrder:       (p: { orderCode: string }) => Promise<unknown>
+  /** 운영체제가 아는 프린터(스풀러·CUPS). 출력용이 아니라 안내용이다 */
+  listOsPrinters:    () => Promise<{ name: string; displayName: string; description: string; deviceUri: string; offline: boolean; stateReason: string }[]>
   onRealtimeStatus:  (cb: (status: string) => void) => void
   offRealtimeStatus: () => void
   onUpdaterStatus:   (cb: (info: { type: string; version: string }) => void) => void
@@ -50,7 +49,7 @@ interface PosBridge {
   listPorts:         () => Promise<{ path: string; manufacturer: string; friendlyName: string }[]>
   connectPrinter:    () => Promise<{ ok: boolean; error?: string }>
   testPrint:         () => Promise<{ ok: boolean; error?: string }>
-  printQrReceipt:    (p: { accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string }) => Promise<unknown>
+  printQrReceipt:    (p: { accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string; storePhone?: string; notice?: string }) => Promise<unknown>
   onPrinterStatus:   (cb: (s: { connected: boolean; queueLength: number }) => void) => void
   offPrinterStatus:  () => void
   onAuthDeeplink:    (cb: (url: string) => void) => void

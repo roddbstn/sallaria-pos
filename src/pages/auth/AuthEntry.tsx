@@ -7,42 +7,49 @@ interface AuthEntryProps {
   onLogin: () => void
 }
 
-/** 최초 진입 화면 — 왼쪽 5 : 오른쪽 3 비율, 왼쪽은 히어로 사진 페이지네이션 */
+/**
+ * 최초 진입 화면 — **세로 1열**.
+ *
+ * 전엔 왼쪽 5(히어로 사진) : 오른쪽 3(로고+카피+CTA) 분할이었다. 토스포스 첫 화면과
+ * 비율까지 거의 같아서 나란히 놓으면 구분이 안 됐다. 회원가입 스텝(AuthShell)을
+ * 세로로 바꾸면서 이 화면도 같은 언어로 맞춘다 — 들어오는 첫 화면과 그 다음 화면이
+ * 다른 문법이면 한 제품처럼 안 읽힌다.
+ *
+ * 히어로 사진은 버리지 않고 라운드 카드에 담는다. 꽉 찬 분할이 아니라 '얹힌 카드'가
+ * 되면서 화면 주인이 사진에서 카피로 넘어온다.
+ */
 export default function AuthEntry({ onStart, onLogin }: AuthEntryProps) {
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      {/* 왼쪽 5 — 히어로 사진 슬라이드쇼 */}
-      <div style={{ flex: 5 }} className="h-full">
-        <HeroCarousel />
-      </div>
+    <div className="h-full w-full overflow-y-auto bg-white">
+      <div className="min-h-full flex flex-col items-center justify-center px-8 py-10">
+        <div className="w-full max-w-[520px] flex flex-col items-center">
+          {/* 히어로 — 16:9 라운드 카드 */}
+          <div className="w-full rounded-[18px] overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
+            <HeroCarousel />
+          </div>
 
-      {/* 오른쪽 3 — 메인 카피 + CTA */}
-      <div style={{ flex: 3 }} className="h-full flex flex-col px-12 bg-white">
-        {/* 로고+카피+버튼 묶음은 세로 중앙 정렬 — 20px 위로 올림 */}
-        <div className="flex-1 flex flex-col items-start justify-center w-[350px] mx-auto" style={{ transform: 'translateY(-20px)' }}>
-          <img src={textLogo} alt="sunpos" className="h-[80px] object-contain" style={{ marginBottom: 10 }} />
+          <img src={textLogo} alt="sunpos" className="h-[62px] object-contain" style={{ marginTop: 28, marginBottom: 6 }} />
 
-          <h1 className="text-left leading-[1.35] mb-10">
-            <span className="block text-[28px]" style={{ fontWeight: 300, color: 'var(--ink)' }}>주문할 때도</span>
-            <span className="block text-[28px]" style={{ fontWeight: 300, color: 'var(--ink)' }}>주문받을 때도</span>
-            <span className="block text-[28px]" style={{ fontWeight: 500, color: 'var(--ink)' }}>훨씬 편한 선결제!</span>
+          <h1 className="text-center leading-[1.35] mb-8">
+            <span className="block text-[26px]" style={{ fontWeight: 300, color: 'var(--ink)' }}>주문할 때도</span>
+            <span className="block text-[26px]" style={{ fontWeight: 300, color: 'var(--ink)' }}>주문받을 때도</span>
+            <span className="block text-[26px]" style={{ fontWeight: 500, color: 'var(--ink)' }}>훨씬 편한 선결제!</span>
           </h1>
 
-          <PrimaryButton onClick={onStart} className="w-[350px]">
+          <PrimaryButton onClick={onStart} className="w-full">
             시작하기
           </PrimaryButton>
-        </div>
 
-        {/* 로그인 링크는 패널 맨 아래 고정 */}
-        <button
-          onClick={onLogin}
-          className="w-full text-center pb-10 text-[13px] transition-colors"
-          style={{ fontWeight: 300, color: 'var(--gray-text)' }}
-          onMouseEnter={e => { e.currentTarget.style.color = 'var(--ink)' }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'var(--gray-text)' }}
-        >
-          전화번호로 로그인 &gt;
-        </button>
+          <button
+            onClick={onLogin}
+            className="mt-6 text-[13px] transition-colors"
+            style={{ fontWeight: 300, color: 'var(--gray-text)' }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--ink)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--gray-text)' }}
+          >
+            전화번호로 로그인 &gt;
+          </button>
+        </div>
       </div>
     </div>
   )

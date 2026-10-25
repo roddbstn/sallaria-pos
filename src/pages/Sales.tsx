@@ -8,6 +8,7 @@ import { useHeaderSlot } from '../lib/header-slot'
 import { PLAN_LIMITS } from '../lib/plans'
 import type { PlanTier } from '../lib/plans'
 import InfoTip from '../components/ui/InfoTip'
+import { signColor } from '../lib/sign-color'
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
@@ -198,6 +199,14 @@ function DonutChart({ segments, size = 100 }: { segments: DonutSegment[]; size?:
   )
 }
 
+interface MonthAdjustment {
+  id:           string
+  account_code: string
+  amount:       number
+  reason:       string | null
+  created_at:   string
+}
+
 // ── 일자별 매출 라인 차트 ──────────────────────────────────────────────────────
 interface DailySalesLineChartProps {
   depositByDay:  Record<number, number>
@@ -374,7 +383,10 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
           }}
         >
           {showOrder   && <path d={ordArea} fill="#C4CBD4" fillOpacity="0.18" />}
-          {showDeposit && <path d={depArea} fill="#34D060" fillOpacity="0.15" />}
+          {/* 충전 계열은 선·영역·점·범례가 모두 같은 갈색(#6A635E)이다.
+              전엔 선만 갈색이고 나머지가 연두(#34D060)라, 범례의 연두 점을 보고
+              그래프에서 연두 선을 찾게 됐다. 0.15 불투명도라 영역은 연한 갈색으로 깔린다. */}
+          {showDeposit && <path d={depArea} fill="#6A635E" fillOpacity="0.15" />}
           {showOrder   && <path d={ordPath} fill="none" stroke="#C1B7AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
           {showDeposit && <path d={depPath} fill="none" stroke="#6A635E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
         </g>
@@ -404,7 +416,7 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
               <circle cx={xOf(hoverDay)} cy={yOf(hoverOrdAmt)} r="4" fill="#C4CBD4" />
             )}
             {showDeposit && hoverDepAmt > 0 && (
-              <circle cx={xOf(hoverDay)} cy={yOf(hoverDepAmt)} r="4" fill="#34D060" />
+              <circle cx={xOf(hoverDay)} cy={yOf(hoverDepAmt)} r="4" fill="#6A635E" />
             )}
           </>
         )}
@@ -425,7 +437,7 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
           <div className="font-medium text-ink mb-1.5">{month + 1}월 {hoverDay}일</div>
           {showDeposit && (
             <div className="flex items-center gap-1.5 mb-1">
-              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#34D060' }} />
+              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#6A635E' }} />
               <span className="text-gray-text">선결제</span>
               <span className="ml-auto font-medium text-[#2C261F]">{hoverDepAmt > 0 ? `+${hoverDepAmt.toLocaleString()}원` : '—'}</span>
             </div>
@@ -673,6 +685,8 @@ export default function Sales() {
   //    ("Rendered more hooks than during the previous render" → 흰 화면).
   const locked = !PLAN_LIMITS[plan].analytics
 
+  // 수기 조정 한 건
+  // (balance_adjustments — 점주가 잔액을 직접 고친 기록. 주문 없이 잔액만 움직인다)
   // ── 월 상태 ───────────────────────────────────────────────────────────────
   const [year,  setYear]  = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -689,6 +703,12 @@ export default function Sales() {
   // 선택한 달의 **마감 잔액** — 그 달 말일 23:59 까지의 원장 누적.
   // '지금 잔액'이 아니다: 6월을 보고 있으면 6월 30일 기준이어야 그 달 숫자와 말이 맞는다.
   const [closingBalance, setClosingBalance] = useState<number | null>(null)
+  // 전월에서 넘어온 잔액. '충전 − 주문'이 마감 잔액과 왜 다른지 설명하려면 이게 있어야 한다.
+  const [openingBalance, setOpeningBalance] = useState<number | null>(null)
+  // 그 달의 수기 조정 내역 — 금액만이 아니라 **건별 사유**까지 보여준다.
+  // 6월 침산점처럼 출시 직전에 구두 주문을 손으로 깎은 달은 이게 없으면 숫자가 설명되지 않는다.
+  const [monthAdjustments, setMonthAdjustments] = useState<MonthAdjustment[]>([])
+  const [adjOpen, setAdjOpen] = useState(false)
 
   // ── 캘린더 필터 ───────────────────────────────────────────────────────────
   const [filterAccount, setFilterAccount] = useState<string | null>(null)
@@ -800,8 +820,9 @@ export default function Sales() {
       // 잔액 스냅샷(deposits.balance_after)은 대부분 0이라 못 쓴다(lib/prepaid-ledger.ts 주석).
       // 선택한 달 말일까지의 원장을 전부 누적한다: 충전 − 주문 + 수기조정.
       if (accountCodes.length > 0) {
-        const monthEnd = new Date(Date.UTC(year, month + 1, 1) - KST_OFFSET_MS).toISOString()
-        const [cDep, cOrd, cAdj] = await Promise.all([
+        const monthEnd   = new Date(Date.UTC(year, month + 1, 1) - KST_OFFSET_MS).toISOString()
+        const monthStart = new Date(Date.UTC(year, month,     1) - KST_OFFSET_MS).toISOString()
+        const [cDep, cOrd, cAdj, oDep, oOrd, oAdj, adjRows] = await Promise.all([
           supabase.from('deposits').select('amount')
             .in('account_code', accountCodes).lt('created_at', monthEnd),
           supabase.from('orders').select('total_amount')
@@ -809,6 +830,20 @@ export default function Sales() {
             .in('account_code', accountCodes).lt('ordered_at', monthEnd),
           supabase.from('balance_adjustments').select('amount')
             .in('account_code', accountCodes).lt('created_at', monthEnd),
+          // ── 전월 이월 — 같은 누적을 '그 달 1일 0시'까지만 ──
+          supabase.from('deposits').select('amount')
+            .in('account_code', accountCodes).lt('created_at', monthStart),
+          supabase.from('orders').select('total_amount')
+            .eq('store_id', storeId).neq('status', '취소').eq('is_deleted', false)
+            .in('account_code', accountCodes).lt('ordered_at', monthStart),
+          supabase.from('balance_adjustments').select('amount')
+            .in('account_code', accountCodes).lt('created_at', monthStart),
+          // ── 그 달 수기 조정 건별 ──
+          supabase.from('balance_adjustments')
+            .select('id, account_code, amount, reason, created_at')
+            .in('account_code', accountCodes)
+            .gte('created_at', monthStart).lt('created_at', monthEnd)
+            .order('created_at'),
         ])
         if (thisId !== fetchIdRef.current) return
         const sum = (rows: { amount?: number | null; total_amount?: number | null }[] | null, key: 'amount' | 'total_amount') =>
@@ -816,8 +851,14 @@ export default function Sales() {
         setClosingBalance(
           sum(cDep.data, 'amount') - sum(cOrd.data, 'total_amount') + sum(cAdj.data, 'amount'),
         )
+        setOpeningBalance(
+          sum(oDep.data, 'amount') - sum(oOrd.data, 'total_amount') + sum(oAdj.data, 'amount'),
+        )
+        setMonthAdjustments((adjRows.data ?? []) as MonthAdjustment[])
       } else {
         setClosingBalance(0)
+        setOpeningBalance(0)
+        setMonthAdjustments([])
       }
     } catch {
       if (thisId !== fetchIdRef.current) return
@@ -1340,7 +1381,7 @@ export default function Sales() {
                       월별 잔액
                     </button>
                   </div>
-                  <div className={`text-[24px] font-medium break-all ${(closingBalance ?? 0) < 0 ? 'text-danger' : 'text-[#2C261F]'}`}>
+                  <div className={`text-[24px] font-medium break-all ${(closingBalance ?? 0) < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
                     {closingBalance == null ? '—' : won(closingBalance)}
                   </div>
                   <div className="text-[11px] font-normal text-[#787878] mt-[6px] leading-relaxed">
@@ -1351,6 +1392,86 @@ export default function Sales() {
                 </div>
               </div>
             </div>
+
+            {/* ── 마감 잔액 풀이 ────────────────────────────────────────────
+                왜 필요한가: 점주는 위 카드 셋을 보고 '충전 − 주문 = 잔액'으로 검산한다.
+                그런데 그 식은 두 가지 이유로 거의 늘 안 맞는다.
+                  ① 잔액은 **이월**된다 — 7월 마감 잔액에는 6월에서 넘어온 돈이 들어 있다
+                  ② **수기 조정**이 있다 — 주문 없이 잔액만 움직인 건
+                침산점 6월이 정확히 ②였다(6/30 구두 주문 3건을 손으로 차감, 합계 -69,100).
+                숫자가 안 맞는 걸 설명 없이 두면 점주는 시스템을 믿지 않는다. */}
+            {closingBalance != null && openingBalance != null && (
+              <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-[#E5E5E5] text-[13px] font-medium text-[#2C261F]">
+                  {isCurrentMonth ? '지금 잔액' : `${MONTH_NAMES[month]} 마감 잔액`}은 이렇게 나왔어요
+                </div>
+                <div className="px-3 py-2.5">
+                  {(() => {
+                    const adjSum = monthAdjustments.reduce((t, a) => t + a.amount, 0)
+                    const rows: { label: string; value: number; sign: '+' | '-' | '' }[] = [
+                      { label: '전월에서 넘어온 잔액', value: openingBalance,     sign: '' },
+                      { label: `${MONTH_NAMES[month]} 충전`, value: monthTotalDeposit, sign: '+' },
+                      { label: `${MONTH_NAMES[month]} 주문`, value: -monthTotalOrder,  sign: '-' },
+                      { label: `${MONTH_NAMES[month]} 수기 조정`, value: adjSum,       sign: adjSum < 0 ? '-' : '+' },
+                    ]
+                    return (
+                      <>
+                        {rows.map(r => (
+                          <div key={r.label} className="flex items-center justify-between py-[5px]">
+                            <span className="text-[12px] font-normal text-[#6A635E]">{r.label}</span>
+                            <span className={`text-[13px] tabular-nums ${r.value === 0 ? 'text-[#ADADAD]' : 'text-[#2C261F]'}`}>
+                              {r.value === 0 ? '0원' : `${r.sign === '-' ? '−' : r.sign}${won(Math.abs(r.value))}`}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between pt-[8px] mt-[4px] border-t border-[#E5E5E5]">
+                          <span className="text-[12px] font-medium text-[#2C261F]">
+                            {isCurrentMonth ? '지금 잔액' : `${MONTH_NAMES[month]} 마감 잔액`}
+                          </span>
+                          <span className={`text-[15px] font-medium tabular-nums ${closingBalance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
+                            {won(closingBalance)}
+                          </span>
+                        </div>
+
+                        {/* 조정이 있었던 달만 — 금액만 보여주면 "누가 왜 고쳤나"가 남는다 */}
+                        {monthAdjustments.length > 0 && (
+                          <div className="mt-[10px] pt-[10px] border-t border-[#F2F2F2]">
+                            <button
+                              onClick={() => setAdjOpen(v => !v)}
+                              className="pressable-tab w-full flex items-center justify-between h-[28px] px-[8px] rounded-[7px] bg-[#F2F2F2] text-[11px] text-[#6A635E]"
+                            >
+                              <span>수기 조정 {monthAdjustments.length}건 — 무엇을 고쳤는지 보기</span>
+                              <span>{adjOpen ? '접기' : '펼치기'}</span>
+                            </button>
+                            {adjOpen && (
+                              <div className="mt-[8px] rounded-[9px] border border-[#E8E4E2] overflow-hidden">
+                                {monthAdjustments.map((a, i) => {
+                                  const name = accounts.find(x => x.account_code === a.account_code)?.account_name ?? '(삭제된 계정)'
+                                  const at   = new Date(a.created_at)
+                                  return (
+                                    <div key={a.id} className={`px-[11px] py-[8px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
+                                      <div className="flex items-baseline justify-between gap-[8px]">
+                                        <span className="text-[12px] text-[#2C261F] truncate">{name}</span>
+                                        <span className="text-[12px] tabular-nums flex-shrink-0" style={{ color: signColor(a.amount) }}>
+                                          {a.amount < 0 ? '−' : '+'}{won(Math.abs(a.amount))}
+                                        </span>
+                                      </div>
+                                      <div className="text-[11px] text-[#787878] mt-[2px] whitespace-pre-line leading-relaxed">
+                                        {`${at.getMonth() + 1}/${at.getDate()}`} · {a.reason?.trim() || '사유가 적혀 있지 않아요'}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+            )}
 
             {/* ── 일자별 매출 그래프 ── */}
             <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
@@ -1366,7 +1487,7 @@ export default function Sales() {
                     }}
                     className={`flex items-center gap-1 px-2 py-0.5 rounded-full transition-opacity ${showDeposit ? 'opacity-100' : 'opacity-35'}`}
                   >
-                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#34D060' }} />
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#6A635E' }} />
                     <span className={showDeposit ? 'text-ink font-semibold' : 'text-gray-text'}>선결제</span>
                   </button>
                   <button
@@ -1484,8 +1605,8 @@ export default function Sales() {
                         <th className="px-4 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
                         <th className="px-3 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">
                           <span className="inline-flex items-center gap-[4px]">
-                            비중
-                            <InfoTip text={'이번 달 전체 주문액 중\n이 계정이 차지하는 몫이에요'} label="비중 설명" />
+                            주문 비중
+                            <InfoTip text={'이번 달 전체 주문액 중\n이 계정이 차지하는 몫이에요'} label="주문 비중 설명" />
                           </span>
                         </th>
                         <th className="px-3 h-[36px] text-right text-[12px] font-normal text-[#6A635E] whitespace-nowrap">주문수</th>

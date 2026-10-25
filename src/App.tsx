@@ -29,8 +29,13 @@ import CustomerHub, { type CustomerHubTab } from './pages/CustomerHub'
 import ProductHub, { type ProductHubTab } from './pages/ProductHub'
 import SupportModal from './components/SupportModal'
 import NotificationBell from './components/ui/NotificationBell'
+import ModalOverlay from './components/ui/ModalOverlay'
+import BottomToast from './components/BottomToast'
+import { decideOnLostSession, nextRetryDelay, AUTH_RETRY_START_MS } from './lib/auth-retry'
+import ConfirmDialog from './components/ui/ConfirmDialog'
 import SettingsHub, { type SettingsHubTab } from './pages/SettingsHub'
 import SalesHub, { type SalesHubTab } from './pages/SalesHub'
+import type { SmsKind } from './lib/sms-templates'
 import OrderPopup  from './components/OrderPopup'
 import ProfileModal from './components/ProfileModal'
 import { type Order } from './lib/mock-data'
@@ -287,6 +292,8 @@ export default function App() {
   const [tab,        setTab]        = useState<Tab>('home')
   // 고객 전체메뉴(CustomerHub)에서 처음 열릴 탭 — 햄버거 드로어에서 누른 항목으로 정해진다
   const [customerHubTab, setCustomerHubTab] = useState<CustomerHubTab>('detail')
+  /** 문자 보내기 탭에 들어갈 때 미리 골라둘 상황 — 주문 리포트의 '문자 보내기' CTA 가 지정한다 */
+  const [smsKind, setSmsKind] = useState<SmsKind | undefined>(undefined)
   const [productHubTab,  setProductHubTab]  = useState<ProductHubTab>('menus')
   const [settingsHubTab, setSettingsHubTab] = useState<SettingsHubTab>('printer')
   const [salesHubTab,    setSalesHubTab]    = useState<SalesHubTab>('report')
@@ -329,39 +336,59 @@ export default function App() {
   const [upgradeOpen,  setUpgradeOpen]  = useState(false)
   // 웰컴 화면 페이드 제어 (true = 완전 표시, false = 페이드아웃 중)
   const [welcomeVisible, setWelcomeVisible] = useState(false)
-  // 상단 햄버거 전체메뉴 드로어.
+  // 상단 햄버거 전체메뉴 드로어 — **클릭으로만** 열고 닫는다.
   //
-  // 클릭이 아니라 호버로 연다. 닫기는 "영역을 벗어나면" — 다만 햄버거와 패널 사이를
-  // 지나가는 몇 px 때문에 즉시 닫으면 깜빡이므로, 짧은 지연을 두고 다시 들어오면 취소한다.
+  // 전엔 호버로 열렸다. 1090px 짜리 패널이 화면 절반을 덮는데, 홈·주문 탭으로 가려고
+  // 좌상단을 스쳐 지나가기만 해도 펼쳐져서 작업을 가로막았다. 의도 없이 열리는 큰 면은
+  // 그 자체가 방해다. 지금은 눌러야 열리고, 다시 누르거나 바깥을 누르거나 Esc 로 닫힌다.
   const [hamburgerOpen, setHamburgerOpen] = useState(false)
-  const drawerCloseTimer = useRef<number | null>(null)
+  const drawerAnchorRef = useRef<HTMLDivElement | null>(null)
 
-  function openDrawer() {
-    if (drawerCloseTimer.current !== null) {
-      window.clearTimeout(drawerCloseTimer.current)
-      drawerCloseTimer.current = null
+  // 바깥 클릭·Esc 로 닫기 — 열려 있을 때만 리스너를 건다.
+  // mousedown 으로 듣는 이유: click 까지 기다리면 패널 안 버튼을 누른 건지
+  // 바깥을 누른 건지 판단이 늦어 한 틱 깜빡인다.
+  useEffect(() => {
+    if (!hamburgerOpen) return
+    function onDown(e: MouseEvent) {
+      if (!drawerAnchorRef.current?.contains(e.target as Node)) setHamburgerOpen(false)
     }
-    setHamburgerOpen(true)
-  }
-  function scheduleCloseDrawer() {
-    if (drawerCloseTimer.current !== null) window.clearTimeout(drawerCloseTimer.current)
-    drawerCloseTimer.current = window.setTimeout(() => {
-      drawerCloseTimer.current = null
-      setHamburgerOpen(false)
-    }, 160)
-  }
-  useEffect(() => () => {
-    if (drawerCloseTimer.current !== null) window.clearTimeout(drawerCloseTimer.current)
-  }, [])
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setHamburgerOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [hamburgerOpen])
   // 문의 모달 — early return(onboarding/welcome) 위에 둘 것. 아래로 내리면 훅 개수가 렌더마다 달라진다
   const [supportOpen, setSupportOpen] = useState(false)
   // 값은 쓰지 않고 setter 만 쓴다(연결 상태는 IPC 쪽에서만 참조) — 자리를 비워 미사용 경고를 없앴다
-  const [, setWsStatus] = useState<'connected' | 'disconnected'>('disconnected')
+  // Realtime 연결 상태. 전엔 `const [, setWsStatus]` 로 **값을 버리고 있었다** —
+  // 끊김을 다섯 군데에서 계산해 놓고 아무 데도 쓰지 않아 점주는 알 길이 없었다.
+  // 30초 폴링이 주문을 복구해 주긴 하지만, 그 사이 주문이 늦게 뜨는 이유를
+  // 설명해 주지 않으면 "주문이 없는 건지 고장인 건지"를 구분할 수 없다.
+  const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected'>('disconnected')
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000)
     return () => clearInterval(id)
   }, [])
+
+  /**
+   * 사장님이 **직접** 로그아웃했는지. 세션이 사라졌을 때 "서버가 끊은 것"과
+   * "우리가 서버에 못 닿은 것"을 가르는 유일한 단서다.
+   *
+   * 2026-10-24 침산점 장애: 점심 12:30 에 POS 가 혼자 로그인 화면으로 튕겨
+   * 주문을 못 받았다. 토큰 갱신은 로그인 후 **59분마다** 오는데, 그 순간
+   * 매장 네트워크가 흔들리면 갱신이 실패하고 아래 핸들러가 바로 로그아웃시켰다.
+   * (주문 자체는 QR웹 anon 경로라 DB 엔 정상 기록됐다 — POS 화면에만 안 보였다)
+   */
+  const intentionalSignOutRef = useRef(false)
+  /** 갱신에 실패해 재시도 중 — 화면은 그대로 두고 배너만 띄운다 */
+  const [authRetrying, setAuthRetrying] = useState(false)
+  const authRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // phaseRef: onAuthStateChange 클로저에서 현재 phase 읽기 위해 동기화
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -428,6 +455,53 @@ export default function App() {
 
   // 운영 상태 + 운영시간 — useOperatingHours 훅으로 분리
 
+  /** 진짜 로그아웃 — 화면을 로그인으로 되돌린다 */
+  function forceSignedOut() {
+    if (authRetryRef.current) { clearTimeout(authRetryRef.current); authRetryRef.current = null }
+    setAuthRetrying(false)
+    setPhase('auth'); setAuthView('entry'); setSession(null); setAuthObj(null)
+    setTab('home'); setProfileOpen(false)
+  }
+
+  /**
+   * 토큰 갱신이 실패했을 때. **화면은 그대로 두고** 뒤에서 다시 시도한다.
+   *
+   * 끊겠다고 판단하는 건 딱 두 경우다:
+   *   · 브라우저가 온라인인데 서버가 400/401 로 **리프레시 토큰을 거절**했을 때
+   *     (= 정말 세션이 죽은 것)
+   *   · 사장님이 직접 로그아웃했을 때
+   * 그 외(오프라인, 타임아웃, 5xx)는 전부 네트워크 문제로 보고 계속 재시도한다.
+   * 간격은 5초부터 2배씩, 최대 1분. 잠깐 끊긴 거면 첫 번째에 바로 붙는다.
+   */
+  function beginAuthRetry(delayMs = AUTH_RETRY_START_MS) {
+    setAuthRetrying(true)
+    if (authRetryRef.current) clearTimeout(authRetryRef.current)
+    authRetryRef.current = setTimeout(async () => {
+      authRetryRef.current = null
+
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        beginAuthRetry(nextRetryDelay(delayMs))   // 아예 오프라인이면 재시도 자체가 낭비
+        return
+      }
+
+      const { data, error } = await supabase.auth.refreshSession()
+      if (!error && data.session) {
+        setAuthRetrying(false)
+        setAuthObj(data.session)
+        return
+      }
+
+      const status = (error as { status?: number } | null)?.status
+      if (decideOnLostSession({ intentional: false, atAuthScreen: false, status }) === 'sign-out') {
+        console.warn('[auth] 서버가 리프레시 토큰을 거절 — 로그아웃', status)
+        forceSignedOut()
+        return
+      }
+      console.warn('[auth] 세션 갱신 실패(네트워크로 판단) — 재시도', status ?? error?.message)
+      beginAuthRetry(nextRetryDelay(delayMs))
+    }, delayMs)
+  }
+
   // ── 인증 + 스토어 로딩 ──────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
@@ -449,11 +523,29 @@ export default function App() {
       // supabase-js 의 AuthChangeEvent 유니온에는 없지만 런타임엔 실제로 오는 이벤트라
       // 타입을 넓혀서 비교한다 (라이브러리 타입이 실제 동작보다 좁음)
       if ((event as string) === 'TOKEN_REFRESH_FAILED' || !s) {
+        // **바로 쫓아내지 않는다.** 사장님이 누른 로그아웃이 아니고 아직 로그인된
+        // 상태였다면, 서버가 세션을 끊은 게 아니라 **우리가 못 닿았을** 가능성이 크다.
+        // 피크타임에 Wi-Fi 가 몇 초 흔들렸다고 로그인 화면이 뜨면 주문을 못 받는다.
+        // 판단 규칙은 lib/auth-retry.ts 가 들고 있다(테스트도 거기).
+        // 여기서 status 를 모르므로 undefined — "못 닿았다" 로 보고 일단 버틴다.
+        // 서버가 거절한 것인지는 재시도에서 refreshSession() 응답으로 가린다.
+        if (decideOnLostSession({
+          intentional:  intentionalSignOutRef.current,
+          atAuthScreen: phaseRef.current === 'auth',
+        }) === 'retry') {
+          beginAuthRetry()
+          return
+        }
         // 로그아웃/세션만료로 진짜 auth phase로 돌아갈 때만 authView를 초기화 —
         // verifyOtp 성공 직후엔 건드리지 않아야 onboarding으로 넘어가기 전
         // 시작화면이 깜빡 보이는 문제가 없다.
-        setPhase('auth'); setAuthView('entry'); setSession(null); setAuthObj(null); setTab('home'); setProfileOpen(false); return
+        intentionalSignOutRef.current = false
+        forceSignedOut()
+        return
       }
+      // 돌아왔다 — 재시도 중이었으면 배너를 내린다
+      if (authRetryRef.current) { clearTimeout(authRetryRef.current); authRetryRef.current = null }
+      setAuthRetrying(false)
       setAuthObj(s)
       // TOKEN_REFRESHED: 세션 갱신만, 스토어 재로딩하면 onboarding 중 홈으로 튕김
       if (event === 'TOKEN_REFRESHED') return
@@ -710,7 +802,7 @@ export default function App() {
   // ── 새 주문 소리 알림 ────────────────────────────────────────────────────────
   //
   // 설정의 '알림 방식'에 따라 둘 중 하나로 동작한다(설정 > 기타 참고).
-  //   정해진 횟수   : N회 울리고 끝
+  //   횟수대로     : N회 울리고 끝
   //   확인할 때까지 : 주문 팝업이 닫힐 때까지 간격마다 계속 울린다
   // 후자는 그동안 설정값만 저장되고 아무 일도 하지 않았다.
   const prevQueueLen = useRef(0)
@@ -820,6 +912,7 @@ export default function App() {
   }
 
   async function handleSignOut() {
+    intentionalSignOutRef.current = true
     await supabase.auth.signOut()
   }
 
@@ -843,6 +936,7 @@ export default function App() {
     // 위에서 실패해도 DB 쪽 탈퇴는 이미 끝났으니 로컬 세션은 정리하고 로그인 화면으로.
     // signOut 자체가 실패해도(세션이 서버에서 이미 무효화됐을 수 있음) 무시하고 진행.
     try {
+      intentionalSignOutRef.current = true
       await supabase.auth.signOut()
     } catch (e) {
       console.error('signOut 실패(무시):', e)
@@ -893,6 +987,7 @@ export default function App() {
       setNewPwMsg({ text: '비밀번호가 변경됐습니다. 다시 로그인해주세요.', ok: true })
       setTimeout(() => {
         setShowNewPwModal(false)
+        intentionalSignOutRef.current = true
         supabase.auth.signOut()
       }, 2000)
     }
@@ -1070,6 +1165,8 @@ export default function App() {
         key={salesHubTab}
         initialTab={salesHubTab}
         onBack={() => setTab('home')}
+        /* 주문 리포트의 '문자 보내기' CTA → 고객 > 문자 보내기 (상황까지 미리 선택) */
+        onOpenSms={kind => goToCustomerHub('sms', kind)}
       />
     ),
     'product-hub': (
@@ -1082,8 +1179,12 @@ export default function App() {
     ),
     'customer-hub': (
       <CustomerHub
-        key={customerHubTab}
+        /* key 에 smsKind 를 섞는다 — 이미 문자 보내기 탭에 있는 상태에서 CTA 로 다시
+           들어와도 패널이 새로 마운트돼 initialKind 가 반영된다. key 가 고정이면
+           initialKind 는 첫 마운트 때만 읽혀서 아무 일도 안 일어난다. */
+        key={`${customerHubTab}-${smsKind ?? ''}`}
         initialTab={customerHubTab}
+        smsKind={smsKind}
         onBack={() => setTab('home')}
       />
     ),
@@ -1091,7 +1192,13 @@ export default function App() {
 
   // ── 햄버거 드로어: 매출·주문 / 상품 / 고객 / 설정 (Figma 690:379 구조) ──
   function goTo(id: Tab) { setTab(id); setHamburgerOpen(false) }
-  function goToCustomerHub(sub: CustomerHubTab) { setCustomerHubTab(sub); goTo('customer-hub') }
+  // kind 를 넘기지 않으면 **지운다.** 안 지우면 리포트 CTA 로 한 번 들어간 뒤
+  // 햄버거 > 문자 보내기 로 들어와도 '다시 이용 안내'가 계속 미리 골라져 있다.
+  function goToCustomerHub(sub: CustomerHubTab, kind?: SmsKind) {
+    setCustomerHubTab(sub)
+    setSmsKind(kind)
+    goTo('customer-hub')
+  }
   function goToProductHub(sub: ProductHubTab)  { setProductHubTab(sub);  goTo('product-hub') }
   function goToSettingsHub(sub: SettingsHubTab) { setSettingsHubTab(sub); goTo('settings-hub') }
   function goToSalesHub(sub: SalesHubTab)       { setSalesHubTab(sub);    goTo('sales-hub') }
@@ -1132,8 +1239,8 @@ export default function App() {
         {/* ── 상단 탭 네비게이션 — 햄버거/탭/밑줄/구분선/프린터/시간/ON-OFF ── */}
         <div className={`relative z-10 flex-shrink-0 h-[58px] w-full overflow-hidden ${
           HUB_TABS.includes(tab)
-            ? 'bg-canvas-line shadow-[0_2px_6px_rgba(0,0,0,0.07)]'
-            : 'bg-canvas'
+            ? 'bg-topbar-deep shadow-[0_2px_6px_rgba(0,0,0,0.07)]'
+            : 'bg-topbar'
         }`}>
             {/* 햄버거는 이 헤더 밖(아래 .drawer-anchor)에 있다 — 헤더가 overflow-hidden 이라
                  안에 두면 펼쳐진 패널이 58px 높이에서 잘린다 */}
@@ -1147,7 +1254,7 @@ export default function App() {
                   if (el && id === tab) measureUnderline()
                 }}
                 onClick={() => goTo(id)}
-                className={`pressable-tab absolute top-[15px] px-[10px] py-[6px] rounded-[8px] text-[21px] whitespace-nowrap leading-none hover:bg-[#F2F2F2] ${
+                className={`pressable-tab absolute top-[15px] px-[10px] py-[6px] rounded-[8px] text-[21px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
                   tab === id ? 'text-ink font-semibold' : 'text-[#787878] font-medium hover:text-ink'
                 }`}
                 style={{ left: 114 + i * 108 - 10 }}
@@ -1173,11 +1280,39 @@ export default function App() {
             {!HUB_TABS.includes(tab) && (
               // 색은 --canvas-line(#E5E5E5) — 바탕(#F2F2F2) 위에 긋는 선의 시스템 값.
               // #C1B7AA 는 추이 차트 막대에 쓰는 색이라 선으로는 한 단계 진했다.
-              <div className={`absolute bg-canvas-line h-px left-[26px] bottom-0 ${
+              <div className={`absolute bg-topbar-deep h-px left-[26px] bottom-0 ${
                 tab === 'customers' ? 'right-[426px]' : 'right-[26px]'
               }`} />
             )}
 
+
+            {/* 연결 끊김 배지 — **끊겼을 때만** 나타난다.
+                 평소에 늘 떠 있는 '연결됨' 표시는 아무 정보가 아니고, 피크타임에
+                 읽을 것만 늘린다. 이상할 때만 눈에 걸리는 게 맞다.
+                 자리는 날짜/시간 블록 왼쪽 — 알림벨(right 194)과 겹치지 않게 right 236. */}
+            {/* 로그인 갱신 재시도 — '연결 끊김'보다 먼저 보여준다.
+                둘 다 연결 문제지만 이쪽이 더 큰 일이다(방치하면 결국 로그아웃된다).
+                전엔 이 상황에서 **말없이 로그인 화면으로 튕겼다** — 사장님은 왜
+                쫓겨났는지 알 길이 없었다. 이제 화면을 지키고 사정을 적는다. */}
+            {authRetrying ? (
+              <div
+                className="absolute flex items-center gap-[5px] h-[26px] px-[9px] rounded-[8px] bg-[#FFF4E8]"
+                style={{ right: 236, top: 16 }}
+                title="인터넷이 잠깐 끊겨 로그인 갱신을 다시 시도하고 있어요. 주문 접수는 계속됩니다."
+              >
+                <span className="w-[6px] h-[6px] rounded-full bg-[#FF8418]" />
+                <span className="text-[12px] font-medium text-[#B35C00] whitespace-nowrap">연결 확인 중</span>
+              </div>
+            ) : wsStatus === 'disconnected' && (
+              <div
+                className="absolute flex items-center gap-[5px] h-[26px] px-[9px] rounded-[8px] bg-[#FFEFEF]"
+                style={{ right: 236, top: 16 }}
+                title="실시간 연결이 끊겼어요. 주문은 30초마다 다시 확인해 가져옵니다."
+              >
+                <span className="w-[6px] h-[6px] rounded-full bg-[#FF676F]" />
+                <span className="text-[12px] font-medium text-[#C92A2A] whitespace-nowrap">연결 끊김</span>
+              </div>
+            )}
 
             {/* 날짜/시간 — 오른쪽 가장자리에서 140px 떨어진 지점에 중앙정렬(translate-x-1/2 + right) */}
             <div
@@ -1220,23 +1355,21 @@ export default function App() {
         {/* 알림 종 — 프린터 표시가 있던 자리.
             프린터 연결 여부는 평소엔 아무 일도 없고 문제가 생기면 영수증이 안 나와서 바로 안다.
             늘 떠 있을 만큼 급한 정보가 아니었다(상태는 설정 > 프린터 연결에서 본다).
-            반대로 거래처 관리자 등록은 일어난 순간 알아야 하는데 알릴 자리가 없었다.
+            반대로 거래처에 누가 등록되는 일은 일어난 순간 알아야 하는데 알릴 자리가 없었다.
 
             ⚠️ 햄버거와 같은 이유로 **헤더 밖**에 둔다 — 헤더가 overflow-hidden 이라
                안에 두면 펼쳐진 드롭다운이 58px 높이에서 잘린다. */}
         <NotificationBell storeId={session?.storeId ?? null} />
 
         <div
+          ref={drawerAnchorRef}
           className="drawer-anchor absolute left-[18px] top-[15px] z-[60]"
-          onMouseEnter={openDrawer}
-          onMouseLeave={scheduleCloseDrawer}
         >
           <button
-            onClick={() => (hamburgerOpen ? setHamburgerOpen(false) : openDrawer())}
-            onFocus={openDrawer}
+            onClick={() => setHamburgerOpen(v => !v)}
             title="전체 메뉴"
             aria-expanded={hamburgerOpen}
-            className="pressable-tab flex flex-col gap-[5px] p-[8px] rounded-[8px] hover:bg-[#F2F2F2]"
+            className="pressable-tab flex flex-col gap-[5px] p-[8px] rounded-[8px] hover:bg-topbar-hover"
           >
             <span className="w-[22px] h-[2px] bg-ink rounded-[1px]" />
             <span className="w-[22px] h-[2px] bg-ink rounded-[1px]" />
@@ -1318,26 +1451,35 @@ export default function App() {
         )}
 
         {/* ── 업데이트 준비 배너 ── */}
-        {updateReady && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-ink text-white text-[14px] font-semibold px-5 py-3 rounded-xl shadow-lg">
-            <span>🆕 v{updateReady} 업데이트 준비 완료</span>
-            <button
-              onClick={() => {
-                const w = window as unknown as { api?: { updaterInstall?: Function } }
-                w.api?.updaterInstall?.()
-              }}
-              className="bg-green text-white text-[13px] font-bold px-3 py-1 rounded-lg hover:opacity-80"
-            >
-              지금 재시작
-            </button>
-            <button onClick={() => setUpdateReady(null)} className="text-white/50 hover:text-white text-[18px] leading-none">×</button>
-          </div>
-        )}
+        {/* 토스트와 같은 박스에 버튼만 얹는다 (BottomToast 의 action) */}
+        <BottomToast
+          message={updateReady ? `v${updateReady} 업데이트 준비 완료` : null}
+          action={updateReady ? (
+            <span className="flex items-center gap-[10px] flex-shrink-0">
+              <button
+                onClick={() => {
+                  const w = window as unknown as { api?: { updaterInstall?: Function } }
+                  w.api?.updaterInstall?.()
+                }}
+                className="bg-green text-white text-[13px] font-bold px-[12px] py-[5px] rounded-[8px] hover:opacity-80 transition-opacity"
+              >
+                지금 재시작
+              </button>
+              <button
+                onClick={() => setUpdateReady(null)}
+                className="text-white/50 hover:text-white text-[18px] leading-none"
+                title="닫기"
+              >
+                ×
+              </button>
+            </span>
+          ) : undefined}
+        />
 
         {/* ── 조기마감 모달 ── */}
         {closureOpen && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
-            <div className="modal-in bg-white rounded-2xl shadow-xl w-[480px] px-9 py-9 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+          <ModalOverlay onClose={() => setClosureOpen(false)} z={300} backdropClassName="bg-black/50">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[480px] px-9 py-9 flex flex-col gap-4">
               <div>
                 <div className="text-[17px] font-semibold text-ink">조기마감</div>
                 <div className="text-[12px] text-gray-text mt-0.5">오늘 지정한 시간부터 자동으로 영업이 종료됩니다</div>
@@ -1368,7 +1510,7 @@ export default function App() {
                 >조기마감 확정</button>
               </div>
             </div>
-          </div>
+          </ModalOverlay>
         )}
 
         {/* ── 휴가예약 모달 ── */}
@@ -1511,7 +1653,7 @@ export default function App() {
               </div>
 
               {/* 하단 버튼 */}
-              <div className="px-6 py-4 border-t border-gray-border flex-shrink-0 flex gap-2 modal-footer">
+              <div className="px-6 py-4 flex-shrink-0 flex gap-2 modal-footer">
                 <button
                   onClick={() => setVacationOpen(false)}
                   className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
@@ -1525,34 +1667,24 @@ export default function App() {
           </div>
         )}
 
-        {/* ── 운영시간 외 강제 ON 확인 다이얼로그 ── */}
+        {/* ── 운영시간 외 강제 ON 확인 ──
+            공용 ConfirmDialog 를 쓴다. 전엔 여기만 직접 그려서 폭(320 vs 440)·여백·
+            글자 크기·버튼 높이가 전부 달랐고, Esc 와 눌림 효과도 없었다 —
+            같은 "예/아니요" 결정인데 이 화면에서만 다른 물건처럼 보였다.
+            확인 버튼은 앱 CTA 색(#2C261F)을 그대로 쓴다. */}
         {offHoursConfirm && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
-            <div className="modal-in bg-white rounded-2xl shadow-xl w-[320px] px-9 py-9 flex flex-col gap-4">
-              <div>
-                <div className="text-[17px] font-semibold text-ink mb-1">운영시간이 아닙니다</div>
-                <div className="text-[13px] text-gray-text leading-relaxed">현재는 설정한 운영시간이 아니에요.<br/>그래도 운영 상태로 바꿀까요?</div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setOffHoursConfirm(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
-                >취소</button>
-                <button
-                  onClick={confirmForceOpen}
-                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
-                >운영 시작</button>
-              </div>
-            </div>
-          </div>
+          <ConfirmDialog
+            title={'지금은 운영시간이 아니에요.\n그래도 운영을 시작할까요?'}
+            description="설정해 둔 운영시간 밖이에요. 시작하면 손님이 바로 주문할 수 있어요."
+            confirmLabel="운영 시작"
+            cancelLabel="시작 안할래요"
+            onConfirm={confirmForceOpen}
+            onCancel={() => setOffHoursConfirm(false)}
+          />
         )}
 
-        {/* ── 토스트 ── */}
-        {toast && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-ink text-white text-[14px] font-semibold px-5 py-3 rounded-xl shadow-lg animate-[fadeIn_0.2s_ease]">
-            {toast}
-          </div>
-        )}
+        {/* ── 토스트 — 메뉴 화면 모드 전환 토스트와 같은 박스 (components/BottomToast.tsx) ── */}
+        <BottomToast message={toast} />
 
         {/* ── 운영시간 설정 모달 ── */}
         {hoursOpen && (
@@ -1658,6 +1790,7 @@ export default function App() {
         <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
 
         {/* ── 회원탈퇴 확인 모달 ── */}
+        {/* 바깥 클릭으로 닫지 않는다(의도) — 회원탈퇴는 되돌릴 수 없다. ModalOverlay 를 쓰지 않는 이유다. */}
         {deleteConfirmOpen && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50">
             <div className="modal-in bg-white rounded-2xl shadow-xl w-[320px] px-9 py-9 flex flex-col gap-4">
@@ -1685,6 +1818,7 @@ export default function App() {
           </div>
         )}
         {/* 새 비밀번호 입력 모달 — 재설정 이메일 링크 클릭 후 */}
+        {/* 바깥 클릭으로 닫지 않는다(의도) — 비밀번호 재설정은 끝까지 가야 하는 흐름이다. ModalOverlay 를 쓰지 않는 이유다. */}
         {showNewPwModal && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
             <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] px-9 py-9 flex flex-col gap-4">

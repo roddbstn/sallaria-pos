@@ -6,6 +6,7 @@ import { won } from '../lib/ipc'
 import { maskName, maskPhone } from '../lib/mask'
 import { SMS_TEMPLATES, fillTemplate, smsByteLength, SMS_BYTE_LIMIT, type SmsKind } from '../lib/sms-templates'
 import LoadingBlock from '../components/ui/LoadingBlock'
+import { isIdleAccount, daysSince, averageGapDays, IDLE_WINDOW_DAYS } from '../lib/idle-accounts'
 
 // ── 문자 보내기 ─────────────────────────────────────────────────────────────
 //
@@ -19,7 +20,9 @@ import LoadingBlock from '../components/ui/LoadingBlock'
 // 점주는 그중에서 빼기만 할 수 있다. "전체 선택 + 빈 입력창"을 주면 쓰기 쉬운 만큼
 // 잘못 쓰기도 쉬워진다.
 
-const IDLE_DAYS = 60
+// '뜸하다'의 기준은 lib/idle-accounts.ts 에 있다 — 주문 리포트와 **같은 함수**를 쓴다.
+// 전엔 여기 IDLE_DAYS = 60 이 따로 박혀 있어서, 리포트가 "11곳이 뜸해요" 라고 한 뒤
+// 이 화면에 오면 6곳만 떴다. 점주는 둘 중 뭘 믿어야 하는지 알 수 없었다.
 
 interface Target {
   code:    string
@@ -29,6 +32,8 @@ interface Target {
   balance: number
   /** 마지막 주문 이후 지난 일수 — null 이면 주문 이력 없음 */
   idleDays: number | null
+  /** 평균 주문 주기(일) — 주문 2건 미만이면 null. '평소보다 오래 비었나' 판정에 쓴다 */
+  avgGap: number | null
   adminPending: boolean
 }
 
@@ -41,18 +46,17 @@ interface SentLog {
   created_at:   string
 }
 
-function daysSince(iso: string | null): number | null {
-  if (!iso) return null
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
-}
-
-export default function SmsPanel() {
+export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}) {
   const { storeId, storeName } = useStore()
   const [targets, setTargets] = useState<Target[]>([])
   const [logs,    setLogs]    = useState<SentLog[]>([])
   const [loading, setLoading] = useState(true)
-  const [kind,    setKind]    = useState<SmsKind>('admin_pending')
-  const [draft,   setDraft]   = useState(SMS_TEMPLATES[0].draft)
+  // 다른 화면에서 상황을 지정해 들어올 수 있다 (주문 리포트의 '문자 보내기' 버튼 등).
+  // 지정이 없으면 평소처럼 첫 번째 상황으로 시작한다.
+  const [kind,    setKind]    = useState<SmsKind>(initialKind ?? 'admin_pending')
+  const [draft,   setDraft]   = useState(
+    (SMS_TEMPLATES.find(t => t.kind === (initialKind ?? 'admin_pending')) ?? SMS_TEMPLATES[0]).draft,
+  )
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const [confirm, setConfirm] = useState(false)
   const [sending, setSending] = useState(false)
@@ -80,7 +84,16 @@ export default function SmsPanel() {
       }
 
       const [{ data: orders }, { data: admins }, { data: sent }] = await Promise.all([
-        supabase.from('orders').select('account_code, ordered_at, status').in('account_code', codes),
+        // 주문 리포트와 **같은 창**(180일)으로 좁힌다. 전엔 전체 기간을 봐서
+        // 판정 함수를 공유해도 avgGap 이 달랐다 — 오래된 이력이 평균을 늘려
+        // 같은 거래처를 리포트는 '뜸하다', 문자 화면은 '아니다'로 봤다.
+        // 취소·삭제 제외도 리포트와 맞춘다(전엔 status 를 받아와 클라이언트에서 걸렀다).
+        supabase.from('orders')
+          .select('account_code, ordered_at')
+          .in('account_code', codes)
+          .neq('status', '취소')
+          .eq('is_deleted', false)
+          .gte('ordered_at', new Date(Date.now() - IDLE_WINDOW_DAYS * 86_400_000).toISOString()),
         supabase.from('user_account_links')
           .select('account_code').eq('role', '관리자').eq('status', 'approved').in('account_code', codes),
         supabase.from('sms_logs')
@@ -88,11 +101,16 @@ export default function SmsPanel() {
           .eq('store_id', storeId).order('created_at', { ascending: false }).limit(20),
       ])
 
+      // 전엔 마지막 주문 시각만 모았다. '평소 주기'를 구하려면 전체 시각이 필요하다.
+      const orderTimes = new Map<string, string[]>()
+      for (const o of (orders ?? []) as { account_code: string; ordered_at: string }[]) {
+        const arr = orderTimes.get(o.account_code)
+        if (arr) arr.push(o.ordered_at)
+        else orderTimes.set(o.account_code, [o.ordered_at])
+      }
       const lastOrder = new Map<string, string>()
-      for (const o of (orders ?? []) as { account_code: string; ordered_at: string; status: string }[]) {
-        if (o.status === '취소') continue
-        const prev = lastOrder.get(o.account_code)
-        if (!prev || o.ordered_at > prev) lastOrder.set(o.account_code, o.ordered_at)
+      for (const [code, times] of orderTimes) {
+        lastOrder.set(code, times.reduce((a, b) => (a > b ? a : b)))
       }
       const registered = new Set((admins ?? []).map((r: { account_code: string }) => r.account_code))
 
@@ -104,6 +122,7 @@ export default function SmsPanel() {
         phone:   a.contact_phone,
         balance: a.current_balance,
         idleDays: daysSince(lastOrder.get(a.account_code) ?? null),
+        avgGap:   averageGapDays(orderTimes.get(a.account_code) ?? []),
         adminPending: a.qr_system === 'kakao' && !registered.has(a.account_code),
       })))
       setLogs((sent ?? []) as SentLog[])
@@ -114,12 +133,18 @@ export default function SmsPanel() {
     return () => { cancelled = true }
   }, [storeId])
 
-  // 상황이 대상을 정한다 — 점주는 여기서 빼기만 할 수 있다
-  const matched = targets.filter(t => {
-    if (kind === 'admin_pending')    return t.adminPending
-    if (kind === 'negative_balance') return t.balance < 0
-    return t.idleDays == null || t.idleDays >= IDLE_DAYS
-  })
+  // 상황이 대상을 정한다 — 점주는 여기서 빼기만 할 수 있다.
+  //
+  // ⚠️ 이 판정은 **한 군데**여야 한다. 전엔 여기와 아래 탭 배지 카운트에 같은 조건이
+  //    각각 적혀 있어서, 한쪽만 고치면 "다시 이용 안내 6곳" 배지와 실제 목록이 달라졌다.
+  function matches(t: Target, k: SmsKind): boolean {
+    if (k === 'admin_pending')    return t.adminPending
+    if (k === 'negative_balance') return t.balance < 0
+    // 주문 리포트의 '주문이 뜸한 곳'과 같은 판정. 기준은 lib/idle-accounts.ts.
+    return isIdleAccount({ avgGap: t.avgGap, lastDays: t.idleDays })
+  }
+
+  const matched = targets.filter(t => matches(t, kind))
   const sendable = matched.filter(t => t.phone && !excluded.has(t.code))
   const noPhone  = matched.filter(t => !t.phone)
 
@@ -200,13 +225,10 @@ export default function SmsPanel() {
       ) : (
         <>
           {/* 어떤 상황인가 — 이게 대상을 정한다 */}
-          <div className="mb-[8px] text-[12px] font-medium text-[#2C261F]">어떤 상황인가요?</div>
+          <div className="mb-[8px] text-[12px] font-medium text-[#2C261F]">상황 선택</div>
           <div className="flex gap-[8px] mb-[8px]">
             {SMS_TEMPLATES.map(t => {
-              const count = targets.filter(x =>
-                t.kind === 'admin_pending' ? x.adminPending
-                : t.kind === 'negative_balance' ? x.balance < 0
-                : (x.idleDays == null || x.idleDays >= IDLE_DAYS)).length
+              const count = targets.filter(x => matches(x, t.kind)).length
               return (
                 <button
                   key={t.kind}
@@ -330,7 +352,7 @@ export default function SmsPanel() {
       {/* 보내기 확인 — 돈이 나가고 되돌릴 수 없으므로 한 단계 둔다 */}
       {confirm && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={() => setConfirm(false)}>
-          <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-xl w-[420px] px-[28px] pt-[24px] pb-[22px]" onClick={e => e.stopPropagation()}>
+          <div className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-xl w-[420px] px-[28px] pt-[24px] pb-[22px]" onClick={e => e.stopPropagation()}>
             <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[8px]">
               {sendable.length}명에게 문자를 보낼까요?
             </div>

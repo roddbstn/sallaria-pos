@@ -61,6 +61,7 @@ export function mapOrderRow(row: any): Order {
     total:         row.total_amount,
     prepMins:      row.prep_minutes ?? 0,
     acceptedAt:    row.accepted_at ?? undefined,
+    completedAt:   row.completed_at ?? undefined,
     requestedPickupMinutes: row.requested_pickup_minutes ?? undefined,
     createdAt:     row.ordered_at,
     remarks:       row.note ?? '',

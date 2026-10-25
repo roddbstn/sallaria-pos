@@ -18,15 +18,19 @@ import {
   prepayValidityDisplay, isPrepayExpired,
 } from '../lib/prepay-validity'
 // 이 파일엔 주문 상태용 StatusTag 가 따로 있어 이름이 겹친다 — 별칭으로 구분
-import { StatusTag as PillTag } from '../components/ui/DataTable'
 import ScrollHint from '../components/ui/ScrollHint'
 import RevealText from '../components/ui/RevealText'
 import StatCard from '../components/StatCard'
 import { useQrPrint } from '../hooks/useQrPrint'
+import { DEFAULT_QR_NOTICE } from '../lib/qr-order'
 import LoadingTimer from '../components/ui/LoadingTimer'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import CustomerProfileModal from '../components/customer/CustomerProfileModal'
 import { NUM, NUM_STRONG, NUM_UP, NUM_DOWN, NUM_MUTED, deltaClass } from '../lib/number-style'
+import { signColor } from '../lib/sign-color'
+import ModalOverlay from '../components/ui/ModalOverlay'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
+import BottomToast from '../components/BottomToast'
 
 const BASE_URL = 'https://sallaria.web.app'
 const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
@@ -206,7 +210,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [yearlyOrders,   setYearlyOrders]   = useState<number[]>(Array(12).fill(0))  // 주문 추이 — 올해 1~12월 건수
   const [phoneRevealed, setPhoneRevealed] = useState(false) // 우측 패널 — 관리자 연락처 중간 4자리 공개 토글
   const [yearlyDepositRows, setYearlyDepositRows] = useState<{ account_code: string; amount: number; created_at: string }[]>([]) // 바 차트 호버 툴팁용 — 월별 합계의 원본 행
+  const [yearlyOrderRows,   setYearlyOrderRows]   = useState<{ account_code: string; total_amount: number; ordered_at: string }[]>([]) // 주문 추이 툴팁용 — 위와 같은 용도
   const [barTooltip, setBarTooltip] = useState<{ monthIdx: number; x: number; y: number } | null>(null)
+  /** 주문 추이 막대 — 선결제 쪽(barTooltip)과 따로 둔다. 둘이 상하로 붙어 있어 한 state 를 쓰면 서로 지운다 */
+  const [orderBarTooltip, setOrderBarTooltip] = useState<{ monthIdx: number; x: number; y: number } | null>(null)
   const [donutTooltip, setDonutTooltip] = useState<{ type: DbAccount['account_type']; x: number; y: number } | null>(null)
   const [trendInfoTooltip, setTrendInfoTooltip] = useState<{ x: number; y: number } | null>(null)
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -215,39 +222,95 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   // stores.customer_types(최대 6개)가 이 매장에서 쓸 수 있는 유형 목록의 원본.
   const [customerTypes,  setCustomerTypes]  = useState<string[]>(['부서', '기업', '개인'])
   const [typeEditMode,   setTypeEditMode]   = useState(false)
-  const [typeDraft,      setTypeDraft]      = useState<string[]>([])
+  /**
+   * 편집 중인 유형 목록.
+   *
+   * 이름(string)만 담지 않고 **orig(원래 이름)를 같이** 든다. 이유가 둘이다:
+   *  1) 지우기가 생기면서 인덱스가 밀린다. 전엔 customerTypes[i] → draft[i] 로 짝을
+   *     맞춰 개명했는데, 중간 유형을 빼면 그 뒤가 한 칸씩 당겨져 **엉뚱한 유형이
+   *     개명된다**(부서·기업·개인에서 기업을 빼면 기업→개인 으로 저장됐다).
+   *  2) orig === null 이면 "방금 만들어 아직 저장된 적 없는 유형"이라는 뜻이다.
+   *     그건 묻지 않고 바로 거둘 수 있다 — 그게 생성 취소다.
+   */
+  const [typeDraft,      setTypeDraft]      = useState<{ orig: string | null; name: string }[]>([])
   const [editingTypeIdx, setEditingTypeIdx] = useState<number | null>(null)
   const [typeSaving,     setTypeSaving]     = useState(false)
+  /** 쓰고 있는 유형을 지우려 할 때 한 번 묻는다 */
+  const [removeTypeConfirm, setRemoveTypeConfirm] =
+    useState<{ idx: number; name: string; count: number } | null>(null)
+
+  /** QR 영수증 하단에 찍히는 매장 전화 — 안 넘기면 그 줄이 빠진다(useQrPrint 주석) */
+  const [storeInfo, setStoreInfo] = useState<{ phone: string }>({ phone: '' })
 
   useEffect(() => {
     if (!storeId) return
-    supabase.from('stores').select('customer_types').eq('id', storeId).maybeSingle()
-      .then(({ data }) => { if (data?.customer_types?.length) setCustomerTypes(data.customer_types) })
+    // 유형 목록과 매장 정보를 한 번에 — 같은 행이라 쿼리를 둘로 나눌 이유가 없다
+    supabase.from('stores').select('customer_types, phone').eq('id', storeId).maybeSingle()
+      .then(({ data }) => {
+        if (data?.customer_types?.length) setCustomerTypes(data.customer_types)
+        setStoreInfo({ phone: data?.phone ?? '' })
+      })
   }, [storeId])
 
   function startTypeEdit() {
-    setTypeDraft([...customerTypes])
+    setTypeDraft(customerTypes.map(t => ({ orig: t, name: t })))
     setEditingTypeIdx(null)
     setTypeEditMode(true)
   }
   function cancelTypeEdit() {
     setTypeEditMode(false)
     setEditingTypeIdx(null)
+    setRemoveTypeConfirm(null)
   }
   function addTypeDraft() {
     if (typeDraft.length >= 6) return
-    setTypeDraft(prev => [...prev, '새 유형'])
+    setTypeDraft(prev => [...prev, { orig: null, name: '새 유형' }])
     setEditingTypeIdx(typeDraft.length)
   }
+
+  function dropTypeDraft(i: number) {
+    setTypeDraft(prev => prev.filter((_, xi) => xi !== i))
+  }
+  /**
+   * 유형 지우기(태그 우상단 X) — 카테고리 모드의 삭제와 같은 자리·같은 모양.
+   *
+   * 무게는 둘로 나뉜다:
+   *  · 방금 만든 유형(orig === null) → 저장된 적이 없으니 묻지 않고 바로 거둔다.
+   *  · 이미 쓰고 있는 유형          → 몇 고객이 걸려 있는지 세서 확인을 받는다.
+   *    고객은 지워지지 않는다(카테고리 삭제의 '메뉴는 삭제되지 않아요'와 같은 약속).
+   */
+  async function removeTypeDraft(i: number) {
+    const d = typeDraft[i]
+    if (!d) return
+    // 지우면 인덱스가 밀리므로 이름 편집 중이면 먼저 닫는다
+    setEditingTypeIdx(null)
+    if (d.orig === null) { dropTypeDraft(i); return }
+
+    // 몇 고객이 이 유형을 쓰는지는 **직접 센다.** 화면의 typeCounts 는 활성/비활성 중
+    // 지금 보고 있는 쪽만 담고 있어서(accounts 조회가 is_active 로 걸러진다) 과소 집계된다.
+    const { count } = await supabase.from('accounts')
+      .select('account_code', { count: 'exact', head: true })
+      .eq('store_id', storeId ?? '')
+      .eq('account_type', d.orig)
+    if (!count) { dropTypeDraft(i); return }
+    setRemoveTypeConfirm({ idx: i, name: d.orig, count })
+  }
   async function confirmTypeEdit() {
-    const next = typeDraft.map(t => t.trim()).filter(Boolean)
-    const deduped = Array.from(new Set(next))
-    if (!storeId || deduped.length === 0) { cancelTypeEdit(); return }
+    // 이름이 빈 건 버리고, 같은 이름이 둘이면 먼저 것만 남긴다
+    const kept: { orig: string | null; name: string }[] = []
+    for (const d of typeDraft) {
+      const name = d.name.trim()
+      if (!name || kept.some(k => k.name === name)) continue
+      kept.push({ orig: d.orig, name })
+    }
+    if (!storeId || kept.length === 0) { cancelTypeEdit(); return }
     setTypeSaving(true)
-    // 같은 자리(index)의 이름이 바뀐 유형은, 이미 그 유형을 쓰고 있는 거래처들의 account_type도 같이 갱신
-    const renames = customerTypes
-      .map((old, i) => ({ old, next: deduped[i] }))
-      .filter(r => r.next && r.next !== r.old)
+    const deduped = kept.map(d => d.name)
+    // 개명은 **orig 로 짝을 맞춘다.** 인덱스로 맞추면 중간을 지웠을 때 뒤가 당겨져
+    // 엉뚱한 유형이 개명된다(typeDraft 주석 참고).
+    const renames = kept
+      .filter(d => d.orig !== null && d.name !== d.orig)
+      .map(d => ({ old: d.orig as string, next: d.name }))
     await Promise.all([
       supabase.from('stores').update({ customer_types: deduped }).eq('id', storeId),
       ...renames.map(r => supabase.rpc('rename_account_type', { p_store_id: storeId, p_old_name: r.old, p_new_name: r.next })),
@@ -257,6 +320,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       setAccounts(prev => prev.map(a => renameMap.has(a.account_type) ? { ...a, account_type: renameMap.get(a.account_type)! } : a))
       setTypeFilter(f => renameMap.get(f) ?? f)
     }
+    // 보고 있던 필터의 유형이 사라졌으면 전체로 돌린다 — 안 그러면 빈 표만 남는다
+    setTypeFilter(f => (f === 'all' || deduped.includes(f) ? f : 'all'))
     setCustomerTypes(deduped)
     setTypeSaving(false)
     setTypeEditMode(false)
@@ -280,8 +345,6 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members' | 'statement' | 'people'>('orders')
   const [members,      setMembers]      = useState<{ id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]>([])
   const [adminUsers,   setAdminUsers]   = useState<{ role: string; status: string; name: string | null; phone: string | null; approved_at: string | null; created_at: string }[]>([])
-  const [registeredAdmins, setRegisteredAdmins] = useState<Set<string>>(new Set())
-  const [resendLoading, setResendLoading] = useState(false)
   const [, setOrderPage]  = useState(0)   // 값은 안 쓰고 초기화 용도로만 호출
   const [, setChargePage] = useState(0)   // 값은 안 쓰고 초기화 용도로만 호출
 
@@ -295,23 +358,24 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const selectedQrDataUrl    = useQrDataUrl(selectedQrUrl)
 
   // QR 인쇄(A4 종이 / 영수증) 두 동작은 src/hooks/useQrPrint.ts 로 옮겼다.
-  // 이 화면에는 아직 그 버튼이 없다 — 고객 > QR오더 화면(기획 완료, 미구현)이
-  // 이 훅을 그대로 쓸 예정이다. 그 화면을 붙일 때 printQrSheet / printQrReceipt 를
-  // 버튼에 연결하면 끝이다.
+  // printQrReceipt 는 고객 전용 QR 모달의 'QR 영수증 출력' 이 쓴다.
+  // printQrSheet(A4)는 아직 이 화면에 버튼이 없다 — QR오더 화면이 쓸 예정.
   //
-  // 버튼이 없는데도 여기서 한 번 호출해 두는 이유: selected·storeName 같은 입력이
-  // 바뀌면 타입 에러로 바로 드러나게 하려고. 안 부르고 두면 훅이 조용히 썩는다.
+  // QR 모달은 selected 에서만 열리므로(onQr) 훅을 selected 에 묶어 두면 맞다.
   const qrPrint = useQrPrint({
     account:   selected,
     qrDataUrl: selectedQrDataUrl,
     qrUrl:     selectedQrUrl,
     storeName,
+    storePhone: storeInfo.phone,
+    // QR 출력 화면과 같은 문구. 그 화면의 안내 문구는 저장되지 않아 늘 기본값에서 시작한다.
+    notice:     DEFAULT_QR_NOTICE,
     onError:   msg => {
       setPrinterToast(msg)
       setTimeout(() => setPrinterToast(''), 3500)
     },
   })
-  void qrPrint   // 버튼이 붙기 전까지 의도적 미사용
+  void qrPrint.printQrSheet   // A4 버튼이 붙기 전까지 의도적 미사용
 
   const [addOpen,      setAddOpen]      = useState(false)
   const [newForm,      setNewForm]      = useState({
@@ -326,7 +390,6 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   })
   const [addPhoneError, setAddPhoneError] = useState('')
   const [addDupAccount, setAddDupAccount] = useState<{ account_code: string; account_name: string } | null>(null)
-  const [addConfirm,    setAddConfirm]    = useState(false)
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [editPinError, setEditPinError] = useState('')
   const [editDeactivateConfirm, setEditDeactivateConfirm] = useState(false)
@@ -358,16 +421,6 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     if (error) throw error
     if (data) setAccounts(data as DbAccount[])
     return (data ?? []) as DbAccount[]
-  }
-
-  // ── 관리자 등록완료 여부 (qr_system='kakao' 거래처의 "등록대기" 배지 판정용) ──
-  async function fetchRegisteredAdmins() {
-    const { data } = await supabase
-      .from('user_account_links')
-      .select('account_code')
-      .eq('role', '관리자')
-      .eq('status', 'approved')
-    setRegisteredAdmins(new Set((data ?? []).map((r: { account_code: string }) => r.account_code)))
   }
 
   // ── 이번달 거래처별 사용액 계산 ───────────────────────────────────────────────
@@ -406,7 +459,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       supabase.from('deposits').select('account_code, amount, created_at').in('account_code', accountCodes).gte('created_at', yearStart.toISOString()),
       // 올해 전체로 넓힌다 — 선결제 추이와 나란히 놓을 '주문 추이'를 그리려면
       // 12개월치가 필요하다. orders 가 수백 행이라 범위를 넓혀도 부담이 없다.
-      supabase.from('orders').select('account_code, ordered_at, status').in('account_code', accountCodes).gte('ordered_at', yearStart.toISOString()),
+      supabase.from('orders').select('account_code, ordered_at, status, total_amount').in('account_code', accountCodes).gte('ordered_at', yearStart.toISOString()),
     ])
 
     const mCounts: Record<string, number> = {}
@@ -439,6 +492,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       if (d >= d30) active30d.add(row.account_code)
     }
     setYearlyOrders(yOrders)
+    // 취소분은 빼고 담는다 — 위 집계(yOrders)와 툴팁 숫자가 어긋나면 안 된다
+    setYearlyOrderRows((ordersRes.data ?? [])
+      .filter(r => r.status !== '취소')
+      .map(r => ({ account_code: r.account_code, total_amount: r.total_amount ?? 0, ordered_at: r.ordered_at })))
     setMonthlyOrderCount(thisCount)
     setActive30dCount(active30d.size)
     const trend: Record<string, number> = {}
@@ -469,13 +526,38 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   }
 
   // ── 선택 거래처 누적 주문자 조회 ─────────────────────────────────────────────
+  //
+  // ⚠️ account_members.order_count 는 **쓰지 않는다.**
+  //    create_order 가 +1 하는데 cancel_order 는 -1 하지 않아서, 취소가 쌓일수록
+  //    실제 주문 수와 벌어진다. (토지정보과 이성철이 저장값 4 / 실제 3(취소 1) 이었다.)
+  //
+  //    위 fetchAccountOrders 는 .limit(30) 이 걸려 있어 거기서 셀 수 없다 —
+  //    31번째 이후 주문을 가진 사람이 과소집계된다. 그래서 주문자 이름만 따로
+  //    (취소·삭제 제외) 전부 받아서 센다. 수백 행이라 0.4ms 수준이다.
   async function fetchMembers(accountCode: string) {
-    const { data } = await supabase
-      .from('account_members')
-      .select('id, name, phone, order_count, last_ordered_at')
-      .eq('account_code', accountCode)
-      .order('order_count', { ascending: false })
-    setMembers((data ?? []) as typeof members)
+    const [{ data }, { data: ordererRows }] = await Promise.all([
+      supabase
+        .from('account_members')
+        .select('id, name, phone, last_ordered_at')
+        .eq('account_code', accountCode)
+        .order('name'),
+      supabase
+        .from('orders')
+        .select('orderer_name')
+        .eq('account_code', accountCode)
+        .eq('is_deleted', false)
+        .neq('status', '취소'),
+    ])
+
+    const liveCount = new Map<string, number>()
+    for (const r of (ordererRows ?? []) as { orderer_name: string | null }[]) {
+      if (!r.orderer_name) continue
+      liveCount.set(r.orderer_name, (liveCount.get(r.orderer_name) ?? 0) + 1)
+    }
+
+    setMembers(((data ?? []) as { id: string; name: string; phone: string | null; last_ordered_at: string | null }[])
+      .map(m => ({ ...m, order_count: liveCount.get(m.name) ?? 0 }))
+      .sort((a, b) => b.order_count - a.order_count))
   }
 
   // ── 선택 거래처 관리자/이용자 조회 (qr_system='kakao'인 거래처만 의미 있음) ────
@@ -692,7 +774,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       }
 
       try {
-        const [fetchedAccounts] = await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages(), fetchRegisteredAdmins()])
+        const [fetchedAccounts] = await Promise.all([fetchAccounts(showInactive), fetchMonthlyUsages()])
         setCached(key, fetchedAccounts)
         fetchCustomerStats(fetchedAccounts.map(a => a.account_code)).catch(() => {})
       } catch {
@@ -769,7 +851,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     }
     setAddDupAccount(null)
     setAddPhoneError('')
-    setAddConfirm(true)
+    // 중간 확인 블록('OOO 님이 관리자로 등록됩니다')은 없앴다 — 바로 위 폼에
+    // 관리자 이름이 그대로 보이는데 같은 말을 한 번 더 묻는 자리였다.
+    await handleAddAccount()
   }
 
   async function handleAddAccount() {
@@ -824,75 +908,16 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       if (depErr) console.error('초기 잔액 이력 기록 실패:', depErr)
     }
 
-    // 관리자 등록 링크 발급 + SOLAPI 문자 발송 (실패해도 계정 생성은 이미 끝났으니 토스트로만 알림)
-    if (newAccount) {
-      try {
-        const { data: token, error: linkErr } = await supabase.rpc('admin_registration_issue_link', {
-          p_account_code: newAccount.account_code,
-        })
-        if (linkErr) throw linkErr
-
-        // 문자 단문 요금 유도를 위한 단축링크 (bit.ly 등 외부 서비스는 무료 발급량이 너무 적어 자체 구현)
-        const { data: shortCode } = await supabase.rpc('create_short_link', {
-          p_target_url: `${SUNPOS_KAKAO_URL}/register/admin/${token}`,
-        })
-        const link = shortCode ? `${SUNPOS_KAKAO_URL}/s/${shortCode}` : `${SUNPOS_KAKAO_URL}/register/admin/${token}`
-        const { error: sendErr } = await supabase.functions.invoke('send-notification', {
-          body: {
-            purpose: 'admin_registration',
-            phone,
-            params: { storeName, accountName: newForm.name.trim(), link },
-          },
-        })
-        if (sendErr) throw sendErr
-      } catch (e) {
-        console.error('관리자 등록 링크 발송 실패:', e)
-        setPrinterToast('문자 발송에 실패했어요. 번호를 확인해 주세요')
-        setTimeout(() => setPrinterToast(''), 3500)
-      }
-    }
+    // 관리자 등록 링크·문자는 없앴다.
+    // 이제 관리자는 **계정을 만드는 순간 자동으로 구성원이 된다** —
+    // 여기서 받은 담당자 이름·연락처로 DB 트리거(account_admin_member)가 넣는다.
+    // 이용자도 초대를 기다리지 않는다: QR 찍고 PIN 넣고 카카오 로그인하면 본인이 등록한다.
 
     await fetchAccounts().catch(() => {})
     setNewForm({ name: '', type: '부서', org: '', manager: '', phone: '', pin: '', initialDeposit: '', initialDepositMemo: '', prepayValidity: 'none' })
     setAddDupAccount(null)
-    setAddConfirm(false)
     setAddSubmitting(false)
     setAddOpen(false)
-  }
-
-  // ── 관리자 등록 문자 재발송 ───────────────────────────────────────────────────
-  // 이미 완료된 계정이면 admin_registration_issue_link RPC가 서버에서 막아줌 (raise exception).
-  async function handleResendAdminRegistration() {
-    if (!selected) return
-    setResendLoading(true)
-    try {
-      const { data: token, error: linkErr } = await supabase.rpc('admin_registration_issue_link', {
-        p_account_code: selected.account_code,
-      })
-      if (linkErr) throw linkErr
-
-      const { data: shortCode } = await supabase.rpc('create_short_link', {
-        p_target_url: `${SUNPOS_KAKAO_URL}/register/admin/${token}`,
-      })
-      const link = shortCode ? `${SUNPOS_KAKAO_URL}/s/${shortCode}` : `${SUNPOS_KAKAO_URL}/register/admin/${token}`
-      const { error: sendErr } = await supabase.functions.invoke('send-notification', {
-        body: {
-          purpose: 'admin_registration',
-          phone: selected.contact_phone,
-          params: { storeName, accountName: selected.account_name, link },
-        },
-      })
-      if (sendErr) throw sendErr
-      setPrinterToast('관리자 등록 문자를 다시 보냈어요')
-    } catch (e) {
-      console.error('재발송 실패:', e)
-      const msg = (e as { message?: string })?.message ?? ''
-      setPrinterToast(msg.includes('이미 관리자 등록이 완료된 계정') ? '이미 관리자 등록이 완료된 계정이에요' : '문자 발송에 실패했어요. 번호를 확인해 주세요')
-    } finally {
-      setResendLoading(false)
-      setTimeout(() => setPrinterToast(''), 3500)
-      fetchRegisteredAdmins()
-    }
   }
 
   // ── 중복 전화번호 발견 시: 기존 계정으로 가서 충전 ────────────────────────────
@@ -1060,10 +1085,17 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
   // ── 다운그레이드 예약 ─────────────────────────────────────────────────────────
   async function scheduleDowngrade(targetPlan: import('../lib/plans').PlanTier) {
-    await supabase.from('subscriptions').update({
+    // 요금제 예약은 **돈이 걸린 약속**이다. 실패를 삼키고 모달만 닫으면
+    // 점주는 다운그레이드를 예약한 줄 아는데 다음 달에 그대로 청구된다.
+    const { error } = await supabase.from('subscriptions').update({
       pending_plan:    targetPlan,
       pending_plan_at: new Date().toISOString(),
     }).eq('client_id', clientId)
+    if (error) {
+      setPrinterToast(`요금제 변경 예약 실패: ${error.message}`)
+      setTimeout(() => setPrinterToast(''), 3500)
+      return
+    }
     setDowngradeModal(null)
   }
 
@@ -1178,7 +1210,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
           <div className="flex-shrink-0 flex items-center justify-between gap-[13px] px-[26px] pb-[13px]">
             {/* 유형 필터 pill — Figma 503:786: 평소엔 전체/유형들만, 화면 편집 중엔 각 유형에 연필 아이콘 + "유형 추가" */}
-            <div className="flex items-center gap-[4px] flex-wrap">
+            {/* 편집 중엔 간격을 벌린다 — X 배지가 태그 오른쪽으로 5px 삐져나와 4px 간격에선 옆 태그를 덮는다 */}
+            <div className={`flex items-center flex-wrap ${typeEditMode ? 'gap-[13px]' : 'gap-[4px]'}`}>
               <button
                 onClick={() => setTypeFilter('all')}
                 className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors ${
@@ -1187,34 +1220,65 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               >
                 전체
               </button>
-              {(typeEditMode ? typeDraft : customerTypes).map((t, i) => (
-                typeEditMode && editingTypeIdx === i ? (
-                  <input
-                    key={i}
-                    autoFocus
-                    value={t}
-                    maxLength={7}
-                    onChange={e => setTypeDraft(prev => prev.map((x, xi) => xi === i ? e.target.value.slice(0, 7) : x))}
-                    onBlur={() => setEditingTypeIdx(null)}
-                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingTypeIdx(null) }}
-                    className="px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium border border-ink outline-none"
-                    style={{ width: Math.max(60, t.length * 14 + 20) }}
-                  />
-                ) : (
-                  <button
-                    key={i}
-                    onClick={() => typeEditMode ? setEditingTypeIdx(i) : setTypeFilter(t)}
-                    className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors flex items-center gap-[6px] ${
-                      !typeEditMode && typeFilter === t ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink'
-                    }`}
-                  >
-                    {t}
-                    {typeEditMode && (
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z" stroke="#6A635E" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+              {(typeEditMode
+                ? typeDraft
+                : customerTypes.map(t => ({ orig: t, name: t }))
+               ).map((d, i) => {
+                const t = d.name
+                // X 는 하나 남았을 때 숨긴다 — 유형이 0개면 고객 등록·수정의 유형 선택이 빈칸이 된다
+                const canRemove = typeEditMode && typeDraft.length > 1
+                return typeEditMode && editingTypeIdx === i ? (
+                  // 이름 고치는 중 — 이때도 X 를 띄워야 "새 유형" 을 만들고 바로 되돌릴 수 있다
+                  <span key={i} className="relative inline-flex">
+                    <input
+                      autoFocus
+                      value={t}
+                      maxLength={7}
+                      onChange={e => setTypeDraft(prev => prev.map((x, xi) => xi === i ? { ...x, name: e.target.value.slice(0, 7) } : x))}
+                      onBlur={() => setEditingTypeIdx(null)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingTypeIdx(null) }}
+                      className="px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium border border-ink outline-none"
+                      style={{ width: Math.max(60, t.length * 14 + 20) }}
+                    />
+                    {canRemove && (
+                      // onMouseDown — input 의 onBlur 가 먼저 돌면 이 버튼이 사라져 클릭이 안 먹는다
+                      <button
+                        onMouseDown={e => { e.preventDefault(); removeTypeDraft(i) }}
+                        className="absolute w-[18px] h-[18px] rounded-full bg-[#FF676F] flex items-center justify-center"
+                        style={{ right: -5, top: -5 }}
+                        title="유형 삭제"
+                      >
+                        <svg width="9" height="9" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M11 3L3 11" stroke="#FCFCFC" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                      </button>
                     )}
-                  </button>
+                  </span>
+                ) : (
+                  <span key={i} className="relative inline-flex">
+                    <button
+                      onClick={() => typeEditMode ? setEditingTypeIdx(i) : setTypeFilter(t)}
+                      className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors flex items-center gap-[6px] ${
+                        !typeEditMode && typeFilter === t ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink'
+                      }`}
+                    >
+                      {t}
+                      {typeEditMode && (
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z" stroke="#6A635E" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                      )}
+                    </button>
+                    {canRemove && (
+                      // 카테고리 모드의 삭제 배지와 같은 모양·같은 자리(18px, #FF676F, right/top -5)
+                      <button
+                        onClick={e => { e.stopPropagation(); removeTypeDraft(i) }}
+                        className="absolute w-[18px] h-[18px] rounded-full bg-[#FF676F] flex items-center justify-center"
+                        style={{ right: -5, top: -5 }}
+                        title="유형 삭제"
+                      >
+                        <svg width="9" height="9" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M11 3L3 11" stroke="#FCFCFC" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                      </button>
+                    )}
+                  </span>
                 )
-              ))}
+              })}
               {typeEditMode && typeDraft.length < 6 && (
                 <button
                   onClick={addTypeDraft}
@@ -1238,7 +1302,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           {/* 테이블 */}
           <div className="relative flex-1 min-h-0">
             <ScrollHint scrollRef={tableScrollRef} topOffset={55} bottomOffset={38} />
-            <div ref={tableScrollRef} className="h-full overflow-y-auto px-[26px] pb-[26px]">
+            <div ref={tableScrollRef} className="h-full overflow-y-auto scroll-stable px-[26px] pb-[26px]">
             {/* overflow-hidden 을 빼야 머리글 sticky 가 산다(DataTable.tsx 주석 참고).
                 모서리는 rounded + 첫 행/마지막 행이 알아서 맞춰진다. */}
             <div className="bg-canvas-soft rounded-[13px]">
@@ -1278,8 +1342,15 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   return (
                     <button
                       key={acc.account_code}
-                      onClick={() => setSelected(acc)}
-                      className="w-full flex items-center text-left text-[17px] text-ink hover:bg-white/40 transition-colors border-b border-[#E5E5E5] last:border-b-0"
+                      // 같은 칸을 다시 누르면 **선택 해제** — 오른쪽 패널이 고객현황으로 돌아간다.
+                      // 전엔 한 번 고르면 되돌릴 길이 없어서, 전체 현황을 다시 보려면
+                      // 다른 화면에 갔다 와야 했다.
+                      onClick={() => setSelected(sel => sel?.account_code === acc.account_code ? null : acc)}
+                      aria-pressed={selected?.account_code === acc.account_code}
+                      title={selected?.account_code === acc.account_code ? '다시 누르면 고객현황으로 돌아가요' : undefined}
+                      className={`pressable-row w-full flex items-center text-left text-[17px] text-ink border-b border-[#E5E5E5] last:border-b-0 ${
+                        selected?.account_code === acc.account_code ? 'bg-[#E8E4E2]' : 'hover:bg-white/40'
+                      }`}
                       style={{ height: 46, paddingLeft: 15, paddingRight: 15 }}
                     >
                       <span style={{ width: 51 }}>{i + 1}</span>
@@ -1334,17 +1405,22 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           <div className="flex-1 min-h-0 overflow-hidden">
           {!selected ? (
             <div className="h-full overflow-y-auto flex flex-col gap-[13px] px-[26px] py-[13px]">
-          {/* 제목 옆 '>' — 전체메뉴 고객 > 고객 현황 화면으로 진입 */}
-          <button
-            onClick={onOpenDetail}
-            disabled={!onOpenDetail}
-            className="flex items-center gap-[6px] self-start group"
-          >
+          {/* 제목 + '자세히 보기' — 전체메뉴 고객 > 고객 현황 화면으로 진입.
+              전엔 제목 옆에 '>' 꺾쇠만 있었다. 꺾쇠는 "눌러도 된다"는 말을 아주 작게 하고,
+              눌렀을 때 어디로 가는지는 아무 말도 안 한다. 글자로 적고 오른쪽 끝에 붙인다.
+              버튼 모양은 주문 화면의 미선택 탭(Orders.tsx:699)과 같은 값이다 —
+              h-30 / px-13 / r-9 / 12px / #F2F2F2 · #787878. */}
+          <div className="flex items-center justify-between self-stretch">
             <span className="text-[21px] font-medium text-ink whitespace-nowrap">고객현황</span>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="text-[#6A635E] group-hover:text-ink transition-colors">
-              <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
+            {onOpenDetail && (
+              <button
+                onClick={onOpenDetail}
+                className="pressable-tab flex-shrink-0 h-[30px] px-[13px] rounded-[9px] text-[12px] font-normal bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2] transition-colors"
+              >
+                자세히 보기
+              </button>
+            )}
+          </div>
 
           <div className="flex gap-[6px]">
             <StatCard className="bg-[#F2F2F2] rounded-[13px]" padding={13} gap={9} style={{ width: 196 }}>
@@ -1423,20 +1499,50 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <div className="text-[15px] font-semibold text-[#2C261F]">주문 추이</div>
               <div className={`text-[11px] ${NUM_MUTED}`}>올해 {yearlyOrders.reduce((a, b) => a + b, 0)}건</div>
             </div>
+            {/* 막대 호버 — 전엔 title 속성이었다. 브라우저 기본 툴팁은 1초쯤 기다려야 뜨고
+                "3월 12건"까지만 말해서, 그 달에 **누가 얼마를 언제** 썼는지는 알 수 없었다.
+                위 선결제 추이와 같은 말풍선으로 맞춘다. */}
             <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
               {yearlyOrders.map((n, i) => (
                 <div
                   key={i}
-                  className="flex-1 flex flex-col items-center justify-end h-full px-[1px] cursor-default"
-                  title={`${i + 1}월 ${n}건`}
+                  className="flex-1 flex flex-col items-center justify-end h-full px-[1px] cursor-pointer"
+                  onMouseEnter={e => setOrderBarTooltip({ monthIdx: i, x: e.clientX, y: e.clientY })}
+                  onMouseMove={e => setOrderBarTooltip(cur => cur && { ...cur, x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setOrderBarTooltip(null)}
                 >
                   <div
-                    className="w-full bg-[#8C8379] rounded-t-[2px]"
-                    style={{ height: Math.max(2, (n / Math.max(1, ...yearlyOrders)) * 51) }}
+                    className="w-full bg-[#8C8379] rounded-t-[2px] transition-opacity"
+                    style={{
+                      height: Math.max(2, (n / Math.max(1, ...yearlyOrders)) * 51),
+                      opacity: orderBarTooltip && orderBarTooltip.monthIdx !== i ? 0.4 : 1,
+                    }}
                   />
                 </div>
               ))}
             </div>
+            {orderBarTooltip && (() => {
+              // 한 줄만 — "7월 154건 1,340,000원".
+              // 전엔 거래처별 n건·금액·날짜까지 펼쳤는데, 월별 막대에 올렸을 때 알고 싶은 건
+              // 그 달의 크기 하나다. 거래처별로 쪼개 보는 건 아래 표와 고객 상세가 맡는다.
+              const monthRows = yearlyOrderRows.filter(
+                r => new Date(r.ordered_at).getMonth() === orderBarTooltip.monthIdx,
+              )
+              const monthTotal = monthRows.reduce((a, r) => a + r.total_amount, 0)
+              return (
+                <div
+                  className="fixed z-50 pointer-events-none bg-white border border-gray-border rounded-[9px] shadow-lg px-[11px] py-[7px] text-[12px] whitespace-nowrap"
+                  style={orderBarTooltip.x > window.innerWidth / 2
+                    ? { right: window.innerWidth - orderBarTooltip.x + 12, top: orderBarTooltip.y - 8 }
+                    : { left: orderBarTooltip.x + 12, top: orderBarTooltip.y - 8 }}
+                >
+                  <span className="font-semibold text-ink">{orderBarTooltip.monthIdx + 1}월</span>
+                  <span className="text-gray-text">
+                    {' '}{yearlyOrders[orderBarTooltip.monthIdx]}건 · {won(monthTotal)}
+                  </span>
+                </div>
+              )
+            })()}
           </div>
 
           {/* 계정유형 도넛 — 비율 높은 순으로 정렬해 범례도 위→아래, 도넛도 12시(위)부터 시계방향으로 큰 비율부터 */}
@@ -1464,11 +1570,22 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     </div>
                   ))}
                 </div>
+                {/* 도넛 자체도 호버 — 범례만 반응하던 걸 맞췄다. 눈은 큰 도형으로 먼저 가는데
+                    거기선 아무 일도 일어나지 않아서, 범례에 올려봐야 안다는 걸 알 수 없었다.
+                    DonutChart 는 onSegmentHover 를 원래 지원하고 있었고 안 넘겨주고 있었을 뿐이다.
+                    index 는 segments 배열(=typesSorted) 기준으로 돌아온다. */}
                 <div className="absolute" style={{ right: 19, top: 28 }}>
-                  <DonutChart size={109} strokeWidth={21} segments={typesSorted.map((t, i) => ({
-                    pct: typeCounts[t] ? Math.round((typeCounts[t] / typeTotal) * 100) : 0,
-                    color: colorOf(i),
-                  }))} />
+                  <DonutChart
+                    size={109} strokeWidth={21}
+                    segments={typesSorted.map((t, i) => ({
+                      pct: typeCounts[t] ? Math.round((typeCounts[t] / typeTotal) * 100) : 0,
+                      color: colorOf(i),
+                    }))}
+                    onSegmentHover={(idx, e) => {
+                      const t = idx == null ? null : typesSorted[idx]
+                      setDonutTooltip(t ? { type: t, x: e.clientX, y: e.clientY } : null)
+                    }}
+                  />
                 </div>
                 {donutTooltip && (() => {
                   const list = accounts.filter(a => a.account_type === donutTooltip.type)
@@ -1523,7 +1640,6 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               accountOrders={accountOrders}
               deposits={deposits}
               members={members}
-              registeredAdmins={registeredAdmins}
               memberCounts={memberCounts}
               phoneRevealed={phoneRevealed}
               setPhoneRevealed={setPhoneRevealed}
@@ -1534,8 +1650,6 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               showInactive={showInactive}
               onEdit={openEdit}
               onRestore={handleRestoreAccount}
-              onResendAdmin={handleResendAdminRegistration}
-              resendLoading={resendLoading}
             />
           )}
           </div>
@@ -1571,7 +1685,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
       {/* ── 거래처 추가 모달 — scale 제거, FIGMA_SCALE로 고정 px 재계산 (메뉴 상세 모달과 동일 패턴) ── */}
       {addOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setAddOpen(false); setAddDupAccount(null); setAddConfirm(false) }}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setAddOpen(false); setAddDupAccount(null) }}>
           <div
             className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
             style={{ width: 900 }}
@@ -1622,27 +1736,28 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <CustFormField label="관리자 연락처">
                 <input
                   value={newForm.phone}
-                  onChange={e => { setNewForm(f => ({ ...f, phone: formatPhone(e.target.value) })); setAddDupAccount(null); setAddPhoneError(''); setAddConfirm(false) }}
+                  onChange={e => { setNewForm(f => ({ ...f, phone: formatPhone(e.target.value) })); setAddDupAccount(null); setAddPhoneError('') }}
                   inputMode="numeric" placeholder="010-0000-0000" className={CUST_INPUT_CLS}
                 />
                 {addPhoneError && <p className="text-[12px] text-danger font-semibold mt-[8px]">{addPhoneError}</p>}
                 {addDupAccount && (
-                  <div className="mt-[10px] px-[15px] py-[13px] rounded-[10px] bg-orange-50 border border-orange-200">
-                    <p className="text-[13px] font-semibold text-orange-700 mb-[10px]">
-                      이 번호로 등록된 계정이 있어요: {addDupAccount.account_name}
-                    </p>
+                  <div className="mt-[10px] px-[16px] py-[14px] rounded-[10px] bg-[#FFF4E8]">
+                    <p className="text-[13px] text-[#6A635E] leading-relaxed mb-[2px]">이 번호로 이미 등록된 계정이 있어요</p>
+                    <p className="text-[15px] font-semibold text-ink mb-[12px]">{addDupAccount.account_name}</p>
                     <div className="flex gap-[8px]">
+                      {/* 왼쪽이 권하는 쪽이다 — 같은 번호면 대개 같은 사람이고,
+                          계정을 또 만들기보다 쓰던 곳에 충전하는 게 맞다. */}
                       <button
                         onClick={goChargeExistingAccount}
-                        className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-white border border-orange-300 text-orange-700 hover:bg-orange-100 transition-colors"
+                        className="flex-1 h-[42px] rounded-[10px] text-[14px] font-medium bg-[#2C261F] text-[#F9F9F9] hover:opacity-90 transition-opacity"
                       >
                         기존 계정에 충전하기
                       </button>
                       <button
-                        onClick={() => { setAddDupAccount(null); setAddConfirm(true) }}
-                        className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-orange-600 text-white hover:bg-orange-700 transition-colors"
+                        onClick={() => { setAddDupAccount(null); handleAddAccount() }}
+                        className="flex-1 h-[42px] rounded-[10px] text-[14px] font-medium bg-[#FCFCFC] border border-[#D9D9D9] text-[#6A635E] hover:bg-[#F2F2F2] transition-colors"
                       >
-                        그래도 신규로 만들기
+                        그래도 새로 만들기
                       </button>
                     </div>
                   </div>
@@ -1690,33 +1805,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 <input value={newForm.initialDepositMemo} onChange={e => setNewForm(f => ({ ...f, initialDepositMemo: e.target.value }))} placeholder="ex) 6월 선결제" className={CUST_INPUT_CLS} />
               </CustFormField>
 
-              {addConfirm && (
-                <div className="mt-[13px] px-[15px] py-[13px] rounded-[10px] bg-green-soft border border-green/30">
-                  <p className="text-[14px] font-semibold text-ink mb-[10px]">
-                    {newForm.manager} {newForm.phone}로 관리자 등록 링크가 발송됩니다
-                  </p>
-                  <div className="flex gap-[8px]">
-                    <button
-                      onClick={() => setAddConfirm(false)}
-                      disabled={addSubmitting}
-                      className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-white border border-gray-border text-gray-text hover:bg-gray-bg transition-colors disabled:opacity-50"
-                    >
-                      취소
-                    </button>
-                    <button
-                      onClick={handleAddAccount}
-                      disabled={addSubmitting}
-                      className="flex-1 py-[11px] rounded-[10px] text-[14px] font-semibold bg-green text-white hover:bg-green/90 transition-colors disabled:opacity-50"
-                    >
-                      {addSubmitting ? '등록 중...' : '확인'}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
-            <div className="flex items-center justify-end gap-[10px] px-[62px] py-[20px] border-t border-[#ADADAD]/30 flex-shrink-0">
-              <button onClick={() => { setAddOpen(false); setAddDupAccount(null); setAddConfirm(false) }} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-semibold hover:opacity-90 transition-opacity">
+            <div className="flex items-center justify-end gap-[10px] px-[62px] py-[20px] flex-shrink-0 modal-footer">
+              <button onClick={() => { setAddOpen(false); setAddDupAccount(null) }} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-semibold hover:opacity-90 transition-opacity">
                 닫기
               </button>
               <button
@@ -1727,11 +1819,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   !isValidManagerPhone(newForm.phone.trim()) ||
                   newForm.pin.length !== 4 ||
                   !newForm.initialDeposit ||
-                  parseInt(newForm.initialDeposit.replace(/,/g, ''), 10) === 0
+                  parseInt(newForm.initialDeposit.replace(/,/g, ''), 10) === 0 ||
+                  addSubmitting
                 }
                 className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[15px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                저장
+                {addSubmitting ? '등록 중...' : '저장'}
               </button>
             </div>
           </div>
@@ -1819,7 +1912,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               </CustFormField>
 
               <CustFormField label="선결제 잔액">
-                <div className={`w-full border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] font-semibold bg-[#F2F2F2] ${selected.current_balance < 0 ? 'text-danger' : 'text-ink'}`}>
+                <div className={`w-full border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] font-semibold bg-[#F2F2F2] ${selected.current_balance < 0 ? 'text-[#3374FF]' : 'text-ink'}`}>
                   {won(selected.current_balance)}
                 </div>
                 <p className="text-[12px] text-[#ADADAD] mt-[6px]">잔액은 여기서 못 바꿔요. 금액 충전으로 올리거나 문의해 주세요</p>
@@ -1853,7 +1946,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               </CustFormField>
             </div>
 
-            <div className="flex-shrink-0 flex items-center px-[62px] pt-[18px] pb-[32px] border-t border-[#E8E4E2]">
+            <div className="flex-shrink-0 flex items-center px-[62px] pt-[18px] pb-[32px] modal-footer">
               <div className="flex items-center gap-[10px] ml-auto">
               <button
                 onClick={() => { setEditOpen(false); setEditPinError('') }}
@@ -1874,12 +1967,23 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
         </div>
       )}
 
-      {/* ── 프린터 오류 토스트 ── */}
-      {printerToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-ink text-white text-[13px] font-semibold px-5 py-3 rounded-xl shadow-lg pointer-events-none">
-          {printerToast}
-        </div>
+      {/* ── 프린터·저장 오류 토스트 — 메뉴 화면과 같은 박스 ── */}
+      {/* ── 쓰고 있는 유형 지우기 확인 ──
+          카테고리 삭제와 같은 약속을 한다: 분류만 사라지고 **고객은 그대로 남는다.**
+          점주가 가장 겁내는 건 고객이 같이 날아가는 일이다. */}
+      {removeTypeConfirm && (
+        <ConfirmDialog
+          title={`'${removeTypeConfirm.name}' 유형을 지우시겠어요?`}
+          description={`이 유형을 쓰는 고객 ${removeTypeConfirm.count}곳은 그대로 남아요. 유형 표시만 목록에서 사라지니, 각 고객에서 다른 유형으로 바꿔주세요.`}
+          confirmLabel="지우기"
+          cancelLabel="그대로 두기"
+          tone="danger"
+          onConfirm={() => { dropTypeDraft(removeTypeConfirm.idx); setRemoveTypeConfirm(null) }}
+          onCancel={() => setRemoveTypeConfirm(null)}
+        />
       )}
+
+      <BottomToast message={printerToast || null} />
 
       {/* ── 키오스크 QR 모달 ── */}
       {kioskQr && <KioskQrModal storeId={storeId} onClose={() => setKioskQr(false)} />}
@@ -1891,6 +1995,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           accountName={accounts.find(a => a.account_code === accountQr)?.account_name ?? ''}
           qrSystem={accounts.find(a => a.account_code === accountQr)?.qr_system ?? 'legacy'}
           storeId={storeId}
+          onPrintReceipt={qrPrint.printQrReceipt}
           onClose={() => setAccountQr(null)}
         />
       )}
@@ -1952,7 +2057,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   </CustFormField>
                 </div>
 
-                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] border-t border-[#ADADAD]/30 flex-shrink-0">
+                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] flex-shrink-0 modal-footer">
                   <button onClick={() => { setChargeOpen(false); setChargeError('') }}
                     className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
                     취소
@@ -2007,7 +2112,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   )}
                 </div>
 
-                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] border-t border-[#ADADAD]/30 flex-shrink-0">
+                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] flex-shrink-0 modal-footer">
                   <button onClick={() => { setChargeConfirm(false); setChargeError('') }}
                     className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
                     취소
@@ -2035,7 +2140,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
         return (
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => setStatementOpen(false)}>
             <div
-              className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+              className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
               style={{ width: 1030 }}
               onClick={e => e.stopPropagation()}
             >
@@ -2104,7 +2209,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                                 <div className="text-[9px] font-bold bg-orange-100 text-orange-600 px-[4px] py-[2px] rounded mb-[2px] w-fit">잔액조정</div>
                                 {fmtRowDate(row.date)}
                               </td>
-                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount >= 0 ? 'var(--green)' : 'var(--danger)' }}>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: signColor(row.amount) }}>
                                 {row.amount >= 0 ? `+${won(row.amount)}` : `-${won(Math.abs(row.amount))}`}
                               </td>
                               <td className="py-[6px] px-[8px] border border-gray-border" />
@@ -2117,7 +2222,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                                 <span className="whitespace-nowrap">{won(row.balanceAfter)}</span>
                               </td>
                               <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[10px]">{row.orderer ?? ''}</td>
-                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold" style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold" style={{ color: row.balanceAfter < 0 ? 'var(--sign-down)' : 'inherit' }}>
                                 {won(row.balanceAfter)}
                               </td>
                             </tr>
@@ -2126,7 +2231,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                           return (
                             <tr key={idx} className="hover:bg-green-soft/20 transition-colors">
                               <td className="py-[6px] px-[8px] border border-gray-border text-green font-medium whitespace-nowrap">{fmtRowDate(row.date)}</td>
-                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: row.amount < 0 ? 'var(--danger)' : 'var(--green)' }}>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold whitespace-nowrap" style={{ color: signColor(row.amount) }}>
                                 {row.amount < 0 ? `-${won(Math.abs(row.amount))}` : `+${won(row.amount)}`}
                               </td>
                               <td className="py-[6px] px-[8px] border border-gray-border text-gray-text">{row.paymentMethod}</td>
@@ -2150,7 +2255,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                               <td className="py-[6px] px-[8px] border border-gray-border text-gray-text break-words">{row.note}</td>
                               <td className="py-[6px] px-[8px] border border-gray-border text-gray-text">{row.orderer}</td>
                               <td className="py-[6px] px-[8px] border border-gray-border text-right font-medium">
-                                <span style={{ color: row.balanceAfter < 0 ? 'var(--danger)' : 'inherit' }}>{won(row.balanceAfter)}</span>
+                                <span style={{ color: row.balanceAfter < 0 ? 'var(--sign-down)' : 'inherit' }}>{won(row.balanceAfter)}</span>
                                 {/* 앞 행 잔액 + 충전 − 주문금액 과 실제 스냅샷이 어긋난 경우 —
                                      주문 외 경로로 잔액이 바뀌었다는 뜻이라 조용히 넘기지 않고 표시한다 */}
                                 {row.discrepancy !== undefined && (
@@ -2168,7 +2273,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 )}
               </div>
 
-              <div className="flex items-center justify-end px-[41px] py-[13px] border-t border-[#ADADAD]/30 flex-shrink-0">
+              <div className="flex items-center justify-end px-[41px] py-[13px] flex-shrink-0 modal-footer">
                 <button onClick={() => setStatementOpen(false)} className="px-[18px] py-[9px] rounded-[8px] bg-[#E8E4E2] text-[#6A635E] text-[10px] font-semibold hover:opacity-90 transition-opacity">
                   닫기
                 </button>
@@ -2221,16 +2326,15 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
 // 우측 사이드 패널 — 고객 선택 시 "고객현황" 집계 대신 해당 고객 상세정보로 전환 (Figma node 644:372)
 function CustomerDetailPanel({
-  selected, accountOrders, deposits, members, registeredAdmins, memberCounts,
+  selected, accountOrders, deposits, members, memberCounts,
   phoneRevealed, setPhoneRevealed, detailTab, setDetailTab, onQr, onOpenStatement,
-  showInactive, onEdit, onRestore, onResendAdmin, resendLoading, storeId,
+  showInactive, onEdit, onRestore, storeId,
 }: {
   selected: DbAccount
   storeId: string
   accountOrders: Order[]
   deposits: DbDeposit[]
   members: { id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]
-  registeredAdmins: Set<string>
   memberCounts: Record<string, number>
   phoneRevealed: boolean
   setPhoneRevealed: (v: boolean | ((prev: boolean) => boolean)) => void
@@ -2241,8 +2345,6 @@ function CustomerDetailPanel({
   showInactive: boolean
   onEdit: () => void
   onRestore: () => void
-  onResendAdmin: () => void
-  resendLoading: boolean
 }) {
   /** 구성원을 눌러 펼쳐 볼 손님 — 고객 현황에서 쓰는 모달과 같은 것 */
   const [profileOf, setProfileOf] = useState<{ name: string; code: string; account: string } | null>(null)
@@ -2282,9 +2384,6 @@ function CustomerDetailPanel({
 
         <div className="flex items-center gap-[10px] text-[14px] font-medium text-[#414141]">
           <span className="truncate">{selected.contact_person ? maskName(selected.contact_person) : '-'}</span>
-          {selected.qr_system === 'kakao' && !registeredAdmins.has(selected.account_code) && (
-            <PillTag label="등록대기" />
-          )}
           <span className="flex-shrink-0 w-[1px] h-[17px] bg-[#414141]" />
           {selected.contact_phone ? (
             <span className="flex-shrink-0 flex items-center gap-[5px]">
@@ -2307,17 +2406,12 @@ function CustomerDetailPanel({
           <span className="flex-shrink-0">{TYPE_LABEL[selected.account_type]}</span>
         </div>
 
-        {!registeredAdmins.has(selected.account_code) && selected.qr_system === 'kakao' && (
-          <button onClick={onResendAdmin} disabled={resendLoading} className="text-[9px] text-orange-600 hover:underline disabled:opacity-50 text-left -mt-[8px]">
-            {resendLoading ? '발송 중...' : '📨 관리자 등록 문자 재발송'}
-          </button>
-        )}
 
         {/* 선결제잔액 / 이용자수 */}
         <div className="flex gap-[4px]">
           <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={10} gap={6}>
             <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">선결제 잔액</div>
-            <div className={`text-[18px] font-medium whitespace-nowrap ${selected.current_balance < 0 ? 'text-danger' : 'text-[#2C261F]'}`}>
+            <div className={`text-[18px] font-medium whitespace-nowrap ${selected.current_balance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
               {selected.current_balance < 0 ? `-${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
             </div>
           </StatCard>
@@ -2442,8 +2536,9 @@ function CustomerDetailPanel({
                   className="bg-[#F2F2F2] hover:bg-[#E8E4E2] cursor-pointer transition-colors rounded-[10px] px-[13px] py-[10px] flex items-center justify-between"
                 >
                   <div className="flex flex-col items-start gap-[3px] min-w-0">
-                    {/* 이름은 10 → 13px. 이 카드에서 가장 먼저 읽어야 할 것이 이름인데
-                        전화번호(9px)와 거의 같은 크기라 훑기 어려웠다. */}
+                    {/* 이름은 10 → 13 → 12px. 13px 은 카드 안에서 혼자 커 보였다 —
+                        이 칸은 이름·전화번호·주문수가 한 줄씩 쌓이는 좁은 카드라,
+                        이름이 너무 크면 나머지가 각주처럼 밀린다. */}
                     <span className="flex items-center gap-[5px] min-w-0">
                       {adminNames.has(m.name) && (
                         /* 관리자 — 왕관. 등록을 마친 사람이 누구인지는 점주가
@@ -2454,8 +2549,8 @@ function CustomerDetailPanel({
                         </svg>
                       )}
                       <RevealText
-                        value={m.name} masked={maskName(m.name)} iconSize={12}
-                        className="text-[13px] font-semibold text-ink"
+                        value={m.name} masked={maskName(m.name)} iconSize={11}
+                        className="text-[12px] font-semibold text-ink"
                       />
                     </span>
                     {m.phone && (
@@ -2500,12 +2595,24 @@ function StatusTag({ status }: { status: string }) {
   )
 }
 
-function AccountQrModal({ accountCode, accountName, qrSystem, storeId, onClose }: { accountCode: string; accountName: string; qrSystem: 'legacy' | 'kakao'; storeId: string; onClose: () => void }) {
+function AccountQrModal({ accountCode, accountName, qrSystem, storeId, onPrintReceipt, onClose }: {
+  accountCode: string; accountName: string; qrSystem: 'legacy' | 'kakao'; storeId: string
+  /** 매장 감열 프린터로 바로 출력. 실패는 호출부가 토스트로 알린다(useQrPrint.onError) */
+  onPrintReceipt: () => Promise<void>
+  onClose: () => void
+}) {
   const url = qrSystem === 'kakao'
     ? `${SUNPOS_KAKAO_URL}/qr/${accountCode}`
     : `${BASE_URL}?store=${storeId}&account=${accountCode}`
   const [copied, setCopied] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const qrDataUrl = useQrDataUrl(url)
+
+  async function printReceipt() {
+    if (printing) return
+    setPrinting(true)
+    try { await onPrintReceipt() } finally { setPrinting(false) }
+  }
 
   function copy() {
     navigator.clipboard.writeText(url)
@@ -2522,7 +2629,7 @@ function AccountQrModal({ accountCode, accountName, qrSystem, storeId, onClose }
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+    <ModalOverlay onClose={onClose} z={40}>
       <div className="modal-in bg-white rounded-2xl shadow-xl p-7 w-[460px]">
         <div className="flex items-center justify-between mb-1">
           <div className="text-[17px] font-semibold">고객 전용 QR</div>
@@ -2539,19 +2646,30 @@ function AccountQrModal({ accountCode, accountName, qrSystem, storeId, onClose }
         ) : (
           <div className="h-[200px] flex items-center justify-center text-gray-text text-[11px]">QR 생성 중…</div>
         )}
+        {/* 저장·복사는 흰 버튼(보조), 영수증 출력만 먹색(주행동).
+            셋 다 진하면 뭘 눌러야 할지 고르게 된다 — 이 모달에서 급한 건 출력이다. */}
         <div className="flex gap-2">
           <button onClick={saveImage} disabled={!qrDataUrl}
-            className="flex-1 py-[14px] rounded-xl font-bold text-[15px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
+            className="flex-1 py-[14px] rounded-xl font-bold text-[14px] whitespace-nowrap border border-gray-border bg-white text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
             이미지 저장
           </button>
           <button onClick={copy}
-            className={`flex-1 py-[14px] rounded-xl font-bold text-[15px] transition-colors
-              ${copied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}>
+            className={`flex-1 py-[14px] rounded-xl font-bold text-[14px] whitespace-nowrap border transition-colors
+              ${copied
+                ? 'border-green-soft bg-green-soft text-green'
+                : 'border-gray-border bg-white text-ink hover:bg-gray-bg'}`}>
             {copied ? '✓ 복사됨' : '링크 복사'}
+          </button>
+          <button onClick={printReceipt} disabled={printing}
+            className="flex-[1.35] py-[14px] rounded-xl font-bold text-[14px] whitespace-nowrap bg-ink text-white hover:bg-ink/90 transition-colors disabled:opacity-40">
+            {printing ? (
+              // 점 세 개가 차례로 튄다 — 프린터가 몇 초 걸려서 '…' 만 두면 멈춘 줄 안다
+              <>출력 중<span className="dot-bounce ml-[1px]"><span>.</span><span>.</span><span>.</span></span></>
+            ) : 'QR 영수증 출력'}
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }
 
@@ -2575,7 +2693,7 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+    <ModalOverlay onClose={onClose} z={40}>
       <div className="modal-in bg-white rounded-2xl shadow-xl p-7 w-[460px]">
         <div className="flex items-center justify-between mb-4">
           <div className="text-[17px] font-semibold">키오스크 공용 QR</div>
@@ -2604,6 +2722,6 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }

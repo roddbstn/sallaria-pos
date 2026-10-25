@@ -62,7 +62,7 @@ export default function DiagnosticReportModal({
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[520px] max-w-[92vw] max-h-[84vh] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[520px] max-w-[92vw] max-h-[84vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex-1 min-h-0 overflow-y-auto px-[28px] pt-[26px] pb-[20px]">
@@ -113,7 +113,7 @@ export default function DiagnosticReportModal({
           </pre>
         </div>
 
-        <div className="flex items-center gap-[8px] px-[28px] py-[18px] border-t border-[#E8E4E2]">
+        <div className="flex items-center gap-[8px] px-[28px] py-[18px] modal-footer">
           {/* 복사는 전송이 실패했을 때만 — 평소엔 선택지를 하나로 둔다 */}
           {state === 'failed' && (
             <button

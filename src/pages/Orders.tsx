@@ -8,6 +8,7 @@ import PeriodCalendarModal from '../components/ui/PeriodCalendarModal'
 import { DataTable, DataTableHead, DataTableRow, DataTableNotice } from '../components/ui/DataTable'
 import DonutChart from '../components/DonutChart'
 import ScrollHint from '../components/ui/ScrollHint'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 // parseNote는 lib/ipc.ts에서 import
 
@@ -188,7 +189,15 @@ function accountBucket(type: string | undefined): typeof ACCOUNT_TYPE_BUCKETS[nu
 }
 
 type ChartTooltip =
-  | { kind: 'list';    label: string; total: number; orders: Order[]; x: number; y: number }
+  // 'list' 는 두 그래프가 같이 쓴다. 그런데 **세는 단위가 다르다** —
+  // 주문 유형은 '건'(주문 수)이고 메뉴는 '개'(판매 수량)다. 금액도 다르다:
+  // 주문 유형은 주문 총액, 메뉴는 그 메뉴 줄의 금액.
+  // 전엔 둘 다 '주문 수 / 주문 총액'으로 계산해서, 메뉴 툴팁이 표와 어긋났다
+  // (표: 훈제오리 8개 76,000원 ↔ 툴팁: 7건 87,500원 — 7은 그 메뉴가 들어간 '주문 수',
+  //  87,500은 그 주문들의 **총액**이라 다른 메뉴 값까지 섞여 있었다).
+  // 그래서 세는 일을 부르는 쪽이 하고, 여기엔 결과만 담는다.
+  | { kind: 'list';    label: string; total: number; countLabel: string
+      rows: { key: string; time: string; amount: number }[]; x: number; y: number }
   | { kind: 'account'; label: string; count: number; amount: number;  x: number; y: number }
 
 /** 분석 박스 껍데기 — StatCard 와 **같은 언어**(#F2F2F2 / r10 / 11px 라벨)로 맞춘다.
@@ -258,9 +267,9 @@ function dayCount(start: string | null, end: string | null): number {
 
 function Row({ label, value, mono, bold }: { label: string; value: string; mono?: boolean; bold?: boolean }) {
   return (
-    <div className="flex justify-between text-[12px] gap-3">
-      <span className="text-gray-text flex-shrink-0">{label}</span>
-      <span className={`max-w-[50%] text-right break-words ${mono ? 'font-mono' : ''} ${bold ? 'font-medium text-ink' : 'text-ink'}`}>{value}</span>
+    <div className="flex justify-between items-baseline text-[13px] gap-3">
+      <span className="text-[#787878] flex-shrink-0">{label}</span>
+      <span className={`max-w-[55%] text-right break-words ${mono ? 'font-mono tabular-nums' : ''} ${bold ? 'font-medium text-[#1E1E1E]' : 'text-[#1E1E1E]'}`}>{value}</span>
     </div>
   )
 }
@@ -340,7 +349,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
       .select(`
         order_code, order_number, orderer_name, orderer_phone,
         ordered_at, total_amount, menu_subtotal, delivery_fee, balance_before, balance_after,
-        method, status, note, is_deleted, requested_pickup_minutes, prep_minutes, accepted_at,
+        method, status, note, is_deleted, requested_pickup_minutes, prep_minutes, accepted_at, completed_at,
         accounts ( account_name, account_type ),
         order_items (
           order_item_id, menu_name, quantity, unit_price,
@@ -507,15 +516,35 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
   }, [okOrders])
   const maxAccountBar = Math.max(1, ...accountBars.map(b2 => b2.amount))
 
+  const hhmm = (iso: string) =>
+    new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+
+  /** 메뉴 툴팁 — 수량과 금액을 **그 메뉴 줄만** 센다(메뉴별 주문액 표와 같은 식) */
   function showListTooltip(label: string, e: React.MouseEvent) {
-    const hit = okOrders.filter(o => o.items.some(it => it.name === label))
-    setChartTooltip({ kind: 'list', label, total: hit.reduce((s2, o) => s2 + o.total, 0), orders: hit, x: e.clientX, y: e.clientY })
+    let qty = 0, total = 0
+    const rows: { key: string; time: string; amount: number }[] = []
+    for (const o of okOrders) {
+      // 같은 메뉴가 한 주문에 두 줄로 들어갈 수 있다(옵션이 다르면) — 합쳐서 한 행으로
+      const lines = o.items.filter(it => it.name === label)
+      if (lines.length === 0) continue
+      const lineQty    = lines.reduce((t, it) => t + it.qty, 0)
+      const lineAmount = lines.reduce((t, it) => t + it.price * it.qty, 0)
+      qty   += lineQty
+      total += lineAmount
+      rows.push({ key: o.code, time: hhmm(o.createdAt), amount: lineAmount })
+    }
+    setChartTooltip({ kind: 'list', label, total, countLabel: `${qty}개`, rows, x: e.clientX, y: e.clientY })
   }
+
+  /** 이용방법 툴팁 — 이쪽은 '건'과 '주문 총액'이 맞다 */
   function showMethodTooltip(method: string, e: React.MouseEvent) {
     const hit = okOrders.filter(o => o.method === method)
     setChartTooltip({
       kind: 'list', label: METHOD_SHORT[method] ?? method,
-      total: hit.reduce((s2, o) => s2 + o.total, 0), orders: hit, x: e.clientX, y: e.clientY,
+      total: hit.reduce((s2, o) => s2 + o.total, 0),
+      countLabel: `${hit.length}건`,
+      rows: hit.map(o => ({ key: o.code, time: hhmm(o.createdAt), amount: o.total })),
+      x: e.clientX, y: e.clientY,
     })
   }
   const trackTooltip = (e: React.MouseEvent) =>
@@ -567,7 +596,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               <DonutChart
                 size={92} strokeWidth={18}
                 segments={methodOrderSorted.map(m => ({
-                  pct: Math.round(((methodCounts[m] ?? 0) / methodTotal) * 100),
+                  pct: ((methodCounts[m] ?? 0) / methodTotal) * 100,
                   color: METHOD_COLOR[m],
                 }))}
                 onSegmentHover={(idx, e) => {
@@ -605,8 +634,12 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               </div>
               <DonutChart
                 size={64} strokeWidth={12}
+                // ⚠️ Math.round 를 쓰면 안 된다. 메뉴가 40개쯤 되는 매장에서는 대부분이
+                //    1% 미만이라 전부 0 으로 깎여 **도넛에서 사라지고**, 남은 것들은 죄다
+                //    1~4% 로 뭉개져 큰 순서가 보이지 않는다. 소수점 그대로 넘기면
+                //    합이 정확히 100 이 되고 12시부터 큰 조각 순으로 제대로 깔린다.
                 segments={bestList.map((b2, i) => ({
-                  pct: bestTotal ? Math.round((b2.count / bestTotal) * 100) : 0,
+                  pct: bestTotal ? (b2.count / bestTotal) * 100 : 0,
                   color: BEST_COLORS[i % BEST_COLORS.length],
                 }))}
                 onSegmentHover={(idx, e) => {
@@ -900,7 +933,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     </span>
                     <span className={`w-[100px] text-right text-[13px] font-normal tabular-nums ${
                       order.balanceAfter == null ? 'text-[#ADADAD]'
-                      : order.balanceAfter < 0 ? 'text-danger' : 'text-[#787878]'
+                      : order.balanceAfter < 0 ? 'text-[#3374FF]' : 'text-[#787878]'
                     }`}>
                       {order.balanceAfter == null ? '—' : won(order.balanceAfter)}
                     </span>
@@ -927,7 +960,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               ) : (
                 menuSales.map((ms, idx) => (
                   <button key={ms.name} onClick={() => setSelectedMenuName(ms.name)}
-                    className={`w-full grid grid-cols-[1fr_68px_88px_76px] px-[15px] h-[46px] items-center text-left text-[15px] transition-colors
+                    className={`pressable-row w-full grid grid-cols-[1fr_68px_88px_76px] px-[15px] h-[46px] items-center text-left text-[15px]
                       ${selectedMenuName === ms.name ? 'bg-[#E8E4E2]' : 'hover:bg-white/40'}`}>
                     <span className="font-semibold text-ink flex items-center gap-1.5 min-w-0 overflow-hidden">
                       {idx === 0 && <span className="flex-shrink-0">🏆</span>}
@@ -958,7 +991,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               ) : (
                 accountSales.map((as, idx) => (
                   <button key={as.name} onClick={() => setSelectedAccountName(as.name)}
-                    className={`w-full grid grid-cols-[1fr_72px_72px_120px] px-[15px] h-[46px] items-center text-left text-[15px] transition-colors
+                    className={`pressable-row w-full grid grid-cols-[1fr_72px_72px_120px] px-[15px] h-[46px] items-center text-left text-[15px]
                       ${selectedAccountName === as.name ? 'bg-[#E8E4E2]' : 'hover:bg-white/40'}`}>
                     <span className="font-semibold text-ink flex items-center gap-1.5 min-w-0 overflow-hidden">
                       {idx === 0 && <span className="flex-shrink-0">🏆</span>}
@@ -992,17 +1025,15 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
           ) : (
             <>
               <div className="font-bold text-ink mb-1.5">
-                {chartTooltip.label} · {chartTooltip.orders.length}건 · 합계 {won(chartTooltip.total)}
+                {chartTooltip.label} · {chartTooltip.countLabel} · 합계 {won(chartTooltip.total)}
               </div>
               <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                {chartTooltip.orders.length === 0 ? (
+                {chartTooltip.rows.length === 0 ? (
                   <div className="text-gray-text">주문 내역이 없습니다</div>
-                ) : chartTooltip.orders.map(o => (
-                  <div key={o.code} className="flex justify-between gap-2">
-                    <span className="text-gray-text flex-shrink-0">
-                      {new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                    </span>
-                    <span className="text-ink font-semibold truncate text-right">{won(o.total)}</span>
+                ) : chartTooltip.rows.map(r => (
+                  <div key={r.key} className="flex justify-between gap-2">
+                    <span className="text-gray-text flex-shrink-0">{r.time}</span>
+                    <span className="text-ink font-semibold truncate text-right tabular-nums">{won(r.amount)}</span>
                   </div>
                 ))}
               </div>
@@ -1019,27 +1050,33 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
         />
       )}
 
-      {/* 주문 상세 모달 */}
+      {/* ── 주문 상세 모달 ──────────────────────────────────────────────────
+          이 앱의 모달 틀을 그대로 따른다(OptionGroupEditModal · CategoryEditModal):
+            헤더(제목만) / 스크롤 본문 / 테두리로 나뉜 푸터(약한 행동 왼쪽 · 주 행동 오른쪽)
+          전엔 이것만 혼자 달랐다 — 오른쪽 위 ✕ 로 닫고, 본문·버튼이 한 덩어리로 흐르고,
+          글자는 12px 로 다른 모달(13px)보다 한 단계 작았다. */}
       {selected && (
         <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelected(null)}>
-          <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="text-[17px] font-semibold text-ink">주문 상세</div>
-                <button onClick={() => setSelected(null)}
-                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
-              </div>
-              <div className="flex items-center justify-end mb-3">
-                <Badge label={selected.status} color={STATUS_COLOR[selected.status] ?? '#787878'} />
-              </div>
-              <div className="space-y-2 mb-4">
+          <div
+            className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[460px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 헤더 — 제목과 상태를 한 줄에. 상태는 이 주문을 어떻게 다룰지 정하는 값이라
+                맨 위에 있어야 한다(전엔 제목 아래 오른쪽에 따로 떨어져 있었다) */}
+            <div className="flex-shrink-0 px-[28px] pt-[24px] pb-[16px] flex items-center justify-between gap-[12px]">
+              <div className="text-[18px] font-semibold text-[#1E1E1E]">주문 상세</div>
+              <Badge label={selected.status} color={STATUS_COLOR[selected.status] ?? '#787878'} />
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-[28px] pb-[20px]">
+              <div className="space-y-[7px] mb-[18px]">
                 <Row label="주문번호"  value={selected.orderNumber ? `#${selected.orderNumber}` : selected.code} mono />
                 <Row label="거래처"    value={selected.accountName} />
                 <Row label="주문자"    value={selected.orderer} />
                 {selected.phone && (
-                  <div className="flex justify-between text-[12px]">
-                    <span className="text-gray-text">연락처</span>
-                    <span className="flex items-center text-ink">
+                  <div className="flex justify-between items-baseline text-[13px] gap-3">
+                    <span className="text-[#787878] flex-shrink-0">연락처</span>
+                    <span className="flex items-center text-[#1E1E1E]">
                       {selected.phone}
                       <CopyBtn text={selected.phone} />
                     </span>
@@ -1047,7 +1084,6 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 )}
                 <Row label="이용방법"  value={selected.method === '배달' ? '배달 (+3,500원)' : selected.method} />
                 <Row label="주문일시"  value={formatDate(selected.createdAt)} />
-                <Row label="합계"      value={won(selected.total)} bold />
                 {selected.remarks && (() => {
                   const { deliveryAddress, deliveryDetail, deliveryNote, customerNote } = parseNote(selected.remarks)
                   return (
@@ -1055,26 +1091,26 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                       {customerNote && <Row label="가게 요청사항" value={customerNote} />}
                       {deliveryAddress && (
                         <>
-                          <div className="flex justify-between text-[12px]">
-                            <span className="text-gray-text">배달 주소</span>
-                            <span className="flex items-center text-ink text-right max-w-[60%]">
+                          <div className="flex justify-between items-baseline text-[13px] gap-3">
+                            <span className="text-[#787878] flex-shrink-0">배달 주소</span>
+                            <span className="flex items-center text-[#1E1E1E] text-right max-w-[60%]">
                               <span className="truncate">{deliveryAddress}</span>
                               <CopyBtn text={deliveryAddress} />
                             </span>
                           </div>
                           {deliveryDetail && (
-                            <div className="flex justify-between text-[12px]">
-                              <span className="text-gray-text">배달 상세</span>
-                              <span className="flex items-center text-ink">
+                            <div className="flex justify-between items-baseline text-[13px] gap-3">
+                              <span className="text-[#787878] flex-shrink-0">배달 상세</span>
+                              <span className="flex items-center text-[#1E1E1E]">
                                 <span className="truncate">{deliveryDetail}</span>
                                 <CopyBtn text={deliveryDetail} />
                               </span>
                             </div>
                           )}
                           {deliveryNote && (
-                            <div className="flex justify-between text-[12px]">
-                              <span className="text-gray-text">배달 요청사항</span>
-                              <span className="flex items-center text-ink text-right max-w-[60%]">
+                            <div className="flex justify-between items-baseline text-[13px] gap-3">
+                              <span className="text-[#787878] flex-shrink-0">배달 요청사항</span>
+                              <span className="flex items-center text-[#1E1E1E] text-right max-w-[60%]">
                                 <span className="truncate">{deliveryNote}</span>
                                 <CopyBtn text={deliveryNote} />
                               </span>
@@ -1087,80 +1123,97 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                   )
                 })()}
               </div>
-              <div className="bg-[#F2F2F2] rounded-[10px] p-3 mb-4 space-y-2.5">
+
+              {/* 주문 내용 — 다른 모달의 목록과 같은 테두리 카드(CategoryEditModal 메뉴 목록과 동일) */}
+              <div className="text-[12px] font-medium text-[#2C261F] mb-[7px]">주문 내용</div>
+              <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden">
                 {selected.items.map((item, i) => (
-                  <div key={i}>
-                    <div className="flex justify-between text-[12px] font-semibold text-ink">
-                      <span>{item.name} × {item.qty}</span>
-                      <span>{won(item.price * item.qty)}</span>
+                  <div key={i} className={`px-[13px] py-[10px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
+                    <div className="flex justify-between gap-[10px] text-[13px] text-[#1E1E1E]">
+                      <span className="min-w-0">{item.name} × {item.qty}</span>
+                      <span className="flex-shrink-0 tabular-nums">{won(item.price * item.qty)}</span>
                     </div>
                     {item.options.length > 0 && (
-                      <div className="text-[11px] text-gray-text mt-0.5 ml-1">
-                        {item.options.map(o => `▶ ${o}`).join('  ')}
+                      <div className="text-[11px] font-normal text-[#787878] mt-[3px] leading-relaxed">
+                        {item.options.map(o => `· ${o}`).join('  ')}
                       </div>
                     )}
                   </div>
                 ))}
+                <div className="flex justify-between px-[13px] py-[10px] border-t border-[#E8E4E2] bg-[#F9F9F9]">
+                  <span className="text-[13px] font-medium text-[#2C261F]">합계</span>
+                  <span className="text-[14px] font-medium text-[#1E1E1E] tabular-nums">{won(selected.total)}</span>
+                </div>
               </div>
-              {selected.isDeleted ? (
-                <button
-                  onClick={() => handleRestoreOrder(selected.code)}
-                  className="pressable w-full h-[44px] rounded-[10px] text-[13px] font-medium text-[#FCFCFC] bg-[#2C261F] hover:opacity-90 transition-opacity">
-                  주문 복구
-                </button>
-              ) : (
-                <>
-                  {deleteConfirmCode === selected.code ? (
-                    <div className="flex items-center gap-[8px]">
-                      <span className="flex-1 text-[13px] font-medium text-danger">정말 삭제할까요?</span>
-                      <button onClick={() => setDeleteConfirmCode(null)}
-                        className="pressable h-[38px] px-[14px] rounded-[9px] text-[13px] font-medium bg-[#E8E4E2] text-[#6A635E] hover:opacity-90 transition-opacity">
-                        아니요
-                      </button>
-                      <button onClick={() => handleDeleteOrder(selected.code)}
-                        className="pressable h-[38px] px-[16px] rounded-[9px] text-[13px] font-medium bg-[#C92A2A] text-[#FCFCFC] hover:opacity-90 transition-opacity">
-                        삭제
-                      </button>
-                    </div>
-                  ) : (
-                    /* 삭제와 재출력이 같은 크기로 나란히 있었다. 둘은 무게가 전혀 다르다 —
-                       재출력은 하루에도 몇 번 누르는 일이고, 삭제는 되돌릴 수 없다.
-                       삭제는 좌하단에 글자만, 재출력은 우하단 CTA 로 둔다
-                       (다른 모달들과 같은 배치: 약한 행동 왼쪽, 주 행동 오른쪽). */
-                    <div className="flex items-center">
-                      <button onClick={() => setDeleteConfirmCode(selected.code)}
-                        className="text-[13px] font-normal text-[#ADADAD] hover:text-danger transition-colors">
-                        삭제
-                      </button>
-                      <div className="flex-1" />
-                      <button
-                        onClick={async () => {
-                          setReprintMsg(null)
-                          const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
-                          const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected, storeName) })
-                          if (!res) return
-                          setReprintMsg(res.ok
-                            ? { ok: true,  text: '영수증을 출력합니다' }
-                            : { ok: false, text: res.error ?? '출력 실패' }
-                          )
-                          setTimeout(() => setReprintMsg(null), 3000)
-                        }}
-                        className="pressable h-[44px] px-[20px] rounded-[10px] text-[13px] font-medium transition-opacity hover:opacity-90"
-                        style={{ backgroundColor: '#E8E4E2', color: '#6A635E' }}>
-                        영수증 재출력
-                      </button>
-                    </div>
-                  )}
-                  {reprintMsg && (
-                    <div className={`mt-2 text-center text-[11px] font-normal ${reprintMsg.ok ? 'text-[#2C261F]' : 'text-danger'}`}>
-                      {reprintMsg.ok ? '✅' : '⚠️'} {reprintMsg.text}
-                    </div>
-                  )}
-                </>
+
+              {reprintMsg && (
+                <div className={`mt-[12px] text-[12px] font-normal ${reprintMsg.ok ? 'text-[#2C261F]' : 'text-danger'}`}>
+                  {reprintMsg.text}
+                </div>
               )}
+            </div>
+
+            {/* 푸터 — 약한 행동(삭제) 왼쪽, 주 행동(재출력) 오른쪽 */}
+            <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex items-center justify-between">
+              {selected.isDeleted ? (
+                <span className="text-[12px] text-[#ADADAD]">삭제된 주문이에요</span>
+              ) : (
+                <button
+                  onClick={() => setDeleteConfirmCode(selected.code)}
+                  className="h-[30px] px-[11px] rounded-[8px] text-[#C92A2A] text-[12px] hover:bg-[#FFEFEF] transition-colors"
+                >
+                  삭제
+                </button>
+              )}
+              <div className="flex items-center gap-[9px]">
+                <button
+                  onClick={() => setSelected(null)}
+                  className="h-[38px] px-[16px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[13px] font-medium hover:bg-[#E8E4E2] transition-colors"
+                >
+                  닫기
+                </button>
+                {selected.isDeleted ? (
+                  <button
+                    onClick={() => handleRestoreOrder(selected.code)}
+                    className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 transition-opacity"
+                  >
+                    주문 복구
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      setReprintMsg(null)
+                      const w = window as unknown as { api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> } }
+                      const res = await w.api?.reprintOrder?.({ order: orderToPayload(selected, storeName) })
+                      if (!res) return
+                      setReprintMsg(res.ok
+                        ? { ok: true,  text: '영수증을 출력합니다' }
+                        : { ok: false, text: res.error ?? '출력 실패' }
+                      )
+                      setTimeout(() => setReprintMsg(null), 3000)
+                    }}
+                    className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 transition-opacity"
+                  >
+                    영수증 재출력
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* 주문 삭제 확인 — 카테고리 삭제와 같은 다이얼로그 */}
+      {deleteConfirmCode && (
+        <ConfirmDialog
+          title="이 주문을 삭제하시겠어요?"
+          description="매출 집계에서 빠지고, 차감했던 잔액은 거래처에 돌아가요. 주문 내역에서 다시 복구할 수 있어요."
+          tone="danger"
+          confirmLabel="삭제"
+          cancelLabel="아니요"
+          onConfirm={() => { const c = deleteConfirmCode; setDeleteConfirmCode(null); handleDeleteOrder(c) }}
+          onCancel={() => setDeleteConfirmCode(null)}
+        />
       )}
 
       {/* 거래처별 상세 모달 */}
@@ -1171,7 +1224,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
         )
         return (
           <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center" onClick={() => setSelectedAccountName(null)}>
-            <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="p-6">
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -1223,7 +1276,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 전에는 overflow-y-auto 가 둥근 모서리를 가진 바깥 컨테이너에 걸려 있어
                 스크롤바가 모달 위쪽 모서리 밖으로 삐져나왔다.
                 머리말(제목·닫기)은 스크롤 밖에 고정 — 긴 목록에서 제목이 사라지지 않는다. */}
-            <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="px-6 pt-6 pb-3 flex-shrink-0 border-b border-gray-border">
                 <div className="flex items-start justify-between">
                   <div>

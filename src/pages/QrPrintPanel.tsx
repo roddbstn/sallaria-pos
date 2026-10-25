@@ -4,6 +4,8 @@ import { supabase, type DbAccount } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { qrUrlFor, qrDataUrl, PAPER_OPTIONS, DEFAULT_QR_NOTICE, paperGeometry, fontSizesFor, mmToCm, CELL_GAP, type QrPaper } from '../lib/qr-order'
 import { printQrSheet } from '../components/ui/QrSheetPrinter'
+import { usePrinterConfig } from '../hooks/usePrinterConfig'
+import { paperChoice } from '../lib/printer-paper'
 import LoadingBlock from '../components/ui/LoadingBlock'
 
 // 고객 허브에 있던 걸 설정으로 옮겼다 — QR 종이를 뽑는 건 "고객을 보는 일"이 아니라
@@ -14,6 +16,107 @@ import LoadingBlock from '../components/ui/LoadingBlock'
 // 이 화면의 목표는 QR을 "만드는" 게 아니라 "나눠주는" 것이다. 고객 화면 사이드패널에서
 // 이미 한 곳씩은 뽑을 수 있다. 추진하기로 한 배포 방식이 "QR 종이를 각 사무실에 배부"라
 // 여러 장을 한 번에 뽑는 게 핵심이다.
+
+/**
+ * 영수증 프린터로 나가는 모습 그대로의 미리보기.
+ *
+ * ⚠️ 이 컴포넌트는 **electron/escpos.ts 의 buildQrReceiptEscPos 와 짝**이다.
+ *    전엔 영수증을 골라도 A4 카드 양식(가게명·거래처명·QR·안내문)이 보였는데,
+ *    실제로 나오는 건 전혀 다른 양식이었다 — 머리글 [거래처 선결제 QR오더],
+ *    점선, QR, 점선, 계정/관리자/연락처/PIN 표, 점선, 매장명.
+ *    종이를 뽑아보기 전엔 뭐가 나올지 알 수 없었다.
+ *    한쪽을 고치면 **반드시 다른 쪽도** 고쳐야 한다.
+ */
+/** 미리보기 종이 폭(px)과 좌우 여백 — 실제 비율을 흉내 내는 기준값 */
+const RECEIPT_PREVIEW_W = 232
+const RECEIPT_PREVIEW_PAD = 14
+/**
+ * 인쇄 폭의 몇 %를 QR 에 내줄지 — **electron/escpos.ts 의 QR_FILL_RATIO 와 같은 값.**
+ * 한쪽만 고치면 미리보기와 종이가 어긋난다.
+ */
+const QR_FILL_RATIO = 0.72
+
+/**
+ * 미리보기 QR 크기.
+ *
+ * 실제 출력이 인쇄 가능 폭의 QR_FILL_RATIO 만큼을 차지하므로 미리보기도 같은 비율로 둔다.
+ * 전엔 150px 로 박아둬서 실물보다 작게 보였다.
+ */
+const QR_PREVIEW_PX = Math.round((RECEIPT_PREVIEW_W - RECEIPT_PREVIEW_PAD * 2) * QR_FILL_RATIO)
+
+function ReceiptPreview({ storeName, accountName, manager, phone, qrImg, storePhone, notice, paperLabel }: {
+  storeName:   string
+  accountName: string
+  manager:     string
+  phone:       string
+  qrImg:       string
+  storePhone:  string
+  /** QR 바로 아래 한 줄 — escpos 쪽도 같은 자리에 찍는다 */
+  notice:      string
+  paperLabel:  string
+}) {
+  // 점선 — ESC/POS 쪽 L.hr() 과 같은 자리에 온다
+  const hr = <div className="border-t border-dashed border-[#9A9A9A]" />
+  // 라벨 열 — padL(label, 6) 과 같은 리듬(라벨 폭 고정 + 두 칸 띄우기)
+  const row = (label: string, value: string) => (
+    <div className="flex gap-[10px] leading-[1.7]">
+      <span className="w-[46px] flex-shrink-0 text-[#414141]">{label}</span>
+      <span className="min-w-0 flex-1 break-all text-[#1E1E1E]">{value}</span>
+    </div>
+  )
+
+  return (
+    <div>
+      {/* 감열지 한 장. 폭은 고정 232px — 실제 비율이 아니라 **양식**을 보여주는 게 목적이다
+          (A4 미리보기는 비율이 중요해서 mm 로 그린다) */}
+      <div className="bg-white mx-auto shadow-[0_1px_6px_rgba(0,0,0,0.14)] py-[16px] flex flex-col gap-[9px]"
+           /* 좌우 여백은 상수로 — QR 크기 계산과 같은 값을 써야 비율이 맞는다 */
+           style={{ width: RECEIPT_PREVIEW_W, paddingLeft: RECEIPT_PREVIEW_PAD, paddingRight: RECEIPT_PREVIEW_PAD, fontFamily: "'Courier New', monospace" }}>
+        <div className="text-center text-[12px] font-bold text-[#1E1E1E] leading-snug break-all">
+          [{accountName} 선결제 QR오더]
+        </div>
+        {hr}
+
+        {/* QR — 실제 출력은 **인쇄 폭을 거의 꽉** 채운다(escpos.ts 의 fitQrModule).
+            전엔 여기만 150px 로 작게 그려서, 미리보기를 믿고 뽑으면 실물이 달랐다.
+            종이 폭에서 좌우 여백을 뺀 만큼을 그대로 쓴다. */}
+        <div className="flex justify-center py-[2px]">
+          {qrImg
+            ? <img src={qrImg} alt="" style={{ width: QR_PREVIEW_PX, height: QR_PREVIEW_PX }} />
+            : <div style={{ width: QR_PREVIEW_PX, height: QR_PREVIEW_PX, background: '#F2F2F2' }} />}
+        </div>
+
+        {/* 안내 문구 — QR 바로 아래 한 줄. 실제 출력도 여기에 찍힌다.
+            nowrap 으로 둬서 "두 줄이 되면 어떡하지"를 미리보기에서도 볼 수 있게 한다
+            (15자 제한이 있어 실제로는 넘치지 않는다). */}
+        {notice.trim() && (
+          <div className="text-center text-[11px] text-[#1E1E1E] whitespace-nowrap overflow-hidden text-ellipsis">
+            {notice}
+          </div>
+        )}
+        {hr}
+
+        <div className="text-[11px]">
+          {row('계정', accountName)}
+          {manager && row('관리자', manager)}
+          {phone && row('연락처', phone)}
+          {/* PIN 값은 찍지 않는다 — 종이가 벽에 붙으니까. escpos.ts 의 같은 줄과 맞춘다 */}
+          {row('PIN', '관리자에게 문의')}
+        </div>
+        {hr}
+
+        <div className="text-center text-[11px] text-[#1E1E1E] leading-[1.7]">
+          <div className="font-bold">{storeName}</div>
+          {storePhone && <div>{storePhone}</div>}
+        </div>
+      </div>
+
+      <div className="mt-[10px] text-[11px] font-normal text-[#787878] text-center">
+        영수증 {paperLabel} · 한 장에 1곳
+      </div>
+    </div>
+  )
+}
 
 /**
  * 인쇄될 종이를 그대로 축소해 보여준다.
@@ -33,13 +136,17 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
   filled:      number
 }) {
   const spec = PAPER_OPTIONS.find(p => p.key === paper)!
-  const geo  = paperGeometry(paper)
+  // 영수증 폭은 프린터 설정에서 온다. 58mm 로 박아두면 80mm 프린터를 쓰는 매장에서
+  // 미리보기가 실제보다 좁게 보이고, QR 이 종이 가운데 작게 찍히는 걸 설명할 수 없다.
+  const { cfg } = usePrinterConfig()
+  const rp   = paperChoice(cfg.paperWidth)
+  const geo  = paperGeometry(paper, rp.printMM)
   const f    = fontSizesFor(geo.qrMM)
   const isReceipt = paper === 'receipt'
 
   // 종이 실치수(mm)와 인쇄 여백 — QrSheetPrinter 의 @page margin 과 같은 값
-  const paperW = isReceipt ? 58 : 210
-  const margin = isReceipt ? 4 : 10
+  const paperW = isReceipt ? rp.paperMM : 210
+  const margin = isReceipt ? (rp.paperMM - rp.printMM) / 2 : 10
   const innerH = isReceipt ? geo.cellH : 277
   const paperH = innerH + margin * 2
 
@@ -111,7 +218,7 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
       </div>
 
       <div className="mt-[10px] text-[11px] font-normal text-[#787878] text-center">
-        {isReceipt ? '영수증 58mm' : 'A4 210 × 297mm'} · 한 장에 {geo.perPage}칸
+        {isReceipt ? `영수증 ${rp.label}` : 'A4 210 × 297mm'} · 한 장에 {geo.perPage}칸
         {filled < geo.perPage && geo.perPage > 1 && (
           <span className="text-[#ADADAD]"> · 이번엔 {filled}칸만 채워져요</span>
         )}
@@ -120,8 +227,19 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
   )
 }
 
+/**
+ * 안내 문구 글자 수 상한.
+ *
+ * 15자인 이유는 **영수증 한 줄**이다. 한글은 인쇄 폭을 2칸 먹으니 15자 = 30칸이고,
+ * 가장 좁은 용지(57mm · 32칸)에도 들어간다. 더 길게 허용하면 QR 바로 아래 한 줄이라는
+ * 규칙이 깨져 두 줄로 흐르거나 잘린 채 나간다.
+ */
+const NOTICE_MAX = 15
+
 export default function QrPrintPanel() {
   const { storeId, storeName } = useStore()
+  // 영수증 미리보기 밑에 "영수증 79mm" 처럼 적어주기 위해 — 실제 출력 폭과 같은 값
+  const { cfg } = usePrinterConfig()
   const [accounts, setAccounts] = useState<DbAccount[]>([])
   const [loading,  setLoading]  = useState(true)
   const [picked,   setPicked]   = useState<Set<string>>(new Set())
@@ -129,6 +247,14 @@ export default function QrPrintPanel() {
   const [notice,   setNotice]   = useState(DEFAULT_QR_NOTICE)
   const [printing, setPrinting] = useState(false)
   const [preview,  setPreview]  = useState('')
+  /** 영수증 푸터에 찍을 매장 연락처 (stores.phone) */
+  const [store, setStore] = useState<{ phone: string }>({ phone: '' })
+
+  useEffect(() => {
+    if (!storeId) return
+    supabase.from('stores').select('phone').eq('id', storeId).maybeSingle()
+      .then(({ data }) => setStore({ phone: data?.phone ?? '' }))
+  }, [storeId])
 
   useEffect(() => {
     if (!storeId) return
@@ -181,6 +307,8 @@ export default function QrPrintPanel() {
             pin:         '',   // PIN 은 종이에 찍지 않는다 — 아래 printQrSheet 주석 참고
             qrUrl:       qrUrlFor(a, storeId),
             storeName,
+            storePhone:  store.phone,
+            notice:      notice || DEFAULT_QR_NOTICE,
           })
         }
         return
@@ -221,15 +349,33 @@ export default function QrPrintPanel() {
           <div className="flex-shrink-0" style={{ width: 260 }}>
             <div className="text-[13px] font-normal text-[#6A635E] mb-[12px]">미리보기</div>
             <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[16px]">
-              <PaperPreview
-                paper={paper}
-                storeName={storeName}
-                accountName={first?.account_name ?? '거래처'}
-                notice={notice || DEFAULT_QR_NOTICE}
-                qrImg={preview}
-                pin={null}
-                filled={picked.size}
-              />
+              {/* 용지에 따라 **다른 양식**을 보여준다.
+                  영수증은 감열 프린터로 ESC/POS 가 바로 나가고(escpos.ts),
+                  A4 는 브라우저 인쇄로 카드가 나간다(QrSheetPrinter). 두 양식이
+                  전혀 다른데 전엔 둘 다 A4 카드로 그려서, 영수증을 고르면
+                  미리보기와 실물이 따로 놀았다. */}
+              {paper === 'receipt' ? (
+                <ReceiptPreview
+                  storeName={storeName}
+                  accountName={first?.account_name ?? '거래처'}
+                  manager={first?.contact_person ?? ''}
+                  phone={first?.contact_phone ?? ''}
+                  qrImg={preview}
+                  storePhone={store.phone}
+                  notice={notice || DEFAULT_QR_NOTICE}
+                  paperLabel={paperChoice(cfg.paperWidth).label}
+                />
+              ) : (
+                <PaperPreview
+                  paper={paper}
+                  storeName={storeName}
+                  accountName={first?.account_name ?? '거래처'}
+                  notice={notice || DEFAULT_QR_NOTICE}
+                  qrImg={preview}
+                  pin={null}
+                  filled={picked.size}
+                />
+              )}
             </div>
 
             {/* 인쇄 버튼은 미리보기 바로 아래, 그 박스와 같은 폭으로 둔다.
@@ -313,15 +459,24 @@ export default function QrPrintPanel() {
 
 
 
-            {/* 안내 문구 */}
+            {/* 안내 문구 — QR 바로 아래 한 줄로 찍힌다 */}
             <div className="mb-[20px]">
-              <div className="text-[12px] font-medium text-[#2C261F] mb-[8px]">안내 문구</div>
+              <div className="flex items-baseline justify-between mb-[8px]">
+                <span className="text-[12px] font-medium text-[#2C261F]">안내 문구</span>
+                {/* 한계를 치기 전에 보여준다 — 다 치고 나서 잘리면 뭐가 없어졌는지 모른다 */}
+                <span className={`text-[11px] tabular-nums ${notice.length >= NOTICE_MAX ? 'text-[#C92A2A]' : 'text-[#ADADAD]'}`}>
+                  {notice.length}/{NOTICE_MAX}
+                </span>
+              </div>
               <input
                 value={notice}
-                onChange={e => setNotice(e.target.value.slice(0, 30))}
+                onChange={e => setNotice(e.target.value.slice(0, NOTICE_MAX))}
                 placeholder={DEFAULT_QR_NOTICE}
                 className="field-soft w-full h-[40px] px-[13px] rounded-[9px] border border-[#D9D9D9] text-[13px] text-[#1E1E1E] outline-none"
               />
+              <div className="text-[11px] font-normal text-[#ADADAD] mt-[6px] leading-relaxed">
+                QR 바로 아래에 한 줄로 찍혀요.
+              </div>
             </div>
 
             {/* 대상 거래처 */}

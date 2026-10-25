@@ -85,7 +85,7 @@ export default function BreakTimeModal({ initial, onConfirm, onClose }: {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[460px] px-[28px] pt-[24px] pb-[22px]"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[460px] px-[28px] pt-[24px] pb-[22px]"
         onClick={e => e.stopPropagation()}
       >
         <div className="text-[18px] font-semibold text-[#1E1E1E]">브레이크 타임</div>

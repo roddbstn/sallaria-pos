@@ -56,9 +56,15 @@ export default function HubLayout<K extends string>({
       </div>
 
       {/* ── 본문 (Figma: left 453 → 좌측 네비 353 + 100 = px 64, top 150 → pt 96) ── */}
+      {/* scroll-stable(scrollbar-gutter: stable) 이 꼭 필요하다.
+           이 앱의 스크롤바는 overlay 가 아니라 **폭 6px 을 실제로 차지**한다(index.css).
+           그래서 본문 길이가 바뀌어 스크롤바가 생기거나 사라지면 안쪽 폭이 6px 튀었다 —
+           '옵션 정보'에서 그룹 칩을 누를 때마다 칩이 줄바꿈되고, 요약 박스와 표의 가로길이가
+           달라지고, 우측 정렬 버튼이 좌우로 움직인 게 전부 이 6px 때문이었다.
+           빈 자리를 늘 비워 두면 스크롤바 유무와 무관하게 폭이 고정된다. */}
       <div className={bare
         ? 'flex-1 min-w-0 overflow-hidden'
-        : 'flex-1 min-w-0 overflow-y-auto px-[64px] pt-[64px] pb-[62px]'}>
+        : 'flex-1 min-w-0 overflow-y-auto scroll-stable px-[64px] pt-[64px] pb-[62px]'}>
         {children}
       </div>
     </div>

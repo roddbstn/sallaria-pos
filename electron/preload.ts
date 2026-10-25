@@ -9,9 +9,7 @@ const api = {
   offOrderNew:   ()                             => ipcRenderer.removeAllListeners('order:new'),
   approveOrder:  (p: { order: Record<string, unknown>; prepMins: number }) => ipcRenderer.invoke('order:approve',  p),
   reprintOrder:  (p: { order: Record<string, unknown> })                   => ipcRenderer.invoke('printer:reprint', p),
-  rejectOrder:   (p: { orderCode: string; reason: string })   => ipcRenderer.invoke('order:reject',   p),
-  completeOrder: (p: { orderCode: string })                   => ipcRenderer.invoke('order:complete', p),
-  cancelOrder:   (p: { orderCode: string })                   => ipcRenderer.invoke('order:cancel',   p),
+  listOsPrinters: ()                                                      => ipcRenderer.invoke('printer:list-os'),
 
   // ── Realtime 상태 ────────────────────────────────────────────────────────────
   onRealtimeStatus: (cb: (status: string) => void) => ipcRenderer.on('realtime:status', (_e, v) => cb(v)),
@@ -39,6 +37,7 @@ const api = {
     version: string; electron: string; chrome: string; node: string
     platform: string; arch: string; osRelease: string; logDir: string
     printerPort: string; printerConnected: boolean
+    paperWidth: string; lineChars: number; link: string; baudRate: number; lanHost: string
   }>,
 
   // ── 매장 세션 ────────────────────────────────────────────────────────────────
@@ -50,7 +49,7 @@ const api = {
   listPorts:      ()           => ipcRenderer.invoke('printer:list-ports') as Promise<{ path: string; manufacturer: string; friendlyName: string }[]>,
   connectPrinter: ()           => ipcRenderer.invoke('printer:connect'),
   testPrint:      ()           => ipcRenderer.invoke('printer:test'),
-  printQrReceipt: (p: { accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string }) =>
+  printQrReceipt: (p: { accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string; storePhone?: string; notice?: string }) =>
     ipcRenderer.invoke('printer:qr-receipt', p),
 
   onPrinterStatus:  (cb: (s: { connected: boolean; queueLength: number }) => void) =>

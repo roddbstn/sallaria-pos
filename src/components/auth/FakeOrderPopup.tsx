@@ -29,6 +29,7 @@ export default function FakeOrderPopup({ order, storeName, onDone }: Props) {
   }
 
   return (
+    // 바깥 클릭으로 닫지 않는다(의도) — 온보딩 연습 주문은 끝까지 따라가야 의미가 있다.
     <div className="fixed inset-0 z-[400] bg-black/50 backdrop-blur-sm flex items-center justify-center">
       <div className="bg-white rounded-2xl overflow-hidden flex flex-col" style={{ width: 400, maxHeight: 'calc(100vh - 40px)' }}>
         <div className="bg-ink px-5 py-3">

@@ -2,8 +2,16 @@ import { useState, useEffect, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { won } from '../lib/ipc'
+import { isIdleAccount, IDLE_WINDOW_DAYS } from '../lib/idle-accounts'
+import type { SmsKind } from '../lib/sms-templates'
 import { DB_METHOD_MAP } from '../lib/mappers'
 import LoadingBlock from '../components/ui/LoadingBlock'
+import OrderTrendChart from '../components/ui/OrderTrendChart'
+import SegmentedTabs from '../components/ui/SegmentedTabs'
+import {
+  buildOrderTrend, summarizeTrend, UNIT_LABEL, UNIT_CURR_LABEL, UNIT_PREV_LABEL,
+  type TrendUnit, type TrendOrder,
+} from '../lib/order-trend'
 import { rootZoom } from '../lib/figma-scale'
 
 // ── 주문 리포트 ───────────────────────────────────────────────────────────────
@@ -26,7 +34,18 @@ const DOW = ['일', '월', '화', '수', '목', '금', '토']
 /** 영업시간 범위만 본다 — 새벽 칸은 늘 비어서 히트맵 대비를 희석시킨다 */
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 8)   // 08~22시
 /** 주기 계산 기간(일). 창과 분리된 고정값 */
-const CYCLE_DAYS = 180
+// 주기 집계 창 — 기준은 lib/idle-accounts.ts (문자 보내기 화면과 공유한다)
+const CYCLE_DAYS = IDLE_WINDOW_DAYS
+
+/** 아래 집계(히트맵·메뉴·이용방법)가 보는 창. 0 = 전체 기간 */
+const DAY_OPTIONS = [7, 30, 90, 0]
+
+/** 주문 추이 탭 순서 — 넓은 구간에서 좁은 구간으로 */
+const TREND_UNITS: TrendUnit[] = ['month', 'biweek', 'week', 'day']
+/** 막대 굵기. 구간이 성길수록 굵게 — 월 막대 다섯 개가 10px 이면 허전하다 */
+const TREND_BAR_W: Record<TrendUnit, number> = {
+  month: 26, biweek: 18, week: 14, day: 9,
+}
 
 interface WindowRow {
   dow:    number
@@ -93,7 +112,7 @@ function Insight({ children }: { children: React.ReactNode }) {
   )
 }
 
-export default function OrderAnalysis() {
+export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKind) => void } = {}) {
   const { storeId } = useStore()
   const [rows,    setRows]    = useState<WindowRow[]>([])
   const [menus,   setMenus]   = useState<MenuRow[]>([])
@@ -108,6 +127,16 @@ export default function OrderAnalysis() {
   const [hover,   setHover]   = useState<{ key: string; x: number; y: number } | null>(null)
   /** 히트맵에서 눌러 펼친 칸 */
   const [picked,  setPicked]  = useState<string | null>(null)
+  /**
+   * 주문 추이 — 위의 7/30/90일 창과 **무관하다.**
+   *
+   * 추이는 "흐름이 꺾였나"를 보는 것이라 창에 묶으면 의미가 없다. 7일을 고른 순간
+   * 막대가 한 칸으로 줄어버린다. 그래서 늘 최근 12개월을 받아 두고, 월/격주/주는
+   * 받아둔 걸 다시 묶기만 한다 — 탭을 눌러도 다시 조회하지 않는다.
+   */
+  const [trendUnit, setTrendUnit] = useState<TrendUnit>('month')
+  const [trendAt,   setTrendAt]   = useState<TrendOrder[]>([])
+  const [trendLoading, setTrendLoading] = useState(true)
 
   // ── 창(window) 집계: 히트맵 · 메뉴 · 옵션 · 이용방법 ──
   useEffect(() => {
@@ -121,7 +150,22 @@ export default function OrderAnalysis() {
         ? new Date('2020-01-01').toISOString()
         : new Date(Date.now() - days * 86_400_000).toISOString()
 
-      // orders 에 store_id 가 있어 조인 없이 바로 좁혀진다
+      // ⚠️ store_id 로 바로 긁지 않는다 — **활성 거래처를 거친다.**
+      //
+      // orders 에 store_id 가 있어 조인 없이 좁힐 수는 있는데, 그러면 비활성으로
+      // 돌린 거래처(테스트 계정 등)의 주문이 히트맵·메뉴 순위·이용방법에 그대로 남는다.
+      // 금액 집계(매출·월별 잔액·문자)는 전부 거래처를 거쳐서 이미 제외되는데
+      // 여기만 빠져 있어서, "비활성으로 돌렸는데 리포트엔 아직 보인다"가 됐다.
+      // (김정보(테스트) 계정의 주문 3건이 정확히 그 경우였다)
+      const { data: actRows } = await supabase
+        .from('accounts').select('account_code')
+        .eq('store_id', storeId).eq('is_active', true)
+      const activeCodes = (actRows ?? []).map(a => a.account_code as string)
+      if (activeCodes.length === 0) {
+        if (!cancelled) { setRows([]); setMenus([]); setOpts([]); setLoading(false) }
+        return
+      }
+
       const { data } = await supabase
         .from('orders')
         .select(`
@@ -129,7 +173,7 @@ export default function OrderAnalysis() {
           order_items ( menu_name, quantity, subtotal,
             order_item_options ( option_name, quantity ) )
         `)
-        .eq('store_id', storeId)
+        .in('account_code', activeCodes)
         .neq('status', '취소')
         .eq('is_deleted', false)
         .gte('ordered_at', since)
@@ -185,6 +229,42 @@ export default function OrderAnalysis() {
     return () => { cancelled = true }
   }, [storeId, days])
 
+  // ── 주문 추이: 창과 무관하게 **전 기간** ──
+  //
+  // 기간을 안 자르는 이유: 추이는 좌우로 스크롤해서 전부 보는 그림이다. 받아오는 걸
+  // 자르면 스크롤해도 그 앞이 없다. 막대 수는 lib 쪽 MAX_BUCKETS 가 막는다.
+  // (한 매장 전 기간이 수백 건 수준이라 ordered_at·total_amount 두 칸만 받으면 가볍다)
+  useEffect(() => {
+    if (!storeId) return
+    let cancelled = false
+
+    async function load() {
+      // 창 집계와 같은 기준 — 비활성 거래처(테스트 계정 등)는 뺀다
+      const { data: actRows } = await supabase
+        .from('accounts').select('account_code')
+        .eq('store_id', storeId).eq('is_active', true)
+      const activeCodes = (actRows ?? []).map(a => a.account_code as string)
+      if (activeCodes.length === 0) { if (!cancelled) { setTrendAt([]); setTrendLoading(false) } return }
+
+      const { data } = await supabase
+        .from('orders')
+        .select('ordered_at, total_amount')
+        .in('account_code', activeCodes)
+        .neq('status', '취소')
+        .eq('is_deleted', false)
+
+      if (cancelled) return
+      setTrendAt((data ?? []).map(o => ({
+        at:     o.ordered_at as string,
+        amount: (o.total_amount as number | null) ?? 0,
+      })))
+      setTrendLoading(false)
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [storeId])
+
   // ── 주기 집계: 창과 무관하게 180일 고정 ──
   useEffect(() => {
     if (!storeId) return
@@ -201,6 +281,8 @@ export default function OrderAnalysis() {
           .select('account_code, account_name, current_balance')
           .eq('store_id', storeId)
           .eq('is_active', true),
+        // 아래 accounts 는 is_active 로 좁혀져 있고, times 를 그 계정으로만 조회하므로
+        // 비활성 주문은 결과에서 버려진다. 다만 네트워크로 받아올 이유가 없어 여기서 끊는다.
         supabase
           .from('orders')
           .select('account_code, ordered_at')
@@ -276,29 +358,111 @@ export default function OrderAnalysis() {
   }, {})
   const deliveryTotal = rows.reduce((s, r) => s + r.deliveryFee, 0)
 
-  // 평균 주기의 2배 넘게 비었으면 신호. 7일 하한은 주기가 짧은 곳(매일 오는 곳)이
-  // 이틀 쉰 것만으로 경고에 뜨는 걸 막는다
-  const overdue = cycles.filter(c =>
-    c.avgGap != null && c.lastDays != null && c.lastDays > c.avgGap * 2 && c.lastDays >= 7)
+  // 판정 기준은 lib/idle-accounts.ts 가 들고 있다 — **문자 보내기 화면과 같은 함수**다.
+  // 전엔 이 줄에 조건이 직접 박혀 있었고, 문자 화면은 60일 절대 기준을 따로 써서
+  // 같은 말("뜸하다")을 두 화면이 11곳 / 6곳으로 다르게 셌다.
+  const trend        = buildOrderTrend(trendAt, trendUnit)
+  const trendSummary = summarizeTrend(trend)
+
+  const overdue = cycles.filter(isIdleAccount)
   const dormantWithMoney = dormant.filter(d => d.balance > 0)
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-bg px-[30px] py-[24px]">
-      <div className="flex items-center justify-between mb-[20px]">
-        <div className="text-[18px] font-semibold text-[#1E1E1E]">주문 리포트</div>
-        <div className="flex gap-[6px]">
-          {[7, 30, 90, 0].map(d => (
-            <button
-              key={d}
-              onClick={() => { setDays(d); setPicked(null) }}
-              className={`pressable-tab h-[30px] px-[12px] rounded-[9px] text-[13px] font-normal ${
-                days === d ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878]'
-              }`}
-            >
-              {d === 0 ? '전체' : `최근 ${d}일`}
-            </button>
-          ))}
+    <div className="h-full overflow-y-auto scroll-stable bg-gray-bg px-[30px] py-[24px]">
+      <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[20px]">주문 리포트</div>
+
+      {/* 0. 주문 추이 ─────────────────────────────────────────────────────
+          맨 위에 두는 이유: 나머지는 전부 "지난 N일을 쪼개 본 것"인데, 그걸 보기 전에
+          **흐름이 올라가는지 내려가는지**를 먼저 알아야 한다. 히트맵부터 보면
+          "목요일 12시가 바쁘다"는 알아도 "요즘 전보다 한산하다"는 끝까지 모른다.
+
+          기간 버튼(7/30/90/전체)이 이 박스 **아래**에 있는 것도 같은 이유다 —
+          추이는 그 창에 묶이지 않는다(항상 최근 12구간). 버튼을 추이 위에 두면
+          추이까지 걸러지는 것처럼 읽힌다. */}
+      <Section
+        title="주문 추이"
+        right={
+          <SegmentedTabs
+            options={TREND_UNITS.map(u => ({ value: u, label: UNIT_LABEL[u] }))}
+            value={trendUnit}
+            onChange={setTrendUnit}
+          />
+        }
+      >
+        {/* 막대 | 분석 멘트 — 주문 시간대의 '히트맵 | 요약'과 같은 구성 */}
+        {trendLoading ? (
+          <LoadingBlock py={40} />
+        ) : trendAt.length === 0 ? (
+          <div className="bg-[#FCFCFC] rounded-[11px] py-[40px] text-center">
+            <div className="text-[13px] font-normal text-[#787878]">아직 추이를 그릴 주문이 없어요</div>
+          </div>
+        ) : (
+        <div className="flex items-stretch gap-[12px]">
+          <div className="flex-1 min-w-0 bg-[#FCFCFC] rounded-[11px] p-[14px]">
+            <OrderTrendChart
+              buckets={trend}
+              barWidth={TREND_BAR_W[trendUnit]}
+              // 평균선은 일별에서만 — 월별 다섯 칸에 7일 평균은 뜻이 없다
+              showAverage={trendUnit === 'day'}
+            />
+          </div>
+          <div className="w-[205px] flex-shrink-0 bg-[#FCFCFC] rounded-[11px] px-[16px] py-[14px] flex flex-col justify-center">
+            {(() => {
+              const { current, lastDone, peak, delta } = trendSummary
+              return (
+                <>
+                  <div className="text-[12px] font-normal text-[#787878]">
+                    {UNIT_CURR_LABEL[trendUnit]} 주문
+                  </div>
+                  <div className="text-[18px] font-semibold text-[#1E1E1E] mt-[6px] leading-snug">
+                    {current?.count ?? 0}건
+                    <span className="text-[11px] font-normal text-[#ADADAD] ml-[4px]">진행 중</span>
+                  </div>
+                  {/* 건수만 보면 "건수는 줄었는데 매출은 늘었다"를 놓친다 —
+                      주문 화면 오른쪽이 주문수량과 주문액을 나란히 두는 것과 같은 이유 */}
+                  <div className="text-[13px] font-medium text-[#1E1E1E] tabular-nums mt-[2px]">
+                    {won(current?.amount ?? 0)}
+                  </div>
+
+                  {/* 비교는 **끝난 구간끼리** 한다 — 진행 중인 칸을 끌어다 비교하면
+                      달이 바뀔 때마다 "급감"이라고 나온다.
+                      증감 색은 앱 관습대로 +빨강 / −파랑 (PrepaidTrendChart 주석 참고) */}
+                  <div className="text-[12px] font-normal text-[#787878] mt-[12px] leading-relaxed">
+                    {lastDone && delta !== undefined ? (
+                      <>
+                        {UNIT_PREV_LABEL[trendUnit]} {lastDone.count}건 · {won(lastDone.amount)}<br />
+                        <span className={delta > 0 ? 'text-[#C92A2A]' : delta < 0 ? 'text-[#1C7ED6]' : ''}>
+                          그 전보다 {delta === 0 ? '같음' : `${Math.abs(delta)}건 ${delta > 0 ? '많음' : '적음'}`}
+                        </span>
+                      </>
+                    ) : '비교할 지난 기록이 아직 없어요'}
+                  </div>
+
+                  {peak && (
+                    <div className="text-[12px] font-normal text-[#ADADAD] mt-[6px]">
+                      최다 {peak.label} {peak.count}건 · {won(peak.amount)}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
         </div>
+        )}
+      </Section>
+
+      {/* 기간 탭 — 여기부터 아래가 이 창의 영향을 받는다.
+          추이 단위 탭과 **같은 모양·같은 오른쪽 끝**에 선다. 둘 다 "무엇을 기준으로
+          볼지" 고르는 같은 성격의 조작인데, 모양이나 자리가 다르면 하나는 버튼,
+          하나는 탭으로 읽힌다. 라벨을 따로 안 붙인 이유도 같다 — 바로 위 추이 탭에도
+          라벨이 없고, 탭은 고르는 물건이라는 게 모양만으로 읽힌다. */}
+      <div className="flex justify-end mt-[16px] mb-[20px]">
+        <SegmentedTabs
+          options={DAY_OPTIONS.map(d => ({ value: d, label: d === 0 ? '전체' : `최근 ${d}일` }))}
+          value={days}
+          onChange={d => { setDays(d); setPicked(null) }}
+          cellWidth={84}
+        />
       </div>
 
       {loading ? (
@@ -318,17 +482,15 @@ export default function OrderAnalysis() {
                   그리고 칸을 누르면 그 요일·시간에 실제로 들어왔던 주문을 아래에
                   좌우 스크롤로 펼친다 — 히트맵은 겹쳐 본 그림이라, 진짜 주문을
                   보여주지 않으면 "그래서 뭐가 팔렸는데"에 답할 수 없다. */}
-              <Section
-                title="주문 시간대"
-                right={peak && peakDow != null && peakHour != null && (
-                  <div className="text-[13px] font-normal text-[#6A635E] text-right leading-snug">
-                    가장 바쁜 때는{' '}
-                    <span className="text-[15px] font-semibold text-[#1E1E1E]">{DOW[peakDow]}요일 {peakHour}시</span>
-                    <span className="text-[#ADADAD]"> · {peakCount}건</span>
-                  </div>
-                )}
-              >
-                <div className="bg-[#FCFCFC] rounded-[11px] p-[14px] overflow-x-auto relative">
+              <Section title="주문 시간대">
+                {/* 히트맵 | 요약, 두 박스를 나란히 둔다.
+                    요약은 히트맵을 읽은 '결과'라서 지표처럼 세워 보여준다 — 라벨·값·건수를
+                    왼쪽으로 맞추고 박스 높이 가운데에 놓는다. 한 줄 문장으로 오른쪽 끝에
+                    붙여두면 그림의 캡션처럼 읽혀서 눈이 잘 안 간다.
+                    가로 스크롤은 히트맵 안쪽 div 가 맡는다 — 요약까지 같이 밀려가면 안 된다. */}
+                <div className="flex items-stretch gap-[12px]">
+                <div className="flex-1 min-w-0 bg-[#FCFCFC] rounded-[11px] p-[14px]">
+                  <div className="overflow-x-auto">
                   <div className="inline-grid gap-[2px]" style={{ gridTemplateColumns: `28px repeat(${HOURS.length}, 26px)` }}>
                     <div />
                     {HOURS.map(h => (
@@ -362,6 +524,17 @@ export default function OrderAnalysis() {
                       </Fragment>
                     ))}
                   </div>
+                  </div>
+                </div>
+                {peak && peakDow != null && peakHour != null && (
+                  <div className="w-[190px] flex-shrink-0 bg-[#FCFCFC] rounded-[11px] px-[16px] py-[14px] flex flex-col justify-center">
+                    <div className="text-[12px] font-normal text-[#787878]">가장 바쁜 때</div>
+                    <div className="text-[18px] font-semibold text-[#1E1E1E] mt-[6px] leading-snug">
+                      {DOW[peakDow]}요일 {peakHour}시
+                    </div>
+                    <div className="text-[12px] font-normal text-[#ADADAD] mt-[3px]">주문 {peakCount}건</div>
+                  </div>
+                )}
                 </div>
 
                 {/* 호버 말풍선 — 고객 화면 '추이' i 와 같은 모양 */}
@@ -427,8 +600,10 @@ export default function OrderAnalysis() {
                 })()}
               </Section>
 
-              {/* 2. 많이 나간 메뉴 · 옵션 */}
-              <div className="flex gap-[20px] mb-[30px]">
+              {/* 2. 많이 나간 메뉴 · 옵션 —
+                  Section 과 달리 제목이 두 칸 안에 각각 들어가서, 섹션 간 기본 간격(30px)만
+                  두면 위 히트맵에 붙어 보인다. 여기만 더 띄운다. */}
+              <div className="flex gap-[20px] mt-[16px] mb-[30px]">
                 <div className="flex-1 min-w-0">
                   <div className="text-[15px] font-semibold text-[#2C261F] mb-[10px]">많이 나간 메뉴</div>
                   <div className="bg-[#FCFCFC] rounded-[11px] p-[13px] flex flex-col gap-[9px]">
@@ -486,7 +661,17 @@ export default function OrderAnalysis() {
 
           {/* 4. 계정별 주문 주기 — 기간 선택과 무관하게 180일.
               창 안의 주문만으로 주기를 재면 정작 뜸해진 계정이 기간 밖으로 사라진다 */}
-          <Section title="계정별 주문 주기">
+          <Section
+            title="계정별 주문 주기"
+            right={
+              <span className="text-[12px] font-normal text-[#787878]">
+                {cycles.length}곳
+                {dormant.length > 0 && (
+                  <span className="text-[#ADADAD]"> · {CYCLE_DAYS}일 주문 없는 {dormant.length}곳은 제외</span>
+                )}
+              </span>
+            }
+          >
             {cycles.length === 0 ? (
               <div className="bg-[#FCFCFC] rounded-[11px] py-[40px] text-center text-[13px] font-normal text-[#ADADAD]">
                 주문 기록이 있는 계정이 없어요
@@ -500,7 +685,11 @@ export default function OrderAnalysis() {
                   <span className="w-[95px] text-right">마지막 주문</span>
                   <span className="w-[105px] text-right">현재 잔액</span>
                 </div>
-                {cycles.slice(0, 12).map((c, i, arr) => {
+                {/* 전엔 .slice(0, 12) 로 잘려 있었다. 자른다는 표시가 없어서
+                    "왜 우리 과가 없지?"를 확인할 길이 없었다(활성 25곳 중 24곳이
+                    주기가 있는데 12줄만 보였다). 전부 보여주고, 무엇이 빠졌는지는
+                    제목 줄에 적는다 — 180일 동안 주문이 없어 주기를 못 구하는 곳만 빠진다. */}
+                {cycles.map((c, i, arr) => {
                   const late = c.avgGap != null && c.lastDays != null
                             && c.lastDays > c.avgGap * 2 && c.lastDays >= 7
                   return (
@@ -518,7 +707,7 @@ export default function OrderAnalysis() {
                       <span className={`w-[95px] text-right ${late ? 'text-danger font-medium' : 'text-[#787878]'}`}>
                         {c.lastDays == null ? '—' : c.lastDays === 0 ? '오늘' : `${c.lastDays}일 전`}
                       </span>
-                      <span className={`w-[105px] text-right ${c.balance < 0 ? 'text-danger' : 'text-[#1E1E1E]'}`}>
+                      <span className={`w-[105px] text-right ${c.balance < 0 ? 'text-[#3374FF]' : 'text-[#1E1E1E]'}`}>
                         {won(c.balance)}
                       </span>
                     </div>
@@ -529,9 +718,25 @@ export default function OrderAnalysis() {
 
             {overdue.length > 0 && (
               <Insight>
-                <span className="font-medium">{overdue.slice(0, 3).map(o => o.account).join(', ')}</span>
-                {overdue.length > 3 ? ` 외 ${overdue.length - 3}곳` : ''}은 평소 주기보다 오래 비었어요.
-                {' '}고객 · 문자 보내기에서 한 번에 연락할 수 있어요.
+                {/* 문장과 CTA 를 한 줄에 — 읽고 바로 누를 수 있어야 한다.
+                    버튼은 이 목록(overdue)과 **같은 기준**으로 추려진 명단을 띄운다
+                    (lib/idle-accounts.ts). 전엔 리포트는 상대 주기, 문자 화면은 60일
+                    절대 기준이라 건너가면 명단이 달라져 있었다. */}
+                <div className="flex items-center gap-[12px]">
+                  <span className="flex-1 min-w-0">
+                    <span className="font-medium">{overdue.slice(0, 3).map(o => o.account).join(', ')}</span>
+                    {overdue.length > 3 ? ` 외 ${overdue.length - 3}곳` : ''}은 현재 주문이 뜸한 상태예요.
+                    {' '}고객 &gt; 문자 보내기에서 일괄로 리마인드 문자를 전송해보세요.
+                  </span>
+                  {onOpenSms && (
+                    <button
+                      onClick={() => onOpenSms('idle_account')}
+                      className="flex-shrink-0 h-[30px] px-[13px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 transition-opacity"
+                    >
+                      문자 보내기
+                    </button>
+                  )}
+                </div>
               </Insight>
             )}
 

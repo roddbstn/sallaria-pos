@@ -45,7 +45,7 @@ export default function MenuFormModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-[40px]" onClick={onClose}>
       <div
-        className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[#FCFCFC] rounded-[18px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
         style={{ width: 900 }}
         onClick={e => e.stopPropagation()}
       >
@@ -60,7 +60,7 @@ export default function MenuFormModal({
 
           {/* 이미지 + 고객용표시/품절 토글 */}
           <div className="flex gap-[26px] mb-[31px]">
-            <label className="relative w-[117px] h-[117px] rounded-[6px] border border-[#D9D9D9] flex-shrink-0 cursor-pointer overflow-hidden block">
+            <label className="relative w-[117px] h-[117px] rounded-[10px] border border-[#D9D9D9] flex-shrink-0 cursor-pointer overflow-hidden block">
               <input type="file" accept="image/*" className="hidden" onChange={e => {
                 const file = e.target.files?.[0]
                 if (!file) return
@@ -92,7 +92,7 @@ export default function MenuFormModal({
                     오늘만 품절
                     <span className="relative group">
                       <span className="w-[18px] h-[18px] rounded-full bg-[#E8E4E2] text-[#787878] text-[11px] flex items-center justify-center cursor-default">i</span>
-                      <span className="absolute left-1/2 -translate-x-1/2 bottom-[calc(100%+8px)] w-[84px] bg-[#FCFCFC] rounded-[8px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[6px] py-[6px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity pointer-events-none z-10">
+                      <span className="absolute left-1/2 -translate-x-1/2 bottom-[calc(100%+8px)] w-[84px] bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[6px] py-[6px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity pointer-events-none z-10">
                         <span className="block text-[10px] font-semibold text-ink text-center leading-[1.2]">마감 시간까지<br />품절 처리돼요</span>
                       </span>
                     </span>
@@ -139,7 +139,7 @@ export default function MenuFormModal({
             <div className="flex flex-wrap gap-[6px]">
               <button
                 onClick={() => setForm(p => ({ ...p, categoryId: '' }))}
-                className={`px-[10px] py-[7px] rounded-[8px] text-[13px] font-medium whitespace-nowrap transition-colors ${
+                className={`px-[10px] py-[7px] rounded-[10px] text-[13px] font-medium whitespace-nowrap transition-colors ${
                   form.categoryId === '' ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
                 }`}
               >
@@ -149,7 +149,7 @@ export default function MenuFormModal({
                 <button
                   key={cat.id}
                   onClick={() => setForm(p => ({ ...p, categoryId: cat.id }))}
-                  className={`px-[10px] py-[7px] rounded-[8px] text-[13px] font-medium whitespace-nowrap transition-colors ${
+                  className={`px-[10px] py-[7px] rounded-[10px] text-[13px] font-medium whitespace-nowrap transition-colors ${
                     form.categoryId === cat.id ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
                   }`}
                 >
@@ -158,7 +158,7 @@ export default function MenuFormModal({
               ))}
               <button
                 onClick={onAddCategory}
-                className="px-[10px] py-[7px] rounded-[8px] text-[13px] font-medium border border-[#ADADAD] text-[#787878] whitespace-nowrap"
+                className="px-[10px] py-[7px] rounded-[10px] text-[13px] font-medium border border-[#ADADAD] text-[#787878] whitespace-nowrap"
               >
                 + 카테고리 추가
               </button>
@@ -175,7 +175,7 @@ export default function MenuFormModal({
               <button
                 disabled
                 title="메뉴 가격에 맞춰 자동으로 만들어지는 옵션이라 끄거나 켤 수 없어요"
-                className="px-[10px] py-[7px] rounded-[8px] text-[13px] font-medium whitespace-nowrap bg-[#E8E4E2] text-[#6A635E] opacity-70 cursor-not-allowed flex items-center gap-[5px]"
+                className="px-[10px] py-[7px] rounded-[10px] text-[13px] font-medium whitespace-nowrap bg-[#E8E4E2] text-[#6A635E] opacity-70 cursor-not-allowed flex items-center gap-[5px]"
               >
                 <svg width="10" height="11" viewBox="0 0 12 13" fill="none">
                   <rect x="2.2" y="5.6" width="7.6" height="6.2" rx="1.3" stroke="#6A635E" strokeWidth="1.3"/>
@@ -187,7 +187,7 @@ export default function MenuFormModal({
                 <button
                   key={g.id}
                   onClick={() => onToggleGroup(g.id)}
-                  className={`px-[10px] py-[7px] rounded-[8px] text-[13px] font-medium whitespace-nowrap transition-colors ${
+                  className={`px-[10px] py-[7px] rounded-[10px] text-[13px] font-medium whitespace-nowrap transition-colors ${
                     selectedGroupIds.has(g.id) ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
                   }`}
                 >
@@ -196,7 +196,7 @@ export default function MenuFormModal({
               ))}
               <button
                 onClick={onAddOptionGroup}
-                className="px-[10px] py-[7px] rounded-[8px] text-[13px] font-medium border border-[#ADADAD] text-[#787878] whitespace-nowrap flex items-center gap-[4px]"
+                className="px-[10px] py-[7px] rounded-[10px] text-[13px] font-medium border border-[#ADADAD] text-[#787878] whitespace-nowrap flex items-center gap-[4px]"
               >
                 + 옵션 추가
               </button>
@@ -213,7 +213,7 @@ export default function MenuFormModal({
                   <button
                     key={t.key}
                     onClick={() => setForm(p => ({ ...p, [t.key]: !p[t.key] }))}
-                    className="px-[10px] py-[7px] rounded-[8px] text-[13px] font-medium whitespace-nowrap transition-colors"
+                    className="px-[10px] py-[7px] rounded-[10px] text-[13px] font-medium whitespace-nowrap transition-colors"
                     style={{ backgroundColor: active ? t.bg : '#F2F2F2', color: active ? '#FCFCFC' : '#787878' }}
                   >
                     {t.label}
@@ -233,7 +233,7 @@ export default function MenuFormModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-[10px] px-[62px] py-[20px] border-t border-[#ADADAD]/30 flex-shrink-0">
+        <div className="flex items-center justify-end gap-[10px] px-[62px] py-[20px] flex-shrink-0 modal-footer">
           <button onClick={onClose} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-medium hover:opacity-90 transition-opacity">
             닫기
           </button>

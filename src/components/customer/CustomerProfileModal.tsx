@@ -32,7 +32,21 @@ interface Profile {
   recent:     { date: string; time: string; dow: string; method: string; amount: number; items: string | null }[]
 }
 
-const SLOT_ORDER = ['아침', '점심', '오후', '저녁'] as const
+// 시간대 경계는 customer_profile() RPC 안의 case 문과 **같은 값**이다.
+//   hour < 11 → 아침 / < 15 → 점심 / < 18 → 오후 / 그 외 → 저녁
+// 화면에 범위를 같이 적어주지 않으면 "점심이 몇 시부터인데?"를 알 길이 없다.
+// RPC 를 고치면 여기 range 도 같이 고쳐야 한다.
+//
+// 아침의 시작을 08시로 적는 이유: RPC 는 11시 **이전 전부**를 아침으로 넣는데,
+// 실제 주문 기록에서 가장 이른 주문이 09시다(08시 이전 주문은 0건). 그래서
+// '08~11시' 가 현실과 어긋나지 않는다. 혹시 새벽 주문을 받기 시작하면
+// 이 레이블이 거짓이 되므로 그때 RPC 와 함께 고쳐야 한다.
+const SLOTS = [
+  { slot: '아침', range: '08~11시' },
+  { slot: '점심', range: '11~15시' },
+  { slot: '오후', range: '15~18시' },
+  { slot: '저녁', range: '18시~'  },
+] as const
 
 export default function CustomerProfileModal({
   storeId, ordererName, accountCode, accountName, onClose,
@@ -71,17 +85,22 @@ export default function CustomerProfileModal({
   // 표에서는 "39건 1위"로만 보여서 잘 되는 손님처럼 읽히는데, 실제로는 내려오는 중일 수 있다.
   const declining = !!p && p.monthly.length >= 3 && p.monthly[p.monthly.length - 1].n < maxMonth / 2
 
-  function slotsOf(part: '평일' | '주말') {
-    if (!p) return []
-    return SLOT_ORDER
-      .map(s => ({ slot: s, n: p.slots.find(x => x.part === part && x.slot === s)?.n ?? 0 }))
-      .filter(x => x.n > 0)
+  /** 시간대 × 평일/주말 교차 칸 하나 */
+  function slotN(part: '평일' | '주말', slot: string) {
+    return p?.slots.find(x => x.part === part && x.slot === slot)?.n ?? 0
   }
+  // 가장 많이 오는 칸 — 표에서 한 칸만 진하게 집어준다.
+  // 숫자를 전부 같은 굵기로 두면 "그래서 언제 오는 사람인데?"에 눈이 멈출 곳이 없다.
+  const peak = p
+    ? SLOTS.flatMap(s => (['평일', '주말'] as const)
+        .map(part => ({ part: part as string, slot: s.slot as string, n: slotN(part, s.slot) })))
+        .reduce((a, b) => (b.n > a.n ? b : a), { part: '', slot: '', n: 0 })
+    : null
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[520px] max-w-[92vw] max-h-[86vh] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[520px] max-w-[92vw] max-h-[86vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-[28px] pt-[24px] pb-[16px] border-b border-[#E8E4E2]">
@@ -119,13 +138,31 @@ export default function CustomerProfileModal({
                   </div>
                 ))}
               </div>
-              {declining && (
-                <div className="text-[12px] font-medium text-danger mb-[20px]">줄고 있어요</div>
+              {/* '줄고 있어요' — 전엔 빨간 글자 한 줄이 막대 아래에 떠 있어서
+                  차트의 일부인지 경고인지 구분이 안 됐다. 박스에 담고 아이콘을 붙여
+                  "이건 읽어야 하는 말"로 만든다. 왜 그렇게 판단했는지도 같이 적는다 —
+                  근거 없는 경고는 점주가 두 번째부터 무시한다. */}
+              {declining ? (
+                <div className="mt-[11px] mb-[20px] flex items-start gap-[9px] rounded-[10px] bg-[#FFEFEF] px-[13px] py-[11px]">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-[1px]">
+                    <path d="M8 2.5L14.5 13.5H1.5L8 2.5Z" stroke="#C92A2A" strokeWidth="1.5" strokeLinejoin="round"/>
+                    <path d="M8 6.5V9.5" stroke="#C92A2A" strokeWidth="1.5" strokeLinecap="round"/>
+                    <circle cx="8" cy="11.4" r="0.8" fill="#C92A2A"/>
+                  </svg>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold text-[#C92A2A] leading-snug">주문이 줄고 있어요</div>
+                    <div className="text-[12px] font-normal text-[#A94442] mt-[3px] leading-relaxed">
+                      가장 많았던 달 {maxMonth}건의 절반도 안 되는 {p.monthly[p.monthly.length - 1].n}건이에요
+                      {' '}({p.monthly[p.monthly.length - 1].label} 기준).
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-[20px]" />
               )}
-              {!declining && <div className="mb-[20px]" />}
 
-              {/* 늘 시키는 것 */}
-              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">늘 시키는 것</div>
+              {/* 선호 메뉴 */}
+              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">선호 메뉴</div>
               <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mb-[20px]">
                 {p.menus.map((m, i) => (
                   <div key={m.name} className={`flex items-center px-[14px] h-[36px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
@@ -138,31 +175,55 @@ export default function CustomerProfileModal({
                 ))}
               </div>
 
-              {/* 주로 오는 시간 — 평일과 주말을 나눠 센다.
-                  합쳐 보면 서로 다른 두 습관이 섞여서 "아침도 저녁도 많다"로 뭉개진다.
-                  실제로 평일엔 저녁, 주말엔 아침인 손님이 있었다. */}
+              {/* 주로 오는 시간 — 시간대(행) × 평일·주말(열) 교차표.
+                  평일과 주말을 나눠 세는 이유는 그대로다: 합치면 서로 다른 두 습관이 섞여
+                  "아침도 저녁도 많다"로 뭉개진다. 실제로 평일엔 저녁, 주말엔 아침인 손님이 있었다.
+
+                  전엔 평일/주말 카드 두 장 안에 아침·점심·저녁을 나열했다. 그러면 '평일'과
+                  '저녁'이 **같은 층처럼 읽혀서** 어느 쪽이 묶는 축인지 알 수 없었다.
+                  축을 머리글로 못 박고(행=시간대, 열=평일/주말) 시간 범위까지 적어
+                  '점심이 몇 시부터인지'를 화면에서 바로 읽게 한다. */}
               <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">주로 오는 시간</div>
-              <div className="flex gap-[10px] mb-[20px]">
-                {(['평일', '주말'] as const).map(part => {
-                  const list  = slotsOf(part)
-                  const total = part === '평일' ? p.weekday_n : p.weekend_n
+              <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mb-[20px]">
+                {/* 머리글 — 여기가 '열은 평일/주말이다'라고 말해주는 유일한 자리 */}
+                <div className="flex items-center h-[32px] px-[14px] bg-[#F2F2F2]">
+                  <span className="flex-1 text-[11px] font-medium text-[#6A635E]">시간대</span>
+                  <span className="w-[62px] text-right text-[11px] font-medium text-[#6A635E]">평일</span>
+                  <span className="w-[62px] text-right text-[11px] font-medium text-[#6A635E]">주말</span>
+                </div>
+                {SLOTS.map(({ slot, range }) => {
+                  const wd = slotN('평일', slot)
+                  const we = slotN('주말', slot)
                   return (
-                    <div key={part} className="flex-1 rounded-[11px] border border-[#E8E4E2] px-[14px] py-[11px]">
-                      <div className="flex items-baseline justify-between mb-[7px]">
-                        <span className="text-[12px] font-medium text-[#1E1E1E]">{part}</span>
-                        <span className="text-[11px] font-normal text-[#ADADAD] tabular-nums">{total}건</span>
-                      </div>
-                      {list.length === 0 ? (
-                        <div className="text-[11px] font-normal text-[#ADADAD]">없음</div>
-                      ) : list.map(x => (
-                        <div key={x.slot} className="flex items-center justify-between py-[2px]">
-                          <span className="text-[12px] font-normal text-[#787878]">{x.slot}</span>
-                          <span className="text-[12px] font-medium text-[#1E1E1E] tabular-nums">{x.n}건</span>
-                        </div>
+                    <div key={slot} className="flex items-center h-[34px] px-[14px] border-t border-[#F2F2F2]">
+                      <span className="flex-1 min-w-0 text-[12px] text-[#414141]">
+                        {slot}
+                        {/* 범위는 한 단계 흐리게 — 이름이 먼저 읽히고 범위가 뒤따라야 한다 */}
+                        <span className="ml-[5px] text-[11px] font-normal text-[#ADADAD] tabular-nums">{range}</span>
+                      </span>
+                      {([['평일', wd], ['주말', we]] as const).map(([part, n]) => (
+                        <span
+                          key={part}
+                          className={`w-[62px] text-right text-[12px] tabular-nums ${
+                            n === 0
+                              ? 'font-normal text-[#D7D7D7]'
+                              : peak && peak.n > 0 && peak.part === part && peak.slot === slot
+                                ? 'font-semibold text-[#1E1E1E]'
+                                : 'font-normal text-[#414141]'
+                          }`}
+                        >
+                          {n === 0 ? '—' : `${n}건`}
+                        </span>
                       ))}
                     </div>
                   )
                 })}
+                {/* 합계 — 평일·주말 둘 중 어느 쪽 사람인지는 이 줄이 답한다 */}
+                <div className="flex items-center h-[32px] px-[14px] border-t border-[#E8E4E2] bg-[#FAFAFA]">
+                  <span className="flex-1 text-[11px] font-medium text-[#6A635E]">합계</span>
+                  <span className="w-[62px] text-right text-[12px] font-medium text-[#1E1E1E] tabular-nums">{p.weekday_n}건</span>
+                  <span className="w-[62px] text-right text-[12px] font-medium text-[#1E1E1E] tabular-nums">{p.weekend_n}건</span>
+                </div>
               </div>
 
               {/* 이용방법 */}
@@ -199,7 +260,7 @@ export default function CustomerProfileModal({
           )}
         </div>
 
-        <div className="flex justify-end px-[28px] py-[16px] border-t border-[#E8E4E2]">
+        <div className="flex justify-end px-[28px] py-[16px] modal-footer">
           <button
             onClick={onClose}
             className="pressable w-[86px] h-[42px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[14px] font-medium hover:opacity-90"

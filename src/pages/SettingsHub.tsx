@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { getAppVersion } from '../lib/ipc'
 import { usePersistentState } from '../hooks/usePersistentState'
 import CountStepper from '../components/ui/CountStepper'
 import QrPrintPanel from './QrPrintPanel'
@@ -9,6 +10,12 @@ import ReceiptPreview, { DEFAULT_RECEIPT_CONFIG, type ReceiptPreviewConfig } fro
 import PrinterDiagnosticModal, { buildDiagnosticText, type PrinterDiagnostic } from '../components/ui/PrinterDiagnosticModal'
 import DiagnosticReportModal, { type DiagnosticReport } from '../components/ui/DiagnosticReportModal'
 import * as Sentry from '@sentry/electron/renderer'
+import { usePrinterConfig } from '../hooks/usePrinterConfig'
+import {
+  PAPER_CHOICES, LINK_CHOICES, BAUD_RATES, DEFAULT_TCP_PORT,
+  paperChoice, effectiveLineChars, configProblem,
+  type PaperWidth, type PrinterLink, type PrinterConfig,
+} from '../lib/printer-paper'
 
 // 햄버거 드로어 "설정" 그룹 — `선포스-전체메뉴-화면기획.md` §4~6의 기획을 와이어프레임으로 구현.
 // Figma 노드는 아직 없다. 기존 Settings.tsx의 기능을 옮겨오되, 토스 POS 벤치마크 결과를
@@ -28,9 +35,20 @@ const NAV: HubNavItem<SettingsHubTab>[] = [
 ]
 
 // Electron preload가 노출한 것만 추린 타입 (Settings.tsx와 동일 계약)
-type ComPort = { path: string; manufacturer?: string; friendlyName?: string }
+/** 운영체제가 아는 프린터(Windows 스풀러 · macOS CUPS). 출력용이 아니라 안내용이다 */
+type OsPrinter = {
+  name: string; displayName: string; description: string; deviceUri: string
+  /** 큐에는 있지만 지금은 못 쓰는 상태(케이블 빠짐·전원 꺼짐) */
+  offline: boolean
+  stateReason: string
+}
+
+type ComPort = {
+  path: string; manufacturer?: string; friendlyName?: string
+  vendorId?: string; productId?: string; pnpId?: string
+}
 type Api = {
-  getSettings?:     () => Promise<{ printer?: { portName: string } }>
+  getSettings?:     () => Promise<{ printer?: PrinterConfig }>
   listPorts?:       () => Promise<ComPort[]>
   connectPrinter?:  () => Promise<{ ok: boolean; error?: string }>
   testPrint?:       () => Promise<{ ok: boolean; error?: string }>
@@ -39,6 +57,7 @@ type Api = {
   offPrinterStatus?:() => void
   // 기타 설정이 쓰는 창구 — 전체 정의는 src/vite-env.d.ts 의 PosBridge 에 있다
   appVersion?:      () => Promise<string>
+  listOsPrinters?:  () => Promise<OsPrinter[]>
   openLogs?:        () => Promise<{ ok: boolean; dir: string; error?: string }>
   keepAwake?:       (on: boolean) => Promise<{ active: boolean; platform: string }>
   updaterCheck?:    () => Promise<{ state: 'latest' | 'available' | 'no-feed' | 'error'; current: string; latest?: string; message?: string }>
@@ -46,6 +65,7 @@ type Api = {
     version: string; electron: string; chrome: string; node: string
     platform: string; arch: string; osRelease: string; logDir: string
     printerPort: string; printerConnected: boolean
+    paperWidth: string; lineChars: number; link: string; baudRate: number; lanHost: string
   }>
 }
 const api = (): Api => (window as unknown as { api?: Api }).api ?? {}
@@ -151,11 +171,6 @@ function SmallButton({ onClick, children, disabled, tone = 'plain' }: {
   )
 }
 
-/** 못 쓰는 기능을 숨기지 않고 "왜 + 어디로"를 같이 준다 (토스 벤치마크 3) */
-function NotYet({ children }: { children: React.ReactNode }) {
-  return <span className="text-[12px] font-normal text-[#ADADAD]">{children}</span>
-}
-
 // ── 허브 ───────────────────────────────────────────────────────────────────
 
 export default function SettingsHub({
@@ -177,15 +192,92 @@ export default function SettingsHub({
   )
 }
 
+// ── 용지·연결 공용 조각 ────────────────────────────────────────────────────
+//
+// 용지 넓이는 '프린터 연결'과 '영수증·증빙' 두 화면에 다 나온다. 점주가 어느 쪽에서
+// 찾든 있어야 하고, 둘이 같은 값을 보여야 한다 — 그래서 usePrinterConfig 하나를
+// 공유하고 컨트롤도 한 곳에서 정의한다.
+
+function PaperWidthRow() {
+  const { cfg, patch } = usePrinterConfig()
+  const choice = paperChoice(cfg.paperWidth)
+  return (
+    <Row label="용지 넓이">
+      <SegButtons
+        value={choice.key}
+        options={PAPER_CHOICES.map(c => ({ v: c.key, label: c.label }))}
+        onChange={(v: PaperWidth) => {
+          // 넓이를 바꾸면 미세조정값은 버린다. 57mm 로 옮기면서 42자가 남아 있으면
+          // 구분선이 종이보다 길어 두 줄로 접힌다.
+          patch({ paperWidth: v, lineChars: undefined })
+        }}
+      />
+    </Row>
+  )
+}
+
 // ── §4. 프린터 연결 ─────────────────────────────────────────────────────────
 
-/** VID/PID·제조사 문자열로 모델명을 추정. 실제로 만난 기기만 조금씩 채우면 된다. */
+/**
+ * USB-시리얼 변환 칩 제조사(VID). 값싼 영수증 프린터는 대부분 이 칩을 거쳐 붙는다 —
+ * 그래서 제조사 문자열에 프린터 이름이 아니라 칩 제조사가 뜬다.
+ * 프린터 모델까지는 알 수 없지만 "USB로 꽂힌 장치"라는 건 확실히 말할 수 있다.
+ */
+const USB_SERIAL_VIDS: Record<string, string> = {
+  '1A86': 'USB 연결 장치 (CH340)',
+  '0403': 'USB 연결 장치 (FTDI)',
+  '067B': 'USB 연결 장치 (Prolific)',
+  '10C4': 'USB 연결 장치 (Silicon Labs)',
+}
+
+/** 영수증 프린터를 직접 만드는 제조사 VID */
+const PRINTER_VIDS: Record<string, string> = {
+  '04B8': 'EPSON 영수증 프린터',
+  '1504': 'BIXOLON 영수증 프린터',
+  '0519': 'Star 영수증 프린터',
+}
+
+/**
+ * macOS 가 기본으로 들고 있는 시리얼 장치. 프린터가 아니다.
+ *
+ * 개발 중에 이 화면을 열면 /dev/tty.debug-console · tty.wlan-debug ·
+ * tty.Bluetooth-Incoming-Port 세 개가 늘 뜬다. 실제 배포는 Windows 라
+ * 점주 화면에는 안 나오지만, 개발 화면에서 "프린터 3개 찾음"으로 보이면
+ * 매번 헷갈린다.
+ */
+const MAC_SYSTEM_PORTS = ['debug-console', 'wlan-debug', 'Bluetooth-Incoming-Port']
+
+// export 하지 않는다 — 이 파일은 컴포넌트 파일이라 함수를 export 하면
+// Vite Fast Refresh 가 깨진다("isSystemPort export is incompatible").
+// 다른 파일에서 필요해지면 그때 lib/ 로 옮긴다.
+function isSystemPort(path: string): boolean {
+  return MAC_SYSTEM_PORTS.some(n => path.includes(n))
+}
+
+/**
+ * 제조사·VID/PID 로 모델명을 추정. 실제로 만난 기기만 조금씩 채우면 된다.
+ *
+ * ⚠️ path 로 폴백하지 않는다. 전엔 메인 프로세스가 friendlyName 이 없을 때
+ *    path 를 넣어 보내서, 이 함수가 "/dev/tty.Bluetooth-Incoming-Port" 를
+ *    제품명으로 알고 그대로 찍었다. path 는 아래 줄에 따로 작게 보여준다.
+ */
 function guessModel(p: ComPort): string {
   const s = `${p.friendlyName ?? ''} ${p.manufacturer ?? ''}`.toUpperCase()
   if (s.includes('BIXOLON') || s.includes('SRP')) return 'BIXOLON 영수증 프린터'
   if (s.includes('EPSON') || s.includes('TM-'))   return 'EPSON TM 시리즈'
   if (s.includes('SEWOO') || s.includes('SLK'))   return 'SEWOO 영수증 프린터'
-  return p.friendlyName || p.manufacturer || '알 수 없는 프린터'
+
+  // 문자열이 비었을 때(macOS·드라이버 미설치) VID 로 한 번 더 시도
+  const vid = (p.vendorId ?? '').toUpperCase()
+  if (PRINTER_VIDS[vid])     return PRINTER_VIDS[vid]
+  if (USB_SERIAL_VIDS[vid])  return USB_SERIAL_VIDS[vid]
+
+  // friendlyName 이 있으면 그걸(Windows 는 "POS-80 (COM3)" 처럼 들어온다),
+  // 없으면 제조사, 그마저 없으면 솔직하게 모른다고 한다.
+  if (p.friendlyName) return p.friendlyName
+  if (p.manufacturer) return p.manufacturer
+  if (isSystemPort(p.path)) return '이 컴퓨터의 시스템 포트 (프린터 아님)'
+  return '이름을 알 수 없는 장치'
 }
 
 /** 포트 이름으로 꽂힌 방식을 짐작해 사람 말로 적는다 */
@@ -194,13 +286,23 @@ function connectionHint(path: string): string {
   const m = /^COM(\d+)$/i.exec(path)
   if (m && Number(m[1]) <= 2) return '포스기 뒤 9핀 포트에 꽂혀 있어요'
   if (path.startsWith('COM'))  return '이 포스에 USB로 꽂혀 있어요'
+  // 개발용 맥에서만 보이는 것들 — 프린터로 오해하지 않게 분명히 적는다
+  if (isSystemPort(path))      return '맥 기본 포트예요 — 프린터가 아닙니다'
   return '이 포스에 연결돼 있어요'
 }
 
 function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
+  // 진단에 붙는 앱 버전 — 하드코딩하면 안 된다.
+  // 아래 diagnostic 에 '1.0.1' 이 박혀 있었고 실제 배포는 1.1.0 이었다. 원격 지원에서
+  // "어느 버전 쓰세요?"의 답이 늘 틀려 있으면 진단 정보를 붙이는 의미가 없다.
+  const [diagAppVersion, setDiagAppVersion] = useState('unknown')
+  useEffect(() => { void getAppVersion().then(setDiagAppVersion) }, [])
   const { storeName } = useStore()
+  const { cfg, patch } = usePrinterConfig()
   const [diagOpen, setDiagOpen] = useState(false)
   const [ports,     setPorts]     = useState<ComPort[]>([])
+  /** 시리얼로는 안 잡히지만 OS 는 알고 있는 프린터 — "0개" 라고 거짓말하지 않기 위해 */
+  const [osPrinters, setOsPrinters] = useState<OsPrinter[]>([])
   const [selected,  setSelected]  = usePersistentState('printer_port', '')
   const [connected, setConnected] = useState(false)
   const [scanning,  setScanning]  = useState(false)
@@ -216,21 +318,49 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
     return () => api().offPrinterStatus?.()
   }, [])
 
+  /** 지금 출력 대상의 이름 — 시리얼이면 COM 포트, USB 면 OS 프린터 이름 */
+  const targetLabel = selected || (cfg.osPrinter ?? '')
+
   const scan = useCallback(async () => {
     setScanning(true)
-    const list = (await api().listPorts?.()) ?? []
+    // 둘을 같이 본다. 시리얼 목록이 비어 있어도 OS 가 프린터를 알고 있으면
+    // 그걸 알려줘야 한다 — USB 영수증 프린터는 시리얼이 아니라 '프린터'로 등록된다.
+    const [list, osList] = await Promise.all([
+      api().listPorts?.().then(r => r ?? []) ?? Promise.resolve([]),
+      api().listOsPrinters?.().then(r => r ?? []) ?? Promise.resolve([] as OsPrinter[]),
+    ])
     setPorts(list)
+    setOsPrinters(osList)
     setScanned(true)
     setScanning(false)
-    // 후보가 하나뿐이면 굳이 고르게 하지 않는다
-    if (!selected && list.length === 1) setSelected(list[0].path)
+    // 후보가 하나뿐이면 굳이 고르게 하지 않는다 (시스템 포트는 후보가 아니다)
+    const candidates = list.filter(x => !isSystemPort(x.path))
+    if (!selected && candidates.length === 1) setSelected(candidates[0].path)
   }, [selected])
 
   useEffect(() => { scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * USB(OS 프린터)를 출력 대상으로 고른다.
+   *
+   * portName 을 **비운다** — 메인 프로세스의 우선순위가 LAN > COM > OS프린터 라서,
+   * 예전에 고른 COM 포트가 남아 있으면 그쪽으로 가버린다.
+   */
+  async function connectOsPrinter(name: string) {
+    setSelected('')
+    await patch({ osPrinter: name, portName: '', link: 'usb' })
+    const r = await api().connectPrinter?.()
+    showToast(r?.ok ? `${name} 에 연결됐어요` : `연결 실패: ${r?.error ?? '알 수 없는 오류'}`)
+    setConnected(!!r?.ok)
+  }
+
   async function connect(path: string) {
     setSelected(path)
-    await api().updateSettings?.({ printer: { portName: path } })
+    // ⚠️ patch 로 보낸다. 전에는 { printer: { portName } } 를 통째로 보내서
+    //    settings:update 가 printer 객체를 덮어쓰며 용지 넓이·연결수단·보율을 날렸다.
+    // osPrinter 를 비운다 — 둘 다 설정돼 있으면 메인 프로세스가 COM 을 먼저 쓰므로
+    // 동작은 맞지만, 설정 화면과 실제 출력 대상이 어긋나 보인다.
+    await patch({ portName: path, osPrinter: '' })
     const r = await api().connectPrinter?.()
     showToast(r?.ok ? '프린터에 연결됐어요' : `연결 실패: ${r?.error ?? '알 수 없는 오류'}`)
   }
@@ -243,7 +373,14 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
   }
 
   const diagnostic: PrinterDiagnostic = {
-    storeName, connected, selected, ports, copies, appVersion: '1.0.1',
+    storeName, connected, selected, ports, copies, appVersion: diagAppVersion,
+    paper: {
+      width:    paperChoice(cfg.paperWidth).label.replace('mm', ''),
+      lineChars: effectiveLineChars(cfg),
+      link:     cfg.link ?? 'serial',
+      baudRate: cfg.baudRate,
+      host:     cfg.host,
+    },
   }
 
   /**
@@ -274,24 +411,100 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
       }`}>
         <span className={`w-[8px] h-[8px] rounded-full flex-shrink-0 ${connected ? 'bg-[#00DD67]' : 'bg-[#C92A2A]'}`} />
         <span className={`text-[13px] ${connected ? 'text-[#017333]' : 'text-[#C92A2A]'}`}>
-          {connected ? `연결됨 — ${selected}` : selected ? `${selected} 를 찾았지만 아직 연결 전이에요` : '연결된 프린터가 없어요'}
+          {/* 연결 대상 이름은 시리얼이면 포트, USB 면 OS 프린터 이름이다.
+              전엔 selected(포트)만 썼더니 USB 로 연결했을 때 '연결됨 — ' 처럼
+              뒤가 비어 보였다. 구분선(—)도 뺀다. */}
+          {connected
+            ? `연결됨 ${targetLabel}`
+            : targetLabel
+              ? `${targetLabel} 를 찾았지만 아직 연결 전이에요`
+              : '연결된 프린터가 없어요'}
         </span>
       </div>
 
       {/* 프린터 찾기 — 연결 방식을 고르게 하지 않는다 (§4-1 보강) */}
       <div className="flex items-center justify-between mb-[11px]">
+        {/* 개수는 아래 목록과 **같은 기준**으로 센다. 맥 기본 포트(debug-console 등)는
+            프린터가 아니라서 목록에서 빼는데, 전엔 개수에는 포함돼 개발 중에 늘
+            "찾은 프린터 3개"로 보였다. 뺀 게 있으면 뺐다고 적는다. */}
         <span className="text-[12px] font-normal text-[#6A635E]">
-          {scanned ? `찾은 프린터 ${ports.length}개` : '프린터를 찾는 중…'}
+          {scanned
+            ? (() => {
+                const sys = ports.filter(x => isSystemPort(x.path)).length
+                return `찾은 프린터 ${ports.length - sys}개${sys > 0 ? ` (시스템 포트 ${sys}개 제외)` : ''}`
+              })()
+            : '프린터를 찾는 중…'}
         </span>
         <SmallButton onClick={scan} disabled={scanning}>{scanning ? '찾는 중…' : '다시 찾기'}</SmallButton>
       </div>
 
       <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mb-[12px]">
-        {ports.length === 0 ? (
-          <div className="bg-[#FCFCFC] py-[34px] text-center text-[13px] font-normal text-[#ADADAD]">
-            연결된 프린터를 못 찾았어요
+        {ports.filter(x => !isSystemPort(x.path)).length === 0 ? (
+          <div className="bg-[#FCFCFC] px-[20px] py-[26px]">
+            <div className="text-center text-[13px] font-normal text-[#ADADAD]">
+              연결된 프린터를 못 찾았어요
+            </div>
+
+            {/* USB 로 꽂아 OS 가 '프린터'로 등록한 경우 — **고를 수 있게** 보여준다.
+                영수증 프린터를 USB 로 꽂으면 시리얼 포트가 아니라 '프린터'로 등록되는
+                일이 흔하다(맥은 거의 항상). 그러면 위 시리얼 목록은 비는데 프린터는
+                눈앞에 꽂혀 있다. 전엔 "못 찾았어요" 한 줄만 떠서 길이 없었다.
+                이제 메인 프로세스가 스풀러/CUPS 에 원시 ESC/POS 를 보낼 수 있다. */}
+            {osPrinters.length > 0 && (
+              <div className="mt-[18px]">
+                {/* ⚠️ "꽂힌" 이 아니라 "등록된" 이다.
+                    USB 프린터를 뽑아도 CUPS/스풀러의 큐는 남아서 목록에 계속 보인다.
+                    전엔 그걸 "USB로 꽂힌 프린터 1개" 라고 적어서, 케이블을 뽑아둔
+                    상태에서도 꽂혀 있는 것처럼 읽혔다. 지금 쓸 수 있는 것만 따로 센다. */}
+                <div className="text-[12px] font-medium text-[#6A635E] mb-[8px]">
+                  이 컴퓨터에 등록된 프린터 {osPrinters.length}개
+                  {osPrinters.some(o => o.offline) && (
+                    <span className="font-normal text-[#C92A2A]">
+                      {' '}· 지금 연결된 건 {osPrinters.filter(o => !o.offline).length}개
+                    </span>
+                  )}
+                </div>
+                <div className="rounded-[10px] border border-[#E8E4E2] overflow-hidden">
+                  {osPrinters.map((op, i) => {
+                    const on = cfg.osPrinter === op.name
+                    return (
+                      <button
+                        key={op.name}
+                        onClick={() => connectOsPrinter(op.name)}
+                        // 꺼져 있는 프린터는 고를 수 없다 — 골라봐야 출력이 안 된다.
+                        disabled={op.offline}
+                        className={`pressable-row w-full flex items-center px-[16px] h-[52px] bg-[#FCFCFC] text-left hover:bg-[#F9F9F9] disabled:hover:bg-[#FCFCFC] disabled:cursor-not-allowed ${
+                          i > 0 ? 'border-t border-[#F2F2F2]' : ''
+                        }`}
+                      >
+                        <span className={`w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                          op.offline ? 'border-[#E0E0E0]' : on ? 'border-[#6A635E]' : 'border-[#ADADAD]'
+                        }`}>
+                          {on && !op.offline && <span className="w-[7px] h-[7px] rounded-full bg-[#6A635E]" />}
+                        </span>
+                        <span className="min-w-0 ml-[11px] flex-1">
+                          <span className={`block text-[13px] truncate ${op.offline ? 'text-[#ADADAD]' : 'text-[#1E1E1E]'}`}>
+                            {op.displayName}
+                          </span>
+                          <span className="block text-[11px] text-[#787878] truncate">
+                            {op.offline
+                              ? '케이블이 빠졌거나 전원이 꺼져 있어요'
+                              : (op.deviceUri || '이 컴퓨터에 등록된 프린터예요')}
+                          </span>
+                        </span>
+                        {op.offline && (
+                          <span className="flex-shrink-0 ml-[10px] text-[11px] font-medium text-[#C92A2A] px-[8px] py-[3px] rounded-[6px] bg-[#FFEFEF]">
+                            연결 안 됨
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        ) : ports.map((p, i) => {
+        ) : ports.filter(x => !isSystemPort(x.path)).map((p, i) => {
           const on = p.path === selected
           return (
             <button
@@ -316,15 +529,66 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
         })}
       </div>
 
-      <div className="flex items-center gap-[9px] mb-[34px]">
-        <SmallButton onClick={() => showToast('IP로 직접 추가는 준비 중이에요 (네트워크 프린터는 2단계)')}>
-          IP로 직접 추가
-        </SmallButton>
-      </div>
+      {/* 용지 넓이와 연결 수단 — 출력 비율이 여기서 정해진다.
+          조사한 기기(세우·빅솔론·시원아이티)의 포트는 9핀 시리얼·USB·RJ45·블루투스 넷인데,
+          앞의 셋 중 시리얼·USB·블루투스는 윈도우에서 모두 COM 포트로 잡혀 통신 코드가 같다.
+          LAN 만 TCP 9100 이라 경로가 다르다. */}
+      <Group title="용지와 연결">
+        <PaperWidthRow />
+        <Row label="연결 수단" hint={LINK_CHOICES.find(l => l.key === (cfg.link ?? 'serial'))?.hint}>
+          <SegButtons
+            value={(cfg.link ?? 'serial') as PrinterLink}
+            options={LINK_CHOICES.map(l => ({ v: l.key, label: l.label }))}
+            onChange={(v: PrinterLink) => patch({ link: v })}
+          />
+        </Row>
+
+        {cfg.link === 'lan' ? (
+          <>
+            <Row label="프린터 IP" hint="프린터 설정 출력물이나 공유기 관리화면에서 확인할 수 있어요">
+              <input
+                value={cfg.host ?? ''}
+                onChange={e => patch({ host: e.target.value.trim() })}
+                placeholder="192.168.0.50"
+                inputMode="decimal"
+                className="w-[132px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[13px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
+              />
+            </Row>
+            <Row label="포트" hint={`비우면 ${DEFAULT_TCP_PORT} 를 써요 (영수증 프린터 표준)`}>
+              <input
+                value={cfg.tcpPort ?? ''}
+                onChange={e => {
+                  const n = Number(e.target.value.replace(/[^0-9]/g, ''))
+                  patch({ tcpPort: n > 0 ? n : undefined })
+                }}
+                placeholder={String(DEFAULT_TCP_PORT)}
+                inputMode="numeric"
+                className="w-[78px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[13px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
+              />
+            </Row>
+          </>
+        ) : (
+          <Row label="통신 속도" hint="글자가 깨져 나오면 이걸 바꿔보세요. 대부분 9600 또는 115200">
+            <select
+              value={cfg.baudRate ?? 9600}
+              onChange={e => patch({ baudRate: Number(e.target.value) })}
+              className="h-[32px] px-[9px] rounded-[8px] bg-[#F2F2F2] text-[13px] tabular-nums text-[#1E1E1E] outline-none"
+            >
+              {BAUD_RATES.map(b => <option key={b} value={b}>{b.toLocaleString('ko-KR')} bps</option>)}
+            </select>
+          </Row>
+        )}
+      </Group>
+
+      {configProblem(cfg) && (
+        <div className="rounded-[11px] bg-[#FFEFEF] px-[20px] py-[13px] mb-[34px] text-[12px] text-[#C92A2A]">
+          {configProblem(cfg)}
+        </div>
+      )}
 
       {/* 문제를 겪는 사람이 설정을 더 만지기 전에 먼저 보이도록 출력 문서 위에 둔다 */}
       <div className="rounded-[11px] bg-[#F2F2F2] px-[20px] py-[16px] mb-[34px]">
-        <div className="text-[12px] font-medium text-[#414141] mb-[7px]">연결이 안 되나요?</div>
+        <div className="text-[12px] font-medium text-[#414141] mb-[7px]">연결이 안 될 때</div>
         <ul className="text-[11px] font-normal text-[#787878] leading-[1.9] list-disc pl-[15px]">
           <li>프린터 전원과 선이 꽂혀 있는지 확인해 주세요</li>
           <li>다른 프로그램(기존 POS)이 프린터를 쓰고 있으면 잡히지 않아요</li>
@@ -406,10 +670,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
       <HubSection title="영수증 · 증빙" />
 
       <Group title="영수증 모양">
-        <Row label="용지 폭">
-          <span className="text-[13px] text-[#1E1E1E]">58mm</span>
-          <NotYet>80mm 준비 중</NotYet>
-        </Row>
+        <PaperWidthRow />
         <Row label="메뉴명 글자 크기">
           <SegButtons value={menuSize} options={SIZE_OPTS} onChange={v => patch({ menuSize: v })} />
         </Row>
@@ -498,7 +759,9 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   const [alarmMode,    setAlarmMode]    = usePersistentState<'count' | 'until-ack'>('alarm_mode', 'count')
   const [repeatSec,    setRepeatSec]    = usePersistentState('repeat_sec', 1)
   const [alarmCount,   setAlarmCount]   = usePersistentState('alarm_count', 1)
-  const [keepAwake,    setKeepAwake]    = usePersistentState('keep_awake', true)
+  // 기본 **꺼짐**. 켜두면 영업시간 내내 화면이 안 꺼져서 번인과 전기요금이 쌓인다.
+  // 필요한 매장만 켜는 게 맞다(주방에서 멀리 두고 보는 경우).
+  const [keepAwake,    setKeepAwake]    = usePersistentState('keep_awake', false)
 
   const [appVersion,  setAppVersion]  = useState('—')
   const [checking,    setChecking]    = useState(false)
@@ -514,7 +777,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   useEffect(() => { api().keepAwake?.(keepAwake).catch(() => {}) }, [keepAwake])
 
   // 미리 듣기 — **지금 고른 방식 그대로** 들려준다.
-  // 정해진 횟수면 그 횟수만큼, 확인할 때까지면 고른 간격으로 반복한다.
+  // 횟수대로면 그 횟수만큼, 확인할 때까지면 고른 간격으로 반복한다.
   // 전에는 늘 1회만 울려서 "반복 간격을 0.5초로 했는데 왜 한 번만 나지"가 됐다.
   const [previewing, setPreviewing] = useState(false)
   function previewAlarm() {
@@ -632,7 +895,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
           <SegButtons
             value={alarmMode}
             options={[
-              { v: 'count' as const,     label: '정해진 횟수' },
+              { v: 'count' as const,     label: '횟수대로' },
               { v: 'until-ack' as const, label: '확인할 때까지' },
             ]}
             onChange={setAlarmMode}

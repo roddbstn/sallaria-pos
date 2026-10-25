@@ -170,7 +170,6 @@ export default function AccountDetailModal({ target, onClose }: {
   // 수기 조정 — 잔액을 움직이는 세 번째 축. 빠뜨리면 추이가 어긋난다
   const [adjustments, setAdjustments] = useState<{ at: string; amount: number; reason: string | null }[]>([])
   const [qrImg,    setQrImg]    = useState('')
-  const [revealed, setRevealed] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   // 금액 충전 — Customers 화면의 충전 폼을 통째로 가져오지 않고, 이 모달에서 바로 끝낼 수
   // 있는 최소한(금액·결제수단·비고)만 둔다. 저장은 같은 RPC(add_deposit)를 쓴다.
@@ -209,9 +208,11 @@ export default function AccountDetailModal({ target, onClose }: {
           .eq('account_code', target.code)
           .order('created_at', { ascending: false }),
         supabase.from('account_members')
-          .select('id, name, phone, order_count, last_ordered_at')
+          // order_count 는 믿을 수 없어 화면에 쓰지 않는다(아래 liveCount 참고).
+          // 정렬도 실제 건수로 다시 하므로 여기 order() 는 그냥 안정적인 순서용이다.
+          .select('id, name, phone, last_ordered_at')
           .eq('account_code', target.code)
-          .order('order_count', { ascending: false }),
+          .order('name'),
         supabase.from('balance_adjustments')
           .select('created_at, amount, reason')
           .eq('account_code', target.code),
@@ -276,6 +277,19 @@ export default function AccountDetailModal({ target, onClose }: {
         note:         d.note,
       })))
 
+      // ⚠️ account_members.order_count 를 **쓰지 않는다.**
+      //
+      // 그 컬럼은 create_order 가 +1 하는데 cancel_order 는 -1 하지 않는다 —
+      // 취소·삭제·복구를 거칠수록 실제 주문 수와 벌어진다. (토지정보과 이성철이
+      // 저장값 4 / 실제 3(취소 1) 으로 틀어져 있었다.)
+      // 위에서 이미 이 거래처의 주문 전체를 받아왔으니(ordRes, is_deleted=false)
+      // 거기서 세면 **추가 쿼리 없이** 항상 맞는 값이 나온다.
+      const liveCount = new Map<string, number>()
+      for (const o of (ordRes.data ?? []) as { orderer_name: string | null; status: string }[]) {
+        if (o.status === '취소' || !o.orderer_name) continue
+        liveCount.set(o.orderer_name, (liveCount.get(o.orderer_name) ?? 0) + 1)
+      }
+
       setMembers(((memRes.data ?? []) as {
         id: string; name: string; phone: string | null
         order_count: number | null; last_ordered_at: string | null
@@ -283,9 +297,9 @@ export default function AccountDetailModal({ target, onClose }: {
         id:     m.id,
         name:   m.name,
         phone:  m.phone,
-        orders: m.order_count ?? 0,
+        orders: liveCount.get(m.name) ?? 0,
         lastAt: m.last_ordered_at,
-      })))
+      })).sort((a, b) => b.orders - a.orders))   // 정렬도 실제 건수 기준으로
 
       setAdjustments(((adjRes.data ?? []) as { created_at: string; amount: number | null; reason: string | null }[])
         .map(b => ({ at: b.created_at, amount: b.amount ?? 0, reason: b.reason })))
@@ -344,7 +358,8 @@ export default function AccountDetailModal({ target, onClose }: {
       .filter(e => e.at.slice(0, 7) < cutoff)
       .reduce((s2, e) => s2 + e.delta, 0)
     return rollUpLedger(events.filter(e => e.at.slice(0, 7) >= cutoff), months, opening)
-      .map(m => ({ key: m.key, deposit: m.deposit, order: m.order, balance: m.balance, active: m.active }))
+      // adjust 도 같이 — 말풍선이 월말 잔액을 스스로 설명하려면 필요하다
+      .map(m => ({ key: m.key, deposit: m.deposit, order: m.order, balance: m.balance, active: m.active, adjust: m.adjust }))
   }, [deposits, valid, adjustments, months])
 
   // 이용자별 — account_members(명단)가 아니라 실제 주문의 orderer_name 기준
@@ -428,7 +443,7 @@ export default function AccountDetailModal({ target, onClose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-[20px]" onClick={onClose}>
       <div
-        className="modal-in relative bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[980px] max-w-full max-h-[88vh] flex flex-col overflow-hidden"
+        className="modal-in relative bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[980px] max-w-full max-h-[88vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* ── 헤더 ── */}
@@ -445,22 +460,27 @@ export default function AccountDetailModal({ target, onClose }: {
                 </span>
                 {target.adminPending && <StatusTag label="등록대기" />}
               </div>
-              <div className="text-[12px] font-normal text-[#787878]">
-                {info?.organization ? `${info.organization} · ` : ''}
-                관리자 {revealed ? (info?.manager || '—') : (maskName(info?.manager) || '—')}
-                {info?.phone ? ` · ${revealed ? info.phone : maskPhone(info.phone)}` : ''}
-                <button
-                  onClick={() => setRevealed(v => !v)}
-                  className="ml-[8px] text-[11px] font-normal text-[#ADADAD] hover:text-[#787878] underline underline-offset-2"
-                >
-                  {revealed ? '가리기' : '보기'}
-                </button>
+              {/* 가린 값마다 자기 눈 버튼을 갖는다 — 주문 팝업·고객 패널과 같은 RevealText.
+                  전엔 모달 전체를 여는 '보기' 글자 하나가 헤더 끝에 있어서, 아래 탭의
+                  이름까지 한꺼번에 열렸고 버튼이 값에서 멀었다. */}
+              <div className="flex items-center flex-wrap gap-x-[4px] text-[12px] font-normal text-[#787878]">
+                {info?.organization ? <span>{info.organization} ·</span> : null}
+                <span>관리자</span>
+                {info?.manager
+                  ? <RevealText value={info.manager} masked={maskName(info.manager)} iconSize={12} />
+                  : <span>—</span>}
+                {info?.phone && (
+                  <>
+                    <span>·</span>
+                    <RevealText value={info.phone} masked={maskPhone(info.phone)} iconSize={12} />
+                  </>
+                )}
               </div>
             </div>
             <div className="flex items-start gap-[14px] flex-shrink-0">
               <div className="text-right">
                 <div className="text-[11px] font-normal text-[#787878] mb-[2px]">현재 잔액</div>
-                <div className={`text-[22px] font-semibold ${(info?.balance ?? 0) < 0 ? 'text-danger' : 'text-[#2C261F]'}`}>
+                <div className={`text-[22px] font-semibold ${(info?.balance ?? 0) < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
                   {won(info?.balance ?? 0)}
                 </div>
               </div>
@@ -615,7 +635,9 @@ export default function AccountDetailModal({ target, onClose }: {
                             <div key={d.label} className="flex items-center gap-[6px] text-[11px] font-normal">
                               <i className="w-[8px] h-[8px] rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
                               <span className="flex-1 min-w-0 truncate text-[#1E1E1E]">
-                                {d.label.startsWith('외 ') ? d.label : (revealed ? d.label : maskName(d.label))}
+                                {d.label.startsWith('외 ')
+                                  ? d.label
+                                  : <RevealText value={d.label} masked={maskName(d.label)} iconSize={11} />}
                               </span>
                               <span className="text-[#787878] flex-shrink-0">{Math.round(d.pct)}%</span>
                             </div>
@@ -641,7 +663,9 @@ export default function AccountDetailModal({ target, onClose }: {
                   <DataTableNotice>주문 기록이 없어요</DataTableNotice>
                 ) : byOrderer.slice(0, 12).map((u, i, arr) => (
                   <DataTableRow key={u.name} last={i === arr.length - 1}>
-                    <span className="flex-1 truncate">{revealed ? u.name : maskName(u.name)}</span>
+                    <span className="flex-1 min-w-0">
+                      <RevealText value={u.name} masked={maskName(u.name)} iconSize={12} />
+                    </span>
                     <span className="w-[80px] text-right text-[#787878]">{u.count}건</span>
                     <span className="w-[110px] text-right">{won(u.amount)}</span>
                     <span className="w-[80px] text-right text-[#787878]">
@@ -670,7 +694,9 @@ export default function AccountDetailModal({ target, onClose }: {
                 ) : orders.map((o, i, arr) => (
                   <DataTableRow key={o.code} last={i === arr.length - 1}>
                     <span className="w-[130px] text-[#787878] tabular-nums">{fmtDateTime(o.orderedAt)}</span>
-                    <span className="flex-1 truncate">{revealed ? o.orderer : maskName(o.orderer)}</span>
+                    <span className="flex-1 min-w-0">
+                      <RevealText value={o.orderer} masked={maskName(o.orderer)} iconSize={12} />
+                    </span>
                     <span className="w-[90px] text-[#787878]">{DB_METHOD_MAP[o.method] ?? o.method}</span>
                     <span className={`w-[90px] ${o.status === '취소' ? 'text-danger' : 'text-[#787878]'}`}>{o.status}</span>
                     <span className={`w-[110px] text-right ${o.status === '취소' ? 'text-[#ADADAD] line-through' : ''}`}>
@@ -729,9 +755,13 @@ export default function AccountDetailModal({ target, onClose }: {
                     last={i === arr.length - 1}
                     onClick={() => setProfileOf(m.name)}
                   >
-                    <span className="flex-1 truncate">{revealed ? m.name : maskName(m.name)}</span>
+                    <span className="flex-1 min-w-0">
+                      <RevealText value={m.name} masked={maskName(m.name)} iconSize={12} />
+                    </span>
                     <span className="w-[150px] text-[#787878] tabular-nums">
-                      {m.phone ? (revealed ? m.phone : maskPhone(m.phone)) : '—'}
+                      {m.phone
+                        ? <RevealText value={m.phone} masked={maskPhone(m.phone)} iconSize={12} />
+                        : '—'}
                     </span>
                     <span className="w-[90px] text-right text-[#787878]">{m.orders}건</span>
                     <span className="w-[130px] text-right text-[#787878]">
@@ -745,7 +775,7 @@ export default function AccountDetailModal({ target, onClose }: {
         </div>
 
         {/* ── 하단 바 — 좌: 이용내역서(문서 내보내기) / 우: 충전·닫기 ── */}
-        <div className="flex-shrink-0 border-t border-[#ADADAD] shadow-[0px_-5px_24.3px_4px_rgba(0,0,0,0.06)] px-[28px] py-[14px] flex items-center justify-between gap-[10px]">
+        <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex items-center justify-between gap-[10px]">
           <div className="relative">
             <button
               onClick={() => setExportOpen(v => !v)}
@@ -800,7 +830,7 @@ export default function AccountDetailModal({ target, onClose }: {
         {chargeOpen && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/30" onClick={() => setChargeOpen(false)}>
             <div
-              className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[380px] overflow-hidden"
+              className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[380px] overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
               <div className="px-[24px] pt-[22px] pb-[18px]">
@@ -851,7 +881,7 @@ export default function AccountDetailModal({ target, onClose }: {
                 )}
               </div>
 
-              <div className="border-t border-[#E5E5E5] px-[24px] py-[13px] flex justify-end gap-[8px]">
+              <div className="px-[24px] py-[13px] flex justify-end gap-[8px] modal-footer">
                 <button
                   onClick={() => setChargeOpen(false)}
                   className="pressable w-[76px] h-[40px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[13px] font-medium hover:opacity-90"

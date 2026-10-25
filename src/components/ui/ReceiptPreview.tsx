@@ -24,7 +24,9 @@ export interface ReceiptPreviewConfig {
 
 export const DEFAULT_RECEIPT_CONFIG: ReceiptPreviewConfig = {
   menuSize: 'normal', optionSize: 'normal', amountSize: 'normal',
-  footerText: '', showBalance: true,
+  // 빈 값이면 영수증 아래가 휑하게 끝난다. 매장이 고쳐 쓰라고 초안을 깔아둔다
+  // (설정 > 영수증·증빙에서 지우거나 바꿀 수 있다).
+  footerText: '감사합니다', showBalance: true,
 }
 
 // 58mm 용지에 ESC/POS 기본 폰트로 찍히는 크기를 화면 px로 옮긴 값

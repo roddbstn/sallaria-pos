@@ -168,14 +168,33 @@ export function useMenuForm({ onCreated, onUpdated, showToast }: UseMenuFormOpti
       const prevGroupIds = new Set(editing.optionGroups.map(g => g.id))
       const toAdd    = [...selectedGroupIds].filter(id => !prevGroupIds.has(id))
       const toRemove = [...prevGroupIds].filter(id => !selectedGroupIds.has(id))
+      // ⚠️ 옵션 연결의 실패를 삼키면 안 된다.
+      //
+      // 위 menus UPDATE 는 에러를 보고 멈추는데, 여기는 await 만 하고 결과를 버리고
+      // 있었다. 그 상태로 아래 onUpdated(...) 가 optionGroups 를 **붙은 것처럼** 넘기고
+      // "저장했어요"까지 떴다. 서버가 잠깐 끊긴 순간에 저장하면:
+      //   POS 화면 → 옵션이 붙어 보인다
+      //   DB        → menu_option_groups 에 행이 없다
+      //   QR웹      → 옵션 없는 메뉴로 보인다 (필수 옵션·사이즈 가격이 사라진다)
+      // 점주는 아무 신호도 못 받는다. 가격이 틀린 주문이 들어온 뒤에야 안다.
+      const linkErrors: string[] = []
       if (toAdd.length) {
-        await supabase.from('menu_option_groups').insert(
+        const { error } = await supabase.from('menu_option_groups').insert(
           toAdd.map((id, i) => ({ menu_id: editing.code, option_group_id: id, display_order: prevGroupIds.size + i }))
         )
+        if (error) linkErrors.push(error.message)
       }
       if (toRemove.length) {
-        await supabase.from('menu_option_groups')
+        const { error } = await supabase.from('menu_option_groups')
           .delete().eq('menu_id', editing.code).in('option_group_id', toRemove)
+        if (error) linkErrors.push(error.message)
+      }
+      if (linkErrors.length) {
+        // 메뉴 자체는 이미 저장됐다 — 되돌리지 않는다(그게 더 나쁘다).
+        // 대신 **무엇이 안 됐는지** 분명히 말하고 모달을 닫지 않는다.
+        setImageError(`메뉴는 저장됐지만 옵션 연결에 실패했어요: ${linkErrors.join(' / ')}\n옵션을 다시 확인해 주세요.`)
+        setSaving(false)
+        return
       }
 
       setSaving(false)
@@ -202,9 +221,19 @@ export function useMenuForm({ onCreated, onUpdated, showToast }: UseMenuFormOpti
     if (error || !data) { setImageError(`저장 실패: ${error?.message ?? '알 수 없는 오류'}`); setSaving(false); return }
 
     if (selectedGroupIds.size > 0) {
-      await supabase.from('menu_option_groups').insert(
+      // 위 edit 경로와 같은 이유로 에러를 반드시 본다.
+      const { error: linkErr } = await supabase.from('menu_option_groups').insert(
         [...selectedGroupIds].map((id, i) => ({ menu_id: data.id, option_group_id: id, display_order: i }))
       )
+      if (linkErr) {
+        // 메뉴는 이미 생겼다. 목록에는 반영해 주되(안 그러면 유령 메뉴가 된다)
+        // "옵션은 안 붙었다"를 분명히 알리고 모달은 열어둔다.
+        const partial = mapMenuRow({ ...data, menu_option_groups: [] })
+        onCreated(partial)
+        setImageError(`메뉴는 만들어졌지만 옵션 연결에 실패했어요: ${linkErr.message}\n옵션을 다시 선택해 저장해 주세요.`)
+        setSaving(false)
+        return
+      }
     }
 
     setSaving(false)

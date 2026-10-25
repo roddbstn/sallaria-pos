@@ -30,11 +30,21 @@ export interface UseQrPrintArgs {
   /** QR 이 가리키는 실제 주소 — 영수증 출력은 메인 프로세스에서 다시 그린다 */
   qrUrl:      string
   storeName:  string
+  /**
+   * 영수증 하단에 같이 찍히는 매장 전화 — stores.phone.
+   * 안 넘기면 **그 줄이 통째로 빠진다**(escpos.ts 의 buildQrReceiptEscPos 는
+   * 값이 있을 때만 찍는다). QR 출력 화면과 같은 영수증이 나오려면 넘겨야 한다.
+   */
+  storePhone?: string
+  /** QR 아래 한 줄 안내. 없으면 그 줄이 빠진다 — 기본값은 DEFAULT_QR_NOTICE */
+  notice?:     string
   /** 영수증 출력 실패를 화면에 알릴 방법 (토스트 등) */
   onError?:   (message: string) => void
 }
 
-export function useQrPrint({ account, qrDataUrl, qrUrl, storeName, onError }: UseQrPrintArgs) {
+export function useQrPrint({
+  account, qrDataUrl, qrUrl, storeName, storePhone, notice, onError,
+}: UseQrPrintArgs) {
   /** A4 한 장에 거래처명 + QR + 로고. 사무실 벽에 붙이는 용도 */
   const printQrSheet = useCallback(() => {
     if (!account || !qrDataUrl) return
@@ -142,14 +152,18 @@ export function useQrPrint({ account, qrDataUrl, qrUrl, storeName, onError }: Us
         accountName: account.account_name,
         manager:     account.contact_person ?? '',
         phone:       account.contact_phone  ?? '',
-        pin:         account.pin_code,
+        // PIN 은 **보내지 않는다.** 영수증은 사무실로 건너가고, 빌더도 이 값을 쓰지 않고
+        // 'PIN  관리자에게 문의' 를 찍는다(escpos.ts). QR 출력 화면도 '' 를 보낸다.
+        pin:         '',
         qrUrl,
         storeName,
+        storePhone,
+        notice,
       })
     } catch (err) {
       onError?.((err as Error).message ?? '영수증 출력에 실패했어요')
     }
-  }, [account, qrUrl, storeName, onError])
+  }, [account, qrUrl, storeName, storePhone, notice, onError])
 
   return { printQrSheet, printQrReceipt }
 }

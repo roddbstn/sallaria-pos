@@ -178,9 +178,13 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
           setTimeout(resolve, 3000)
         })
 
-        // ③ Electron IPC
-        const w = window as unknown as { api?: { rejectOrder?: Function } }
-        await w.api?.rejectOrder?.({ orderCode: target.code, reason: why })
+        // ③ 전엔 여기서 Electron IPC(order:reject)를 한 번 더 불렀다. **지웠다.**
+        //    그 핸들러가 하는 일이 위 ①②와 똑같았는데,
+        //      - cancel_order 는 이미 ①이 처리해서 두 번째 호출은 늘
+        //        'Order already cancelled' 로 터졌다(에러를 아무도 안 봐서 조용했다)
+        //      - ORDER_REJECTED broadcast 도 ②가 이미 보내서 손님 화면에 두 번 갔다
+        //    게다가 메인 프로세스의 supabase 클라이언트는 anon 키 + 세션이 없어서
+        //    cancel_order 를 anon 에서 잠글 수 없게 만드는 유일한 걸림돌이었다.
 
         track('pos_order_rejected', {
           order_code:   target.code,
@@ -204,6 +208,7 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
     // z-[65] — 헤더 바깥에 따로 떠 있는 햄버거·알림벨(z-[60])까지 덮어야 한다.
     // z-50 이었을 때는 그 둘이 블러 위로 올라와 호버·클릭이 됐다.
     // 레이어 순서: 50 화면 내부 오버레이 < 60 헤더 앵커 < 65 신규 주문 < 70 사용자가 연 모달
+    // 바깥 클릭으로 닫지 않는다(의도) — 새 주문은 점주가 확인했다는 조작이 있어야 사라진다.
     <div className="fixed inset-0 z-[65] bg-black/50 backdrop-blur-sm">
       {/* 슬라이드 스트립 — card1 중앙 고정, card2는 오른쪽 끝에 반만 노출 */}
       <div
@@ -270,7 +275,7 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                         {o.items.map((item, i) => (
                           <div key={i} className={`flex gap-[14px] ${i > 0 ? 'mt-[24px]' : ''}`}>
                             <div className="flex-1 min-w-0">
-                              <div className="text-[20px] font-semibold text-[#1E1E1E] truncate">
+                              <div className="text-[22px] font-semibold text-[#1E1E1E] truncate">
                                 {item.name} | {item.qty}개
                               </div>
                               <div className="mt-[12px] flex flex-col gap-[10px]">
@@ -292,8 +297,8 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                         <div className="h-px bg-[#D9D9D9] my-[26px]" />
 
                         <div className="flex items-center justify-between">
-                          <span className="text-[15px] font-semibold text-[#1E1E1E]">합계</span>
-                          <span className="text-[18px] font-semibold text-[#1E1E1E]">{won(o.total)}</span>
+                          <span className="text-[17px] font-semibold text-[#1E1E1E]">합계</span>
+                          <span className="text-[20px] font-semibold text-[#1E1E1E]">{won(o.total)}</span>
                         </div>
 
                         {/* 요청사항 / 배달 정보 */}
@@ -308,7 +313,7 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                                       자유 문장은 이것뿐이라 박스 자체가 라벨 역할을 한다
                                       (홈 상세의 요청사항도 같은 이유로 라벨을 뺐다).
                                       배달 주소·배달 요청사항은 둘이 나란히 와서 구분이 필요하므로 라벨을 남긴다. */}
-                                  <div className="mt-[32px] rounded-[13px] bg-[#F2F2F2] px-[19px] py-[16px] text-[15px] font-semibold text-[#1E1E1E] leading-[1.5] whitespace-pre-wrap">
+                                  <div className="mt-[32px] rounded-[13px] bg-[#F2F2F2] px-[19px] py-[16px] text-[17px] font-semibold text-[#1E1E1E] leading-[1.5] whitespace-pre-wrap">
                                     {note}
                                   </div>
                                 </>
@@ -534,7 +539,7 @@ function BranchLine({ children, small = false }: { children: React.ReactNode; sm
         className="border-l border-b border-[#1E1E1E] flex-shrink-0 mr-[3px]"
         style={{ width: arm, height: arm, marginTop: small ? 1 : 2 }}
       />
-      <span className={`${small ? 'text-[13px]' : 'text-[15px]'} font-light text-[#1E1E1E] leading-none`}>
+      <span className={`${small ? 'text-[13px]' : 'text-[17px]'} font-light text-[#1E1E1E] leading-none`}>
         {children}
       </span>
     </div>

@@ -90,7 +90,7 @@ export default function PeriodCalendarModal({ onClose, onApply }: { onClose: () 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[420px] max-w-[92vw] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[420px] max-w-[92vw] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-[28px] pt-[28px] pb-[22px]">
@@ -199,7 +199,7 @@ export default function PeriodCalendarModal({ onClose, onApply }: { onClose: () 
         </div>
 
         {/* 하단 바 — RegularHolidayModal 과 같은 규칙 */}
-        <div className="flex-shrink-0 border-t border-[#ADADAD] shadow-[0px_-5px_24.3px_4px_rgba(0,0,0,0.06)] px-[28px] py-[16px] flex justify-end gap-[10px]">
+        <div className="flex-shrink-0 modal-footer px-[28px] py-[16px] flex justify-end gap-[10px]">
           <button
             onClick={onClose}
             className="w-[86px] h-[44px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[14px] font-medium hover:opacity-90 transition-opacity"

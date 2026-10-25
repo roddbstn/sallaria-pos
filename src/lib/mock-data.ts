@@ -38,6 +38,8 @@ export interface Order {
   prepMins:      number
   /** 점주가 승인한 시각. 남은 시간은 이 시각 + prepMins 기준 — 주문 시각이 아니다 */
   acceptedAt?:   string
+  /** '준비 완료'를 누른 시각. 완료 카드의 '소요 시간'은 이 시각 − acceptedAt 이다 */
+  completedAt?:  string
   /**
    * 고객이 주문할 때 고른 예상 수령시간 (주문시각 기준 분). 0 = 지금, undefined = 미선택.
    * 점주가 승인 화면에서 정하는 prepMins 와는 다른 값이다 —

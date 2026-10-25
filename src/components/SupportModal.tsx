@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { getAppVersion } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
 
 // 앱 안의 유일한 문의 입구.
@@ -41,6 +42,8 @@ export default function SupportModal({ onClose, showToast }: {
     setSending(true)
 
     const kindLabel = KINDS.find(k => k.key === kind)?.label ?? kind
+    // 버전은 하드코딩하지 않는다 — 메인 프로세스의 app.getVersion() 이 유일한 진실
+    const appVersion = await getAppVersion()
     const { error } = await supabase.from('support_tickets').insert({
       store_id: storeId,
       source:   'help_request',
@@ -49,7 +52,7 @@ export default function SupportModal({ onClose, showToast }: {
         kind,
         message:    body.trim(),
         storeName,
-        appVersion: '1.0.0',
+        appVersion,
         // 사장님이 따로 안 적어도 되게 — 기기 정보는 우리가 붙인다
         userAgent:  navigator.userAgent,
         screen:     `${window.innerWidth}x${window.innerHeight}`,
@@ -64,7 +67,7 @@ export default function SupportModal({ onClose, showToast }: {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={() => !sending && onClose()}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-w-[92vw] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[460px] max-w-[92vw] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {done ? (
@@ -76,7 +79,7 @@ export default function SupportModal({ onClose, showToast }: {
                 급한 출력 문제면 설정 &gt; 프린터 연결의 <span className="text-[#6A635E]">프린터 연결 진단</span>도 같이 보내주시면 더 빨라요.
               </div>
             </div>
-            <div className="border-t border-[#E8E4E2] px-[28px] py-[16px] flex justify-end">
+            <div className="px-[28px] py-[16px] flex justify-end modal-footer">
               <button onClick={onClose} className="h-[50px] px-[26px] rounded-[13px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 transition-all">
                 확인
               </button>
@@ -120,7 +123,7 @@ export default function SupportModal({ onClose, showToast }: {
               </div>
             </div>
 
-            <div className="border-t border-[#E8E4E2] px-[28px] py-[16px] flex justify-end gap-[10px]">
+            <div className="px-[28px] py-[16px] flex justify-end gap-[10px] modal-footer">
               <button
                 onClick={onClose}
                 className="h-[50px] px-[26px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all"

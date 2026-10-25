@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { type MenuDetail, type Category } from '../lib/mock-data'
 import { mapMenuRow } from '../lib/mappers'
+import ModalOverlay from './ui/ModalOverlay'
+import ConfirmDialog from './ui/ConfirmDialog'
 
 // ── 구두주문 받기 — 전화/현장 구두주문을 POS에서 직접 입력해 create_order RPC로 제출 ──
 // 별도 "장바구니 화면" 없이 메뉴를 고르면 우측 주문요약에 바로 반영되는 단일 화면 구성.
@@ -75,6 +77,8 @@ export default function VerbalOrderModal({
   const [menuLoading, setMenuLoading] = useState(true)
 
   const [cart, setCart] = useState<CartItem[]>([])
+  /** 바깥 클릭으로 닫으려는데 입력한 게 있을 때 띄우는 확인창 */
+  const [discardConfirm, setDiscardConfirm] = useState(false)
   const [optionPicker, setOptionPicker] = useState<MenuDetail | null>(null)
   const [optionSel,    setOptionSel]    = useState<Record<string, string[]>>({})
   const [optionQty,    setOptionQty]    = useState(1)
@@ -282,8 +286,17 @@ export default function VerbalOrderModal({
     onClose()
   }
 
+  // 바깥을 눌러 닫을 때 **입력한 걸 말없이 버리지 않는다.**
+  // 이 모달은 거래처·주문자·장바구니를 다 들고 있고, 피크타임에 전화를 받으면서 채운다.
+  // 빈 상태면 그냥 닫고, 뭔가 담겨 있으면 한 번 묻는다.
+  const hasWork = cart.length > 0 || !!selectedAccount || !!memberName.trim()
+  function closeFromBackdrop() {
+    if (!hasWork) { onClose(); return }
+    setDiscardConfirm(true)
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <ModalOverlay onClose={closeFromBackdrop} z={50}>
       <div className="modal-in bg-white rounded-2xl shadow-xl w-[90vw] max-w-[1100px] h-[85vh] flex flex-col overflow-hidden">
 
         {/* 헤더 */}
@@ -314,7 +327,7 @@ export default function VerbalOrderModal({
                 <button
                   key={acc.account_code}
                   onClick={() => { if (selectedAccount?.account_code !== acc.account_code) { setSelectedAccount(acc); setCart([]) } }}
-                  className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-left border-b border-gray-border/60 transition-colors ${
+                  className={`pressable-row w-full flex items-center justify-between gap-2 px-4 py-3 text-left border-b border-gray-border/60 ${
                     selectedAccount?.account_code === acc.account_code ? 'bg-gray-bg' : 'hover:bg-gray-bg/60'
                   }`}
                 >
@@ -322,7 +335,7 @@ export default function VerbalOrderModal({
                     <div className="text-[13px] font-bold text-ink truncate">{acc.account_name}</div>
                     <div className="text-[11px] text-gray-text">{acc.account_type}</div>
                   </div>
-                  <div className={`text-[12px] font-semibold flex-shrink-0 ${acc.current_balance < 0 ? 'text-danger' : 'text-gray-text'}`}>
+                  <div className={`text-[12px] font-semibold flex-shrink-0 ${acc.current_balance < 0 ? 'text-[#3374FF]' : 'text-gray-text'}`}>
                     {won(acc.current_balance)}
                   </div>
                 </button>
@@ -394,7 +407,7 @@ export default function VerbalOrderModal({
                 <div className="flex-shrink-0 px-5 py-3 border-b border-gray-border space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[14px] font-bold text-ink">{selectedAccount.account_name}</span>
-                    <span className={`text-[12px] font-semibold ${selectedAccount.current_balance < 0 ? 'text-danger' : 'text-gray-text'}`}>
+                    <span className={`text-[12px] font-semibold ${selectedAccount.current_balance < 0 ? 'text-[#3374FF]' : 'text-gray-text'}`}>
                       잔액 {won(selectedAccount.current_balance)}
                     </span>
                   </div>
@@ -402,9 +415,8 @@ export default function VerbalOrderModal({
                     {/* 주문자는 가운데 이용자 열에서 고른다 — 여기선 고른 결과만 보여준다 */}
                     <span className="text-[12px] font-normal text-[#787878]">
                       주문자{' '}
-                      {memberName
-                        ? <span className="font-medium text-[#1E1E1E]">{memberName}</span>
-                        : <span className="text-[#C92A2A]">미선택</span>}
+                      {/* 미선택은 빈칸으로 둔다 — 아직 안 고른 걸 빨간 글씨로 경고할 단계가 아니다 */}
+                      {memberName && <span className="font-medium text-[#1E1E1E]">{memberName}</span>}
                     </span>
                     <div className="flex gap-1 ml-auto">
                       {METHODS.map(m => (
@@ -477,7 +489,7 @@ export default function VerbalOrderModal({
                 </div>
 
                 {/* 우하단 고정: 담긴 메뉴 요약 칩(제거 가능) + 총액 + 주문하기 CTA — 한 화면에서 바로 클릭 */}
-                <div className="flex-shrink-0 border-t border-gray-border bg-gray-bg">
+                <div className="flex-shrink-0 bg-gray-bg modal-footer">
                   {cart.length > 0 && (
                     <div className="flex gap-2 overflow-x-auto px-4 py-2.5">
                       {cart.map(c => (
@@ -596,6 +608,20 @@ export default function VerbalOrderModal({
           </div>
         )}
       </div>
-    </div>
+
+      {/* 입력한 주문을 버릴지 확인 — 바깥 클릭으로 닫으려 할 때만 뜬다.
+          헤더의 ✕ 는 "닫겠다"는 분명한 의사표시라 그대로 닫는다. */}
+      {discardConfirm && (
+        <ConfirmDialog
+          title="입력한 구두주문을 버릴까요?"
+          description="담은 메뉴와 고른 거래처가 사라져요. 주문은 아직 접수되지 않았어요."
+          confirmLabel="버리기"
+          cancelLabel="계속 입력"
+          tone="danger"
+          onConfirm={() => { setDiscardConfirm(false); onClose() }}
+          onCancel={() => setDiscardConfirm(false)}
+        />
+      )}
+    </ModalOverlay>
   )
 }

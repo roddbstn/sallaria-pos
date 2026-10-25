@@ -28,14 +28,6 @@ export interface OptionGroupDraft {
   linkedMenuIds: string[]
 }
 
-const QTY_UNLIMITED = 999
-
-function qtyLabel(q: number | null): string {
-  if (q === null) return '수량버튼 없음'
-  if (q >= QTY_UNLIMITED) return '제한없음'
-  return `최대 ${q}개`
-}
-
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-[16px] py-[12px]">
@@ -61,7 +53,7 @@ function Seg<T extends string | number>({ value, options, onChange, disabled }: 
           key={String(o.v)}
           disabled={disabled}
           onClick={() => onChange(o.v)}
-          className={`h-[30px] px-[11px] rounded-[8px] text-[12px] transition-colors disabled:opacity-40 ${
+          className={`h-[30px] px-[11px] rounded-[10px] text-[12px] transition-colors disabled:opacity-40 ${
             value === o.v ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
           }`}
         >
@@ -105,10 +97,19 @@ export default function OptionGroupEditModal({
         isBase: isPriceGroup && it.extra_price === 0 && i === 0,
       })),
   )
+  // 새로 만드는 중이면 빈 항목 한 줄을 깔아둔다 — 빈 화면에서 '추가' 를 한 번 더
+  // 누르게 하면 "뭘 해야 하지"가 된다. 어차피 항목 0개로는 저장이 안 된다.
+  useEffect(() => {
+    if (!group.id) setItems(prev => prev.length === 0
+      ? [{ name: '', extra_price: 0, max_quantity: null, display_order: 0 }]
+      : prev)
+  }, [group.id])
   const [linked, setLinked] = useState<Set<string>>(new Set(linkedMenuIds))
   const [menuQuery, setMenuQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  /** group.id 가 비어 있으면 '새로 만드는 중' — 제목과 하단 삭제 자리를 바꾼다 */
+  const isCreating = !group.id
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && !saving) onClose() }
@@ -142,8 +143,22 @@ export default function OptionGroupEditModal({
         max_select:  maxSelect,
       }
       if (!isPriceGroup) groupPatch.name = name.trim()
-      const { error: gErr } = await supabase.from('option_groups').update(groupPatch).eq('id', group.id)
-      if (gErr) throw gErr
+
+      // 신규 생성 모드 — group.id 가 비어 있으면 그룹 행을 먼저 만들고 그 id 로 이어간다.
+      // 이렇게 해야 아래 항목·연결 로직을 수정 모드와 똑같이 쓸 수 있다.
+      let groupId = group.id
+      if (!groupId) {
+        const { data: created, error: cErr } = await supabase
+          .from('option_groups')
+          .insert({ ...groupPatch, store_id: group.store_id })
+          .select('id')
+          .single()
+        if (cErr) throw cErr
+        groupId = (created as { id: string }).id
+      } else {
+        const { error: gErr } = await supabase.from('option_groups').update(groupPatch).eq('id', groupId)
+        if (gErr) throw gErr
+      }
 
       // 2) 항목 — 지워진 것 삭제, 기존 것 수정, 새 것 추가
       const keepIds = items.filter(it => it.id).map(it => it.id!)
@@ -163,7 +178,7 @@ export default function OptionGroupEditModal({
           const { error } = await supabase.from('option_items').update(row).eq('id', it.id)
           if (error) throw error
         } else {
-          const { error } = await supabase.from('option_items').insert({ ...row, option_group_id: group.id })
+          const { error } = await supabase.from('option_items').insert({ ...row, option_group_id: groupId })
           if (error) throw error
         }
       }
@@ -175,12 +190,12 @@ export default function OptionGroupEditModal({
         const toRemove = [...before].filter(id => !linked.has(id))
         if (toRemove.length > 0) {
           const { error } = await supabase.from('menu_option_groups')
-            .delete().eq('option_group_id', group.id).in('menu_id', toRemove)
+            .delete().eq('option_group_id', groupId).in('menu_id', toRemove)
           if (error) throw error
         }
         if (toAdd.length > 0) {
           const { error } = await supabase.from('menu_option_groups')
-            .insert(toAdd.map((menu_id, i) => ({ menu_id, option_group_id: group.id, display_order: i + 1 })))
+            .insert(toAdd.map((menu_id, i) => ({ menu_id, option_group_id: groupId, display_order: i + 1 })))
           if (error) throw error
         }
       }
@@ -209,16 +224,16 @@ export default function OptionGroupEditModal({
     ? menus.filter(m => m.name.toLowerCase().includes(menuQuery.toLowerCase()))
     : menus
 
-  const inputCls = 'h-[32px] px-[11px] rounded-[9px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E]'
+  const inputCls = 'h-[32px] px-[11px] rounded-[10px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E]'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !saving && onClose()}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[620px] max-w-[94vw] max-h-[86vh] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[620px] max-w-[94vw] max-h-[86vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex-shrink-0 px-[28px] pt-[26px] pb-[14px]">
-          <div className="text-[18px] font-semibold text-[#1E1E1E]">옵션 그룹 수정</div>
+          <div className="text-[18px] font-semibold text-[#1E1E1E]">{isCreating ? '옵션 그룹 추가' : '옵션 그룹 수정'}</div>
           {isPriceGroup && (
             <div className="text-[11px] text-[#ADADAD] mt-[4px] leading-relaxed">
               가격(필수) 그룹이에요. 이름과 연결 메뉴는 메뉴를 따라 자동으로 관리돼서 바꿀 수 없고,
@@ -284,13 +299,13 @@ export default function OptionGroupEditModal({
               <span className="text-[12px] text-[#6A635E]">옵션 ({items.length}개)</span>
               <button
                 onClick={addItem}
-                className="h-[28px] px-[10px] rounded-[7px] bg-[#F2F2F2] text-[#1E1E1E] text-[12px] hover:bg-[#E8E4E2] transition-colors"
+                className="h-[28px] px-[10px] rounded-[10px] bg-[#F2F2F2] text-[#1E1E1E] text-[12px] hover:bg-[#E8E4E2] transition-colors"
               >
                 + 옵션 추가
               </button>
             </div>
 
-            <div className="rounded-[9px] border border-[#E8E4E2] overflow-hidden">
+            <div className="rounded-[10px] border border-[#E8E4E2] overflow-hidden">
               <div className="flex items-center bg-[#E8E4E2] px-[12px] h-[32px] text-[11px] text-[#6A635E]">
                 <span className="flex-1 min-w-0">이름</span>
                 <span className="w-[110px] text-right">추가가격</span>
@@ -313,22 +328,10 @@ export default function OptionGroupEditModal({
                     className={`${inputCls} w-[104px] text-right disabled:bg-[#F2F2F2] disabled:text-[#787878]`}
                   />
                   <button
-                    onClick={() => patchItem(i, {
-                      max_quantity: it.max_quantity === null ? 1
-                        : it.max_quantity >= QTY_UNLIMITED ? null
-                        : it.max_quantity >= 9 ? QTY_UNLIMITED
-                        : it.max_quantity + 1,
-                    })}
-                    title="없음 → 최대 1개 → … → 제한없음 → 없음"
-                    className="w-[104px] h-[32px] rounded-[9px] bg-[#F2F2F2] text-[11px] text-[#787878] hover:bg-[#E8E4E2] transition-colors"
-                  >
-                    {qtyLabel(it.max_quantity)}
-                  </button>
-                  <button
                     onClick={() => removeItem(i)}
                     disabled={it.isBase}
                     title={it.isBase ? '기본 가격 항목은 지울 수 없어요' : '삭제'}
-                    className="w-[24px] h-[24px] rounded-[6px] text-[#ADADAD] hover:bg-[#F2F2F2] hover:text-[#C92A2A] disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center"
+                    className="w-[24px] h-[24px] rounded-[10px] text-[#ADADAD] hover:bg-[#F2F2F2] hover:text-[#C92A2A] disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center"
                   >
                     <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
                       <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
@@ -354,7 +357,7 @@ export default function OptionGroupEditModal({
                   className={`${inputCls} w-[160px]`}
                 />
               </div>
-              <div className="rounded-[9px] border border-[#E8E4E2] bg-[#FCFCFC] max-h-[168px] overflow-y-auto p-[10px] flex flex-wrap gap-[6px]">
+              <div className="rounded-[10px] border border-[#E8E4E2] bg-[#FCFCFC] max-h-[168px] overflow-y-auto p-[10px] flex flex-wrap gap-[6px]">
                 {filteredMenus.length === 0 ? (
                   <span className="text-[11px] text-[#ADADAD] py-[10px]">검색 결과가 없어요</span>
                 ) : filteredMenus.map(m => {
@@ -367,7 +370,7 @@ export default function OptionGroupEditModal({
                         next.has(m.id) ? next.delete(m.id) : next.add(m.id)
                         return next
                       })}
-                      className={`h-[28px] px-[10px] rounded-[7px] text-[12px] transition-colors ${
+                      className={`h-[28px] px-[10px] rounded-[10px] text-[12px] transition-colors ${
                         on ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                       }`}
                     >
@@ -380,28 +383,30 @@ export default function OptionGroupEditModal({
           )}
         </div>
 
-        <div className="flex-shrink-0 border-t border-[#E8E4E2] px-[28px] py-[14px] flex items-center justify-between">
-          {isPriceGroup ? (
+        <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex items-center justify-between">
+          {isCreating ? (
+            <span className="text-[11px] text-[#ADADAD]">저장하면 옵션 그룹이 만들어져요</span>
+          ) : isPriceGroup ? (
             <span className="text-[11px] text-[#ADADAD]">메뉴를 지우면 이 그룹도 같이 사라져요</span>
           ) : confirmDelete ? (
             <div className="flex items-center gap-[7px]">
               <span className="text-[12px] text-[#C92A2A]">정말 지울까요?</span>
-              <button onClick={doDelete} disabled={saving} className="h-[30px] px-[11px] rounded-[8px] bg-[#C92A2A] text-white text-[12px] font-medium">삭제</button>
-              <button onClick={() => setConfirmDelete(false)} className="h-[30px] px-[11px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[12px]">취소</button>
+              <button onClick={doDelete} disabled={saving} className="h-[30px] px-[11px] rounded-[10px] bg-[#C92A2A] text-white text-[12px] font-medium">삭제</button>
+              <button onClick={() => setConfirmDelete(false)} className="h-[30px] px-[11px] rounded-[10px] bg-[#F2F2F2] text-[#787878] text-[12px]">취소</button>
             </div>
           ) : (
             <button
               onClick={() => setConfirmDelete(true)}
-              className="h-[30px] px-[11px] rounded-[8px] text-[#C92A2A] text-[12px] hover:bg-[#FFEFEF] transition-colors"
+              className="h-[30px] px-[11px] rounded-[10px] text-[#C92A2A] text-[12px] hover:bg-[#FFEFEF] transition-colors"
             >
               그룹 삭제
             </button>
           )}
           <div className="flex items-center gap-[9px]">
-            <button onClick={onClose} className="h-[38px] px-[16px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[13px] font-medium hover:bg-[#E8E4E2] transition-colors">
+            <button onClick={onClose} className="h-[38px] px-[16px] rounded-[10px] bg-[#F2F2F2] text-[#787878] text-[13px] font-medium hover:bg-[#E8E4E2] transition-colors">
               닫기
             </button>
-            <button onClick={save} disabled={saving} className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity">
+            <button onClick={save} disabled={saving} className="h-[38px] px-[20px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity">
               {saving ? '저장 중…' : '저장'}
             </button>
           </div>

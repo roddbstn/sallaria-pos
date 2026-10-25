@@ -8,15 +8,21 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { mapMenuRow } from '../lib/mappers'
 import rotateIcon from '../assets/icons/rotate.svg'
-import BottomToast from '../components/BottomToast'
+import BottomToast, { TOAST_BOX } from '../components/BottomToast'
 import MenuFormModal from '../components/menu/MenuFormModal'
-import CountStepper, { PlusMinusStepper } from '../components/ui/CountStepper'
+import OptionGroupAddModal from '../components/menu/OptionGroupAddModal'
 import { useMenuForm } from '../components/menu/use-menu-form'
-import { MenuTagBadges } from '../components/menu/tag-badges'
+import { MenuTagBadges, MenuTagRow } from '../components/menu/tag-badges'
 
 type MenuTab      = 'menu' | 'option' | 'category'
 import type { SoldOutState } from '../components/menu/menu-form-types'
 import LoadingTimer from '../components/ui/LoadingTimer'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
+import ModalOverlay from '../components/ui/ModalOverlay'
+import CategoryAddModal from '../components/ui/CategoryAddModal'
+
+/** 보기 모드 로컬 캐시 키 — 서버값(stores.menu_display_mode)이 올 때까지 쓴다 */
+const MENU_MODE_KEY = 'sallaria_pos_menu_view_mode'
 
 // ── 품절 상태 헬퍼 ────────────────────────────────────────────────────────────
 function getSoldOutState(soldOut: boolean, soldOutUntil: string | null | undefined): SoldOutState {
@@ -32,100 +38,12 @@ function getKSTEndOfDay(): string {
   return d.toISOString()
 }
 
-// ── 옵션 항목 수량 버튼 설정 (option_items.max_quantity) ─────────────────────
-// NULL = 수량 버튼 미사용(1개 고정) · 999 = 제한없음 · 1~998 = 최대 N개
-const QTY_UNLIMITED = 999
-function maxQtyLabel(maxQty: number | null | undefined): string {
-  if (maxQty == null) return '수량 버튼 사용'
-  if (maxQty >= QTY_UNLIMITED) return '제한없음'
-  return `최대 ${maxQty}개`
-}
-
-// "{옵션이름} 옵션은 최대 몇 개까지 선택할 수 있나요?" 모달 — Figma node 491:4381.
-// 제한없음(999) / 직접입력(스테퍼) 둘 중 하나를 고르고 확인하면 max_quantity가 정해진다.
-function OptionMaxQtyModal({
-  optionName, value, onClose, onConfirm,
-}: {
-  optionName: string
-  value: number | null
-  onClose: () => void
-  onConfirm: (next: number) => void
-}) {
-  const [unlimited, setUnlimited] = useState(value == null || value >= QTY_UNLIMITED)
-  const [count, setCount] = useState(value != null && value < QTY_UNLIMITED ? value : 1)
-  const shown = unlimited ? QTY_UNLIMITED : count
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-xl w-[460px] px-[28px] pt-[24px] pb-[22px]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-[20px]">
-          <div className="text-[18px] leading-[26px] font-semibold text-ink">
-            <span className="text-[#8C8379]">{optionName.trim() || '이 옵션'}</span> 옵션은<br />
-            최대 몇 개까지 선택할 수 있나요?
-          </div>
-          <button onClick={onClose} className="flex-shrink-0 text-[#6A635E] hover:text-ink text-[20px] leading-none">✕</button>
-        </div>
-
-        <div className="mt-[24px] flex items-center justify-between gap-[16px]">
-          <div className="flex flex-col gap-[11px]">
-            {([
-              { key: true,  label: '제한없음' },
-              { key: false, label: '직접입력' },
-            ] as const).map(opt => (
-              <button key={String(opt.key)} onClick={() => setUnlimited(opt.key)} className="flex items-center gap-[10px]">
-                <span className={`w-[20px] h-[20px] rounded-[6px] flex items-center justify-center flex-shrink-0 transition-colors ${
-                  unlimited === opt.key ? 'bg-[#C1B7AA]' : 'bg-transparent border-2 border-[#D9D2C8]'
-                }`}>
-                  {unlimited === opt.key && (
-                    <svg width="12" height="9" viewBox="0 0 15 11" fill="none"><path d="M1.5 5.5L5.5 9.5L13.5 1.5" stroke="#FCFCFC" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  )}
-                </span>
-                <span className="text-[14px] text-ink">{opt.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* 수량 스테퍼 — 제한없음일 땐 999 고정으로 비활성 */}
-          {/* −, 숫자칸, + 셋 다 40×40 정사각형. 가운데만 커서 저울이 기울어 보이던 걸 맞췄다 */}
-          <div className={`flex items-center gap-[2px] bg-[#F2F0EE] rounded-[10px] p-[5px] transition-opacity ${unlimited ? 'opacity-60' : ''}`}>
-            <button
-              onClick={() => setCount(c => Math.max(1, c - 1))}
-              disabled={unlimited}
-              className="w-[40px] h-[40px] flex items-center justify-center text-[20px] text-[#6A635E] disabled:text-[#C1B7AA]"
-            >
-              −
-            </button>
-            <input
-              value={shown}
-              onChange={e => { const n = parseInt(e.target.value.replace(/[^0-9]/g, '') || '0', 10); setCount(Math.min(998, Math.max(1, n))) }}
-              disabled={unlimited}
-              inputMode="numeric"
-              className="field-bare w-[40px] h-[40px] rounded-[8px] bg-[#FCFCFC] text-center text-[15px] font-medium text-ink outline-none disabled:bg-[#FCFCFC]"
-            />
-            <button
-              onClick={() => setCount(c => Math.min(998, c + 1))}
-              disabled={unlimited}
-              className="w-[40px] h-[40px] flex items-center justify-center text-[20px] text-[#6A635E] disabled:text-[#C1B7AA]"
-            >
-              +
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-[26px] flex justify-end">
-          <button
-            onClick={() => onConfirm(unlimited ? QTY_UNLIMITED : count)}
-            className="px-[40px] h-[48px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 transition-opacity"
-          >
-            확인
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+// 옵션 항목별 수량 버튼(option_items.max_quantity) 설정은 걷어냈다.
+// 4개월간 항목 493개 중 1개만 설정됐고 수량 2 이상 주문은 0건이었다.
+// 컬럼과 QR웹 렌더링은 남겨뒀으니 되살리려면 이 설정 UI만 다시 넣으면 된다.
 
 // 메뉴 태그 뱃지 — 인기/추천/신규 다중 표시 가능 (Figma Frame 126/127/128)
+
 
 // 옵션 순서편집 — 포인터 기반 드래그 리오더 임계값 (Figma node 491:3881)
 // Figma 원본(66/59) × FIGMA_SCALE — src/lib/figma-scale.ts 참고
@@ -191,11 +109,6 @@ export default function Menus() {
     return () => window.removeEventListener('message', onMessage)
   }, [])
   const [categoryAddOpen, setCategoryAddOpen] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const [catAddStep,      setCatAddStep]      = useState<1 | 2>(1)
-  const [catAddMenuIds,   setCatAddMenuIds]   = useState<Set<string>>(new Set())
-  const [catAddSearch,    setCatAddSearch]    = useState('')
-  const [catAddSaving,    setCatAddSaving]    = useState(false)
 
   // 카테고리/개별메뉴 6열 그리드의 좌측 영역 실측 폭 — 창 크기에 따라 카드 폭을 다시 계산해서
   // 항상 사이드 패널까지 꽉 차게(고정 px로 하드코딩하면 창 크기가 다를 때마다 오른쪽에 빈 여백이 생김)
@@ -208,7 +121,18 @@ export default function Menus() {
 
   // ── 좌측 패널 표시 모드(카테고리/개별메뉴) + 화면편집 — Figma 491:592·491:2594·491:836 ──
   // 매장(store) 단위 설정 — 다른 PC에서 열어도 동일해야 해서 stores 테이블에 저장
-  const [menuViewMode,     setMenuViewMode]     = useState<'category' | 'individual'>('category')
+  // 보기 모드는 **세 군데**가 맞물린다:
+  //   · stores.menu_display_mode — 진실(다른 기기에서도 같게)
+  //   · localStorage            — 서버 응답 전에 바로 그리기 위한 캐시
+  //   · 이 state
+  // localStorage 를 두는 이유: 서버값만 쓰면 매번 카테고리 모드로 한 번 그렸다가
+  // 개별메뉴로 바뀌어서 화면이 깜빡인다.
+  const [menuViewMode,     setMenuViewMode]     = useState<'category' | 'individual'>(() => {
+    try {
+      const v = localStorage.getItem(MENU_MODE_KEY)
+      return v === 'individual' || v === 'category' ? v : 'category'
+    } catch { return 'category' }
+  })
   const [itemCountVisible, setItemCountVisible] = useState(true)
   const [categoryTextSize, setCategoryTextSize] = useState<'default' | 'large'>('default')
   const [menuEditMode,     setMenuEditMode]     = useState(false)
@@ -236,7 +160,9 @@ export default function Menus() {
       .eq('id', storeId)
       .maybeSingle()
     if (data) {
-      setMenuViewMode(data.menu_display_mode as 'category' | 'individual')
+      const mode = data.menu_display_mode as 'category' | 'individual'
+      setMenuViewMode(mode)
+      try { localStorage.setItem(MENU_MODE_KEY, mode) } catch { /* 저장 못 해도 동작엔 지장 없다 */ }
       setItemCountVisible(data.menu_item_count_visible)
       setCategoryTextSize(data.menu_category_text_size as 'default' | 'large')
       setItemImageVisible(data.menu_item_image_visible)
@@ -247,6 +173,7 @@ export default function Menus() {
   async function toggleMenuViewMode() {
     const next = menuViewMode === 'category' ? 'individual' : 'category'
     setMenuViewMode(next)
+    try { localStorage.setItem(MENU_MODE_KEY, next) } catch { /* 저장 못 해도 동작엔 지장 없다 */ }
     setOptionPanelMenu(null)
     showMenuToast(`보기 설정을 ${next === 'category' ? '카테고리' : '개별메뉴'} 모드로 전환했어요`)
     if (storeId) await supabase.from('stores').update({ menu_display_mode: next }).eq('id', storeId)
@@ -335,7 +262,11 @@ export default function Menus() {
   // 카테고리 삭제 — Figma node 491:1065 확인 다이얼로그("메뉴는 삭제되지 않아요") 그대로.
   // menus.category_id는 RESTRICT라 먼저 null로 풀어줘야 삭제 가능.
   async function confirmDeleteCategory(cat: Category) {
-    await supabase.from('menus').update({ category_id: null }).eq('category_id', cat.id)
+    // 이 UPDATE 가 실패하면 아래 DELETE 는 RESTRICT 에 걸려 어차피 실패한다 —
+    // 그런데 전엔 결과를 버려서, 실제 원인("메뉴를 못 풀었다")이 아니라
+    // 엉뚱한 외래키 메시지가 점주에게 그대로 떴다. 여기서 끊는다.
+    const { error: orphanErr } = await supabase.from('menus').update({ category_id: null }).eq('category_id', cat.id)
+    if (orphanErr) { alert('카테고리 삭제 실패 — 메뉴 연결을 풀지 못했어요: ' + orphanErr.message); return }
     const { error } = await supabase.from('categories').delete().eq('id', cat.id)
     if (error) { alert('카테고리 삭제 실패: ' + error.message); return }
     setMenus(prev => prev.map(m => m.categoryId === cat.id ? { ...m, categoryId: '' } : m))
@@ -504,17 +435,6 @@ export default function Menus() {
   })
 
   const [addingStoreGroup, setAddingStoreGroup] = useState(false)
-  const [newStoreGroup,    setNewStoreGroup]    = useState({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
-  const [addOptStep,       setAddOptStep]       = useState<1|2>(1)
-  // maxQty: 옵션 항목별 "수량 버튼" 설정 (Figma 491:3318의 "최대 N개 / 수량 버튼 사용").
-  // 아직 option_items에 대응 컬럼이 없어서 모달 안에서만 유지되고 저장되지는 않음.
-  const [newGroupItems,    setNewGroupItems]    = useState<{ id: string; name: string; price: string; maxQty: number | null }[]>([{ id: crypto.randomUUID(), name: '', price: '', maxQty: null }])
-  const [optQtyPickerId,   setOptQtyPickerId]   = useState<string | null>(null)
-  const [optDragItemId,    setOptDragItemId]    = useState<string | null>(null)
-  const [step3MenuIds,     setStep3MenuIds]     = useState<Set<string>>(new Set())
-  const [optAddSearch,     setOptAddSearch]     = useState('')
-  const [optExpandedCats,  setOptExpandedCats]  = useState<Set<string>>(new Set())
-  const [addOptLoading,    setAddOptLoading]    = useState(false)
 
   const [addingCat,          setAddingCat]          = useState(false)
   const [newCatName,         setNewCatName]         = useState('')
@@ -663,6 +583,13 @@ export default function Menus() {
     const key = `menus:${storeId}`
 
     async function load() {
+      // 보기 설정(모드·토글들)은 **캐시를 타지 않는다.**
+      // 캐시에 담긴 건 메뉴/카테고리 목록뿐인데, 캐시가 싱싱하면 아래에서 바로 return 하면서
+      // 이 호출까지 건너뛰고 있었다. 그래서 개별메뉴 모드로 바꿔두고 다른 화면에 갔다 오면
+      // 카테고리 모드로 되돌아가 있었다(캐시가 상한 뒤에 오면 멀쩡해서 더 헷갈렸다).
+      // stores 한 행짜리 조회라 매번 해도 싸다.
+      void fetchMenuDisplayPrefs()
+
       // 캐시가 있으면 **먼저 그려놓고** 뒤에서 갱신한다.
       // 탭을 옮길 때마다 화면이 언마운트돼 매번 처음부터 받던 걸 없앤다.
       const hit = getCached<{ cats: Category[]; menus: MenuDetail[] }>(key)
@@ -680,7 +607,6 @@ export default function Menus() {
         fetchCategories(),
         fetchMenus(),
         fetchStoreGroups(),
-        fetchMenuDisplayPrefs(),
       ])
       if (cats && menus) setCached(key, { cats, menus })
       setLoading(false)
@@ -735,7 +661,8 @@ export default function Menus() {
   }
 
   async function renameCategory(id: string, name: string) {
-    await supabase.from('categories').update({ name: name.trim() }).eq('id', id)
+    const { error } = await supabase.from('categories').update({ name: name.trim() }).eq('id', id)
+    if (error) { showMenuToast(`카테고리 이름 변경 실패: ${error.message}`, 3500); return }
     setCategories(prev => prev.map(c => c.id === id ? { ...c, name: name.trim() } : c))
   }
 
@@ -1004,93 +931,6 @@ export default function Menus() {
     return categories.find(c => c.id === previewCatId)
   }
 
-  // ── 옵션 그룹 CRUD (스토어 단위 — 옵션 탭용) ────────────────────────────────
-  function closeOptGroupModal() {
-    setAddingStoreGroup(false)
-    setAddOptStep(1)
-    setNewStoreGroup({ name: '', isRequired: false, isMulti: false, maxSelect: '' })
-    setNewGroupItems([{ id: crypto.randomUUID(), name: '', price: '', maxQty: null }])
-    setStep3MenuIds(new Set())
-    setOptAddSearch('')
-    setOptExpandedCats(new Set())
-    setOptQtyPickerId(null)
-    setOptDragItemId(null)
-  }
-
-  async function confirmOptGroupCreate() {
-    if (!newStoreGroup.name.trim() || !storeId) return
-    setAddOptLoading(true)
-    try {
-      const { data: gd, error: ge } = await supabase
-        .from('option_groups')
-        .insert({
-          store_id:      storeId,
-          name:          newStoreGroup.name.trim(),
-          is_required:   newStoreGroup.isRequired,
-          is_multi:      newStoreGroup.isMulti,
-          max_select:    newStoreGroup.isMulti && newStoreGroup.maxSelect ? parseInt(newStoreGroup.maxSelect) : null,
-          display_order: storeGroups.length,
-        })
-        .select('id, name, is_required, is_multi, max_select')
-        .single()
-      if (ge || !gd) { console.error(ge); return }
-
-      const validItems = newGroupItems.filter(i => i.name.trim())
-      const menuIds = Array.from(step3MenuIds)
-
-      // 옵션 항목·메뉴 연결은 서로 독립적이고 각각 여러 행이라 벌크 insert 1번씩,
-      // 두 요청은 병렬로 실행 — 예전엔 행마다 개별 insert를 날려서(N+1) 항목·메뉴가
-      // 많을수록 느려졌음
-      const [itemsRes] = await Promise.all([
-        validItems.length > 0
-          ? supabase.from('option_items')
-              .insert(validItems.map((item, idx) => ({
-                option_group_id: gd.id, name: item.name.trim(),
-                extra_price: parseInt(item.price) || 0, display_order: idx,
-                max_quantity: item.maxQty,
-              })))
-              .select('id, name, extra_price, is_popular, is_sold_out, is_hidden, display_order, max_quantity')
-          : Promise.resolve({ data: [], error: null }),
-        menuIds.length > 0
-          ? supabase.from('menu_option_groups').insert(
-              menuIds.map((menuId, i) => ({ menu_id: menuId, option_group_id: gd.id, display_order: i }))
-            )
-          : Promise.resolve({ data: [], error: null }),
-      ])
-
-      if (itemsRes.error) {
-        console.error('옵션 항목 저장 실패:', itemsRes.error)
-        alert('옵션그룹은 생성됐지만 옵션 항목 저장에 실패했습니다: ' + itemsRes.error.message + '\n항목을 다시 추가해주세요.')
-      }
-      const createdItems: OptionItem[] = (itemsRes.data ?? [])
-        .map(d => ({ id: d.id, name: d.name, extra: d.extra_price, soldOut: false, soldOutUntil: null, hidden: false, isPopular: false, maxQty: d.max_quantity ?? null }))
-
-      const newGroup: any = {
-        id: gd.id, name: gd.name,
-        isRequired: gd.is_required ?? false,
-        isMulti:    gd.is_multi    ?? false,
-        maxSelect:  gd.max_select  ?? null,
-        isSoldOut: false, soldOutUntil: null, isHidden: false,
-        usedBy:     menuIds.map(id => menus.find(m => m.code === id)?.name ?? '').filter(Boolean),
-        usedByMenus: menuIds.map(id => {
-          const m = menus.find(m2 => m2.code === id)
-          return m ? { name: m.name, soldOut: false, hidden: false } : null
-        }).filter(Boolean),
-        items: createdItems,
-      }
-      setStoreGroups(prev => [...prev, newGroup])
-      if (selected && step3MenuIds.has(selected.code)) {
-        applyLocalUpdate({ ...selected, optionGroups: [...selected.optionGroups, newGroup] })
-      }
-      // 메뉴 상세 모달에서 "옵션 추가 +"로 들어온 경우, 새로 만든 옵션그룹을 지금 편집 중인 메뉴에 바로 선택 처리
-      if (menuForm.mode) {
-        menuForm.toggleGroup(gd.id)
-      }
-    } finally {
-      setAddOptLoading(false)
-      closeOptGroupModal()
-    }
-  }
 
   async function updateStoreGroup(groupId: string, updates: Partial<OptionGroup>) {
     const dbUpdates: Record<string, any> = {}
@@ -1100,13 +940,19 @@ export default function Menus() {
     if (updates.maxSelect  !== undefined) dbUpdates.max_select  = updates.maxSelect
     if ((updates as any).isSoldOut  !== undefined) dbUpdates.is_sold_out = (updates as any).isSoldOut
     if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from('option_groups').update(dbUpdates).eq('id', groupId)
+      const { error } = await supabase.from('option_groups').update(dbUpdates).eq('id', groupId)
+      // ⚠️ 실패했으면 화면도 바꾸지 않는다.
+      // 전엔 결과를 버리고 아래 setStoreGroups 를 무조건 실행했다 — 서버가 끊기면
+      // 화면만 바뀌고 DB 는 그대로라, 새로고침 전까지 점주는 저장된 줄 안다.
+      if (error) { showMenuToast(`옵션 저장 실패: ${error.message}`, 3500); return }
     }
     setStoreGroups(prev => prev.map(g => g.id !== groupId ? g : { ...g, ...updates }))
   }
 
   async function deleteStoreGroup(groupId: string) {
-    await supabase.from('option_groups').delete().eq('id', groupId)
+    const { error } = await supabase.from('option_groups').delete().eq('id', groupId)
+    // 삭제가 실패했는데 목록에서 사라지면, 점주는 지운 줄 알고 넘어간다.
+    if (error) { showMenuToast(`옵션 삭제 실패: ${error.message}`, 3500); return }
     setStoreGroups(prev => prev.filter(g => g.id !== groupId))
     // 이 그룹이 연결된 selected 메뉴가 있으면 로컬에서도 제거
     if (selected) {
@@ -1119,7 +965,10 @@ export default function Menus() {
       state === 'active'  ? { is_sold_out: false, sold_out_until: null            }
       : state === 'today' ? { is_sold_out: true,  sold_out_until: getKSTEndOfDay() }
       :                     { is_sold_out: true,  sold_out_until: null             }
-    await supabase.from('option_groups').update(updates).eq('id', groupId)
+    const { error } = await supabase.from('option_groups').update(updates).eq('id', groupId)
+    // ⚠️ 품절은 조용히 실패하면 안 되는 경로다. POS 에는 '품절'로 보이는데 DB 가
+    //    안 바뀌면 QR웹은 계속 그 옵션을 팔고, 없는 걸 주문받게 된다.
+    if (error) { showMenuToast(`품절 처리 실패: ${error.message}`, 3500); return }
     const localPatch = { isSoldOut: state !== 'active', soldOutUntil: state === 'today' ? getKSTEndOfDay() : null }
     setStoreGroups(prev => prev.map(g => g.id === groupId ? { ...g, ...localPatch } : g))
     // 메뉴 상세 모달에서도 반영 (가격(필수) 등 storeGroups에 없는 그룹 대응)
@@ -1135,7 +984,9 @@ export default function Menus() {
     const selGroup = selected?.optionGroups.find(g => g.id === groupId)
     const currentHidden = sgGroup?.isHidden ?? (selGroup as any)?.isHidden ?? false
     const next = !currentHidden
-    await supabase.from('option_groups').update({ is_hidden: next }).eq('id', groupId)
+    const { error } = await supabase.from('option_groups').update({ is_hidden: next }).eq('id', groupId)
+    // 숨김도 손님 화면에 바로 영향을 준다 — 실패를 삼키지 않는다.
+    if (error) { showMenuToast(`숨김 처리 실패: ${error.message}`, 3500); return }
     setStoreGroups(prev => prev.map(g => g.id === groupId ? { ...g, isHidden: next } : g))
     setSelected(prev => {
       if (!prev) return null
@@ -1181,7 +1032,9 @@ export default function Menus() {
     if (updates.hidden       !== undefined) dbUpdates.is_hidden     = updates.hidden
     if (updates.isPopular    !== undefined) dbUpdates.is_popular    = updates.isPopular
     if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from('option_items').update(dbUpdates).eq('id', itemId)
+      const { error } = await supabase.from('option_items').update(dbUpdates).eq('id', itemId)
+      // 옵션 항목의 가격·품절은 손님이 보는 값이다 — 실패를 삼키면 화면과 DB가 갈린다.
+      if (error) { showMenuToast(`옵션 항목 저장 실패: ${error.message}`, 3500); return }
     }
     setStoreGroups(prev => prev.map(g =>
       g.id !== groupId ? g : { ...g, items: g.items.map(it => it.id !== itemId ? it : { ...it, ...updates }) }
@@ -1189,7 +1042,8 @@ export default function Menus() {
   }
 
   async function deleteStoreItem(groupId: string, itemId: string) {
-    await supabase.from('option_items').delete().eq('id', itemId)
+    const { error } = await supabase.from('option_items').delete().eq('id', itemId)
+    if (error) { showMenuToast(`옵션 항목 삭제 실패: ${error.message}`, 3500); return }
     setStoreGroups(prev => prev.map(g =>
       g.id !== groupId ? g : { ...g, items: g.items.filter(it => it.id !== itemId) }
     ))
@@ -1275,6 +1129,15 @@ export default function Menus() {
         // (카드 높이가 메뉴이름 줄바꿈에 따라 달라져도 같은 행끼리 stretch로 맞춰짐) 좌표 계산은
         // 그룹 시작 위치(첫 카테고리 상단 여백/제목-카드 간격/그룹 간 간격)만 필요.
         const INDIV_FIRST_TOP   = 73
+        /**
+         * 카테고리 편집 그리드의 첫 줄 top.
+         *
+         * 일반 보기(62)보다 아래다. 삭제 배지가 카드 기준 top:-5 라 62 면 배지가 y=57 에서
+         * 시작하는데, 검색창 줄을 덮는 **고정 배경 띠가 height:59 · z-10** 이라 맨 윗줄
+         * 배지의 윗부분이 그 띠에 가려 잘려 보였다. 배지가 띠 아래에서 시작하도록 띄운다
+         * (70 → 배지 top 65 > 59). 개별메뉴 편집은 paddingTop:73 + 분류 제목이 있어 무관.
+         */
+        const CAT_EDIT_TOP      = 70
         const INDIV_HEADING_GAP = 29
         const INDIV_GROUP_GAP   = 24
         const individualGroups = categories
@@ -1322,7 +1185,7 @@ export default function Menus() {
                   </button>
                   {menuViewMode === 'category' ? (
                     <button
-                      onClick={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+                      onClick={() => setCategoryAddOpen(true)}
                       className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
                     >
                       카테고리 추가
@@ -1415,7 +1278,7 @@ export default function Menus() {
                         className={`absolute bg-[#FCFCFC] rounded-[13px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left cursor-grab active:cursor-grabbing ${
                           dragCatId === cat.id ? 'opacity-40' : ''
                         }`}
-                        style={{ left: GRID_PAD + col * COL_STEP, top: 62 + row * 123, width: CARD_W, height: 117 }}
+                        style={{ left: GRID_PAD + col * COL_STEP, top: CAT_EDIT_TOP + row * 123, width: CARD_W, height: 117 }}
                       >
                         <div className={`absolute ${catTextSizeClass} font-semibold text-ink leading-snug`} style={{ left: 10, top: 10, right: 10 }}>
                           {cat.name}
@@ -1441,9 +1304,9 @@ export default function Menus() {
                     const row = Math.floor(i / COLS)
                     return (
                       <button
-                        onClick={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+                        onClick={() => setCategoryAddOpen(true)}
                         className="absolute rounded-[20px] border border-[#ADADAD] flex items-center justify-center hover:bg-gray-100 transition-colors"
-                        style={{ left: GRID_PAD + col * COL_STEP, top: 62 + row * 123, width: CARD_W, height: 117 }}
+                        style={{ left: GRID_PAD + col * COL_STEP, top: CAT_EDIT_TOP + row * 123, width: CARD_W, height: 117 }}
                         title="카테고리 추가"
                       >
                         <span className="relative" style={{ width: 41, height: 41 }}>
@@ -1582,7 +1445,7 @@ export default function Menus() {
                         className={`absolute flex items-center justify-center rounded-[10px] text-[15px] font-medium transition-colors ${rightTab === 'qr' ? 'text-ink' : 'text-[#BDB4A7]'}`}
                         style={{ left: 3, top: 3, width: 78, height: 36 }}
                       >
-                        QR오더
+                        미리보기
                       </button>
                       <button
                         onClick={() => setRightTab('items')}
@@ -1600,7 +1463,7 @@ export default function Menus() {
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-[29px] px-[26px] text-center">
                         <div className="text-[15px] text-[#ADADAD]">카테고리에 메뉴를 지정해 주세요</div>
                         <button
-                          onClick={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+                          onClick={() => setCategoryAddOpen(true)}
                           className="flex items-center gap-[8px] bg-[#E8E4E2] rounded-[16px] px-[24px] py-[16px] text-[15px] font-medium text-[#6A635E] hover:bg-[#dcd7d4] transition-colors"
                         >
                           + 카테고리 추가하기
@@ -1658,6 +1521,14 @@ export default function Menus() {
                           <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
                         )}
                         <div className="absolute text-[12px] font-light text-ink" style={{ left: 10, top: 66 }}>{won(optionPanelMenu.price)}</div>
+                      </div>
+
+                      {/* 태그 — 메뉴 박스 바로 오른쪽에 1행 3열.
+                          박스가 left 26 + width 159 → 오른쪽 끝이 185. 패널은 400 폭에
+                          좌우 26 패딩이라 185~374(189px)가 비어 있고, 세 칸(≈126px)이 들어간다.
+                          세로는 박스(top 81, height 86) 가운데에 맞춘다. */}
+                      <div className="absolute" style={{ left: 197, top: 114 }}>
+                        <MenuTagRow menu={optionPanelMenu} />
                       </div>
 
                       <div className="absolute text-[15px] font-medium text-ink" style={{ left: 26, top: 192 }}>연결된 옵션</div>
@@ -1756,61 +1627,92 @@ export default function Menus() {
                     </>
                   ) : menuViewMode === 'individual' && optionPanelMenu ? (
                     <>
-                      {/* 메뉴 선택 시 "연결된 옵션" 요약 (Figma node 628:371) */}
-                      <button onClick={() => openOptionPanel(optionPanelMenu)} className="absolute bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left" style={{ left: 26, top: 81, width: 159, height: 86 }}>
-                        <div className="absolute text-[13px] font-semibold text-ink leading-snug" style={{ left: 10, top: 10, width: 89 }}>{optionPanelMenu.name}</div>
-                        {optionPanelMenu.imageUrl ? (
-                          <img src={optionPanelMenu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
-                        ) : (
-                          <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
-                        )}
-                        <div className="absolute text-[12px] font-light text-ink" style={{ left: 10, top: 66 }}>{won(optionPanelMenu.price)}</div>
-                      </button>
+                      {/* 메뉴 요약 + 연결된 옵션 (Figma node 628:371 에서 재배치).
+                          전엔 159×86 짜리 카드 안에 이름 13px·사진 48×48·가격을 욱여넣었다.
+                          400px 패널에서 48px 사진은 무엇을 고른 건지 알아보기 어렵다.
+                          카드를 걷어내고 사진을 패널 폭(348)으로 키운 뒤 이름을 24px 로 올렸다.
 
-                      <div className="absolute text-[15px] font-medium text-ink" style={{ left: 26, top: 192 }}>연결된 옵션</div>
+                          구조도 absolute 좌표에서 **flex 흐름**으로 바꿨다 — 이름이 2줄이 되면
+                          아래가 같이 밀려야 하는데, 좌표를 찍어두면 겹친다.
+                          (순서편집 모드는 드래그 스왑 계산에 좌표가 필요해 그대로 둔다.)
+
+                          bottom 104 = 버튼(bottom 20 + height 64) + 간격 20.
+                          전엔 목록이 bottom 20 이라 옵션이 많으면 버튼 **뒤로** 흘러들어갔다. */}
+                      <div className="absolute flex flex-col" style={{ left: 26, top: 70, right: 26, bottom: 104 }}>
+                        {optionPanelMenu.imageUrl ? (
+                          <img
+                            src={optionPanelMenu.imageUrl}
+                            alt=""
+                            className="w-full flex-shrink-0 rounded-[10px] object-cover"
+                            style={{ height: 180 }}
+                          />
+                        ) : (
+                          <div
+                            className="w-full flex-shrink-0 rounded-[10px] bg-[#F2F2F2] flex items-center justify-center"
+                            style={{ height: 180 }}
+                          >
+                            <span className="text-[13px] font-normal text-[#C4C4C4]">사진 없음</span>
+                          </div>
+                        )}
+
+                        {/* 이름 — 두 줄까지만. 더 길면 말줄임(패널이 400px 뿐이라 3줄은 사진을 밀어낸다) */}
+                        <div
+                          className="flex-shrink-0 text-[24px] font-semibold text-ink leading-snug mt-[16px]"
+                          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                        >
+                          {optionPanelMenu.name}
+                        </div>
+
+                        {/* 가격 + 태그 한 줄 — 태그는 오른쪽 끝에 붙인다 */}
+                        <div className="flex-shrink-0 flex items-center justify-between gap-[10px] mt-[10px]">
+                          <span className="text-[17px] font-light text-ink">{won(optionPanelMenu.price)}</span>
+                          <MenuTagRow menu={optionPanelMenu} />
+                        </div>
+
+                        <div className="flex-shrink-0 text-[15px] font-medium text-ink mt-[26px] mb-[10px]">연결된 옵션</div>
 
                       {optionPanelMenu.optionGroups.length === 0 ? (
-                        <div className="absolute text-[12px] text-[#ADADAD]" style={{ left: 26, top: GROUPS_START_TOP }}>연결된 옵션이 없습니다.</div>
+                        <div className="text-[12px] text-[#ADADAD]">연결된 옵션이 없습니다.</div>
                       ) : (
-                        <div className="absolute overflow-y-auto" style={{ left: 26, top: GROUPS_START_TOP, right: 26, bottom: 20 }}>
-                          {(() => {
-                            let cursor = 0
-                            return optionPanelMenu.optionGroups.map(g => {
-                              const groupTop = cursor
-                              cursor += OPT_GROUP_ROW_H
-                              const expanded = optionPanelExpandedGroupId === g.id
-                              const itemRows = expanded ? g.items.map(it => {
-                                const itemTop = cursor
-                                cursor += OPT_ITEM_ROW_H
-                                return { it, itemTop }
-                              }) : []
-                              return (
-                                <div key={g.id}>
-                                  <button
-                                    onClick={() => setOptionPanelExpandedGroupId(expanded ? null : g.id)}
-                                    className="absolute flex items-center justify-between w-full"
-                                    style={{ top: groupTop, height: OPT_GROUP_ROW_H }}
-                                  >
-                                    <span className="flex items-center gap-[8px]">
-                                      <svg width="13" height="13" viewBox="0 0 20 20" fill="none" className={`transition-transform ${expanded ? 'rotate-180' : ''}`}><path d="M5 7.5L10 12.5L15 7.5" stroke="#ADADAD" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                                      <span className="text-[18px] font-semibold text-ink">{g.name}</span>
-                                    </span>
-                                    <div className={`flex items-center justify-center px-[8px] py-[5px] rounded-[16px] ${g.isRequired ? 'bg-[#6A635E]' : 'bg-[#F2F2F2]'}`}>
-                                      <span className={`text-[12px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
-                                    </div>
-                                  </button>
-                                  {itemRows.map(({ it, itemTop }) => (
-                                    <div key={it.id} className="absolute flex items-center justify-between w-full" style={{ top: itemTop, height: OPT_ITEM_ROW_H }}>
-                                      <span className="text-[15px] font-medium text-ink">{it.name}</span>
-                                      <span className="text-[15px] font-medium text-ink">+{won(it.extra)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )
-                            })
-                          })()}
+                        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+                          {/* 읽기 전용 목록은 **일반 흐름**이다(순서편집 모드와 다르다).
+                              전엔 여기도 cursor 로 top 을 직접 찍었는데, 행마다 42px 를 고정으로
+                              더하다 보니 옵션그룹 이름이 2줄이 되면 늘어난 만큼을 아무도 몰라서
+                              아래 행이 겹쳤다. 드래그가 없는 화면이라 좌표를 쥐고 있을 이유가 없다.
+                              (순서편집 모드는 스왑 임계값 계산에 좌표가 필요해 그대로 둔다.) */}
+                          {optionPanelMenu.optionGroups.map(g => {
+                            const expanded = optionPanelExpandedGroupId === g.id
+                            return (
+                              <div key={g.id} className="flex flex-col">
+                                {/* text-left 가 필요하다 — button 은 기본이 text-align:center 라
+                                    이름이 2줄이 되면 둘째 줄만 가운데로 떠 있었다. */}
+                                <button
+                                  onClick={() => setOptionPanelExpandedGroupId(expanded ? null : g.id)}
+                                  className="pressable-row w-full flex items-center justify-between gap-[10px] text-left py-[9px]"
+                                  style={{ minHeight: OPT_GROUP_ROW_H }}
+                                >
+                                  <span className="flex-1 min-w-0 flex items-center gap-[8px]">
+                                    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}><path d="M5 7.5L10 12.5L15 7.5" stroke="#ADADAD" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                    <span className="min-w-0 text-[18px] font-semibold text-ink leading-snug">{g.name}</span>
+                                  </span>
+                                  {/* 배지는 눌리지도 늘어나지도 않는다. 전엔 제목이 폭을 다 먹어
+                                      '필/수' 로 줄바꿈되며 세로로 길어졌다. */}
+                                  <div className={`flex-shrink-0 flex items-center justify-center px-[8px] py-[5px] rounded-[16px] whitespace-nowrap ${g.isRequired ? 'bg-[#6A635E]' : 'bg-[#F2F2F2]'}`}>
+                                    <span className={`text-[12px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
+                                  </div>
+                                </button>
+                                {expanded && g.items.map(it => (
+                                  <div key={it.id} className="flex items-center justify-between gap-[10px] w-full" style={{ minHeight: OPT_ITEM_ROW_H }}>
+                                    <span className="flex-1 min-w-0 text-[15px] font-medium text-ink leading-snug">{it.name}</span>
+                                    <span className="flex-shrink-0 text-[15px] font-medium text-ink">+{won(it.extra)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
+                      </div>
 
                       {/* 고객 화면 사이드패널의 계정 추가/금액 충전 버튼과 디자인 통일 — 통일 전 font-semibold를 1단계 낮춰 font-medium으로 */}
                       <div className="absolute flex gap-[6px]" style={{ left: 26, right: 26, bottom: 20 }}>
@@ -1964,191 +1866,35 @@ export default function Menus() {
               )}
             </div>
 
-            <BottomToast message={menuToast} />
+            {/* 기준이 된 토스트 — 모드 전환 안내라 21px(large) 그대로 */}
+            <BottomToast message={menuToast} size="large" />
           </div>
         )
       })()}
 
-      {/* ── 카테고리 삭제 확인 (Figma node 491:949) ── */}
+      {/* ── 카테고리 삭제 확인 (Figma 491:1293) ──
+          카테고리 정보 화면의 삭제와 **같은 다이얼로그**를 쓴다. 전엔 이쪽만 따로
+          만들어 둬서(가운데 정렬·빨간 '네'·20px 라운드) 같은 일을 하는 확인창이
+          화면마다 달랐다. */}
       {deleteCatConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => setDeleteCatConfirm(null)}>
-          <div className="modal-in bg-white rounded-[20px] shadow-xl p-8 w-[380px] flex flex-col items-center text-center" onClick={e => e.stopPropagation()}>
-            <div className="text-[16px] font-semibold text-ink mb-2">
-              '{deleteCatConfirm.name}' 카테고리를<br />삭제하시겠어요?
-            </div>
-            <div className="text-[12px] text-gray-text mb-6">메뉴는 삭제되지 않아요</div>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => setDeleteCatConfirm(null)}
-                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]"
-              >
-                아니요
-              </button>
-              <button
-                onClick={() => confirmDeleteCategory(deleteCatConfirm)}
-                className="flex-1 py-3 rounded-xl bg-danger text-white font-bold text-[13px]"
-              >
-                네
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={`${deleteCatConfirm.name} 카테고리를 삭제하시겠어요?`}
+          description="메뉴는 삭제되지 않아요"
+          onConfirm={() => confirmDeleteCategory(deleteCatConfirm)}
+          onCancel={() => setDeleteCatConfirm(null)}
+        />
       )}
 
       {/* ── 카테고리 추가 (1단계: 이름 / 2단계: 적용할 메뉴 선택 — Figma node 656:373의 2단계 패턴 참고) ── */}
-      {categoryAddOpen && (() => {
-        const search = catAddSearch.trim().toLowerCase()
-        const visibleCats = sortedCategories()
-        const menusByCat = (catId: string) => menus.filter(m =>
-          m.categoryId === catId && (!search || m.name.toLowerCase().includes(search))
-        )
-        const totalVisible = visibleCats.reduce((s, c) => s + menusByCat(c.id).length, 0)
-        const allChecked = totalVisible > 0 && visibleCats.every(c => menusByCat(c.id).every(m => catAddMenuIds.has(m.code)))
-
-        function closeModal() {
-          setCategoryAddOpen(false)
-          setCatAddStep(1)
-          setCatAddMenuIds(new Set())
-          setCatAddSearch('')
-        }
-        function toggleAll() {
-          setCatAddMenuIds(prev => {
-            const next = new Set(prev)
-            const ids = visibleCats.flatMap(c => menusByCat(c.id).map(m => m.code))
-            if (allChecked) { ids.forEach(id => next.delete(id)) } else { ids.forEach(id => next.add(id)) }
-            return next
-          })
-        }
-        async function handleCreate() {
-          if (!newCategoryName.trim()) return
-          setCatAddSaving(true)
-          await addCategoryWithMenus(newCategoryName, catAddMenuIds)
-          setCatAddSaving(false)
-          closeModal()
-        }
-
-        return (
-          // 메뉴 상세 모달(z-50)보다 늦게 렌더링돼 같은 z-50이면 DOM 순서상 메뉴 상세 모달 아래에 깔리던 문제 — z-[60]으로 명시적으로 위에 오도록
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={closeModal}>
-            <div className="modal-in bg-[#FCFCFC] rounded-[14px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[560px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-
-              {/* 헤더 + 단계 표시 (옵션그룹 추가 모달과 동일 패턴) */}
-              <div className="px-[28px] pt-[28px] pb-0 flex-shrink-0">
-                <div className="flex items-center justify-between mb-[18px]">
-                  <span className="text-[18px] font-semibold text-[#1E1E1E]">카테고리 추가</span>
-                  <button onClick={closeModal} aria-label="닫기" className="text-[#787878] hover:text-[#2C261F] transition-colors">
-                    <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                    </svg>
-                  </button>
-                </div>
-                <div className="flex gap-[4px]">
-                  {([1, 2] as const).map(s => (
-                    <div key={s} className={`h-[3px] flex-1 rounded-full transition-colors ${s <= catAddStep ? 'bg-[#6A635E]' : 'bg-[#E8E4E2]'}`} />
-                  ))}
-                </div>
-              </div>
-
-              {/* Step 1: 카테고리 이름 */}
-              {catAddStep === 1 && (
-                <div className="px-5 pt-[30px] pb-[30px] flex flex-col gap-4 overflow-y-auto">
-                  <FloatingCellInput
-                    autoFocus
-                    value={newCategoryName}
-                    onChange={setNewCategoryName}
-                    onKeyDown={e => { if (e.key === 'Enter' && newCategoryName.trim()) setCatAddStep(2) }}
-                    label="카테고리 이름 (예: 샐러드)"
-                  />
-                </div>
-              )}
-
-              {/* Step 2: 적용할 메뉴 선택 — 검색 + 카테고리별 구분 리스트 + 전체선택 */}
-              {catAddStep === 2 && (
-                <div className="flex flex-col flex-1 min-h-0">
-                  <div className="px-5 pt-[20px] pb-3 flex-shrink-0 flex items-center gap-3">
-                    <div className="field-wrap flex-1 flex items-center gap-2 border border-gray-border rounded-xl px-3 py-2">
-                      <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
-                      <input
-                        value={catAddSearch}
-                        onChange={e => setCatAddSearch(e.target.value)}
-                        placeholder="메뉴 이름을 검색할 수 있어요"
-                        className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[13px] text-ink placeholder:text-[#8C8379] bg-transparent"
-                      />
-                    </div>
-                    <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-text whitespace-nowrap cursor-pointer flex-shrink-0">
-                      <input type="checkbox" checked={allChecked} onChange={toggleAll} disabled={totalVisible === 0} />
-                      메뉴 전체선택
-                    </label>
-                  </div>
-
-                  <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4">
-                    {totalVisible === 0 ? (
-                      <div className="text-center py-10 text-[12px] text-gray-text">
-                        {search ? '검색 결과가 없습니다.' : '등록된 메뉴가 없습니다.'}
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-3">
-                        {visibleCats.map(cat => {
-                          const items = menusByCat(cat.id)
-                          if (items.length === 0) return null
-                          return (
-                            <div key={cat.id}>
-                              <div className="text-[12px] font-bold text-gray-text mb-1.5">{cat.name}</div>
-                              <div className="flex flex-col gap-0.5">
-                                {items.map(menu => (
-                                  <label key={menu.code} className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={catAddMenuIds.has(menu.code)}
-                                      onChange={() => setCatAddMenuIds(prev => {
-                                        const next = new Set(prev)
-                                        if (next.has(menu.code)) next.delete(menu.code); else next.add(menu.code)
-                                        return next
-                                      })}
-                                    />
-                                    <div className="w-7 h-7 rounded-md overflow-hidden bg-gray-100 flex-shrink-0">
-                                      {menu.imageUrl && <img src={menu.imageUrl} className="w-full h-full object-cover" alt="" />}
-                                    </div>
-                                    <span className="text-[13px] text-ink">{menu.name}</span>
-                                    {menu.soldOut && <span className="text-[10px] text-danger font-bold">품절</span>}
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="px-5 pb-2 flex-shrink-0 text-[11px] text-gray-text">
-                    '{newCategoryName}' 카테고리에 적용할 메뉴 {catAddMenuIds.size}개 선택됨 (선택 사항)
-                  </div>
-                </div>
-              )}
-
-              {/* 푸터 버튼 */}
-              <div className={`flex items-center ${catAddStep === 1 ? 'justify-end' : 'justify-between'} border-t border-[#E8E4E2] px-[28px] py-[16px] flex-shrink-0 mt-auto`}>
-                {catAddStep > 1 && (
-                  <button
-                    onClick={() => setCatAddStep(1)}
-                    className="h-[50px] px-[26px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all"
-                  >
-                    이전
-                  </button>
-                )}
-                <button
-                  onClick={() => catAddStep < 2 ? (newCategoryName.trim() && setCatAddStep(2)) : handleCreate()}
-                  disabled={catAddStep < 2 ? !newCategoryName.trim() : catAddSaving}
-                  className="h-[50px] px-[26px] rounded-[13px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-all"
-                >
-                  {catAddStep < 2 ? '다음' : (catAddSaving ? '저장 중…' : '완료')}
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+      {/* 카테고리 추가 — 카테고리 정보 화면과 **같은 컴포넌트**를 쓴다.
+          전엔 이 화면 안에 통째로 박혀 있어서 다른 화면에서 쓸 수가 없었다. */}
+      {categoryAddOpen && (
+        <CategoryAddModal
+          menus={menus.map(m => ({ code: m.code, name: m.name, soldOut: m.soldOut }))}
+          onClose={() => setCategoryAddOpen(false)}
+          onCreate={async (name, codes) => { await addCategoryWithMenus(name, codes) }}
+        />
+      )}
 
       {/* ── 메뉴 추가/수정 모달 (Figma node 491:2237 "메뉴 상세") — 고정 실제 px, scale 없음.
            원인 메모: 예전엔 width:1402,height:1500 네이티브 값에 transform:scale(menuScale*0.72)를 걸었는데,
@@ -2170,7 +1916,7 @@ export default function Menus() {
           storeGroups={storeGroups}
           selectedGroupIds={menuForm.selectedGroupIds}
           onToggleGroup={menuForm.toggleGroup}
-          onAddCategory={() => { setNewCategoryName(''); setCategoryAddOpen(true) }}
+          onAddCategory={() => setCategoryAddOpen(true)}
           onAddOptionGroup={() => setAddingStoreGroup(true)}
           onDelete={() => setDeleteConfirm('single')}
           onClose={menuForm.close}
@@ -2841,12 +2587,19 @@ export default function Menus() {
                     </div>
                   </div>
                 </div>
-                {/* 설명 */}
-                <FloatingCellTextarea
-                  value={detailForm.description}
-                  onChange={v => setDetailForm(p => ({ ...p, description: v }))}
-                  label="메뉴 설명 (선택)"
-                />
+                {/* 설명 — 안 쓰는 점주가 대부분이다(침산점 161개 중 1개).
+                    '(선택)'만으로는 "써서 뭐가 되는지"를 몰라 그냥 건너뛰게 된다.
+                    어디에 보이는지 한 줄로 말해주고, 쓸지 말지는 점주가 고르게 둔다. */}
+                <div>
+                  <FloatingCellTextarea
+                    value={detailForm.description}
+                    onChange={v => setDetailForm(p => ({ ...p, description: v }))}
+                    label="메뉴 설명 (선택)"
+                  />
+                  <p className="mt-[6px] text-[11px] text-[#ADADAD] leading-relaxed">
+                    손님 주문 화면에서 메뉴 이름 아래에 작게 보여요. 비워두면 안 보입니다.
+                  </p>
+                </div>
                 {/* 옵션 그룹 */}
                 {storeGroups.length > 0 && (
                   <div>
@@ -2896,7 +2649,10 @@ export default function Menus() {
         const allPermanent = states.every(s => s === 'permanent')
         const allHidden    = checkedMenus.every(m => !m.active)
         return (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-ink text-white rounded-2xl shadow-xl px-5 py-2.5 flex items-center gap-3 z-30">
+          /* 토스트는 아니지만(버튼이 여럿인 작업 바) 하단 중앙에 뜨는 같은 종류의 면이라
+             박스 값은 토스트와 공유한다 — TOAST_BOX (components/BottomToast.tsx).
+             py 는 버튼이 들어가서 조금 더 눕힌다. */
+          <div className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 ${TOAST_BOX} !py-[9px]`}>
             <span className="text-[11px] font-semibold text-white/70">{checked.size}개 선택</span>
             <div className="w-px h-5 bg-white/20" />
             {/* 판매 상태 */}
@@ -2948,6 +2704,7 @@ export default function Menus() {
       })()}
 
       {/* 삭제 확인 다이얼로그 */}
+      {/* 바깥 클릭으로 닫지 않는다(의도) — 삭제는 되돌릴 수 없다. ModalOverlay 를 쓰지 않는 이유다. */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
           <div className="modal-in bg-white rounded-2xl shadow-2xl w-[320px] p-6">
@@ -3042,354 +2799,42 @@ export default function Menus() {
         </div>
       )}
 
-      {/* ── 옵션 추가 모달 (2단계 — Figma node 491:3318(옵션 설정) / 491:3401(적용할 메뉴 선택)) ── */}
-      {addingStoreGroup && (() => {
-        const search = optAddSearch.trim().toLowerCase()
-        const visibleCats = sortedCategories()
-        const menusByCat = (catId: string) => menus.filter(m =>
-          m.categoryId === catId && (!search || m.name.toLowerCase().includes(search))
-        )
-        const totalVisible = visibleCats.reduce((s, c) => s + menusByCat(c.id).length, 0)
-        const allChecked = totalVisible > 0 && visibleCats.every(c => menusByCat(c.id).every(m => step3MenuIds.has(m.code)))
-        function toggleAllMenus() {
-          setStep3MenuIds(prev => {
-            const next = new Set(prev)
-            const ids = visibleCats.flatMap(c => menusByCat(c.id).map(m => m.code))
-            if (allChecked) { ids.forEach(id => next.delete(id)) } else { ids.forEach(id => next.add(id)) }
-            return next
-          })
-        }
-        function toggleCatMenus(catId: string) {
-          const ids = menusByCat(catId).map(m => m.code)
-          const allIn = ids.length > 0 && ids.every(id => step3MenuIds.has(id))
-          setStep3MenuIds(prev => {
-            const next = new Set(prev)
-            if (allIn) ids.forEach(id => next.delete(id)); else ids.forEach(id => next.add(id))
-            return next
-          })
-        }
-        function patchItem(id: string, patch: Partial<{ name: string; price: string; maxQty: number | null }>) {
-          setNewGroupItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
-        }
-        // 옵션 항목 드래그 순서 변경 — 드래그 중인 항목을 지나치는 항목 자리로 즉시 이동
-        function handleItemDragOver(e: React.DragEvent, overId: string) {
-          e.preventDefault()
-          if (!optDragItemId || optDragItemId === overId) return
-          setNewGroupItems(prev => {
-            const from = prev.findIndex(i => i.id === optDragItemId)
-            const to   = prev.findIndex(i => i.id === overId)
-            if (from < 0 || to < 0) return prev
-            const next = [...prev]
-            const [moved] = next.splice(from, 1)
-            next.splice(to, 0, moved)
-            return next
-          })
-        }
-        // 그룹 최대 선택 개수 — 1개면 단일 선택(is_multi=false), 2개 이상이면 복수 선택
-        const maxSelectValue = newStoreGroup.isMulti ? Number(newStoreGroup.maxSelect || 2) : 1   // 기본 1개
-
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeOptGroupModal}>
-            <div className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-xl w-[640px] max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-
-              {/* 헤더 + 단계 표시 — Figma: 제목 아래 원형 숫자뱃지 + 단계명(현재 단계만 진하게) */}
-              <div className="px-[30px] pt-[30px] pb-[20px] flex-shrink-0">
-                <div className="flex items-center justify-between mb-[20px]">
-                  <span className="text-[22px] font-bold text-ink">옵션 추가</span>
-                  <button onClick={closeOptGroupModal} className="text-gray-text hover:text-ink text-[18px]">✕</button>
-                </div>
-                <div className="flex items-center gap-[26px]">
-                  {([{ s: 1, label: '설정' }, { s: 2, label: '적용할 메뉴 선택' }] as const).map(({ s, label }) => (
-                    <div key={s} className="flex items-center gap-[8px]">
-                      <span className={`w-[24px] h-[24px] rounded-full flex items-center justify-center text-[12px] font-semibold flex-shrink-0 ${
-                        s === addOptStep ? 'bg-[#E8E4E2] text-ink' : 'bg-[#F2F2F2] text-[#ADADAD]'
-                      }`}>
-                        {s}
-                      </span>
-                      <span className={`text-[15px] font-semibold whitespace-nowrap ${s === addOptStep ? 'text-ink' : 'text-[#ADADAD]'}`}>{label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── Step 1: 옵션 설정 단계 — Figma node 491:3318 ── */}
-              {addOptStep === 1 && (
-                <div className="px-[30px] pb-[24px] flex flex-col gap-[26px] overflow-y-auto">
-
-                  {/* 옵션그룹 */}
-                  <div>
-                    <div className="text-[15px] font-medium text-ink mb-[10px]">옵션그룹</div>
-                    <input
-                      autoFocus
-                      value={newStoreGroup.name}
-                      onChange={e => setNewStoreGroup(p => ({ ...p, name: e.target.value }))}
-                      placeholder="ex) 토핑 추가"
-                      className="field-soft w-full h-[48px] border border-[#D9D9D9] rounded-[10px] px-[16px] text-[15px] text-ink placeholder:text-[#ADADAD] outline-none focus:border-[#6A635E] bg-transparent"
-                    />
-                  </div>
-
-                  {/* 옵션이름 — 항목마다 (드래그 핸들 + 이름 + 수량버튼 설정) / (가격 스테퍼 + 가격 + 삭제) 두 줄 */}
-                  <div>
-                    <div className="text-[15px] font-medium text-ink mb-[10px]">옵션이름</div>
-                    <div className="flex flex-col gap-[16px]">
-                      {newGroupItems.map(item => (
-                        <div
-                          key={item.id}
-                          onDragOver={e => handleItemDragOver(e, item.id)}
-                          className={`flex flex-col gap-[8px] ${optDragItemId === item.id ? 'opacity-40' : ''}`}
-                        >
-                          <div className="field-wrap flex items-center gap-[10px] h-[48px] border border-[#D9D9D9] rounded-[10px] px-[14px]">
-                            <span
-                              draggable
-                              onDragStart={() => setOptDragItemId(item.id)}
-                              onDragEnd={() => setOptDragItemId(null)}
-                              className="flex-shrink-0 cursor-grab active:cursor-grabbing"
-                              title="끌어서 순서 변경"
-                            >
-                              <svg width="10" height="16" viewBox="0 0 10 16" fill="none">
-                                {[2, 8, 14].map(y => (
-                                  <g key={y}>
-                                    <circle cx="2" cy={y} r="1.3" fill="#ADADAD" />
-                                    <circle cx="8" cy={y} r="1.3" fill="#ADADAD" />
-                                  </g>
-                                ))}
-                              </svg>
-                            </span>
-                            <input
-                              value={item.name}
-                              onChange={e => patchItem(item.id, { name: e.target.value })}
-                              placeholder="ex) 발사믹 소스"
-                              className="field-bare flex-1 min-w-0 text-[15px] text-ink placeholder:text-[#ADADAD] outline-none bg-transparent"
-                            />
-                            {/* 수량 버튼 설정 — 클릭하면 "최대 몇 개까지" 모달 (Figma 491:4381) */}
-                            <button
-                              onClick={() => setOptQtyPickerId(item.id)}
-                              className="flex-shrink-0 flex items-center gap-[6px] text-[14px] text-[#6A635E] hover:text-ink transition-colors whitespace-nowrap"
-                            >
-                              {maxQtyLabel(item.maxQty)}
-                              <svg width="7" height="12" viewBox="0 0 8 14" fill="none"><path d="M1.5 1L6.5 7L1.5 13" stroke="#6A635E" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                            </button>
-                          </div>
-
-                          <div className="flex items-center gap-[12px]">
-                            {/* 추가금액 ± 100원 — Figma node 491:3368 */}
-                            <PlusMinusStepper
-                              onPlus={() => patchItem(item.id, { price: String((parseInt(item.price) || 0) + 100) })}
-                              onMinus={() => patchItem(item.id, { price: String((parseInt(item.price) || 0) - 100) })}
-                            />
-                            <div className="field-wrap w-[170px] h-[44px] flex items-center gap-[6px] border border-[#D9D9D9] rounded-[10px] px-[14px]">
-                              <input
-                                inputMode="numeric"
-                                value={item.price ? formatPriceDisplay(item.price) : ''}
-                                // 맨 앞 '-' 하나만 남기고 나머지 비숫자는 버린다 (깎아주는 옵션 허용)
-                                onChange={e => {
-                                  const raw = e.target.value
-                                  const neg = raw.trimStart().startsWith('-')
-                                  const digits = raw.replace(/[^0-9]/g, '')
-                                  patchItem(item.id, { price: digits ? (neg ? '-' : '') + digits : '' })
-                                }}
-                                placeholder="0"
-                                className="field-bare flex-1 min-w-0 text-[15px] text-ink placeholder:text-[#ADADAD] outline-none bg-transparent"
-                              />
-                              <span className="text-[15px] text-ink flex-shrink-0">원</span>
-                            </div>
-                            <button
-                              onClick={() => setNewGroupItems(prev => prev.length > 1 ? prev.filter(i => i.id !== item.id) : prev)}
-                              disabled={newGroupItems.length === 1}
-                              className="ml-auto flex-shrink-0 px-[14px] py-[9px] rounded-[10px] bg-[#FFEFEF] text-[#FF676F] text-[14px] font-medium hover:bg-[#ffe3e3] disabled:opacity-40 transition-colors"
-                            >
-                              삭제
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={() => setNewGroupItems(prev => [...prev, { id: crypto.randomUUID(), name: '', price: '', maxQty: null }])}
-                      className="mt-[16px] px-[16px] py-[11px] rounded-[10px] bg-[#E8E4E2] text-ink text-[14px] font-medium hover:bg-[#dcd7d4] transition-colors"
-                    >
-                      + 옵션 추가
-                    </button>
-                  </div>
-
-                  {/* 필수/선택 여부 + 선택을 허용할 최대 개수 */}
-                  <div className="grid grid-cols-2 gap-[26px]">
-                    <div>
-                      <div className="text-[15px] font-medium text-ink mb-[10px]">필수/선택 여부</div>
-                      <SegmentedControl
-                        options={[{ label: '필수', value: true }, { label: '선택', value: false }]}
-                        value={newStoreGroup.isRequired}
-                        onChange={v => setNewStoreGroup(p => ({ ...p, isRequired: v }))}
-                        padding={3}
-                        className="rounded-[10px] h-[48px]"
-                        thumbClassName="rounded-[8px]"
-                        optionClassName={active => `h-full flex items-center justify-center text-[15px] font-medium ${active ? 'text-ink' : 'text-[#ADADAD]'}`}
-                      />
-                    </div>
-                    <div>
-                      {/* "선택을 허용할 최대 개수"는 필수/선택 여부와 헷갈렸다.
-                          이 값은 필수든 선택이든 상관없이 "이 그룹 안에서 옵션을 몇 개까지
-                          고를 수 있나"를 정하는 값이라 '옵션'을 앞에 붙여 범위를 분명히 한다. */}
-                      <div className="text-[15px] font-medium text-ink mb-[10px]">옵션 선택을 허용할 최대개수</div>
-                      <CountStepper
-                        value={maxSelectValue}
-                        min={1}
-                        max={20}
-                        onChange={n => setNewStoreGroup(p => ({ ...p, isMulti: n > 1, maxSelect: n > 1 ? String(n) : '' }))}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Step 2: 적용할 메뉴 선택 — Figma node 491:3401 (검색 + 카테고리 접기/펼치기 + 전체선택) ── */}
-              {addOptStep === 2 && (
-                <div className="flex flex-col flex-1 min-h-0">
-                  <div className="px-[30px] pb-[18px] flex-shrink-0">
-                    <div className="field-wrap flex items-center gap-[10px] h-[48px] border border-[#D9D9D9] rounded-[10px] px-[16px]">
-                      <svg width="16" height="16" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
-                      <input
-                        value={optAddSearch}
-                        onChange={e => setOptAddSearch(e.target.value)}
-                        placeholder="메뉴 이름을 검색할 수 있어요"
-                        className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[15px] text-ink placeholder:text-[#ADADAD] bg-transparent"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="px-[30px] pb-[10px] flex-shrink-0 flex items-center justify-between">
-                    <span className="text-[15px] text-[#8C8379]">카테고리</span>
-                    <button
-                      onClick={toggleAllMenus}
-                      disabled={totalVisible === 0}
-                      className="text-[15px] text-[#8C8379] hover:text-ink disabled:opacity-40 transition-colors"
-                    >
-                      메뉴 전체선택
-                    </button>
-                  </div>
-
-                  <div className="flex-1 min-h-0 overflow-y-auto px-[30px] pb-[10px]">
-                    {totalVisible === 0 ? (
-                      <div className="text-center py-10 text-[14px] text-gray-text">
-                        {search ? '검색 결과가 없습니다.' : '등록된 메뉴가 없습니다.'}
-                      </div>
-                    ) : visibleCats.map(cat => {
-                      const items = menusByCat(cat.id)
-                      if (items.length === 0) return null
-                      // 검색 중엔 결과를 바로 볼 수 있게 자동으로 펼침
-                      const expanded = search ? true : optExpandedCats.has(cat.id)
-                      const allInCat = items.every(m => step3MenuIds.has(m.code))
-                      return (
-                        <div key={cat.id}>
-                          <div className="flex items-center gap-[14px] py-[12px]">
-                            <button
-                              onClick={() => setOptExpandedCats(prev => {
-                                const next = new Set(prev)
-                                if (next.has(cat.id)) next.delete(cat.id); else next.add(cat.id)
-                                return next
-                              })}
-                              className="w-[28px] h-[28px] rounded-full bg-[#F2F2F2] flex items-center justify-center flex-shrink-0 hover:bg-[#E8E4E2] transition-colors"
-                              title={expanded ? '접기' : '펼치기'}
-                            >
-                              <svg width="12" height="7" viewBox="0 0 16 10" fill="none" className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
-                                <path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            </button>
-                            <span className="flex-1 min-w-0 text-[16px] font-semibold text-ink truncate">{cat.name}</span>
-                            <input
-                              type="checkbox"
-                              checked={allInCat}
-                              onChange={() => toggleCatMenus(cat.id)}
-                              className="flex-shrink-0 w-[22px] h-[22px]"
-                              title="카테고리 전체 선택"
-                            />
-                          </div>
-                          {expanded && items.map(menu => {
-                            const checked = step3MenuIds.has(menu.code)
-                            return (
-                              <button
-                                key={menu.code}
-                                onClick={() => setStep3MenuIds(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(menu.code)) next.delete(menu.code); else next.add(menu.code)
-                                  return next
-                                })}
-                                className="w-full flex items-center gap-[10px] pl-[42px] pr-[2px] py-[10px] text-left hover:bg-[#F9F9F9] rounded-[8px] transition-colors"
-                              >
-                                <span className={`flex-1 min-w-0 truncate text-[15px] ${checked ? 'text-ink font-medium' : 'text-[#6A635E]'}`}>
-                                  {menu.name}
-                                </span>
-                                {menu.soldOut && <span className="text-[11px] text-danger font-bold flex-shrink-0">품절</span>}
-                                <svg width="18" height="13" viewBox="0 0 20 14" fill="none" className="flex-shrink-0">
-                                  <path d="M1.5 7L7 12.5L18.5 1.5" stroke={checked ? '#1E1E1E' : '#DDD7D1'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 푸터 — Figma: 2단계에선 좌측에 적용 메뉴 개수, 우측에 닫기/다음(마지막 단계는 완료) */}
-              <div className="flex items-center justify-between gap-[14px] px-[30px] py-[20px] flex-shrink-0 mt-auto modal-footer">
-                <span className="text-[14px] text-[#8C8379] truncate">
-                  {addOptStep === 2
-                    ? `'${newStoreGroup.name}' 옵션 적용할 메뉴 개수 (${step3MenuIds.size}/${totalVisible})`
-                    : ''}
-                </span>
-                <div className="flex items-center gap-[10px] flex-shrink-0">
-                  <button
-                    onClick={() => addOptStep === 2 ? setAddOptStep(1) : closeOptGroupModal()}
-                    className="px-[34px] h-[52px] rounded-[12px] bg-[#F2F0EE] text-ink text-[16px] font-medium hover:bg-[#E8E4E2] transition-colors"
-                  >
-                    {addOptStep === 2 ? '이전' : '닫기'}
-                  </button>
-                  {addOptStep === 1 ? (
-                    <button
-                      onClick={() => {
-                        if (!newStoreGroup.name.trim() || newGroupItems.every(i => !i.name.trim())) return
-                        setStep3MenuIds(new Set())
-                        setOptAddSearch('')
-                        setAddOptStep(2)
-                      }}
-                      disabled={!newStoreGroup.name.trim() || newGroupItems.every(i => !i.name.trim())}
-                      className="px-[34px] h-[52px] rounded-[12px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
-                    >
-                      다음
-                    </button>
-                  ) : (
-                    <button
-                      onClick={confirmOptGroupCreate}
-                      disabled={addOptLoading}
-                      className="px-[34px] h-[52px] rounded-[12px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
-                    >
-                      {addOptLoading ? '...' : '완료'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 수량 버튼 설정 모달 — Figma node 491:4381 */}
-            {optQtyPickerId && (() => {
-              const target = newGroupItems.find(i => i.id === optQtyPickerId)
-              if (!target) return null
-              return (
-                <OptionMaxQtyModal
-                  optionName={target.name}
-                  value={target.maxQty}
-                  onClose={() => setOptQtyPickerId(null)}
-                  onConfirm={next => { patchItem(target.id, { maxQty: next }); setOptQtyPickerId(null) }}
-                />
-              )
-            })()}
-          </div>
-        )
-      })()}
+      {/* ── 옵션 추가 마법사 — components/menu/OptionGroupAddModal.tsx 로 꺼냈다.
+             상품 허브의 '옵션 정보' 화면도 같은 모달을 띄운다. ── */}
+      {addingStoreGroup && storeId && (
+        <OptionGroupAddModal
+          storeId={storeId}
+          menus={menus.map(m => ({ code: m.code, name: m.name, categoryId: m.categoryId, soldOut: m.soldOut }))}
+          categories={sortedCategories().map(c => ({ id: c.id, name: c.name }))}
+          displayOrder={storeGroups.length}
+          /* 메뉴 상세 모달의 '+ 옵션 추가'로 들어온 경우, 2단계에서 그 메뉴를 미리 체크해 둔다.
+             추가(add) 모드는 메뉴가 아직 DB 에 없어 붙일 대상이 없다 — 그건 저장 직후
+             onCreated 의 menuForm.toggleGroup 이 대신 처리한다. */
+          preselectMenuCodes={menuForm.mode === 'edit' && menuForm.editing ? [menuForm.editing.code] : undefined}
+          onClose={() => setAddingStoreGroup(false)}
+          onCreated={(g, menuIds) => {
+            const newGroup: any = {
+              id: g.id, name: g.name,
+              isRequired: g.isRequired,
+              isMulti:    g.isMulti,
+              maxSelect:  g.maxSelect,
+              isSoldOut: false, soldOutUntil: null, isHidden: false,
+              usedBy: menuIds.map(id => menus.find(m => m.code === id)?.name ?? '').filter(Boolean),
+              usedByMenus: menuIds.map(id => {
+                const m = menus.find(m2 => m2.code === id)
+                return m ? { name: m.name, soldOut: false, hidden: false } : null
+              }).filter(Boolean),
+              items: g.items,
+            }
+            setStoreGroups(prev => [...prev, newGroup])
+            if (selected && menuIds.includes(selected.code)) {
+              applyLocalUpdate({ ...selected, optionGroups: [...selected.optionGroups, newGroup] })
+            }
+            // 메뉴 상세 모달에서 "+ 옵션 추가"로 들어온 경우, 새 그룹을 지금 편집 중인 메뉴에 바로 선택 처리
+            if (menuForm.mode) menuForm.toggleGroup(g.id)
+          }}
+        />
+      )}
 
     </div>
   )
@@ -3582,7 +3027,7 @@ function OptionGroupPanel({
     <div className="flex flex-col h-full">
       {/* 설정 모달 */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <ModalOverlay onClose={() => setSettingsOpen(false)} z={50}>
           <div className="modal-in bg-white rounded-2xl shadow-xl w-[560px]">
             {/* 헤더 */}
             <div className="flex items-center justify-between px-6 pt-6 pb-0">
@@ -3649,7 +3094,7 @@ function OptionGroupPanel({
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {/* 항목 삭제 확인 모달 */}
@@ -3882,7 +3327,7 @@ function OptionGroupPanel({
               className="flex-shrink-0 text-gray-text hover:text-ink text-[13px]">✗</button>
           </div>
         ) : !readOnly ? (
-          <div className="flex justify-end px-4 py-2.5 border-t border-gray-border">
+          <div className="flex justify-end px-4 py-2.5 modal-footer">
             <GhostButton onClick={() => setShowAddItem(true)} size="lg">+ 항목 추가</GhostButton>
           </div>
         ) : null}

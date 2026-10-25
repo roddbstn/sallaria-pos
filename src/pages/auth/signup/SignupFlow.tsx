@@ -21,7 +21,7 @@ const ORDER: Step[] = ['password', 'storeName', 'source', 'ownerName', 'address'
 const STEP_META: Record<Step, { title?: string; subtitle?: string }> = {
   password:     { title: '로그인에 쓸\n비밀번호를 설정해주세요' },
   storeName:    {},
-  source:       { title: '선포스를 어떻게 알고\n설치하셨나요?' },
+  source:       { title: '선포스를 알게 된 경로를\n알려주세요' },
   ownerName:    {},
   address:      {},
   businessType: { title: '업종유형을\n선택해주세요' },
