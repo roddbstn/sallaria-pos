@@ -102,8 +102,21 @@ jobs:
           # 기존 키체인 목록을 덮어쓰지 않고 앞에 추가 (login.keychain-db 유지)
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | tr -d ' ' | tr '\n' ' ')
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
-          # 서명 ID 확인 (디버그)
+          # 어떤 종류의 인증서가 들어왔는지 확인한다.
+          # Developer ID Application 이 아니면 서명해봐야 공증에서 전부 거부된다
+          # (2026-10-26 릴리즈 실패 원인 — scripts/notarize.js 주석 참고).
+          # 그럴 땐 서명을 끄고 빌드해서 **릴리즈 자체는 나오게** 한다.
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          if security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q "Developer ID Application"; then
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> $GITHUB_ENV
+            echo "✅ Developer ID Application — 서명 + 공증으로 진행합니다"
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+            echo "⚠️  Developer ID Application 인증서가 없습니다 — 서명 없이 빌드합니다."
+            echo "    (현재 키체인에는 Apple Development 만 있는 것으로 보입니다)"
+            echo "    배포용 서명을 켜려면 Developer ID Application 인증서를 발급해"
+            echo "    .p12 로 내보낸 뒤 MACOS_CERTIFICATE 시크릿을 교체하세요."
+          fi
 
       - name: 빌드 (electron-vite)
         run: pnpm run build
