@@ -1,6 +1,6 @@
 {
   "name": "sunpos",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "선포스 앱",
   "main": "out/main/index.js",
   "scripts": {
@@ -73,7 +73,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
-      "guid": "sallaria-pos-0110"
+      "guid": "sallaria-pos-0110",
+      "artifactName": "sunpos-setup.${ext}"
     },
     "mac": {
       "target": "dmg",
@@ -81,7 +82,8 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": false
+      "notarize": false,
+      "artifactName": "sunpos.${ext}"
     },
     "afterSign": "./scripts/notarize.js",
     "publish": {
