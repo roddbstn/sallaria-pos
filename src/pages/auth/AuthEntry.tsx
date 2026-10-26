@@ -1,6 +1,6 @@
 import HeroCarousel from '../../components/auth/HeroCarousel'
 import PrimaryButton from '../../components/auth/PrimaryButton'
-import textLogo from '../../assets/text-logo.png'
+import Wordmark from '../../components/ui/Wordmark'
 
 interface AuthEntryProps {
   onStart: () => void
@@ -28,15 +28,19 @@ export default function AuthEntry({ onStart, onLogin }: AuthEntryProps) {
             <HeroCarousel />
           </div>
 
-          <img src={textLogo} alt="sunpos" className="h-[62px] object-contain" style={{ marginTop: 28, marginBottom: 6 }} />
+          <Wordmark size={48} className="mt-[28px] mb-[6px]" />
 
-          <h1 className="text-center leading-[1.35] mb-8">
+          {/* 자간을 벌려 둔다. 26px Light 한글 세 줄은 기본 자간이면 글자가 서로
+              붙어 덩어리로 읽힌다. 첫 화면 카피는 읽히는 속도보다 숨 쉬는 게 낫다. */}
+          <h1 className="text-center leading-[1.35] mb-8" style={{ letterSpacing: '0.05em' }}>
             <span className="block text-[26px]" style={{ fontWeight: 300, color: 'var(--ink)' }}>주문할 때도</span>
             <span className="block text-[26px]" style={{ fontWeight: 300, color: 'var(--ink)' }}>주문받을 때도</span>
             <span className="block text-[26px]" style={{ fontWeight: 500, color: 'var(--ink)' }}>훨씬 편한 선결제!</span>
           </h1>
 
-          <PrimaryButton onClick={onStart} className="w-full">
+          {/* 히어로 카드(520px) 폭을 꽉 채우면 버튼이 화면의 주인이 된다.
+              첫 화면의 주인은 카피이고 버튼은 그 다음이라 폭을 줄여 둔다. */}
+          <PrimaryButton onClick={onStart} className="w-[260px]">
             시작하기
           </PrimaryButton>
 

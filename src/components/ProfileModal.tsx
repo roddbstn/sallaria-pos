@@ -12,9 +12,14 @@ interface Props {
   onDeleteRequest: () => void
   /** 로그인 화면과 동일한 QR(전화번호+OTP 인증 후 비밀번호 설정) 모달을 여는 콜백 */
   onOpenPasswordSetup: () => void
+  /** 로그아웃. **반드시 App 의 handleSignOut 을 받는다** — 여기서 supabase.auth.signOut()
+   *  을 직접 부르면 intentionalSignOutRef 가 안 서고, App 의 세션 유실 판정이
+   *  "네트워크가 끊겼다"로 오해해서 로그인 화면 대신 '연결 확인 중' 배지를 띄운다
+   *  (lib/auth-retry.ts 의 decideOnLostSession). 실제로 그랬다. */
+  onSignOut: () => void
 }
 
-export default function ProfileModal({ open, onClose, session, setSession, authObj, onDeleteRequest, onOpenPasswordSetup }: Props) {
+export default function ProfileModal({ open, onClose, session, setSession, authObj, onDeleteRequest, onOpenPasswordSetup, onSignOut }: Props) {
   const [storeRepName,  setStoreRepName]  = useState<string | null>(null)
   const [storeAddress,  setStoreAddress]  = useState<string | null>(null)
   const [customerCount, setCustomerCount] = useState<number | null>(null)
@@ -142,19 +147,24 @@ export default function ProfileModal({ open, onClose, session, setSession, authO
             </div>
           )}
 
-          {/* 로그아웃 + 회원탈퇴 */}
-          <div className="px-6 pb-5 pt-1 flex items-center justify-between">
+          {/* 로그아웃 → 그 아래 회원탈퇴.
+              전엔 둘이 justify-between 으로 좌우 끝에 떨어져 있었고 회원탈퇴는
+              text-gray-300(흰 바탕에서 거의 안 보임)이었다. 그래서 "회원탈퇴를
+              안 넣었네" 라는 말이 나왔다 — 기능은 처음부터 다 있었다.
+              되돌릴 수 없는 동작이라 눈에 덜 띄게 두는 건 맞지만, 안 보이는 건
+              다른 문제다. 로그아웃 아래에 세로로 놓고 읽히는 회색으로 올린다. */}
+          <div className="px-6 pb-5 pt-1 flex flex-col items-center gap-[10px]">
             <button
-              onClick={onDeleteRequest}
-              className="text-[12px] text-gray-300 font-normal hover:text-gray-400 transition-colors"
-            >
-              회원탈퇴
-            </button>
-            <button
-              onClick={() => supabase.auth.signOut()}
-              className="text-[12px] text-ink font-semibold hover:text-gray-text transition-colors"
+              onClick={onSignOut}
+              className="pressable-soft w-full py-2 bg-gray-100 text-ink text-[13px] font-semibold rounded-lg hover:bg-gray-200 transition-colors"
             >
               로그아웃
+            </button>
+            <button
+              onClick={onDeleteRequest}
+              className="text-[12px] font-normal text-[#ADADAD] underline underline-offset-[3px] decoration-[#D7D7D7] hover:text-danger hover:decoration-danger transition-colors"
+            >
+              회원탈퇴
             </button>
           </div>
         </div>

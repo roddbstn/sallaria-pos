@@ -118,6 +118,13 @@ body {
    .dashboard-orders-scroll 이 같은 이유로 쓰던 처방을 이름만 일반화한 것이다. */
 .scroll-stable { scrollbar-gutter: stable; }
 
+/* 스크롤바를 아예 숨기는 가로 스크롤 줄(카테고리 탭 등).
+   칩이 한 줄로 흐르는 좁은 영역에서는 6px 스크롤바가 칩 아래를 가로질러
+   줄이 두 겹으로 보인다. 긁는 건 트랙패드/드래그로 되고, 끝에 '전체 보기'
+   버튼이 따로 있으니 스크롤바가 없어도 뒤쪽을 놓치지 않는다. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 /* 모달 하단에 고정된 CTA 푸터 — 위 스크롤 영역과의 경계.
    이 클래스는 네 군데에서 이미 쓰이고 있었는데 **정의가 없었다.** 그래서 각 모달이
    제각각 border-t 를 직접 그렸고, 색이 #ADADAD · #E8E4E2 · #ADADAD/30 · --gray-border

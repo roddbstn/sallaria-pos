@@ -1784,6 +1784,7 @@ export default function App() {
           authObj={authObj}
           onDeleteRequest={() => setDeleteConfirmOpen(true)}
           onOpenPasswordSetup={() => setQrOpen(true)}
+          onSignOut={handleSignOut}
         />
         <QrPasswordSetupModal open={qrOpen} onClose={() => setQrOpen(false)} />
 

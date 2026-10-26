@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { type MenuDetail, type Category } from '../lib/mock-data'
@@ -86,6 +86,10 @@ export default function VerbalOrderModal({
   const [categories, setCategories] = useState<Category[]>([])
   const [menus,      setMenus]      = useState<MenuDetail[]>([])
   const [catId,      setCatId]      = useState<string>('all')
+  /** 카테고리 전체 목록 모달 — 가로 탭에서 안 보이는 뒤쪽까지 한 번에 고른다 */
+  const [catPicker,  setCatPicker]  = useState(false)
+  /** 모달에서 고른 카테고리가 가로 탭의 화면 밖에 있으면 거기로 스크롤한다 */
+  const catTabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const [menuLoading, setMenuLoading] = useState(true)
 
   const [cart, setCart] = useState<CartItem[]>([])
@@ -135,6 +139,12 @@ export default function VerbalOrderModal({
     }, 200)
     return () => clearTimeout(id)
   }, [accountQuery, storeId])
+
+  // 고른 카테고리 칩을 가로 탭 안으로 끌어온다.
+  // 모달에서 뒤쪽 카테고리를 고르면 탭 줄은 앞쪽을 보고 있어서 선택된 칩이 안 보인다.
+  useEffect(() => {
+    catTabRefs.current[catId]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [catId])
 
   // ── 메뉴/카테고리 조회 (거래처 선택 후) ──────────────────────────────────
   useEffect(() => {
@@ -497,27 +507,40 @@ export default function VerbalOrderModal({
                   />
                 </div>
 
-                {/* 카테고리 탭 */}
-                <div className="flex-shrink-0 px-5 py-2 border-b border-gray-border flex gap-1.5 overflow-x-auto">
+                {/* 카테고리 탭 — 오른쪽 끝에 전체 목록 버튼.
+                    QR오더 손님 화면(salaria-prepaid menu/page.tsx)과 같은 모양이다.
+                    카테고리가 늘면 가로 스크롤 뒤쪽이 안 보이는데, 피크타임에 전화를
+                    받으면서 탭을 긁어 찾는 건 현실적이지 않다. 한 번 눌러 전부 펼친다. */}
+                <div className="flex-shrink-0 border-b border-gray-border flex items-center">
+                  <div className="no-scrollbar flex-1 min-w-0 flex gap-1.5 overflow-x-auto px-5 py-2">
+                    {[{ id: 'all', name: '전체' }, ...categories].map(cat => (
+                      <button
+                        key={cat.id}
+                        ref={el => { catTabRefs.current[cat.id] = el }}
+                        onClick={() => setCatId(cat.id)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
+                          catId === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                        }`}
+                      >
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
                   <button
-                    onClick={() => setCatId('all')}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
-                      catId === 'all' ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
-                    }`}
+                    onClick={() => setCatPicker(v => !v)}
+                    className="pressable-soft flex-shrink-0 w-7 h-7 ml-1 mr-4 bg-white border border-[#E0E0E0] rounded-full flex items-center justify-center text-gray-text"
+                    style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+                    aria-label="카테고리 전체 보기"
                   >
-                    전체
-                  </button>
-                  {categories.map(cat => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setCatId(cat.id)}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
-                        catId === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
-                      }`}
+                    <svg
+                      className="transition-transform duration-200"
+                      style={{ transform: catPicker ? 'rotate(-90deg)' : 'rotate(90deg)', width: 15, height: 15 }}
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                     >
-                      {cat.name}
-                    </button>
-                  ))}
+                      <polyline points="9 6 15 12 9 18" />
+                    </svg>
+                  </button>
                 </div>
 
                 {/* 메뉴 그리드 — 옵션 없으면 바로 담김(연속 탭 = 수량+1), 있으면 옵션+수량 선택 모달 */}
@@ -583,6 +606,36 @@ export default function VerbalOrderModal({
             )}
           </div>
         </div>
+
+        {/* 카테고리 선택 모달 — 옵션 모달과 같은 레이어(z-10).
+            구두주문 모달 안쪽만 덮는다. 바깥 배경까지 덮으면 "주문을 닫은 건가"
+            하고 헷갈린다. */}
+        {catPicker && (
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center bg-black/30"
+            onClick={() => setCatPicker(false)}
+          >
+            <div
+              className="modal-in bg-white rounded-2xl shadow-xl w-[380px] max-h-[80%] overflow-y-auto p-5"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-[15px] font-extrabold text-ink mb-3">카테고리</div>
+              <div className="flex flex-wrap gap-1.5">
+                {[{ id: 'all', name: '전체' }, ...categories].map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => { setCatId(cat.id); setCatPicker(false) }}
+                    className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors ${
+                      catId === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 옵션 선택 모달 */}
         {optionPicker && (

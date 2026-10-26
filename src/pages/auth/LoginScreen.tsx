@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import logoWithText from '../../assets/logo-with-text.png'
+import Wordmark from '../../components/ui/Wordmark'
 import BackButton from '../../components/auth/BackButton'
 import PrimaryButton from '../../components/auth/PrimaryButton'
 import { supabase } from '../../lib/supabase'
@@ -72,7 +72,7 @@ export default function LoginScreen({ onBack, onLoginSuccess, onOpenPasswordSetu
 
       <div className="w-[520px]" style={{ transform: 'translateY(-140px)' }}>
         <div className="flex justify-center mb-8">
-          <img src={logoWithText} alt="sunpos" className="h-[110px] object-contain" />
+          <Wordmark size={76} />
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

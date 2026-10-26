@@ -1,4 +1,4 @@
-import logoCropped from '../../assets/logo-cropped.png'
+import Wordmark from '../ui/Wordmark'
 import BackButton from './BackButton'
 
 interface AuthShellProps {
@@ -38,7 +38,7 @@ export default function AuthShell({ title, subtitle, onBack, topAlign, children 
         style={topAlign ? { paddingTop: 120, paddingBottom: 64 } : { paddingTop: 64, paddingBottom: 64 }}
       >
         <div className="w-full max-w-[440px] flex flex-col items-center">
-          <img src={logoCropped} alt="sunpos" className="h-[40px] object-contain" style={{ marginBottom: 26 }} />
+          <Wordmark size={34} className="mb-[26px]" />
 
           {title && (
             <h1 className="text-center leading-[1.35] text-[30px] font-normal whitespace-pre-line" style={{ color: 'var(--ink)' }}>
