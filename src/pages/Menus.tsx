@@ -20,9 +20,50 @@ import LoadingTimer from '../components/ui/LoadingTimer'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import ModalOverlay from '../components/ui/ModalOverlay'
 import CategoryAddModal from '../components/ui/CategoryAddModal'
+import {
+  initHistory, pushHistory, undoHistory, redoHistory,
+  canUndo, canRedo, currentOf, orderChanged, type EditHistory,
+} from '../lib/edit-history'
 
 /** 보기 모드 로컬 캐시 키 — 서버값(stores.menu_display_mode)이 올 때까지 쓴다 */
 const MENU_MODE_KEY = 'sallaria_pos_menu_view_mode'
+
+/**
+ * 되돌리기 / 다시실행 한 쌍 — 카테고리 편집과 개별메뉴 편집이 같이 쓴다.
+ *
+ * 할 수 없을 때 **숨기지 않고 연하게** 둔다. 자리가 사라지면 버튼이 생겼다 없어졌다 해서
+ * 눈이 그 자리를 매번 다시 찾는다. 편집 중 내내 같은 자리에 있어야 손이 기억한다.
+ */
+function UndoRedoPair({ canUndo, canRedo, onUndo, onRedo }: {
+  canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void
+}) {
+  const BTNS = [
+    { key: 'undo', on: canUndo, run: onUndo, label: '되돌리기',
+      head: 'M9 5L4 10l5 5',  tail: 'M4 10h9a5 5 0 0 1 0 10H8' },
+    { key: 'redo', on: canRedo, run: onRedo, label: '다시 실행',
+      head: 'M15 5l5 5-5 5',  tail: 'M20 10h-9a5 5 0 0 0 0 10h5' },
+  ] as const
+  return (
+    <>
+      {BTNS.map(b => (
+        <button
+          key={b.key}
+          onClick={b.run}
+          disabled={!b.on}
+          title={b.label}
+          aria-label={b.label}
+          className="pressable w-[26px] h-[24px] flex items-center justify-center disabled:cursor-default"
+          style={{ opacity: b.on ? 1 : 0.3 }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d={b.head} stroke="#414449" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={b.tail} stroke="#414449" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      ))}
+    </>
+  )
+}
 
 // ── 품절 상태 헬퍼 ────────────────────────────────────────────────────────────
 function getSoldOutState(soldOut: boolean, soldOutUntil: string | null | undefined): SoldOutState {
@@ -137,6 +178,20 @@ export default function Menus() {
   const [categoryTextSize, setCategoryTextSize] = useState<'default' | 'large'>('default')
   const [menuEditMode,     setMenuEditMode]     = useState(false)
   const [editOrder,        setEditOrder]        = useState<Category[]>([]) // 완료 누르기 전까지는 로컬 임시 순서
+  /**
+   * 카테고리 편집 되돌리기/다시실행.
+   *
+   * 편집 모드의 순서는 '완료' 를 누르기 전까지 서버에 안 간다. 그래서 되돌리기는
+   * 이 배열 스냅샷을 오가는 것으로 충분하다(서버 왕복 없음).
+   *
+   * ⚠️ 드래그 **중**에는 쌓지 않는다. onDragOver 는 마우스가 움직일 때마다 오므로
+   *    그때마다 쌓으면 한 번 옮긴 걸 수십 번 되돌려야 한다. 놓는 순간 한 칸만 쌓는다.
+   */
+  const [catHist,  setCatHist]  = useState<EditHistory<Category>>(() => initHistory<Category>([]))
+  const [menuHist, setMenuHist] = useState<EditHistory<MenuDetail>>(() => initHistory<MenuDetail>([]))
+  /** 드래그 시작 시점의 순서 — 놓을 때 '바뀌었나' 를 판단하는 기준 */
+  const dragStartOrderRef = useRef<Category[] | null>(null)
+  const dragStartMenusRef = useRef<MenuDetail[] | null>(null)
   const [dragCatId,        setDragCatId]        = useState<string | null>(null)
   const [deleteCatConfirm, setDeleteCatConfirm] = useState<Category | null>(null)
   const [menuToast,        setMenuToast]        = useState<string | null>(null)
@@ -185,10 +240,13 @@ export default function Menus() {
         .sort((a, b) => a.displayOrder - b.displayOrder)
         .flatMap(cat => menus.filter(m => m.categoryId === cat.id))
       setEditOrderMenus(flattened)
-      showMenuToast('카테고리 안에서 메뉴 박스를 잡고 옮기면 순서를 바꿀 수 있어요', 3000)
+      setMenuHist(initHistory(flattened))
+      showMenuToast('카테고리 안에서 메뉴 박스를 잡고 옮기면 순서를 바꿀 수 있어요', 3500)
     } else {
-      setEditOrder([...categories].sort((a, b) => a.displayOrder - b.displayOrder))
-      showMenuToast('카테고리 박스를 잡고 옮기면 순서를 바꿀 수 있어요', 3000)
+      const initial = [...categories].sort((a, b) => a.displayOrder - b.displayOrder)
+      setEditOrder(initial)
+      setCatHist(initHistory(initial))   // 0번 칸이 '편집 전' — 여기까지만 되돌릴 수 있다
+      showMenuToast('카테고리 박스를 잡고 옮기면 순서를 바꿀 수 있어요', 3500)
     }
     setMenuEditMode(true)
   }
@@ -223,6 +281,26 @@ export default function Menus() {
     setMenuEditMode(false)
     showMenuToast('변경사항을 저장했어요', 2000)
   }
+
+  // 되돌리기/다시실행 — 규칙은 lib/edit-history.ts 가 들고 있다(테스트도 거기).
+  // 카테고리와 개별메뉴가 같은 규칙을 쓰므로 여기선 '어느 배열이냐' 만 다르다.
+  function commitCatOrder(next: Category[]) {
+    setEditOrder(next)
+    setCatHist(h => pushHistory(h, next))
+  }
+  const canUndoCat = canUndo(catHist)
+  const canRedoCat = canRedo(catHist)
+  function undoCatOrder() { const h = undoHistory(catHist); setCatHist(h); setEditOrder(currentOf(h)) }
+  function redoCatOrder() { const h = redoHistory(catHist); setCatHist(h); setEditOrder(currentOf(h)) }
+
+  function commitMenuOrder(next: MenuDetail[]) {
+    setEditOrderMenus(next)
+    setMenuHist(h => pushHistory(h, next))
+  }
+  const canUndoMenu = canUndo(menuHist)
+  const canRedoMenu = canRedo(menuHist)
+  function undoMenuOrder() { const h = undoHistory(menuHist); setMenuHist(h); setEditOrderMenus(currentOf(h)) }
+  function redoMenuOrder() { const h = redoHistory(menuHist); setMenuHist(h); setEditOrderMenus(currentOf(h)) }
 
   function handleCatDragOver(e: React.DragEvent, overId: string) {
     e.preventDefault()
@@ -271,7 +349,7 @@ export default function Menus() {
     if (error) { alert('카테고리 삭제 실패: ' + error.message); return }
     setMenus(prev => prev.map(m => m.categoryId === cat.id ? { ...m, categoryId: '' } : m))
     setCategories(prev => prev.filter(c => c.id !== cat.id))
-    setEditOrder(prev => prev.filter(c => c.id !== cat.id))
+    commitCatOrder(editOrder.filter(c => c.id !== cat.id))
     if (previewCatId === cat.id) setPreviewCatId('all')
     setDeleteCatConfirm(null)
   }
@@ -1088,7 +1166,7 @@ export default function Menus() {
   async function deleteMenus(codes: string[]) {
     await Promise.all(codes.map(code => supabase.from('menus').delete().eq('id', code)))
     setMenus(prev => prev.filter(m => !codes.includes(m.code)))
-    setEditOrderMenus(prev => prev.filter(m => !codes.includes(m.code)))
+    commitMenuOrder(editOrderMenus.filter(m => !codes.includes(m.code)))
     if (selected && codes.includes(selected.code)) {
       setSelected(null)
       menuForm.close()
@@ -1129,15 +1207,18 @@ export default function Menus() {
         // (카드 높이가 메뉴이름 줄바꿈에 따라 달라져도 같은 행끼리 stretch로 맞춰짐) 좌표 계산은
         // 그룹 시작 위치(첫 카테고리 상단 여백/제목-카드 간격/그룹 간 간격)만 필요.
         const INDIV_FIRST_TOP   = 73
+        /** 개별메뉴 **편집** 모드의 상단 여백 — 되돌리기 줄(66~90) 아래에서 시작한다 */
+        const INDIV_EDIT_TOP    = 101
         /**
          * 카테고리 편집 그리드의 첫 줄 top.
          *
-         * 일반 보기(62)보다 아래다. 삭제 배지가 카드 기준 top:-5 라 62 면 배지가 y=57 에서
-         * 시작하는데, 검색창 줄을 덮는 **고정 배경 띠가 height:59 · z-10** 이라 맨 윗줄
-         * 배지의 윗부분이 그 띠에 가려 잘려 보였다. 배지가 띠 아래에서 시작하도록 띄운다
-         * (70 → 배지 top 65 > 59). 개별메뉴 편집은 paddingTop:73 + 분류 제목이 있어 무관.
+         * 70 → 98 로 내렸다. 그리드 바로 위에 되돌리기/다시실행 줄(높이 24)이 들어가는데,
+         * 70 이면 그 줄이 y=42 에 놓여 **상단 고정 띠(height 59, z-10)** 밑으로 들어간다.
+         * 띠 아래(59)에서 시작해 버튼 24 + 간격 15 = 98.
          */
-        const CAT_EDIT_TOP      = 70
+        const CAT_EDIT_TOP      = 98
+        /** 되돌리기 줄의 top — 띠(59) 바로 아래 */
+        const CAT_UNDO_TOP      = 66
         const INDIV_HEADING_GAP = 29
         const INDIV_GROUP_GAP   = 24
         const individualGroups = categories
@@ -1261,6 +1342,24 @@ export default function Menus() {
               {/* 카테고리 모드 — 편집 보기(드래그 순서변경 + 삭제) */}
               {menuViewMode === 'category' && menuEditMode && (
                 <>
+                  {/* 되돌리기 / 다시실행 — 맨 오른쪽 카테고리 박스의 오른쪽 끝에 맞춰 그 위에 둔다.
+                      편집은 '완료' 전까지 서버에 안 가므로 되돌리기가 안전하다.
+                      할 수 없을 때는 연하게(30%) — 숨기지 않는다. 자리가 사라지면
+                      버튼이 생겼다 없어졌다 해서 눈이 그 자리를 다시 찾아야 한다. */}
+                  <div
+                    className="absolute flex items-center gap-[10px]"
+                    style={{
+                      left: GRID_PAD + (COLS - 1) * COL_STEP,
+                      width: CARD_W,
+                      top: CAT_UNDO_TOP,
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <UndoRedoPair
+                      canUndo={canUndoCat} canRedo={canRedoCat}
+                      onUndo={undoCatOrder} onRedo={redoCatOrder}
+                    />
+                  </div>
                   {editOrder.length === 0 ? (
                     <div className="absolute text-[13px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
                       아직 등록된 카테고리가 없습니다.
@@ -1272,9 +1371,17 @@ export default function Menus() {
                       <div
                         key={cat.id}
                         draggable
-                        onDragStart={() => setDragCatId(cat.id)}
+                        onDragStart={() => { setDragCatId(cat.id); dragStartOrderRef.current = editOrder }}
                         onDragOver={e => handleCatDragOver(e, cat.id)}
-                        onDragEnd={() => setDragCatId(null)}
+                        onDragEnd={() => {
+                          setDragCatId(null)
+                          // 드래그 한 번 = 히스토리 한 칸. 제자리에 놓았으면 쌓지 않는다.
+                          const before = dragStartOrderRef.current
+                          dragStartOrderRef.current = null
+                          if (!before) return
+                          if (!orderChanged(before, editOrder, c => c.id)) return
+                          setCatHist(h => pushHistory(h, editOrder))
+                        }}
                         className={`absolute bg-[#FCFCFC] rounded-[13px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left cursor-grab active:cursor-grabbing ${
                           dragCatId === cat.id ? 'opacity-40' : ''
                         }`}
@@ -1375,7 +1482,19 @@ export default function Menus() {
                     아직 등록된 메뉴가 없습니다.
                   </div>
                 ) : (
-                  <div style={{ paddingTop: INDIV_FIRST_TOP, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
+                  <>
+                  {/* 되돌리기 / 다시실행 — 카테고리 편집과 **같은 자리**(띠 아래 66, 그리드 오른쪽 끝).
+                      모드를 오가도 버튼이 같은 곳에 있어야 손이 기억한다. */}
+                  <div
+                    className="absolute flex items-center gap-[10px] justify-end"
+                    style={{ left: GRID_PAD + (COLS - 1) * COL_STEP, width: CARD_W, top: CAT_UNDO_TOP }}
+                  >
+                    <UndoRedoPair
+                      canUndo={canUndoMenu} canRedo={canRedoMenu}
+                      onUndo={undoMenuOrder} onRedo={redoMenuOrder}
+                    />
+                  </div>
+                  <div style={{ paddingTop: INDIV_EDIT_TOP, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
                     {groups.map(({ cat, items }, gi) => (
                       <div key={cat.id} style={{ marginTop: gi > 0 ? INDIV_GROUP_GAP : 0 }}>
                         <div className="text-[18px] font-semibold text-ink" style={{ marginBottom: INDIV_HEADING_GAP }}>
@@ -1386,9 +1505,17 @@ export default function Menus() {
                             <div
                               key={menu.code}
                               draggable
-                              onDragStart={() => setDragMenuCode(menu.code)}
+                              onDragStart={() => { setDragMenuCode(menu.code); dragStartMenusRef.current = editOrderMenus }}
                               onDragOver={e => handleMenuDragOver(e, menu.code)}
-                              onDragEnd={() => setDragMenuCode(null)}
+                              onDragEnd={() => {
+                                setDragMenuCode(null)
+                                // 카테고리 쪽과 같은 규칙 — 놓는 순간 한 칸, 제자리면 안 쌓는다
+                                const before = dragStartMenusRef.current
+                                dragStartMenusRef.current = null
+                                if (!before) return
+                                if (!orderChanged(before, editOrderMenus, m => m.code)) return
+                                setMenuHist(h => pushHistory(h, editOrderMenus))
+                              }}
                               className={`relative flex flex-col bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] cursor-grab active:cursor-grabbing p-[10px] ${
                                 dragMenuCode === menu.code ? 'opacity-40' : ''
                               }`}
@@ -1417,6 +1544,7 @@ export default function Menus() {
                       </div>
                     ))}
                   </div>
+                  </>
                 )
               })()}
 

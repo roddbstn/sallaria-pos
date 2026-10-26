@@ -4,6 +4,7 @@ import { won } from '../lib/ipc'
 import { type MenuDetail, type Category } from '../lib/mock-data'
 import { mapMenuRow } from '../lib/mappers'
 import ModalOverlay from './ui/ModalOverlay'
+import DaumPostcodeEmbed from './DaumPostcodeEmbed'
 import ConfirmDialog from './ui/ConfirmDialog'
 
 // ── 구두주문 받기 — 전화/현장 구두주문을 POS에서 직접 입력해 create_order RPC로 제출 ──
@@ -69,6 +70,17 @@ export default function VerbalOrderModal({
   const [memberPhone,    setMemberPhone]    = useState('')
   const [newMember,      setNewMember]      = useState('')   // 명단에 없을 때 직접 추가
   const [method,        setMethod]      = useState<'포장' | '내점' | '배달'>('포장')
+  /**
+   * 배달 주소 · 요청사항.
+   *
+   * 전엔 구두주문에 이 둘이 아예 없었다. 그래서 전화로 받은 배달 주문이 주문기록에
+   * "구두주문 — POS 직접 입력" 한 줄로만 남았고, 나중에 어디로 보냈는지 알 수 없었다.
+   * 손님이 QR웹으로 넣은 주문과 같은 모양으로 남겨야 한 표에서 같이 읽힌다.
+   */
+  const [roadAddress,   setRoadAddress]   = useState('')
+  const [detailAddress, setDetailAddress] = useState('')
+  const [customerNote,  setCustomerNote]  = useState('')
+  const [postcodeOpen,  setPostcodeOpen]  = useState(false)
   const [deliveryFee,   setDeliveryFee] = useState('0')
 
   const [categories, setCategories] = useState<Category[]>([])
@@ -264,6 +276,16 @@ export default function VerbalOrderModal({
       option_prices: c.options.map(o => o.extra),
     }))
 
+    // note 는 **파싱되는 형식**이다 — lib/ipc.ts 의 parseNote 가 ' / ' 로 끊고
+    // [배달주소]/[배달상세] 접두사를 읽는다. 홈 상세·영수증이 그 결과를 쓰므로
+    // 손님 주문과 같은 모양으로 적어야 한 화면에서 같이 읽힌다.
+    const isDelivery = method === '배달'
+    const noteParts: string[] = []
+    if (isDelivery && roadAddress.trim())   noteParts.push(`[배달주소] ${roadAddress.trim()}`)
+    if (isDelivery && detailAddress.trim()) noteParts.push(`[배달상세] ${detailAddress.trim()}`)
+    if (customerNote.trim())                noteParts.push(customerNote.trim())
+    noteParts.push('구두주문 — POS 직접 입력')
+
     const { error } = await supabase.rpc('create_order', {
       p_account_code:  selectedAccount.account_code,
       p_orderer_name:  memberName.trim(),
@@ -271,7 +293,10 @@ export default function VerbalOrderModal({
       p_items:         items,
       p_delivery_fee:  deliveryFeeNum,
       p_orderer_phone: memberPhone.trim() || null,
-      p_note:          '구두주문 — POS 직접 입력',
+      p_note:          noteParts.join(' / '),
+      // 전용 컬럼에도 같이 넣는다 — 나중에 주소로 집계하려면 note 파싱 말고 이게 필요하다
+      p_delivery_road_address:   isDelivery ? (roadAddress.trim()   || null) : null,
+      p_delivery_detail_address: isDelivery ? (detailAddress.trim() || null) : null,
     })
 
     if (error) {
@@ -441,6 +466,35 @@ export default function VerbalOrderModal({
                       />
                     )}
                   </div>
+
+                  {/* 배달 주소 — 배달일 때만. 주소는 직접 치지 않고 검색해서 고른다
+                      (오타가 나면 배달을 못 간다). 세부주소는 검색으로 안 나오므로 직접 받는다. */}
+                  {method === '배달' && (
+                    <div className="mt-2 flex gap-1.5">
+                      <button
+                        onClick={() => setPostcodeOpen(true)}
+                        className={`pressable-soft flex-1 min-w-0 text-left border rounded-lg px-2.5 py-1.5 text-[12px] truncate ${
+                          roadAddress ? 'border-gray-border text-ink' : 'border-dashed border-[#ADADAD] text-gray-text'
+                        }`}
+                      >
+                        {roadAddress || '배달 주소 찾기'}
+                      </button>
+                      <input
+                        value={detailAddress}
+                        onChange={e => setDetailAddress(e.target.value)}
+                        placeholder="세부주소 (동·호수)"
+                        className="w-40 flex-shrink-0 border border-gray-border rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-[#00DD67]"
+                      />
+                    </div>
+                  )}
+
+                  {/* 요청사항 — 세 가지 이용방법 모두. '덜 맵게' 같은 말은 포장·내점에도 온다 */}
+                  <input
+                    value={customerNote}
+                    onChange={e => setCustomerNote(e.target.value)}
+                    placeholder="요청사항 (예: 덜 맵게, 수저 빼주세요)"
+                    className="mt-2 w-full border border-gray-border rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-[#00DD67]"
+                  />
                 </div>
 
                 {/* 카테고리 탭 */}
@@ -621,6 +675,29 @@ export default function VerbalOrderModal({
           onConfirm={() => { setDiscardConfirm(false); onClose() }}
           onCancel={() => setDiscardConfirm(false)}
         />
+      )}
+
+      {/* 다음 주소검색 — 매장 정보 화면과 같은 컴포넌트.
+          z-[95]: 이 구두주문 모달 위에 떠야 하고, 삭제 확인(z-90)보다도 위다. */}
+      {postcodeOpen && (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40"
+          onClick={() => setPostcodeOpen(false)}
+        >
+          <div
+            className="modal-in bg-[#FCFCFC] rounded-[16px] shadow-xl w-[460px] max-w-[92vw] overflow-hidden flex flex-col"
+            style={{ height: 520 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 flex items-center justify-between px-[20px] py-[14px]">
+              <span className="text-[15px] font-semibold text-ink">배달 주소 찾기</span>
+              <button onClick={() => setPostcodeOpen(false)} className="pressable text-[18px] text-gray-text hover:text-ink">✕</button>
+            </div>
+            <div className="flex-1 min-h-0">
+              <DaumPostcodeEmbed onComplete={road => { setRoadAddress(road); setPostcodeOpen(false) }} />
+            </div>
+          </div>
+        </div>
       )}
     </ModalOverlay>
   )

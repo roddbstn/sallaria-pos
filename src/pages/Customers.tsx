@@ -1194,7 +1194,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   disabled={typeSaving}
                   className="px-[15px] py-[7px] rounded-lg bg-[#2C261F] text-white text-[13px] font-semibold whitespace-nowrap disabled:opacity-50 transition-opacity"
                 >
-                  {typeSaving ? '저장 중...' : '완료'}
+                  {typeSaving ? (
+                    // '저장 중' 글자를 빼고 점만 남긴다 — 버튼 폭이 '완료'에서 갑자기
+                    // 늘었다 줄면 눌린 자리가 움직인 것처럼 보인다.
+                    // 점은 뒤에서 앞으로 차례로 튄다(.dot-bounce-rev)
+                    <span className="dot-bounce-rev inline-flex gap-[2px]"><span>.</span><span>.</span><span>.</span></span>
+                  ) : '완료'}
                 </button>
               </div>
             ) : (
@@ -1445,7 +1450,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   onMouseMove={e => setBarTooltip(t => t && { ...t, x: e.clientX, y: e.clientY })}
                   onMouseLeave={() => setBarTooltip(null)}
                 >
-                  <div className="w-full bg-[#6A635E] rounded-t-[2px] transition-opacity" style={{ height: Math.max(2, (amt / maxYearlyDeposit) * 51), opacity: barTooltip && barTooltip.monthIdx !== i ? 0.4 : 1 }} />
+                  <div className="bar-rise w-full bg-[#6A635E] rounded-t-[2px] transition-opacity" style={{ height: Math.max(2, (amt / maxYearlyDeposit) * 51), opacity: barTooltip && barTooltip.monthIdx !== i ? 0.4 : 1, animationDelay: `${i * 25}ms` }} />
                 </div>
               ))}
             </div>
@@ -1512,10 +1517,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   onMouseLeave={() => setOrderBarTooltip(null)}
                 >
                   <div
-                    className="w-full bg-[#8C8379] rounded-t-[2px] transition-opacity"
+                    className="bar-rise w-full bg-[#8C8379] rounded-t-[2px] transition-opacity"
                     style={{
                       height: Math.max(2, (n / Math.max(1, ...yearlyOrders)) * 51),
                       opacity: orderBarTooltip && orderBarTooltip.monthIdx !== i ? 0.4 : 1,
+                      animationDelay: `${i * 25}ms`,
                     }}
                   />
                 </div>
@@ -1543,6 +1549,15 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 </div>
               )
             })()}
+            {/* 월 축 — 위 선결제 추이와 **같은 줄 모양**이다.
+                여기만 빠져 있어서, 막대에 마우스를 올리기 전에는 몇 월인지 알 수 없었다.
+                두 차트를 위아래로 겹쳐 읽으라고 나란히 둔 건데 축이 한쪽에만 있으면
+                눈이 위 차트의 축까지 올라갔다 내려와야 한다. */}
+            <div className="flex mt-[6px]" style={{ width: 323 }}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <div key={i} className="flex-1 text-center text-[10px] text-[#6A635E]">{i + 1}월</div>
+              ))}
+            </div>
           </div>
 
           {/* 계정유형 도넛 — 비율 높은 순으로 정렬해 범례도 위→아래, 도넛도 12시(위)부터 시계방향으로 큰 비율부터 */}

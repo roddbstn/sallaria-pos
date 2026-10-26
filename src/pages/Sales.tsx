@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
+import LoadingTimer from '../components/ui/LoadingTimer'
 import { supabase, type DbAccount } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
@@ -69,7 +70,7 @@ function DeltaBadge({ current, previous, goodWhenUp = true }: {
   const good = up === goodWhenUp
   return (
     <span className={`text-[11px] font-normal ${good ? 'text-[#2C261F]' : 'text-danger'}`}>
-      {up ? '▲' : '▼'} 지난달 {up ? '+' : ''}{pct}%
+      {up ? '▲' : '▼'} 지난달보다 {up ? '+' : ''}{pct}%
     </span>
   )
 }
@@ -221,16 +222,10 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
   const [hoverDay,    setHoverDay]    = useState<number | null>(null)
   const [tooltipSide, setTooltipSide] = useState<'left' | 'right'>('right')
   const [hoverRelX,   setHoverRelX]   = useState(0)
-  const [reveal,     setReveal]     = useState(false)
+  /** 데이터가 바뀌면 값이 바뀌는 지문 — 등장 애니메이션을 다시 재생시키는 용도 */
+  const riseKey = `${Object.keys(depositByDay).length}:${Object.keys(orderByDay).length}:${showDeposit}:${showOrder}`
   const svgRef       = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-
-  // 마운트 시 하단→상단 reveal 애니메이션
-  useEffect(() => {
-    setReveal(false)
-    const id = requestAnimationFrame(() => requestAnimationFrame(() => setReveal(true)))
-    return () => cancelAnimationFrame(id)
-  }, [depositByDay, orderByDay])
 
   const W = 600, H = 160
   const padLeft = 40, padRight = 20, padBottom = 30, padTop = 16
@@ -375,12 +370,13 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
         ))}
 
         {/* 차트 라인/면적 — 하단에서 상단으로 reveal */}
+        {/* key 에 데이터 지문을 넣는다 — 화면에 들어온 뒤 데이터가 도착하면 노드가
+            새로 생기면서 등장이 다시 재생된다. 안 그러면 빈 차트에서 한 번 재생되고
+            정작 막대가 그려질 땐 이미 끝나 있어 "고정된 것처럼" 보인다. */}
         <g
-          style={{
-            transform: `scaleY(${reveal ? 1 : 0})`,
-            transformOrigin: `${padLeft}px ${padTop + chartH}px`,
-            transition: reveal ? 'transform 0.65s cubic-bezier(0.4,0,0.2,1)' : 'none',
-          }}
+          key={riseKey}
+          className="chart-rise"
+          style={{ transformOrigin: `${padLeft}px ${padTop + chartH}px` }}
         >
           {showOrder   && <path d={ordArea} fill="#C4CBD4" fillOpacity="0.18" />}
           {/* 충전 계열은 선·영역·점·범례가 모두 같은 갈색(#6A635E)이다.
@@ -1222,7 +1218,7 @@ export default function Sales() {
       {/* ── 본문 ── */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="w-8 h-8 border-4 border-[#6A635E] border-t-transparent rounded-full animate-spin" />
+          <LoadingTimer size={36} />
         </div>
       ) : error ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-text">
@@ -1438,7 +1434,7 @@ export default function Sales() {
                           <div className="mt-[10px] pt-[10px] border-t border-[#F2F2F2]">
                             <button
                               onClick={() => setAdjOpen(v => !v)}
-                              className="pressable-tab w-full flex items-center justify-between h-[28px] px-[8px] rounded-[7px] bg-[#F2F2F2] text-[11px] text-[#6A635E]"
+                              className="pressable-row w-full flex items-center justify-between h-[28px] px-[8px] rounded-[7px] bg-[#F2F2F2] text-[11px] text-[#6A635E]"
                             >
                               <span>수기 조정 {monthAdjustments.length}건 — 무엇을 고쳤는지 보기</span>
                               <span>{adjOpen ? '접기' : '펼치기'}</span>
@@ -1742,7 +1738,7 @@ export default function Sales() {
               <div className="flex-1 overflow-y-auto">
                 {historyLoading ? (
                   <div className="flex items-center justify-center py-10">
-                    <div className="w-6 h-6 border-3 border-[#6A635E] border-t-transparent rounded-full animate-spin" />
+                    <LoadingTimer size={26} />
                   </div>
                 ) : historyMonths.length === 0 ? (
                   <div className="px-4 py-10 text-center text-[11px] text-gray-text">거래 내역이 없습니다</div>

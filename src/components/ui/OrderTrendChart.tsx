@@ -119,11 +119,14 @@ export default function OrderTrendChart({
                   >
                     {/* 0건이어도 1px 은 남긴다 — 칸이 통째로 비면 '없음'인지 '안 그려짐'인지 모른다 */}
                     <div
-                      className="w-full rounded-t-[3px] transition-opacity"
+                      className="bar-rise w-full rounded-t-[3px] transition-opacity"
                       style={{
                         height: Math.max(1, Math.round((b.count / maxCount) * (height - 10))),
                         background: b.partial ? BAR_PARTIAL : BAR_FULL,
                         opacity: hover && hover.i !== i ? 0.4 : 1,
+                        // 왼쪽부터 차례로 — 한꺼번에 솟으면 벽이 올라오는 것처럼 보인다.
+                        // 칸이 많으면(일별 117칸) 전체가 0.3초를 넘지 않게 묶는다.
+                        animationDelay: `${Math.min(i * 12, 300)}ms`,
                       }}
                     />
                   </div>

@@ -658,7 +658,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
           ) : (
             <>
               <div className="flex items-end justify-center gap-[22px]" style={{ height: 51 }}>
-                {accountBars.map(b2 => (
+                {accountBars.map((b2, i2) => (
                   <div
                     key={b2.label}
                     className="flex flex-col items-center justify-end h-full cursor-pointer"
@@ -668,8 +668,11 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     onMouseLeave={() => setChartTooltip(null)}
                   >
                     <div
-                      className="w-[20px] bg-[#C1B7AA] rounded-t-[6px]"
-                      style={{ height: Math.max(2, Math.round((b2.amount / maxAccountBar) * 51)) }}
+                      className="bar-rise w-[20px] bg-[#C1B7AA] rounded-t-[6px]"
+                      style={{
+                        height: Math.max(2, Math.round((b2.amount / maxAccountBar) * 51)),
+                        animationDelay: `${i2 * 30}ms`,
+                      }}
                     />
                   </div>
                 ))}

@@ -408,7 +408,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
           </div>
           <div className="w-[205px] flex-shrink-0 bg-[#FCFCFC] rounded-[11px] px-[16px] py-[14px] flex flex-col justify-center">
             {(() => {
-              const { current, lastDone, peak, delta } = trendSummary
+              const { current, lastDone, prevDone, peak, delta } = trendSummary
               return (
                 <>
                   <div className="text-[12px] font-normal text-[#787878]">
@@ -432,7 +432,10 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                       <>
                         {UNIT_PREV_LABEL[trendUnit]} {lastDone.count}건 · {won(lastDone.amount)}<br />
                         <span className={delta > 0 ? 'text-[#C92A2A]' : delta < 0 ? 'text-[#1C7ED6]' : ''}>
-                          그 전보다 {delta === 0 ? '같음' : `${Math.abs(delta)}건 ${delta > 0 ? '많음' : '적음'}`}
+                          {/* '그 전보다'가 아니라 **그 구간의 이름**을 적는다 —
+                              9월을 보고 있는데 '그 전보다'면 8월인지 작년 9월인지 세어봐야 한다 */}
+                          {prevDone ? `${prevDone.label}보다 ` : '그 전보다 '}
+                          {delta === 0 ? '같음' : `${Math.abs(delta)}건 ${delta > 0 ? '많음' : '적음'}`}
                         </span>
                       </>
                     ) : '비교할 지난 기록이 아직 없어요'}

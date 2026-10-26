@@ -79,7 +79,7 @@ export default function PrepaidTrendChart({ months, height = 140, barWidth = 9 }
 
       <div className="relative">
         <div className="flex items-end gap-[6px]" style={{ height }}>
-          {months.map(m => {
+          {months.map((m, i) => {
             const on = hover === m.key
             return (
               <div
@@ -89,11 +89,15 @@ export default function PrepaidTrendChart({ months, height = 140, barWidth = 9 }
                 className="flex-1 min-w-0 h-full flex items-end justify-center gap-[4px] rounded-[6px] transition-colors"
                 style={{ backgroundColor: on ? '#F2F2F2' : 'transparent' }}
               >
-                {BARS.map(b => (
+                {BARS.map((b, bi) => (
                   <div
                     key={b.key}
-                    className="flex-shrink-0 rounded-full"
-                    style={{ width: barWidth, height: barH(m[b.key]), backgroundColor: b.color }}
+                    className="bar-rise flex-shrink-0 rounded-full"
+                    style={{
+                      width: barWidth, height: barH(m[b.key]), backgroundColor: b.color,
+                      // 달 단위로 왼쪽부터, 한 달 안에서는 충전→주문→잔액 순으로 아주 살짝 어긋나게
+                      animationDelay: `${i * 30 + bi * 8}ms`,
+                    }}
                   />
                 ))}
               </div>
