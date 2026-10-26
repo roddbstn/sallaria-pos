@@ -94,6 +94,10 @@ jobs:
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PWD="runner-keychain-temp"
+          # 시크릿을 붙여넣을 때 끝에 줄바꿈/공백이 딸려 들어가는 일이 흔하다.
+          # 그대로 쓰면 "MAC verification failed (wrong password?)" 로 터진다 —
+          # 비밀번호가 틀린 게 아니라 \n 이 하나 더 붙은 것이다. 여기서 털어낸다.
+          CERT_PWD="$(printf '%s' "$CERT_PWD" | tr -d '\r\n')"
           echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > /tmp/cert.p12
           security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
