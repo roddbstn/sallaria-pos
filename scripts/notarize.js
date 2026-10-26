@@ -1,5 +1,5 @@
 const { notarize } = require('@electron/notarize')
-const { execFileSync } = require('node:child_process')
+const { spawnSync } = require('node:child_process')
 
 /**
  * macOS 공증(notarization).
@@ -21,16 +21,13 @@ const { execFileSync } = require('node:child_process')
  * 인증서를 제대로 넣으면 이 함수가 알아서 다시 켜진다.
  */
 function signedWithDeveloperId(appPath) {
-  try {
-    // codesign 은 결과를 stderr 로 뱉는다
-    const out = execFileSync('codesign', ['-dv', '--verbose=2', appPath], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    return out.includes('Developer ID Application')
-  } catch (e) {
-    const out = `${e.stdout ?? ''}${e.stderr ?? ''}`
-    return out.includes('Developer ID Application')
-  }
+  // ⚠️ codesign 은 결과를 **stderr** 로 뱉는다. execFileSync 는 성공했을 때
+  //    stdout 만 돌려주므로 늘 빈 문자열이 되어 "서명 안 됨" 으로 오판한다
+  //    (v1.3.2 에서 실제로 그랬다 — 서명은 멀쩡했는데 공증을 건너뛰었다).
+  //    spawnSync 로 둘 다 받는다.
+  const r = spawnSync('codesign', ['-dv', '--verbose=2', appPath], { encoding: 'utf8' })
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`
+  return out.includes('Developer ID Application')
 }
 
 exports.default = async function notarizing(context) {
