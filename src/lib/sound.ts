@@ -16,10 +16,13 @@
 // src/assets/sounds/ 에 아래 이름으로 넣으면 그 종류에 쓴다. 없으면 기본음으로
 // 떨어진다 — 세 개를 다 준비하지 못한 상태에서도 알림이 멈추면 안 된다.
 //
-//     alert-delivery.mp3   배달       "선결제 배달주문"
-//     alert-takeout.mp3    포장       "선결제 포장주문"
-//     alert-dinein.mp3     매장 식사   "선결제 내점 주문"
+//     alert-delivery.mp3   배달       벨 + "선결제 배달주문이에요"
+//     alert-takeout.mp3    포장       벨 + "선결제 픽업주문이에요"
+//     alert-dinein.mp3     매장 식사   벨 + "선결제 내점주문이에요"
 //     order-alert.mp3      기본 (위 파일이 없을 때 · 미리 듣기 기본값)
+//
+// 세 파일은 손으로 만들지 않는다 — scripts/gen-alert-sounds.py 가 녹음 원본
+// (scripts/voice-src/) 앞에 종소리를 붙여서 만든다. 자세한 건 그 폴더의 README.
 //
 // glob 으로 읽는 이유: 정적 import 는 파일이 없으면 **빌드가 깨진다.** 아직 녹음이
 // 안 된 종류가 있어도 앱은 나가야 하므로, 있는 것만 집어서 쓴다.
