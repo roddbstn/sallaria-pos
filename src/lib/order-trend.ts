@@ -254,3 +254,109 @@ export function countAxisTicks(maxCount: number): number[] {
   const step = (ladder.find(x => n <= x) ?? 10) * mag
   return [0, step, step * 2]
 }
+
+
+// ── 지난 구간 '이맘때'와의 비교 ──────────────────────────────────────────────
+//
+// 왜 이것 하나만 남겼나: 리포트 오른쪽 위에 지난 구간 총계·그 전 구간과의 증감·최다
+// 구간이 한꺼번에 있었다. 세 숫자를 다 읽어야 "지금 잘 되고 있나"를 겨우 짐작하는데,
+// 정작 그 답을 바로 주는 숫자는 하나도 없었다.
+//
+// 점주가 실제로 묻는 건 하나다 — **지금 페이스가 지난번보다 나은가.**
+// 지난달 총계(91건)는 이번 달이 아직 안 끝났으니 비교 상대가 못 된다. 끝난 구간끼리
+// (지난달 vs 그 전달) 비교한 숫자는 '지금'에 대해 아무 말도 하지 않는다.
+//
+// 그래서 **같은 만큼 흐른 시점끼리** 센다:
+//     이번 구간 [시작 ~ 지금]   vs   지난 구간 [시작 ~ 시작+같은시간]
+// 10월 29일 14시면 10/1 0시~10/29 14시 와 9/1 0시~9/29 14시 를 비교한다.
+// 단위가 달라도 규칙은 하나다 — '시작부터 흐른 시간'만 맞추면 된다.
+
+export interface PaceComparison {
+  /** 이번 구간에서 지금까지의 건수 */
+  current:  number
+  /** 지난 구간의 **같은 시점까지** 건수 */
+  previous: number
+  /**
+   * 증감률(%). previous 가 0 이면 undefined —
+   * 0 에서 늘어난 건 몇 %가 아니라 무한이다. 화면에서 따로 말한다.
+   */
+  pct?:     number
+  /** 비교한 범위 — '9/1~9/29' 처럼. %만 보여주면 근거가 없어 믿기 어렵다 */
+  range:    string
+}
+
+/** KST 날짜 번호의 자정이 UTC 로 몇 ms 인지 */
+function kstMidnightMs(dayIndex: number): number {
+  return dayIndex * DAY_MS - KST_OFFSET_MS
+}
+
+/** {y, m, d} → KST 날짜 번호. m 은 1-based 이고 범위를 벗어나도 Date 가 넘겨준다 */
+function dayIndexOf(y: number, m: number, d: number): number {
+  return Math.floor(Date.UTC(y, m - 1, d) / DAY_MS)
+}
+
+/**
+ * 이번 구간과 지난 구간의 '같은 시점까지'를 비교한다.
+ *
+ * 지난 구간이 아예 없으면(가게를 이번 달에 연 경우) undefined 를 돌려준다 —
+ * 그럴 때 0% 라고 적으면 "지난달에도 똑같았다"는 거짓말이 된다.
+ */
+export function comparePace(
+  orders: TrendOrder[],
+  unit: TrendUnit,
+  now: Date = new Date(),
+): PaceComparison | undefined {
+  const nowMs  = now.getTime()
+  const nowDay = kstDayIndex(nowMs)
+
+  let curStartDay: number
+  let prevStartDay: number
+  let prevEndDay: number          // 지난 구간의 **마지막 날**(포함)
+
+  if (unit === 'month') {
+    const p = kstParts(nowDay)
+    curStartDay  = dayIndexOf(p.y, p.m, 1)
+    prevStartDay = dayIndexOf(p.y, p.m - 1, 1)   // m=1 이면 Date 가 작년 12월로 넘긴다
+    prevEndDay   = curStartDay - 1
+  } else {
+    const step   = unit === 'day' ? 1 : unit === 'week' ? 7 : 14
+    curStartDay  = unit === 'day' ? nowDay : mondayOf(nowDay)
+    prevStartDay = curStartDay - step
+    prevEndDay   = curStartDay - 1
+  }
+
+  const curStartMs  = kstMidnightMs(curStartDay)
+  const prevStartMs = kstMidnightMs(prevStartDay)
+  // 지난 구간의 끝 — 그 마지막 날의 자정 직전까지
+  const prevEndMs   = kstMidnightMs(prevEndDay + 1) - 1
+
+  // 흐른 시간을 그대로 옮긴다. 다만 지난 구간 밖으로 넘기지 않는다 —
+  // 10/31 에 보면 9/1 + 30일 = 10/1 이 되어 10월 주문까지 끌어온다.
+  const elapsed      = nowMs - curStartMs
+  const prevCutoffMs = Math.min(prevStartMs + elapsed, prevEndMs)
+
+  let current = 0
+  let previous = 0
+  let sawPrev = false            // 지난 구간에 주문이 하나라도 있었나(0건과 '기록 없음'은 다르다)
+  let oldestMs = Infinity
+
+  for (const o of orders) {
+    const t = new Date(o.at).getTime()
+    if (t < oldestMs) oldestMs = t
+    if (t >= curStartMs  && t <= nowMs)        current++
+    if (t >= prevStartMs && t <= prevEndMs)    sawPrev = true
+    if (t >= prevStartMs && t <= prevCutoffMs) previous++
+  }
+
+  // 지난 구간이 가게 개업보다 앞이면 비교할 게 없다.
+  // sawPrev 로 먼저 건지는 이유: 지난 구간에 주문이 있었다면 개업 여부를 따질 필요가 없다.
+  if (!sawPrev && oldestMs >= curStartMs) return undefined
+
+  const cutoffDay = kstDayIndex(prevCutoffMs)
+  return {
+    current,
+    previous,
+    pct: previous > 0 ? Math.round(((current - previous) / previous) * 100) : undefined,
+    range: prevStartDay === cutoffDay ? md(prevStartDay) : `${md(prevStartDay)}~${md(cutoffDay)}`,
+  }
+}

@@ -21,8 +21,8 @@
 //     alert-dinein.mp3     매장 식사   벨 + "선결제 내점주문이에요"
 //     order-alert.mp3      기본 (위 파일이 없을 때 · 미리 듣기 기본값)
 //
-// 세 파일은 손으로 만들지 않는다 — scripts/gen-alert-sounds.py 가 녹음 원본
-// (scripts/voice-src/) 앞에 종소리를 붙여서 만든다. 자세한 건 그 폴더의 README.
+// 세 파일은 손으로 만들지 않는다 — scripts/gen-alert-sounds.py 가 벨(bell.mp3)과
+// 녹음 원본(scripts/voice-src/)을 합쳐서 만든다. 자세한 건 그 폴더의 README.
 //
 // glob 으로 읽는 이유: 정적 import 는 파일이 없으면 **빌드가 깨진다.** 아직 녹음이
 // 안 된 종류가 있어도 앱은 나가야 하므로, 있는 것만 집어서 쓴다.

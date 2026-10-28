@@ -178,3 +178,120 @@ describe('countAxisTicks', () => {
     expect(countAxisTicks(0)).toEqual([0, 1, 2])
   })
 })
+
+// ── comparePace — '지난 구간 이맘때' 비교 ────────────────────────────────────
+//
+// 이 함수가 틀리면 리포트 오른쪽 위 숫자가 조용히 거짓말을 한다. 그래서
+// '지난 구간 전체'를 끌어오는 실수와, 월 길이가 다를 때 넘치는 경우를 특히 본다.
+
+import { comparePace } from './order-trend'
+
+/** KST 시각으로 주문 하나 — '2026-10-29 14:00' 처럼 적는다 */
+function kstOrder(s: string): { at: string; amount: number } {
+  const [d, t] = s.split(' ')
+  const [y, m, dd] = d.split('-').map(Number)
+  const [hh, mm] = t.split(':').map(Number)
+  return { at: new Date(Date.UTC(y, m - 1, dd, hh - 9, mm)).toISOString(), amount: 1000 }
+}
+const KST = (s: string) => new Date(kstOrder(s).at)
+
+describe('comparePace', () => {
+  it('월별 — 지난달 같은 날짜까지만 센다 (지난달 전체가 아니다)', () => {
+    const orders = [
+      // 이번 달(10월) 1~3일: 2건
+      kstOrder('2026-10-01 12:00'), kstOrder('2026-10-03 12:00'),
+      // 지난달(9월) 1~3일: 1건  ← 비교 대상
+      kstOrder('2026-09-02 12:00'),
+      // 지난달 하순: 비교에서 빠져야 한다. 여기까지 세면 'previous' 가 4가 된다
+      kstOrder('2026-09-20 12:00'), kstOrder('2026-09-25 12:00'), kstOrder('2026-09-28 12:00'),
+    ]
+    const r = comparePace(orders, 'month', KST('2026-10-03 18:00'))!
+    expect(r.current).toBe(2)
+    expect(r.previous).toBe(1)
+    expect(r.pct).toBe(100)
+    expect(r.range).toBe('9/1~9/3')
+  })
+
+  it('월별 — 시각까지 맞춘다. 지난달 같은 날 늦은 주문은 안 센다', () => {
+    const orders = [
+      kstOrder('2026-10-03 10:00'),                     // 이번 달 1건
+      kstOrder('2026-09-03 10:00'),                     // 지난달 같은 시각 이전 → 센다
+      kstOrder('2026-09-03 23:00'),                     // 같은 날이지만 더 늦다 → 안 센다
+    ]
+    const r = comparePace(orders, 'month', KST('2026-10-03 12:00'))!
+    expect(r.current).toBe(1)
+    expect(r.previous).toBe(1)
+  })
+
+  it('월별 — 지난달이 더 짧으면 그 달 끝에서 멈춘다 (다음 달로 넘치지 않는다)', () => {
+    // 10/31 에 보면 흐른 시간이 30일이다. 9/1 + 30일 = 10/1 로 넘어가 버린다.
+    const orders = [
+      kstOrder('2026-09-30 20:00'),   // 9월 마지막 날 → 센다
+      kstOrder('2026-10-01 09:00'),   // 10월 → previous 에 들어가면 안 된다
+    ]
+    const r = comparePace(orders, 'month', KST('2026-10-31 23:00'))!
+    expect(r.previous).toBe(1)
+    expect(r.range).toBe('9/1~9/30')
+  })
+
+  it('주별 — 지난주 같은 요일·같은 시각까지', () => {
+    // 2026-10-29 는 목요일. 이번 주 월요일은 10/26, 지난주 월요일은 10/19
+    const orders = [
+      kstOrder('2026-10-26 12:00'), kstOrder('2026-10-29 10:00'),   // 이번 주 2건
+      kstOrder('2026-10-19 12:00'), kstOrder('2026-10-22 10:00'),   // 지난주 같은 구간 2건
+      kstOrder('2026-10-24 12:00'),                                  // 지난주 금요일 → 범위 밖
+    ]
+    const r = comparePace(orders, 'week', KST('2026-10-29 14:00'))!
+    expect(r.current).toBe(2)
+    expect(r.previous).toBe(2)
+    expect(r.pct).toBe(0)
+    expect(r.range).toBe('10/19~10/22')
+  })
+
+  it('일별 — 어제 같은 시각까지', () => {
+    const orders = [
+      kstOrder('2026-10-29 09:00'),                      // 오늘 1건
+      kstOrder('2026-10-28 09:00'), kstOrder('2026-10-28 11:00'),  // 어제 10시 전엔 1건뿐
+    ]
+    const r = comparePace(orders, 'day', KST('2026-10-29 10:00'))!
+    expect(r.current).toBe(1)
+    expect(r.previous).toBe(1)
+    expect(r.range).toBe('10/28')
+  })
+
+  it('지난 구간이 0건이면 %를 만들지 않는다', () => {
+    const orders = [kstOrder('2026-09-02 12:00'), kstOrder('2026-10-03 12:00')]
+    // 10/1 에 보면 지난달(9월) 1일까지는 주문이 없다
+    const r = comparePace(orders, 'month', KST('2026-10-01 10:00'))!
+    expect(r.previous).toBe(0)
+    expect(r.pct).toBeUndefined()
+  })
+
+  it('이번 구간에 와서야 첫 주문이면 비교하지 않는다 (0%가 아니다)', () => {
+    const orders = [kstOrder('2026-10-05 12:00'), kstOrder('2026-10-06 12:00')]
+    expect(comparePace(orders, 'month', KST('2026-10-10 12:00'))).toBeUndefined()
+  })
+
+  it('주문이 아예 없으면 비교하지 않는다', () => {
+    expect(comparePace([], 'month', KST('2026-10-10 12:00'))).toBeUndefined()
+  })
+
+  it('지난 구간에 주문이 있었다면 이번 구간이 0건이어도 비교한다 (−100%)', () => {
+    const orders = [kstOrder('2026-09-02 12:00'), kstOrder('2026-09-03 12:00')]
+    const r = comparePace(orders, 'month', KST('2026-10-05 12:00'))!
+    expect(r.current).toBe(0)
+    expect(r.previous).toBe(2)
+    expect(r.pct).toBe(-100)
+  })
+
+  it('1월이면 지난달은 작년 12월이다', () => {
+    const orders = [
+      kstOrder('2026-01-02 12:00'),                      // 이번 달 1건
+      kstOrder('2025-12-02 12:00'), kstOrder('2025-12-03 12:00'),  // 작년 12월 1~3일 2건
+    ]
+    const r = comparePace(orders, 'month', KST('2026-01-03 12:00'))!
+    expect(r.current).toBe(1)
+    expect(r.previous).toBe(2)
+    expect(r.range).toBe('12/1~12/3')
+  })
+})

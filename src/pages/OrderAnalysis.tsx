@@ -9,7 +9,7 @@ import LoadingBlock from '../components/ui/LoadingBlock'
 import OrderTrendChart from '../components/ui/OrderTrendChart'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import {
-  buildOrderTrend, summarizeTrend, UNIT_LABEL, UNIT_CURR_LABEL, UNIT_PREV_LABEL,
+  buildOrderTrend, summarizeTrend, comparePace, UNIT_LABEL, UNIT_CURR_LABEL, UNIT_PREV_LABEL,
   type TrendUnit, type TrendOrder,
 } from '../lib/order-trend'
 import { rootZoom } from '../lib/figma-scale'
@@ -363,6 +363,9 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
   // 같은 말("뜸하다")을 두 화면이 11곳 / 6곳으로 다르게 셌다.
   const trend        = buildOrderTrend(trendAt, trendUnit)
   const trendSummary = summarizeTrend(trend)
+  // 지난 구간 '이맘때'와의 비교 — 막대 합계가 아니라 **원본 주문 시각**이 필요하다.
+  // 버킷은 구간 총계만 들고 있어서 '9/1~9/29 14시까지' 를 잘라낼 수 없다.
+  const pace = comparePace(trendAt, trendUnit)
 
   const overdue = cycles.filter(isIdleAccount)
   const dormantWithMoney = dormant.filter(d => d.balance > 0)
@@ -408,7 +411,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
           </div>
           <div className="w-[205px] flex-shrink-0 bg-[#FCFCFC] rounded-[11px] px-[16px] py-[14px] flex flex-col justify-center">
             {(() => {
-              const { current, lastDone, prevDone, peak, delta } = trendSummary
+              const { current } = trendSummary
               return (
                 <>
                   <div className="text-[12px] font-normal text-[#787878]">
@@ -424,28 +427,46 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                     {won(current?.amount ?? 0)}
                   </div>
 
-                  {/* 비교는 **끝난 구간끼리** 한다 — 진행 중인 칸을 끌어다 비교하면
-                      달이 바뀔 때마다 "급감"이라고 나온다.
-                      증감 색은 앱 관습대로 +빨강 / −파랑 (PrepaidTrendChart 주석 참고) */}
-                  <div className="text-[12px] font-normal text-[#787878] mt-[12px] leading-relaxed">
-                    {lastDone && delta !== undefined ? (
-                      <>
-                        {UNIT_PREV_LABEL[trendUnit]} {lastDone.count}건 · {won(lastDone.amount)}<br />
-                        <span className={delta > 0 ? 'text-[#C92A2A]' : delta < 0 ? 'text-[#1C7ED6]' : ''}>
-                          {/* '그 전보다'가 아니라 **그 구간의 이름**을 적는다 —
-                              9월을 보고 있는데 '그 전보다'면 8월인지 작년 9월인지 세어봐야 한다 */}
-                          {prevDone ? `${prevDone.label}보다 ` : '그 전보다 '}
-                          {delta === 0 ? '같음' : `${Math.abs(delta)}건 ${delta > 0 ? '많음' : '적음'}`}
-                        </span>
-                      </>
-                    ) : '비교할 지난 기록이 아직 없어요'}
-                  </div>
+                  {/* 여기엔 **한 가지만** 둔다 — 지난 구간 이맘때 대비 몇 %인가.
+                      전에는 지난 구간 총계 · 그 전 구간과의 증감 · 최다 구간이 같이 있었다.
+                      셋을 다 읽어도 "지금 잘 되고 있나"는 짐작밖에 안 됐다.
+                      지난달 총계(91건)는 이번 달이 안 끝났으니 비교 상대가 못 되고,
+                      끝난 구간끼리의 증감은 '지금'에 대해 아무 말도 하지 않는다.
 
-                  {peak && (
-                    <div className="text-[12px] font-normal text-[#ADADAD] mt-[6px]">
-                      최다 {peak.label} {peak.count}건 · {won(peak.amount)}
-                    </div>
-                  )}
+                      comparePace 는 같은 만큼 흐른 시점끼리 센다 —
+                      10/29 14시면 10/1~10/29 14시 와 9/1~9/29 14시.
+                      증감 색은 앱 관습대로 +빨강 / −파랑 (PrepaidTrendChart 주석 참고) */}
+                  <div className="mt-[12px] leading-relaxed">
+                    {pace ? (
+                      <>
+                        <div className="text-[12px] font-normal text-[#787878]">
+                          {UNIT_PREV_LABEL[trendUnit]} 이맘때보다
+                        </div>
+                        {pace.pct !== undefined ? (
+                          <div className={`text-[15px] font-semibold tabular-nums ${
+                            pace.pct > 0 ? 'text-[#C92A2A]' : pace.pct < 0 ? 'text-[#1C7ED6]' : 'text-[#1E1E1E]'
+                          }`}>
+                            {pace.pct === 0
+                              ? '같아요'
+                              : `${pace.pct > 0 ? '▲' : '▼'} ${Math.abs(pace.pct)}% ${pace.pct > 0 ? '많아요' : '적어요'}`}
+                          </div>
+                        ) : (
+                          // 0 에서 늘어난 건 몇 %가 아니다. 건수로 말한다
+                          <div className="text-[15px] font-semibold text-[#1E1E1E]">
+                            {pace.current > 0 ? `${pace.current}건 늘었어요` : '그때도 0건'}
+                          </div>
+                        )}
+                        {/* %만 두면 근거가 없어 믿기 어렵다. 분모를 작게 붙인다 */}
+                        <div className="text-[11px] font-normal text-[#ADADAD] mt-[2px] tabular-nums">
+                          {pace.range} {pace.previous}건
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[12px] font-normal text-[#787878]">
+                        비교할 지난 기록이 아직 없어요
+                      </div>
+                    )}
+                  </div>
                 </>
               )
             })()}

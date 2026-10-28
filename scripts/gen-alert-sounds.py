@@ -3,33 +3,40 @@
 
     python3 scripts/gen-alert-sounds.py
 
-scripts/voice-src/*.mp3 (녹음 원본) 앞에 종소리를 붙여서
+scripts/voice-src/ 의 벨과 녹음 원본을 합쳐서
 src/assets/sounds/alert-*.mp3 를 만든다.
 
 왜 스크립트인가
 ---------------
-벨을 오디오 편집기에서 한 번 붙이고 끝내면, 음성을 다시 녹음할 때마다 그 작업을
-손으로 반복해야 한다. 그러다 세 파일의 벨 길이나 음량이 어긋나면 "배달만 소리가
-작은데?" 가 되고, 원인을 찾을 방법이 없다. 여기서 만들면 세 개가 늘 같은 벨을 쓴다.
+오디오 편집기에서 한 번 붙이고 끝내면, 음성을 다시 녹음할 때마다 그 작업을 손으로
+반복해야 한다. 그러다 세 파일의 벨 위치나 음량이 어긋나면 "배달만 소리가 작은데?"
+가 되고, 원인을 찾을 방법이 없다. 여기서 만들면 세 개가 늘 같은 벨, 같은 타이밍이다.
 
-벨을 합성하는 이유는 더 단순하다 — 라이선스를 따질 샘플이 없고, 길이·음높이·감쇠를
-숫자로 적어둘 수 있다. 바꾸고 싶으면 아래 상수만 고치고 다시 돌리면 된다.
+벨은 **합성하지 않는다.** 처음엔 종소리를 코드로 합성했는데, 기존 기본음
+(order-alert.mp3)에 이미 쓰고 있던 벨이 따로 있었다. 소리가 달라져서 바로 들통났다.
+그 벨을 bell.mp3 로 가져와 그대로 쓴다.
 
-필요한 것: ffmpeg (brew install ffmpeg). numpy 는 필요 없다.
+기존 기본음을 역산해서 맞춘 값
+------------------------------
+order-alert.mp3 와 bell.mp3 를 샘플 단위로 비교했더니:
+  · 0.00s ~ 1.20s  두 파일이 **동일**했다 (차이 RMS -80dB = mp3 재인코딩 노이즈)
+  · 1.20s 에서 음성이 시작된다 (차이 RMS 가 -84dB → -31dB 로 솟는다)
+그래서 VOICE_START = 1.20. 벨을 자르지 않고 그 뒤 울림이 음성 아래에 깔린다 —
+그 구간의 벨은 이미 -31dB 이하라 음성을 가리지 않는다.
+
+필요한 것: ffmpeg (brew install ffmpeg)
 """
 
-import math
 import os
-import struct
 import subprocess
 import sys
-import tempfile
-import wave
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-VOICE_DIR = os.path.join(HERE, 'voice-src')
+SRC_DIR = os.path.join(HERE, 'voice-src')
 OUT_DIR = os.path.join(ROOT, 'src', 'assets', 'sounds')
+
+BELL = os.path.join(SRC_DIR, 'bell.mp3')
 
 # 녹음 원본 → 내보낼 이름. sound.ts 의 FILE_OF 와 같은 이름이어야 한다.
 TARGETS = [
@@ -38,123 +45,75 @@ TARGETS = [
     ('dinein.mp3',   'alert-dinein.mp3'),
 ]
 
-# 음성 원본이 24kHz 모노다. 벨도 같이 맞춰서 재샘플링을 피한다.
-SR = 24000
+# 음성이 시작되는 시각(ms). 위 "역산" 참고 — 기존 기본음과 같은 타이밍이다.
+VOICE_START_MS = 1200
 
-# ── 벨 설계 ──────────────────────────────────────────────────────────────────
-#
-# 두 음을 겹쳐 올려 친다(C6 → F6, 완전4도). 올라가는 음형이 "뭔가 도착했다"로
-# 읽히고, 내려가는 음형은 "끝났다"로 읽힌다 — 새 주문이니 올라가야 한다.
-#
-# 종소리는 배음이 정수배가 아니다(비조화). 정수배로 쌓으면 오르간이나 삑 소리가
-# 되고 종으로 안 들린다. 아래 비율은 관형 종(tubular bell)에서 가져왔다.
-# 높은 배음은 더 빨리 죽는다 — 그래서 감쇠 시간을 따로 준다.
-NOTES = [
-    # (기음 Hz, 시작 시각 s, 세기)
-    (1046.50, 0.000, 1.00),   # C6
-    (1396.91, 0.105, 0.95),   # F6
-]
-# (배음 비율, 세기, 감쇠 시간 s)
-PARTIALS = [
-    (1.00, 1.00, 0.130),
-    (2.00, 0.55, 0.090),
-    (2.76, 0.32, 0.065),
-    (5.40, 0.16, 0.045),
-    (8.93, 0.07, 0.030),
-]
+# 출력 포맷은 기존 기본음과 같게 맞춘다.
+# 벨이 **진짜 스테레오**다 — L 과 R 이 5.5dB 다르고 L-R 이 L 자신과 비슷한 크기다.
+# 모노로 합치면 소리가 바뀌므로 스테레오를 유지한다.
+# 12kHz 위 에너지는 -52dB 라 48kHz 가 과하지는 않지만, 원본 그대로 두는 게 안전하다.
+SR = 48000
+CHANNELS = 2
 
-BELL_LEN   = 0.34   # 벨 전체 길이(s). 이 뒤는 잘린다
-BELL_FADE  = 0.030  # 끝에서 페이드아웃(s). 없으면 '뚝' 끊기는 클릭이 들린다
-ATTACK     = 0.002  # 때리는 순간(s). 0 이면 클릭, 길면 종이 아니라 플루트가 된다
-GAP        = 0.060  # 벨과 음성 사이 숨(s)
-BELL_PEAK  = 0.72   # 벨 최대 진폭(0~1). 약 -2.9 dBFS — 음성 피크와 비슷하게
-
-
-def bell_samples() -> list[float]:
-    """종소리 한 번. 샘플 리스트(-1~1)."""
-    n = int(BELL_LEN * SR)
-    buf = [0.0] * n
-
-    for f0, start, note_amp in NOTES:
-        s0 = int(start * SR)
-        for ratio, p_amp, tau in PARTIALS:
-            freq = f0 * ratio
-            if freq >= SR / 2:        # 나이퀴스트 넘으면 앨리어싱만 만든다
-                continue
-            w = 2 * math.pi * freq / SR
-            amp = note_amp * p_amp
-            for i in range(s0, n):
-                t = (i - s0) / SR
-                env = math.exp(-t / tau)
-                if t < ATTACK:        # 선형 어택
-                    env *= t / ATTACK
-                buf[i] += amp * env * math.sin(w * (i - s0))
-
-    # 끝 페이드 — 감쇠가 다 끝나기 전에 자르므로 반드시 필요하다
-    fade = int(BELL_FADE * SR)
-    for k in range(fade):
-        buf[n - fade + k] *= 1.0 - k / fade
-
-    peak = max(abs(x) for x in buf) or 1.0
-    return [x / peak * BELL_PEAK for x in buf]
-
-
-def write_wav(path: str, samples: list[float]) -> None:
-    with wave.open(path, 'wb') as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(SR)
-        frames = bytearray()
-        for x in samples:
-            v = int(max(-1.0, min(1.0, x)) * 32767)
-            frames += struct.pack('<h', v)
-        w.writeframes(bytes(frames))
+# VBR V0. 고정 비트레이트와 재인코딩 충실도를 재어보고 골랐다 —
+# 벨 구간(0~1.20s)을 원본 bell.mp3 와 비교한 오차:
+#     128k  -38.3 dB   57KB
+#     192k  -43.6 dB   86KB
+#     V0    -57.9 dB   71KB   ← 이것
+#     256k  -64.0 dB  114KB
+# 기존 order-alert.mp3 가 -54.0 dB 였으니 V0 면 그보다 충실하고 256k 보다 작다.
+# 번들에 base64 로 들어가므로 크기도 봐야 한다.
+ENCODE = ['-q:a', '0']
 
 
 def run(cmd: list[str]) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        sys.exit(f'실패: {" ".join(cmd[:3])} …\n{r.stderr[-800:]}')
+        sys.exit(f'실패: {" ".join(cmd[:4])} …\n{r.stderr[-800:]}')
+
+
+def probe(path: str, entries: str) -> str:
+    r = subprocess.run(
+        ['ffprobe', '-v', 'error', '-show_entries', entries,
+         '-of', 'default=noprint_wrappers=1:nokey=1', path],
+        capture_output=True, text=True)
+    return r.stdout.strip()
 
 
 def main() -> None:
     if subprocess.run(['which', 'ffmpeg'], capture_output=True).returncode != 0:
         sys.exit('ffmpeg 이 필요해요: brew install ffmpeg')
+    if not os.path.exists(BELL):
+        sys.exit(f'벨이 없어요: {BELL}')
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    bell = bell_samples()
+    print(f'벨: {os.path.basename(BELL)} ({probe(BELL, "format=duration")[:5]}s)')
+    print(f'음성 시작: {VOICE_START_MS}ms\n')
 
-    with tempfile.TemporaryDirectory() as tmp:
-        bell_wav = os.path.join(tmp, 'bell.wav')
-        # 벨 + 숨까지 한 파일로 만들어 둔다 — concat 할 조각이 하나 줄어든다
-        write_wav(bell_wav, bell + [0.0] * int(GAP * SR))
+    for src_name, out_name in TARGETS:
+        src = os.path.join(SRC_DIR, src_name)
+        if not os.path.exists(src):
+            sys.exit(f'원본이 없어요: {src}')
 
-        # 벨만 따로 들어볼 수 있게 남겨둔다. **src/assets/sounds 밖에** 둔다 —
-        # 그 폴더의 *.mp3 는 전부 번들에 base64 로 인라인되므로, 쓰지도 않을
-        # 파일을 거기 두면 앱 용량만 늘어난다.
-        run(['ffmpeg', '-v', 'error', '-y', '-i', bell_wav,
-             '-ar', str(SR), '-ac', '1', '-b:a', '128k',
-             os.path.join(VOICE_DIR, 'bell-preview.mp3')])
+        out = os.path.join(OUT_DIR, out_name)
+        # amix 는 기본적으로 입력 수로 나눠서 음량을 **절반으로 깎는다.**
+        # normalize=0 을 빼면 세 파일이 전부 6dB 작아진다.
+        # duration=longest — 벨(2.0s)보다 음성 끝(1.2+2.3s)이 뒤라 음성 기준으로 간다.
+        flt = (
+            f'[0:a]aformat=sample_rates={SR}:channel_layouts=stereo[bell];'
+            f'[1:a]aformat=sample_rates={SR}:channel_layouts=stereo,'
+            f'adelay={VOICE_START_MS}|{VOICE_START_MS}[voice];'
+            f'[bell][voice]amix=inputs=2:duration=longest:normalize=0[a]'
+        )
+        run(['ffmpeg', '-v', 'error', '-y',
+             '-i', BELL, '-i', src,
+             '-filter_complex', flt, '-map', '[a]',
+             '-ar', str(SR), '-ac', str(CHANNELS), *ENCODE,
+             out])
 
-        for src_name, out_name in TARGETS:
-            src = os.path.join(VOICE_DIR, src_name)
-            if not os.path.exists(src):
-                sys.exit(f'원본이 없어요: {src}')
-
-            voice_wav = os.path.join(tmp, f'v-{src_name}.wav')
-            run(['ffmpeg', '-v', 'error', '-y', '-i', src,
-                 '-ar', str(SR), '-ac', '1', voice_wav])
-
-            out = os.path.join(OUT_DIR, out_name)
-            # concat 필터로 이어붙인다. demuxer 가 아니라 필터를 쓰는 이유는
-            # 두 입력의 포맷을 위에서 이미 같게 맞춰놨기 때문이다.
-            run(['ffmpeg', '-v', 'error', '-y',
-                 '-i', bell_wav, '-i', voice_wav,
-                 '-filter_complex', '[0:a][1:a]concat=n=2:v=0:a=1[a]',
-                 '-map', '[a]', '-ar', str(SR), '-ac', '1', '-b:a', '128k',
-                 out])
-            size = os.path.getsize(out)
-            print(f'  {out_name:22s} ← 벨 + {src_name}   ({size:,} bytes)')
+        dur = probe(out, 'format=duration')
+        size = os.path.getsize(out)
+        print(f'  {out_name:22s} ← 벨 + {src_name:14s} {float(dur):.2f}s  {size:,} bytes')
 
     print('\n완료. 설정 > 기타 설정 > 주문 종류별 알림음 에서 들어보세요.')
 
