@@ -169,6 +169,8 @@ interface StoreInfoProps {
   onDeleteVacationDay: (date: string) => void
   onSetDayTime: (day: string, field: 'open' | 'close', value: string) => void
   onSignOut: () => void
+  /** 회원탈퇴 확인 모달을 연다 — 실제 처리는 App 의 handleDeleteAccount */
+  onDeleteAccount: () => void
   /** 정기 휴무일 — stores.regular_holidays (null이면 미설정) */
   regularHolidays: RegularHolidays | null
   onSaveRegularHolidays: (value: RegularHolidays) => void
@@ -181,7 +183,7 @@ interface StoreInfoProps {
 
 export default function StoreInfo({
   onBack, onOpenHours, onAddVacationDays, onDeleteVacationDay, onSetDayTime,
-  onSignOut, operatingHours, breakTime, vacationDays, regularHolidays, onSaveRegularHolidays,
+  onSignOut, onDeleteAccount, operatingHours, breakTime, vacationDays, regularHolidays, onSaveRegularHolidays,
   onSaveBreakTime, showToast,
 }: StoreInfoProps) {
   const { storeId, clientId, storeName, plan } = useStore()
@@ -213,7 +215,7 @@ export default function StoreInfo({
           showToast={showToast}
         />
       ) : (
-        <RepresentativePanel storeId={storeId} clientId={clientId} plan={plan} showToast={showToast} onSignOut={onSignOut} />
+        <RepresentativePanel storeId={storeId} clientId={clientId} plan={plan} showToast={showToast} onSignOut={onSignOut} onDeleteAccount={onDeleteAccount} />
       )}
     </HubLayout>
   )
@@ -545,7 +547,7 @@ function StoreSettingsPanel({
           )}
           {delivery.addressModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => delivery.setAddressModalOpen(false)}>
-              <div className="bg-white rounded-2xl shadow-xl w-[420px] h-[520px] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="modal-in bg-white rounded-2xl shadow-xl w-[420px] h-[520px] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-border flex-shrink-0">
                   <span className="text-[15px] font-bold text-ink">주소 검색</span>
                   <button onClick={() => delivery.setAddressModalOpen(false)} className="text-gray-text hover:text-ink">✕</button>
@@ -711,13 +713,14 @@ function StoreSettingsPanel({
 // 우: 보유 매장 목록 (현재 매장에 체크)
 // 하단 우측: 로그아웃
 function RepresentativePanel({
-  storeId, clientId, plan, showToast, onSignOut,
+  storeId, clientId, plan, showToast, onSignOut, onDeleteAccount,
 }: {
   storeId: string
   clientId: string
   plan: PlanTier
   showToast: (msg: string) => void
   onSignOut: () => void
+  onDeleteAccount: () => void
 }) {
   const [ownerName, setOwnerName] = useState('')
   const [phone,     setPhone]     = useState('')
@@ -850,8 +853,18 @@ function RepresentativePanel({
         </div>
       </div>
 
-      {/* ── 로그아웃 — Figma: 우측 하단, bg #FFEFEF / text #FF676F ── */}
-      <div className="flex justify-end mt-[68px]">
+      {/* ── 회원탈퇴(좌) · 로그아웃(우) — 한 줄, 같은 높이 ──
+           로그아웃은 Figma 그대로 우측 하단 pill(#FFEFEF/#FF676F).
+           회원탈퇴는 같은 줄 맨 왼쪽에 글자만 둔다. 되돌릴 수 있는 로그아웃과
+           매장 데이터까지 지워지는 탈퇴를 같은 무게로 보이게 하면 안 돼서,
+           무게 차이는 '위치'가 아니라 '형태'(pill vs 글자)로 낸다. */}
+      <div className="flex items-center justify-between mt-[68px]">
+        <button
+          onClick={onDeleteAccount}
+          className="text-[14px] font-normal text-[#ADADAD] hover:text-[#C92A2A] transition-colors"
+        >
+          회원탈퇴
+        </button>
         <button
           onClick={() => setSignOutConfirmOpen(true)}
           className="h-[50px] px-[26px] rounded-[13px] bg-[#FFEFEF] text-[#FF676F] text-[16px] font-medium hover:brightness-95 transition-all"
@@ -883,7 +896,7 @@ function RepresentativePanel({
                 다시 사용하려면 비밀번호로 로그인해야 해요.
               </div>
             </div>
-            <div className="px-[28px] py-[16px] flex justify-end gap-[10px] modal-footer">
+            <div className="px-[28px] py-[16px] flex justify-end gap-[10px]">
               <button
                 onClick={() => setSignOutConfirmOpen(false)}
                 className="h-[50px] px-[26px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all"

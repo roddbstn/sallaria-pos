@@ -110,7 +110,7 @@ function FilterSelect({ value, onChange, allLabel, options }: {
       <button
         onClick={() => setOpen(v => !v)}
         className={`pressable-tab h-[30px] pl-[11px] pr-[8px] rounded-[9px] text-[12px] font-normal flex items-center gap-[5px] ${
-          active ? 'bg-[#6A635E] text-[#FCFCFC] font-medium' : 'bg-[#F2F2F2] text-[#787878]'
+          active ? 'bg-[#6A635E] text-[#FCFCFC] font-medium hover:brightness-110' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
         }`}
       >
         {active ? value : allLabel}
@@ -699,7 +699,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
           {(['주문내역', '메뉴별매출', '거래처별매출'] as const).map(t => (
             <button key={t} onClick={() => handleTabChange(t)}
               className={`pressable-tab h-[30px] px-[13px] rounded-[9px] text-[12px] font-normal
-                ${tab === t ? 'bg-[#2C261F] text-[#FCFCFC] font-medium' : 'bg-[#F2F2F2] text-[#787878]'}`}>
+                ${tab === t ? 'bg-[#2C261F] text-[#FCFCFC] font-medium hover:brightness-125' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'}`}>
               {t === '주문내역' ? '주문 내역' : t === '메뉴별매출' ? '메뉴별 주문액' : '거래처별 주문액'}
             </button>
           ))}
@@ -729,7 +729,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 onClick={() => setShowAccountFilter(v => !v)}
                 title={excludedAccounts.size > 0 ? `${excludedAccounts.size}곳 제외 중` : '거래처 필터'}
                 className={`pressable-tab w-[30px] h-[30px] rounded-[9px] flex items-center justify-center ${
-                  excludedAccounts.size > 0 ? 'bg-[#FF8418] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878]'
+                  excludedAccounts.size > 0 ? 'bg-[#FF8418] text-[#FCFCFC] hover:brightness-110' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                 }`}
               >
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -757,14 +757,14 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                       <button
                         onClick={() => setExcludedAccounts(new Set())}
                         disabled={excludedAccounts.size === 0}
-                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[11px] font-normal disabled:opacity-40"
+                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[11px] font-normal transition-colors hover:bg-[#E8E4E2] disabled:opacity-40 disabled:hover:bg-[#F2F2F2]"
                       >
                         전체 선택
                       </button>
                       <button
                         onClick={() => setExcludedAccounts(new Set(allAccountSales.map(a => a.name)))}
                         disabled={excludedAccounts.size === allAccountSales.length}
-                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[11px] font-normal disabled:opacity-40"
+                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[11px] font-normal transition-colors hover:bg-[#E8E4E2] disabled:opacity-40 disabled:hover:bg-[#F2F2F2]"
                       >
                         전체 해제
                       </button>
@@ -823,7 +823,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                   key={p.label}
                   onClick={() => { const [a, b] = p.range(); handleRangeChange(a, b, p.label) }}
                   className={`pressable-tab h-[30px] px-[11px] rounded-[9px] text-[12px] font-normal ${
-                    periodLabel === p.label ? 'bg-[#6A635E] text-[#FCFCFC] font-medium' : 'bg-[#F2F2F2] text-[#787878]'
+                    periodLabel === p.label ? 'bg-[#6A635E] text-[#FCFCFC] font-medium hover:brightness-110' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                   }`}
                 >
                   {p.label}
@@ -832,7 +832,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               <button
                 onClick={() => setPeriodOpen(true)}
                 className={`pressable-tab h-[30px] px-[11px] rounded-[9px] text-[12px] font-normal ${
-                  periodLabel === '직접 선택' ? 'bg-[#6A635E] text-[#FCFCFC] font-medium' : 'bg-[#F2F2F2] text-[#787878]'
+                  periodLabel === '직접 선택' ? 'bg-[#6A635E] text-[#FCFCFC] font-medium hover:brightness-110' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                 }`}
               >
                 기간 선택

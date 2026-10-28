@@ -91,6 +91,13 @@ export interface PrinterConfig {
   tcpPort?:    number
   /** OS 에 등록된 프린터 이름 (스풀러·CUPS). USB 프린터로 보낼 때 쓴다 */
   osPrinter?:  string
+  /**
+   * A4 시트(QR 종이)를 보낼 **일반 프린터** 이름. 영수증 프린터와 별개다.
+   *
+   * 영수증 감열기와 A4 레이저를 같이 쓰는 매장이 많다. 비워 두면 예전처럼
+   * 브라우저 인쇄 대화상자가 떠서 그때 고른다 — 설정 안 해도 쓰는 데 지장 없다.
+   */
+  docPrinter?: string
 }
 
 /** 화면에 보여줄 한 줄 글자 수 (electron 의 resolveLineChars 와 같은 규칙) */

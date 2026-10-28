@@ -50,6 +50,7 @@ interface PosBridge {
   connectPrinter:    () => Promise<{ ok: boolean; error?: string }>
   testPrint:         () => Promise<{ ok: boolean; error?: string }>
   printQrReceipt:    (p: { accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string; storePhone?: string; notice?: string }) => Promise<unknown>
+  printSheet:        (p: { html: string; deviceName?: string }) => Promise<{ ok: boolean; error?: string }>
   onPrinterStatus:   (cb: (s: { connected: boolean; queueLength: number }) => void) => void
   offPrinterStatus:  () => void
   onAuthDeeplink:    (cb: (url: string) => void) => void

@@ -483,7 +483,7 @@ export default function OptionGroupAddModal({
         )}
 
         {/* 푸터 — Figma: 2단계에선 좌측에 적용 메뉴 개수, 우측에 닫기/다음(마지막 단계는 완료) */}
-        <div className="flex items-center justify-between gap-[14px] px-[30px] py-[20px] flex-shrink-0 mt-auto modal-footer">
+        <div className="bg-[#FCFCFC] flex items-center justify-between gap-[14px] px-[30px] py-[20px] flex-shrink-0 mt-auto">
           <span className="text-[14px] text-[#8C8379] truncate">
             {step === 2 ? `'${draft.name}' 옵션 적용할 메뉴 개수 (${pickedMenus.size}/${totalVisible})` : ''}
           </span>

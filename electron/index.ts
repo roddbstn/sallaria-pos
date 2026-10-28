@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker } from 'electron'
 import os from 'node:os'
+import fs from 'node:fs/promises'
 import { autoUpdater } from 'electron-updater'
 import * as Sentry from '@sentry/electron/main'
 
@@ -680,6 +681,44 @@ ipcMain.handle('printer:qr-receipt', async (_e, payload: {
 })
 
 /** 테스트 출력 */
+/**
+ * A4 시트(QR 종이)를 **무음으로** 지정한 OS 프린터에 보낸다.
+ *
+ * 왜 메인이 하나: 렌더러의 iframe.print() 는 브라우저 인쇄 대화상자를 띄운다.
+ * 영수증 프린터는 설정에 저장해 두고 바로 나가는데 A4 만 매번 손으로 프린터를
+ * 고르는 게 앞뒤가 안 맞았다 — 두 대를 같이 쓰는 매장이 많다.
+ *
+ * deviceName 이 비어 있거나 실패하면 **false 를 돌려준다.** 렌더러가 그때
+ * 기존 대화상자 방식으로 떨어뜨린다 — 못 찍는 것보다 한 번 더 누르는 게 낫다.
+ */
+ipcMain.handle('printer:print-sheet', async (_e, { html, deviceName }: { html: string; deviceName?: string }) => {
+  if (!html) return { ok: false, error: '내용이 비어 있어요' }
+
+  // data: URL 로 띄우면 QR 이 base64 라 길이 제한에 걸린다. 임시 파일로 연다.
+  const file = join(os.tmpdir(), `sunpos-sheet-${Date.now()}.html`)
+  let win: BrowserWindow | null = null
+  try {
+    await fs.writeFile(file, html, 'utf8')
+    win = new BrowserWindow({ show: false, webPreferences: { offscreen: false } })
+    await win.loadFile(file)
+    // 폰트·이미지가 자리를 잡을 시간 — 렌더러 쪽 250ms 와 같은 이유다
+    await new Promise(r => setTimeout(r, 300))
+
+    const ok = await new Promise<boolean>(resolve => {
+      win!.webContents.print(
+        { silent: true, printBackground: true, ...(deviceName ? { deviceName } : {}) },
+        success => resolve(success),
+      )
+    })
+    return ok ? { ok: true } : { ok: false, error: '인쇄가 취소됐어요' }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    win?.destroy()
+    fs.unlink(file).catch(() => {})
+  }
+})
+
 ipcMain.handle('printer:test', async () => {
   const cfg = printerCfg()
   const lineChars = resolveLineChars(cfg)

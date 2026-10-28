@@ -383,7 +383,7 @@ export default function OptionGroupEditModal({
           )}
         </div>
 
-        <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex items-center justify-between">
+        <div className="bg-[#FCFCFC] flex-shrink-0 px-[28px] py-[14px] flex items-center justify-between">
           {isCreating ? (
             <span className="text-[11px] text-[#ADADAD]">저장하면 옵션 그룹이 만들어져요</span>
           ) : isPriceGroup ? (

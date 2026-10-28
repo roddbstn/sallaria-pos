@@ -775,7 +775,7 @@ export default function AccountDetailModal({ target, onClose }: {
         </div>
 
         {/* ── 하단 바 — 좌: 이용내역서(문서 내보내기) / 우: 충전·닫기 ── */}
-        <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex items-center justify-between gap-[10px]">
+        <div className="bg-[#FCFCFC] flex-shrink-0 px-[28px] py-[14px] flex items-center justify-between gap-[10px]">
           <div className="relative">
             <button
               onClick={() => setExportOpen(v => !v)}

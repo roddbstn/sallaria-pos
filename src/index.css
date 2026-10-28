@@ -82,15 +82,38 @@ body {
   font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system, sans-serif;
   background: var(--page-bg);
   color: var(--ink);
-  overflow: hidden;
+  /* 세로는 잠근다(화면마다 자기 스크롤 영역을 가진다).
+     가로만 열어 둔다 — #root 의 min-width 때문에 뷰포트가 좁아지면
+     잘린 오른쪽을 밀어서 볼 수 있어야 한다. 안 열어 두면 조용히 잘린다. */
+  overflow-x: auto;
+  overflow-y: hidden;
   user-select: none;
   transition: background 0.2s, color 0.2s;
 }
 
+/* ⚠️ min-width 가 **모든 화면의 안전망**이다.
+
+   이 앱의 화면들은 Figma 1440 캔버스의 고정 px 를 그대로 쓴다(lib/figma-scale.ts).
+   반응형이 아니므로 뷰포트가 설계 폭보다 좁아지면 4열 그리드가 칸당 40px 로 눌리고,
+   '이번달 주문액' 같은 라벨이 **한 글자씩 세로로** 쌓이면서 숫자끼리 겹친다.
+
+   그럴 때는 뭉개는 것보다 **모양을 지키고 가로로 스크롤되게** 두는 쪽이 낫다 —
+   보이는 부분은 언제나 제대로 된 화면이고, 나머지는 밀어서 보면 된다.
+
+   값을 설계 폭(1440 ÷ 1.07 = 1346)이 아니라 **1040** 으로 둔 건 일부러다.
+   1346 으로 막으면 설계 폭 아래로는 아예 안 내려가서, 좁아질 때 접히라고 만든
+   것들(auto-fit 그리드 · truncate)이 발동할 구간 자체가 없어진다.
+   1040 까지는 안의 박스들이 줄고 글자가 … 로 잘리며 버티고, 그보다 좁으면
+   모양을 지킨 채 가로로 스크롤된다.
+
+   실제 창은 electron/index.ts 에서 minWidth: 1400 으로 막혀 있다.
+   그래도 여기가 필요한 이유: **DevTools 를 오른쪽에 도킹**하면 창은 그대로인 채
+   렌더러 뷰포트만 좁아진다. 화면이 깨져 보이던 게 그 경우였다. */
 #root {
   zoom: 1.07;
   width: calc(100vw / 1.07);
   height: calc(100vh / 1.07);
+  min-width: 1040px;
 }
 
 ::-webkit-scrollbar       { width: 6px; }
@@ -124,6 +147,18 @@ body {
    버튼이 따로 있으니 스크롤바가 없어도 뒤쪽을 놓치지 않는다. */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* 글자만 있는 보조 버튼(화면 편집·모드 변경·비활성 보기 등).
+   전엔 호버 때 글자색만 바뀌었다 — 누를 수 있다는 걸 글자 굵기도 모양도 아닌
+   '색이 조금 진해지는 것'으로만 말해서, 옆의 정렬 드롭다운(배경이 생긴다)과
+   같은 줄에 있으면 저쪽만 버튼처럼 보였다. 배경을 같은 방식으로 준다.
+   패딩이 생기므로 쓰는 쪽에서 gap 을 그만큼 줄인다. */
+.hover-chip {
+  padding: 5px 9px;
+  border-radius: 8px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.hover-chip:hover { background: #E8E4E2; }
 
 /* 모달 하단에 고정된 CTA 푸터 — 위 스크롤 영역과의 경계.
    이 클래스는 네 군데에서 이미 쓰이고 있었는데 **정의가 없었다.** 그래서 각 모달이

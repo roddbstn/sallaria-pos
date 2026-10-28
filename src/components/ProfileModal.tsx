@@ -50,17 +50,13 @@ export default function ProfileModal({ open, onClose, session, setSession, authO
       setStoreRepName(clientData?.owner_name ?? null)
       setStoreAddress(storeData?.address ?? null)
 
-      const { data: myCats } = await supabase
-        .from('categories').select('id').eq('store_id', session.storeId)
-      const catIds = myCats?.map((c: { id: string }) => c.id) ?? []
-
+      // 메뉴 수를 store_id 로 바로 세면서 카테고리 선조회(왕복 1회)가 통째로 없어졌다
       const [{ count: cc }, { count: mc }] = await Promise.all([
         supabase.from('accounts').select('*', { count: 'exact', head: true })
           .eq('is_active', true).eq('store_id', session.storeId),
-        catIds.length > 0
-          ? supabase.from('menus').select('*', { count: 'exact', head: true })
-              .eq('is_hidden', false).in('category_id', catIds)
-          : Promise.resolve({ count: 0 }),
+        // 미분류 메뉴도 이 매장 메뉴다 — store_id 로 세야 빠지지 않는다
+        supabase.from('menus').select('*', { count: 'exact', head: true })
+          .eq('is_hidden', false).eq('store_id', session.storeId),
       ])
       setCustomerCount(cc ?? 0)
       setMenuCount(mc ?? 0)

@@ -125,15 +125,19 @@ function ReceiptPreview({ storeName, accountName, manager, phone, qrImg, storePh
  * 어떻게 앉는지는 뽑아 봐야 알았다. 종이·여백·칸 간격을 QrSheetPrinter 와 같은 mm 값으로
  * 잡고 화면 배율만 곱한다. 그래서 여기 보이는 비율이 실제 출력 비율이다.
  */
-function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, filled }: {
+/** 미리보기 한 칸에 들어갈 것. 칸 수보다 적게 주면 나머지는 **빈 칸**으로 남는다 */
+export interface PreviewLabel { name: string; qrImg: string }
+
+function PaperPreview({ paper, storeName, notice, pin, labels, totalLabels }: {
   paper:       QrPaper
   storeName:   string
-  accountName: string
   notice:      string
-  qrImg:       string
   pin:         string | null
-  /** 이번에 뽑을 거래처 수 — 칸을 몇 개나 채우는지 보여준다 */
-  filled:      number
+  /** 첫 장에 실제로 찍힐 칸들. 전엔 칸마다 같은 이름을 그리고 투명도만 낮췄는데,
+   *  한 곳만 골라도 나머지 세 칸에 그 이름이 흐리게 찍혀 "4장 나오나?" 로 읽혔다. */
+  labels:      PreviewLabel[]
+  /** 전체 장수(여러 장일 때 '첫 장만 보여주는 중'을 알리려고) */
+  totalLabels: number
 }) {
   const spec = PAPER_OPTIONS.find(p => p.key === paper)!
   // 영수증 폭은 프린터 설정에서 온다. 58mm 로 박아두면 80mm 프린터를 쓰는 매장에서
@@ -174,7 +178,8 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
           }}
         >
           {cells.map(i => {
-            const on = i < filled
+            const label = labels[i]
+            const on    = !!label
             return (
               <div
                 key={i}
@@ -190,15 +195,17 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
                 {/* 글자 크기는 QrSheetPrinter 와 같은 fontSizesFor() 를 쓴다.
                     미리보기만 따로 계산하면 "화면과 인쇄물이 다르다"가 생긴다.
                     Math.max(4, …) 하한은 화면에서만 — 종이에서는 안 쓰는 값이다 */}
+                {/* 빈 칸은 **정말로 비운다** — 흐린 글자라도 들어가 있으면 그것도 찍히는 줄 안다 */}
+                {on && <>
                 <div style={{ fontSize: Math.max(4, mm(f.store)), color: '#787878' }}>{storeName} 선결제</div>
                 <div
                   className="font-bold text-center"
                   style={{ fontSize: Math.max(5, mm(f.name)), lineHeight: 1.15, color: '#1E1E1E' }}
                 >
-                  {accountName}
+                  {label.name}
                 </div>
-                {qrImg
-                  ? <img src={qrImg} alt="" style={{ width: mm(geo.qrMM), height: mm(geo.qrMM) }} />
+                {label.qrImg
+                  ? <img src={label.qrImg} alt="" style={{ width: mm(geo.qrMM), height: mm(geo.qrMM) }} />
                   : <div style={{ width: mm(geo.qrMM), height: mm(geo.qrMM), background: '#F2F2F2' }} />}
                 <div
                   className="text-center"
@@ -206,7 +213,8 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
                 >
                   {notice}
                 </div>
-                {pin && (
+                </>}
+                {on && pin && (
                   <div style={{ fontSize: Math.max(4, mm(f.notice)), fontWeight: 600, letterSpacing: mm(f.notice * 0.25), color: '#6A635E' }}>
                     PIN {pin}
                   </div>
@@ -219,9 +227,11 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
 
       <div className="mt-[10px] text-[11px] font-normal text-[#787878] text-center">
         {isReceipt ? `영수증 ${rp.label}` : 'A4 210 × 297mm'} · 한 장에 {geo.perPage}칸
-        {filled < geo.perPage && geo.perPage > 1 && (
-          <span className="text-[#ADADAD]"> · 이번엔 {filled}칸만 채워져요</span>
-        )}
+        {totalLabels > geo.perPage
+          ? <span className="text-[#ADADAD]"> · 총 {totalLabels}장</span>
+          : labels.length < geo.perPage && geo.perPage > 1 && (
+            <span className="text-[#ADADAD]"> · 이번엔 {labels.length}칸만 채워져요</span>
+          )}
       </div>
     </div>
   )
@@ -234,6 +244,9 @@ function PaperPreview({ paper, storeName, accountName, notice, qrImg, pin, fille
  * 가장 좁은 용지(57mm · 32칸)에도 들어간다. 더 길게 허용하면 QR 바로 아래 한 줄이라는
  * 규칙이 깨져 두 줄로 흐르거나 잘린 채 나간다.
  */
+/** 한 거래처당 매수 상한. 종이를 쓰는 동작이라 0 하나 더 누른 사고를 막는다 */
+const MAX_PER_ACCOUNT = 50
+
 const NOTICE_MAX = 15
 
 export default function QrPrintPanel() {
@@ -242,11 +255,18 @@ export default function QrPrintPanel() {
   const { cfg } = usePrinterConfig()
   const [accounts, setAccounts] = useState<DbAccount[]>([])
   const [loading,  setLoading]  = useState(true)
-  const [picked,   setPicked]   = useState<Set<string>>(new Set())
+  /**
+   * 거래처별 **출력 매수**. 키가 없으면 미선택, 있으면 1 이상.
+   *
+   * 전엔 Set<string> 이라 "고른 곳 1곳당 1장"이 전부였다. 그런데 실제로는
+   * 같은 거래처를 2~3장 뽑아 여러 층에 붙이거나, A4 한 장에 김다현 3장 +
+   * KT 1장 식으로 섞어 뽑는 일이 많다. 수량이 없으면 그걸 할 방법이 없었다.
+   */
+  const [counts,   setCounts]   = useState<Map<string, number>>(new Map())
   const [paper,    setPaper]    = useState<QrPaper>('a4-4')
   const [notice,   setNotice]   = useState(DEFAULT_QR_NOTICE)
   const [printing, setPrinting] = useState(false)
-  const [preview,  setPreview]  = useState('')
+  const [previewLabels, setPreviewLabels] = useState<PreviewLabel[]>([])
   /** 영수증 푸터에 찍을 매장 연락처 (stores.phone) */
   const [store, setStore] = useState<{ phone: string }>({ phone: '' })
 
@@ -267,33 +287,70 @@ export default function QrPrintPanel() {
         if (cancelled) return
         const rows = (data ?? []) as DbAccount[]
         setAccounts(rows)
-        setPicked(new Set(rows.map(a => a.account_code)))   // 기본은 전체 — 배부가 목적이니까
+        // 기본은 **아무것도 선택 안 함**. 전엔 전체 선택으로 열렸는데,
+        // 한 곳만 다시 뽑으려고 들어와도 먼저 전체를 풀어야 해서 순서가 거꾸로였다.
+        // 종이를 쓰는 동작이라 실수로 전부 출력되는 쪽이 비용이 크다 —
+        // 고르고 누르는 게 맞다. 전체가 필요하면 머리줄 '전체 선택'이 한 번에 한다.
         setLoading(false)
       })
     return () => { cancelled = true }
   }, [storeId])
 
-  // 미리보기는 "첫 번째로 고른 곳" 기준. 전부 그리면 느리고, 어차피 양식은 같다
-  const first = accounts.find(a => picked.has(a.account_code)) ?? accounts[0]
-  const firstUrl = first ? qrUrlFor(first, storeId) : ''
+  // 실제로 찍힐 순서대로 펼친다 — 거래처 목록 순서 × 각자의 매수.
+  // 인쇄도 이 배열을 그대로 쓴다. 화면과 종이가 다른 순서면 믿을 수 없다.
+  const labelQueue = accounts.flatMap(a => {
+    const n = counts.get(a.account_code) ?? 0
+    return Array.from({ length: n }, () => a)
+  })
+  const totalLabels = labelQueue.length
 
+  const geo = paperGeometry(paper)
+  // 영수증은 한 장에 하나, A4 는 칸 수만큼
+  const perPage   = paper === 'receipt' ? 1 : geo.perPage
+  const pageCount = Math.ceil(totalLabels / perPage)
+
+  // 넘겨 보는 장. 선택을 줄여 장수가 줄면 범위를 벗어나므로 **그릴 때 한 번 더 가둔다** —
+  // state 를 effect 에서 되돌리면 한 프레임 동안 빈 장이 번쩍인다.
+  const [page, setPage] = useState(0)
+  const safePage  = Math.min(page, Math.max(0, pageCount - 1))
+  const pageSlice = labelQueue.slice(safePage * perPage, (safePage + 1) * perPage)
+  const pageKey   = pageSlice.map(a => a.account_code).join('|')
+
+  // 보고 있는 장의 QR 만 만든다. 전부 만들면 37곳 × 매수가 된다.
   useEffect(() => {
-    if (!firstUrl) { setPreview(''); return }
+    if (pageSlice.length === 0) { setPreviewLabels([]); return }
     let cancelled = false
-    qrDataUrl(firstUrl, 400).then(d => { if (!cancelled) setPreview(d) }).catch(() => setPreview(''))
+    Promise.all(pageSlice.map(async a => ({
+      name:  a.account_name,
+      qrImg: await qrDataUrl(qrUrlFor(a, storeId), 400).catch(() => ''),
+    }))).then(ls => { if (!cancelled) setPreviewLabels(ls) })
     return () => { cancelled = true }
-  }, [firstUrl])
+    // pageKey 로 걸어야 매 렌더마다 다시 만들지 않는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageKey, storeId])
 
   function toggle(code: string) {
-    setPicked(prev => {
-      const next = new Set(prev)
-      if (next.has(code)) next.delete(code); else next.add(code)
+    setCounts(prev => {
+      const next = new Map(prev)
+      if (next.has(code)) next.delete(code); else next.set(code, 1)
+      return next
+    })
+  }
+
+  /** 매수 증감. 0 이 되면 선택 해제 — '0장 선택됨'이라는 상태는 뜻이 없다 */
+  function bump(code: string, delta: number) {
+    setCounts(prev => {
+      const next = new Map(prev)
+      const v = (next.get(code) ?? 0) + delta
+      if (v <= 0) next.delete(code)
+      else next.set(code, Math.min(v, MAX_PER_ACCOUNT))
       return next
     })
   }
 
   async function handlePrint() {
-    const chosen = accounts.filter(a => picked.has(a.account_code))
+    // 화면 미리보기와 **같은 배열**을 쓴다 (labelQueue). 따로 만들면 순서가 어긋난다.
+    const chosen = labelQueue
     setPrinting(true)
     try {
       if (paper === 'receipt') {
@@ -323,17 +380,14 @@ export default function QrPrintPanel() {
         })),
         // PIN 은 더 이상 종이에 찍지 않는다. QR 종이는 사무실 벽에 붙는데,
         // PIN 이 적혀 있으면 지나가는 누구나 그 거래처 잔액으로 주문할 수 있다.
-        { paper, storeName, notice, showPin: false },
+        { paper, storeName, notice, showPin: false, docPrinter: cfg.docPrinter },
       )
     } finally {
       setPrinting(false)
     }
   }
 
-  const geo = paperGeometry(paper)
-  // 고른 게 없으면 0장이다. 전에는 Math.max(1, …) 라 아무것도 안 골라도 '1장'이 떴다
-  const pageCount = paper === 'receipt' ? picked.size : Math.ceil(picked.size / geo.perPage)
-  const allPicked = accounts.length > 0 && picked.size === accounts.length
+  const allPicked = accounts.length > 0 && counts.size === accounts.length
 
   return (
     <div>
@@ -349,6 +403,41 @@ export default function QrPrintPanel() {
           <div className="flex-shrink-0" style={{ width: 260 }}>
             <div className="text-[13px] font-normal text-[#6A635E] mb-[12px]">미리보기</div>
             <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[16px]">
+              {/* 장 넘김 — 박스 안 우상단. 전엔 '첫 장만 보여드려요'로 끝내서
+                  둘째 장부터 무엇이 찍히는지 확인할 방법이 없었다.
+                  버튼색은 박스 바탕(#F2F2F2)에서 한 단계만 내린 #E8E4E2 —
+                  미리보기 종이가 주인공이라 조작부가 먼저 눈에 띄면 안 된다. */}
+              {pageCount > 1 && (
+                <div className="flex items-center justify-end gap-[4px] mb-[10px]">
+                  <span className="text-[11px] font-normal text-[#787878] tabular-nums mr-[2px]">
+                    {safePage + 1} / {pageCount}
+                  </span>
+                  {/* 꺾쇠 — Figma 491:3390 을 재서 맞췄다.
+                      수직에서 **40°**(45° 가 아니다 — 더 벌어진 모양),
+                      선 두께는 아이콘 높이의 **0.17**. 글자(‹ ›)로 두면 폰트마다
+                      굵기·세로중심이 달라지고 키워도 가늘어지기만 해서 SVG 로 둔다. */}
+                  <button
+                    onClick={() => setPage(Math.max(0, safePage - 1))}
+                    disabled={safePage === 0}
+                    aria-label="이전 장"
+                    className="pressable-tab w-[26px] h-[34px] rounded-[8px] bg-[#E8E4E2] text-[#6A635E] flex items-center justify-center hover:bg-[#DCD6D1] disabled:opacity-35 transition-colors"
+                  >
+                    <svg width="11" height="20" viewBox="0 0 12 22" fill="none">
+                      <path d="M9.4 3.5L2.8 11L9.4 18.5" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+                    disabled={safePage >= pageCount - 1}
+                    aria-label="다음 장"
+                    className="pressable-tab w-[26px] h-[34px] rounded-[8px] bg-[#E8E4E2] text-[#6A635E] flex items-center justify-center hover:bg-[#DCD6D1] disabled:opacity-35 transition-colors"
+                  >
+                    <svg width="11" height="20" viewBox="0 0 12 22" fill="none">
+                      <path d="M2.6 3.5L9.2 11L2.6 18.5" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              )}
               {/* 용지에 따라 **다른 양식**을 보여준다.
                   영수증은 감열 프린터로 ESC/POS 가 바로 나가고(escpos.ts),
                   A4 는 브라우저 인쇄로 카드가 나간다(QrSheetPrinter). 두 양식이
@@ -357,10 +446,10 @@ export default function QrPrintPanel() {
               {paper === 'receipt' ? (
                 <ReceiptPreview
                   storeName={storeName}
-                  accountName={first?.account_name ?? '거래처'}
-                  manager={first?.contact_person ?? ''}
-                  phone={first?.contact_phone ?? ''}
-                  qrImg={preview}
+                  accountName={pageSlice[0]?.account_name ?? '거래처'}
+                  manager={pageSlice[0]?.contact_person ?? ''}
+                  phone={pageSlice[0]?.contact_phone ?? ''}
+                  qrImg={previewLabels[0]?.qrImg ?? ''}
                   storePhone={store.phone}
                   notice={notice || DEFAULT_QR_NOTICE}
                   paperLabel={paperChoice(cfg.paperWidth).label}
@@ -369,11 +458,10 @@ export default function QrPrintPanel() {
                 <PaperPreview
                   paper={paper}
                   storeName={storeName}
-                  accountName={first?.account_name ?? '거래처'}
                   notice={notice || DEFAULT_QR_NOTICE}
-                  qrImg={preview}
                   pin={null}
-                  filled={picked.size}
+                  labels={previewLabels}
+                  totalLabels={totalLabels}
                 />
               )}
             </div>
@@ -383,10 +471,10 @@ export default function QrPrintPanel() {
                 높이는 폭(260) 대비 약 1/5 — 오른쪽 설정 칼럼의 버튼보다 크다 */}
             <button
               onClick={handlePrint}
-              disabled={picked.size === 0 || printing}
+              disabled={totalLabels === 0 || printing}
               className="pressable w-full h-[52px] mt-[12px] rounded-[11px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
             >
-              {printing ? '출력 중…' : `${picked.size}곳 인쇄하기`}
+              {printing ? '출력 중…' : `${totalLabels}장 인쇄하기`}
             </button>
           </div>
 
@@ -431,7 +519,7 @@ export default function QrPrintPanel() {
                   <div>
                     <div className="text-[11px] font-normal text-[#787878] mb-[3px]">영수증</div>
                     <div className="text-[15px] font-medium text-[#1E1E1E]">
-                      {picked.size > 0 ? `${picked.size}장` : '—'}
+                      {totalLabels > 0 ? `${totalLabels}장` : '—'}
                     </div>
                   </div>
                 ) : (
@@ -444,7 +532,7 @@ export default function QrPrintPanel() {
                     <div>
                       <div className="text-[11px] font-normal text-[#787878] mb-[3px]">용지 수</div>
                       <div className="text-[15px] font-medium text-[#1E1E1E]">
-                        {picked.size > 0 ? `${pageCount}장` : '—'}
+                        {totalLabels > 0 ? `${pageCount}장` : '—'}
                       </div>
                     </div>
                   </>
@@ -482,27 +570,53 @@ export default function QrPrintPanel() {
             {/* 대상 거래처 */}
             <div className="mb-[16px]">
               <div className="flex items-center justify-between mb-[8px]">
-                <span className="text-[12px] font-medium text-[#2C261F]">출력 대상: {picked.size}곳</span>
+                <span className="text-[12px] font-medium text-[#2C261F]">
+                  출력 대상: {counts.size}곳 · {totalLabels}장
+                </span>
                 <button
-                  onClick={() => setPicked(allPicked ? new Set() : new Set(accounts.map(a => a.account_code)))}
+                  onClick={() => setCounts(allPicked ? new Map() : new Map(accounts.map(a => [a.account_code, 1])))}
                   className="text-[12px] font-normal text-[#6A635E] hover:text-ink transition-colors"
                 >
                   {allPicked ? '전체 해제' : '전체 선택'}
                 </button>
               </div>
               <div className="rounded-[10px] bg-[#F2F2F2] p-[10px] max-h-[220px] overflow-y-auto flex flex-wrap gap-[6px]">
+                {/* 고르면 그 칩 안에서 바로 매수를 올린다. 수량을 따로 모아 두면
+                    "어느 줄이 어느 거래처 것인지"를 다시 맞춰 봐야 한다. */}
                 {accounts.map(a => {
-                  const on = picked.has(a.account_code)
+                  const n = counts.get(a.account_code) ?? 0
+                  const on = n > 0
                   return (
-                    <button
+                    <div
                       key={a.account_code}
-                      onClick={() => toggle(a.account_code)}
-                      className={`h-[30px] px-[11px] rounded-[8px] text-[12px] font-normal transition-colors ${
-                        on ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#FCFCFC] text-[#787878] hover:bg-[#E8E4E2]'
+                      className={`h-[30px] rounded-[8px] text-[12px] font-normal flex items-center transition-colors ${
+                        on ? 'bg-[#6A635E] text-[#FCFCFC] pr-[4px]' : 'bg-[#FCFCFC] text-[#787878] hover:bg-[#E8E4E2]'
                       }`}
                     >
-                      {a.account_name}
-                    </button>
+                      <button
+                        onClick={() => toggle(a.account_code)}
+                        className="h-full px-[11px] whitespace-nowrap"
+                        title={on ? '선택 해제' : '선택'}
+                      >
+                        {a.account_name}
+                      </button>
+                      {on && (
+                        <span className="flex items-center gap-[1px] flex-shrink-0">
+                          <button
+                            onClick={() => bump(a.account_code, -1)}
+                            aria-label={`${a.account_name} 한 장 빼기`}
+                            className="w-[20px] h-[22px] rounded-[5px] bg-white/15 hover:bg-white/30 transition-colors leading-none"
+                          >−</button>
+                          <span className="min-w-[20px] text-center tabular-nums font-medium">{n}</span>
+                          <button
+                            onClick={() => bump(a.account_code, 1)}
+                            disabled={n >= MAX_PER_ACCOUNT}
+                            aria-label={`${a.account_name} 한 장 더`}
+                            className="w-[20px] h-[22px] rounded-[5px] bg-white/15 hover:bg-white/30 disabled:opacity-30 transition-colors leading-none"
+                          >+</button>
+                        </span>
+                      )}
+                    </div>
                   )
                 })}
               </div>

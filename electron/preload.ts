@@ -52,6 +52,7 @@ const api = {
   printQrReceipt: (p: { accountName: string; manager: string; phone: string; pin: string; qrUrl: string; storeName: string; storePhone?: string; notice?: string }) =>
     ipcRenderer.invoke('printer:qr-receipt', p),
 
+  printSheet:       (p: { html: string; deviceName?: string }) => ipcRenderer.invoke('printer:print-sheet', p),
   onPrinterStatus:  (cb: (s: { connected: boolean; queueLength: number }) => void) =>
     ipcRenderer.on('printer:status', (_e, v) => cb(v)),
   offPrinterStatus: () => ipcRenderer.removeAllListeners('printer:status'),

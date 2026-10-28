@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import HubLayout, { HubSection, type HubNavItem } from '../components/hub/HubLayout'
 import { supabase, type DbMenu, type DbCategory, type DbOptionGroup } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
+import { usePersistentState } from '../hooks/usePersistentState'
 import { won } from '../lib/ipc'
 import OptionGroupEditModal from '../components/ui/OptionGroupEditModal'
 import OptionBadge from '../components/ui/OptionBadge'
@@ -31,7 +32,13 @@ const NAV: HubNavItem<ProductHubTab>[] = [
   { key: 'categories', label: '카테고리 정보' },
 ]
 
-/** 30일 전 ISO */
+/** 최근 판매 집계 기간. 캘린더가 아니라 버튼인 이유:
+ *  집계가 `daysAgoISO(n)` 한 줄로 끝나는 **상대 기간**이라 시작·끝을 따로 받으면
+ *  쿼리 모양부터 달라진다. 점주가 보는 것도 '요즘 얼마나 나가나'지 '3월 2일~4월 7일'이 아니다. */
+const SOLD_RANGES = [7, 30, 90, 180, 365] as const
+const soldRangeLabel = (d: number) => (d >= 365 ? '1년' : d % 30 === 0 && d >= 60 ? `${d / 30}개월` : `${d}일`)
+
+/** n일 전 ISO */
 function daysAgoISO(n: number): string {
   return new Date(Date.now() - n * 86400000).toISOString()
 }
@@ -118,7 +125,7 @@ interface ProductData {
   soldByOption: Record<string, number>
 }
 
-function useProductData(storeId: string) {
+function useProductData(storeId: string, soldDays: number) {
   const [data, setData]       = useState<ProductData | null>(null)
   const [loading, setLoading] = useState(true)
   const [tick, setTick]       = useState(0)
@@ -129,7 +136,7 @@ function useProductData(storeId: string) {
 
     async function load() {
       setLoading(true)
-      const since = daysAgoISO(30)
+      const since = daysAgoISO(soldDays)
 
       const [{ data: cats }, { data: groups }] = await Promise.all([
         supabase.from('categories').select('*').eq('store_id', storeId).order('display_order'),
@@ -137,12 +144,11 @@ function useProductData(storeId: string) {
       ])
       const categories = (cats ?? []) as DbCategory[]
 
-      // 메뉴는 카테고리로 묶여 있고 store_id 컬럼이 없다 — 이 매장 카테고리로 범위를 좁힌다.
-      // 카테고리가 없는(미분류) 메뉴는 이 쿼리로 안 잡히므로 아래에서 따로 센다.
-      const catIds = categories.map(c => c.id)
-      const { data: menuRows } = catIds.length
-        ? await supabase.from('menus').select('*').in('category_id', catIds).order('display_order')
-        : { data: [] as DbMenu[] }
+      // 2026-10-26: menus.store_id 가 생겨서 매장으로 직접 건다.
+      // 전엔 카테고리 id 목록으로 걸러서 **미분류 메뉴가 통째로 빠졌고**, 그래서
+      // 아래에서 따로 세는 코드가 필요했다. 이제 한 번에 다 들어온다.
+      const { data: menuRows } = await supabase
+        .from('menus').select('*').eq('store_id', storeId).order('display_order')
       const menus = (menuRows ?? []) as DbMenu[]
 
       const menuIds = menus.map(m => m.id)
@@ -195,7 +201,7 @@ function useProductData(storeId: string) {
 
     load()
     return () => { cancelled = true }
-  }, [storeId, tick])
+  }, [storeId, tick, soldDays])
 
   return { data, loading, reload: () => setTick(t => t + 1) }
 }
@@ -231,9 +237,11 @@ export default function ProductHub({
 }) {
   const { storeId } = useStore()
   const [tab, setTab] = useState<ProductHubTab>(initialTab)
-  const { data, loading, reload } = useProductData(storeId)
+  /** 최근 판매 집계 기간(일). 다시 들어와도 고른 값이 남아야 해서 저장한다 */
+  const [soldDays, setSoldDays] = usePersistentState('producthub_sold_days', 30)
+  const { data, loading, reload } = useProductData(storeId, soldDays)
 
-  const shared = { data, loading, reload, showToast }
+  const shared = { data, loading, reload, showToast, soldDays, setSoldDays }
 
   return (
     <HubLayout title="상품" items={NAV} activeKey={tab} onChange={setTab} onBack={onBack}>
@@ -249,6 +257,9 @@ interface PanelProps {
   loading: boolean
   reload: () => void
   showToast: (msg: string) => void
+  /** 최근 판매 집계 기간(일) — 표 머리글에서 바꾸고, 바꾸면 데이터가 다시 로드된다 */
+  soldDays: number
+  setSoldDays: (d: number) => void
 }
 
 // ── 1. 메뉴 상세 — Figma 672:1120 ──────────────────────────────────────────
@@ -256,6 +267,27 @@ interface PanelProps {
 // 토스 POS의 상품 화면과 같은 의도: 카테고리를 "필터 드롭다운"이 아니라 **탭**으로 깐다.
 // 점주 머릿속에 메뉴는 이미 카테고리로 나뉘어 있어서, 탭이 그 구조를 그대로 비춘다.
 // 그리고 그 탭 줄에서 바로 순서까지 바꾼다 — 카테고리 순서는 QR오더 노출 순서다.
+
+/**
+ * 이 메뉴가 손님 QR오더 화면에 **실제로 뜨는지**.
+ *
+ * 기준은 DB 의 qr_menu_board() 와 **똑같이** 맞춘다:
+ *     m.is_hidden = false  AND  m.category_id ∈ (is_active 인 카테고리)
+ * 품절(is_sold_out)은 숨기지 않는다 — 뜨긴 뜨고 '품절'로 표시될 뿐이다.
+ *
+ * 안 보일 때 **이유**까지 돌려주는 이유: '안 보임' 한 마디로는 점주가 무엇을
+ * 고쳐야 할지 모른다. 메뉴를 숨긴 건지, 카테고리를 꺼둔 건지, 분류를 안 한 건지가
+ * 각각 다른 동작이다. (특히 '미분류'는 메뉴 화면에서 눈에 잘 안 띈다)
+ */
+function qrVisibility(
+  m: { is_hidden?: boolean | null; category_id: string | null },
+  catActive: Record<string, boolean>,
+): { on: boolean; label: string; tone: 'ok' | 'off' | 'warn' } {
+  if (!m.category_id)                return { on: false, label: '미분류',      tone: 'warn' }
+  if (!catActive[m.category_id])     return { on: false, label: '카테고리 숨김', tone: 'warn' }
+  if (m.is_hidden)                   return { on: false, label: '숨김',        tone: 'off' }
+  return { on: true, label: '표시중', tone: 'ok' }
+}
 
 type MenuFilter = 'all' | 'selling' | 'soldout' | 'noOption'
 type SortBy     = 'order' | 'recent' | 'soldDesc' | 'priceDesc' | 'nameAsc'
@@ -268,7 +300,7 @@ const SORT_LABEL: Record<SortBy, string> = {
   nameAsc:   '이름 순',
 }
 
-function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
+function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDays }: PanelProps) {
   const { storeId } = useStore()
   /** 메뉴 상세 모달의 '+ 옵션 추가' — 옵션 상세 화면과 같은 마법사를 띄운다 */
   const [addingOptGroup, setAddingOptGroup] = useState(false)
@@ -286,6 +318,7 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
   // 저장되면 이 화면은 전체를 다시 긁는다(reload). 로컬 패치보다 느리지만,
   // 여기서 보여주는 30일 판매량·옵션 연결 수가 같이 바뀔 수 있어 그게 더 정확하다.
   const menuForm = useMenuForm({
+    storeId,
     onCreated: () => reload(),
     onUpdated: () => reload(),
     showToast,
@@ -304,6 +337,14 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
         soldOut: it.is_sold_out ?? false, soldOutUntil: null, hidden: it.is_hidden ?? false,
       })),
     })),
+    [data],
+  )
+
+  const [soldOpen, setSoldOpen] = useState(false)
+
+  /** 카테고리가 켜져 있는지 — QR오더 노출 판정에 쓴다 */
+  const catActive = useMemo(
+    () => Object.fromEntries((data?.categories ?? []).map(c => [c.id, c.is_active])),
     [data],
   )
 
@@ -336,6 +377,7 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
         category:   catName[m.category_id] ?? '미분류',
         groupCount: data.groupsByMenu[m.id]?.length ?? 0,
         sold:       data.soldByMenu[m.id] ?? 0,
+        qr:         qrVisibility(m, catActive),
       }))
 
     switch (sortBy) {
@@ -345,7 +387,7 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
       case 'recent':    return list.reverse()  // display_order 역순 ≈ 최근 추가
       default:          return list
     }
-  }, [data, catTab, filter, q, sortBy, catName])
+  }, [data, catTab, filter, q, sortBy, catName, catActive])
 
   const noOptionCount = data ? data.menus.filter(m => (data.groupsByMenu[m.id]?.length ?? 0) === 0).length : 0
 
@@ -515,12 +557,48 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
 
           <div className="rounded-[11px] overflow-hidden border border-[#E8E4E2]">
             <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[40px] text-[12px] font-normal text-[#6A635E]">
+              {/* 카테고리를 메뉴명 **앞**으로 옮기고 넓혔다(120 → 150).
+                  뒤에 두면 메뉴명이 flex-1 로 남는 폭을 다 먹어서, 정작 '북구청
+                  행정지원과' 같은 긴 카테고리가 잘렸다. 분류를 먼저 보고 그 안에서
+                  메뉴를 찾는 순서이기도 하다. */}
+              {catTab === 'all' && <span className="w-[150px]">카테고리</span>}
               <span className="flex-1 min-w-0">메뉴({rows.length}개)</span>
-              {catTab === 'all' && <span className="w-[120px]">카테고리</span>}
               <span className="w-[90px] text-right">가격</span>
               <span className="w-[80px] text-right">옵션</span>
-              <span className="w-[90px] text-right">30일 판매</span>
+              {/* 기간을 바꿀 수 있다. 고른 값은 저장돼서 다시 들어와도 그대로다. */}
+              <span className="w-[132px] text-right relative">
+                <button
+                  onClick={() => setSoldOpen(v => !v)}
+                  className="inline-flex items-center gap-[4px] h-[22px] px-[6px] rounded-[6px] hover:bg-[#DCD6D1] transition-colors"
+                >
+                  최근 {soldRangeLabel(soldDays)} 판매
+                  <svg width="9" height="6" viewBox="0 0 16 10" fill="none"
+                       className={`transition-transform ${soldOpen ? 'rotate-180' : ''}`}>
+                    <path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                {soldOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setSoldOpen(false)} />
+                    <div className="modal-in absolute right-0 top-[28px] z-30 w-[116px] py-[5px] rounded-[10px] bg-[#FCFCFC] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)]"
+                         style={{ transformOrigin: 'top right' }}>
+                      {SOLD_RANGES.map(d => (
+                        <button
+                          key={d}
+                          onClick={() => { setSoldDays(d); setSoldOpen(false) }}
+                          className={`w-full text-left px-[13px] py-[7px] text-[12px] hover:bg-[#F2F2F2] transition-colors ${
+                            soldDays === d ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'
+                          }`}
+                        >
+                          최근 {soldRangeLabel(d)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </span>
               <span className="w-[70px] text-right">상태</span>
+              <span className="w-[96px] text-right">QR오더 표시</span>
             </div>
             {rows.length === 0 ? <Empty note="조건에 맞는 메뉴가 없어요" /> : rows.map((r, i) => (
               <button
@@ -530,13 +608,15 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                   i > 0 ? 'border-t border-[#F2F2F2]' : ''
                 }`}
               >
-                <span className="flex-1 min-w-0 text-[13px] text-[#1E1E1E] truncate">{r.menu.name}</span>
-                {catTab === 'all' && <span className="w-[120px] text-[12px] text-[#787878] truncate">{r.category}</span>}
+                {catTab === 'all' && (
+                  <span className="w-[150px] pr-[10px] text-[12px] text-[#787878] truncate" title={r.category}>{r.category}</span>
+                )}
+                <span className="flex-1 min-w-0 text-[13px] text-[#1E1E1E] truncate" title={r.menu.name}>{r.menu.name}</span>
                 <span className="w-[90px] text-right text-[13px] text-[#1E1E1E]">{won(r.menu.base_price)}</span>
                 <span className={`w-[80px] text-right text-[12px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
                   {r.groupCount === 0 ? '없음' : `${r.groupCount}그룹`}
                 </span>
-                <span className="w-[90px] text-right text-[13px] text-[#1E1E1E]">{r.sold}개</span>
+                <span className="w-[132px] text-right text-[13px] text-[#1E1E1E]">{r.sold}개</span>
                 <span className="w-[70px] text-right">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[11px] ${
                     r.menu.is_sold_out ? 'bg-[#FFEFEF] text-[#C92A2A]' : 'bg-[#E6F4EC] text-[#017333]'
@@ -544,12 +624,26 @@ function MenuDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                     {r.menu.is_sold_out ? '품절' : '판매중'}
                   </span>
                 </span>
+                {/* 손님 화면에 실제로 뜨는지. 안 뜨면 **이유**를 그대로 적는다 —
+                    '안 보임'만으로는 무엇을 고쳐야 할지 알 수 없다. */}
+                <span className="w-[96px] text-right">
+                  <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[11px] whitespace-nowrap ${
+                    r.qr.tone === 'ok'   ? 'bg-[#E6F4EC] text-[#017333]'
+                    : r.qr.tone === 'warn' ? 'bg-[#FFF4E8] text-[#B35C00]'
+                    : 'bg-[#F2F2F2] text-[#787878]'
+                  }`}>
+                    {r.qr.label}
+                  </span>
+                </span>
               </button>
             ))}
           </div>
 
           <div className="mt-[12px] text-[11px] font-normal text-[#ADADAD]">
-            30일 판매는 취소 주문을 뺀 수량이에요. 주문 이력이 있는 메뉴는 삭제 대신 숨김 처리됩니다.
+            판매 수량은 취소 주문을 뺀 값이에요. 주문 이력이 있는 메뉴는 삭제 대신 숨김 처리됩니다.
+            <br />
+            QR오더 표시는 손님 화면 기준이에요 — 메뉴를 숨겼거나, 카테고리를 껐거나, 분류를 안 하면 안 보여요.
+            품절은 안 보이는 게 아니라 '품절'로 떠요.
           </div>
         </>
       )}
@@ -680,7 +774,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
     <div>
       <HubSection
         title="옵션 정보"
-        action={<PrimaryAction onClick={() => setAdding(true)}>옵션 추가</PrimaryAction>}
+        action={<PrimaryAction onClick={() => setAdding(true)}>+ 옵션 추가</PrimaryAction>}
       />
 
       {loading || !data ? <Loading /> : (
@@ -719,8 +813,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
 
           {kind === 'price' && (
             <div className="text-[11px] text-[#ADADAD] mb-[10px] leading-relaxed">
-              메뉴를 만들면 <span className="text-[#6A635E]">가격(필수)</span> 그룹이 자동으로 하나 생겨요.
-              옵션이 하나뿐이면 QR오더에서 이미 선택된 채로 보입니다. 사이즈·용량 변형은 여기서 더하면 돼요.
+              메뉴를 등록하면 해당 메뉴이름으로 <span className="text-[#6A635E]">가격(필수)</span> 그룹이 자동으로 연결돼요.
               {!q.trim() && byKind.price.length > 24 && ` (${byKind.price.length}개 중 24개만 표시 — 검색해 주세요)`}
             </div>
           )}
@@ -1019,17 +1112,20 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
             ))}
           </div>
 
-          {/* 미분류 — 카테고리 없는 메뉴는 QR오더에서 안 보일 수 있는데 지금은 알 길이 없다.
-              다만 메뉴 조회를 카테고리 기준으로 하고 있어 여기서는 아직 셀 수 없다. */}
+          {/* 미분류 — 카테고리 없는 메뉴.
+              2026-10-26 menus.store_id 가 생기면서 매장 기준으로 조회하게 됐고,
+              그 덕에 여기서도 실제로 셀 수 있다(전엔 카테고리 기준 조회라 아예 안 잡혔다).
+              순서변경 대상이 아니므로 점선 테두리로 진짜 카테고리와 구분해 둔다. */}
           <div className="mt-[11px] flex items-center px-[20px] h-[44px] rounded-[11px] border border-dashed border-[#D9D2C8] bg-[#FCFCFC]">
             <span className="w-[46px] text-[12px] text-[#ADADAD]">—</span>
             <span className="flex-1 min-w-0 text-[13px] text-[#787878]">미분류</span>
-            <button
-              onClick={() => showToast('미분류 메뉴 집계는 준비 중이에요')}
-              className="text-[12px] text-[#6A635E] hover:underline"
-            >
-              카테고리 없는 메뉴 확인
-            </button>
+            <span className="w-[90px] text-right text-[13px] text-[#787878]">{stats['__none__']?.menus ?? 0}개</span>
+            <span className="w-[100px] text-right text-[13px] text-[#787878]">{stats['__none__']?.sold ?? 0}개</span>
+            <span className="w-[80px] text-right">
+              <span className="inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[11px] bg-[#F2F2F2] text-[#787878]">
+                QR 미노출
+              </span>
+            </span>
           </div>
 
           <div className="mt-[12px] text-[11px] font-normal text-[#ADADAD]">

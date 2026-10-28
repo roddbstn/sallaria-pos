@@ -62,10 +62,18 @@ export default function HubLayout<K extends string>({
            '옵션 정보'에서 그룹 칩을 누를 때마다 칩이 줄바꿈되고, 요약 박스와 표의 가로길이가
            달라지고, 우측 정렬 버튼이 좌우로 움직인 게 전부 이 6px 때문이었다.
            빈 자리를 늘 비워 두면 스크롤바 유무와 무관하게 폭이 고정된다. */}
+      {/* ⚠️ 여백을 **스크롤 요소에 직접 주면 안 된다.**
+           Chrome 은 position:sticky 를 스크롤 영역의 **패딩 박스** 기준으로 고정한다.
+           그래서 이 div 에 pt-[64px] 가 있으면 표 머리글(DataTableHead, sticky top-0)이
+           화면 맨 위가 아니라 **64px 아래**에 붙고, 그 위 64px 띠는 잘리지 않으므로
+           행들이 머리글 위를 지나가며 머리글이 목록 중간에 떠 있는 것처럼 보였다
+           (계정 관리 화면에서 실제로 그랬다 — 2026-10-27).
+           스크롤은 바깥이 맡고 여백은 안쪽 래퍼가 맡으면 sticky 가 제자리에 붙는다.
+           scroll-stable 은 스크롤 요소에 남아야 한다(바로 위 주석 참고). */}
       <div className={bare
         ? 'flex-1 min-w-0 overflow-hidden'
-        : 'flex-1 min-w-0 overflow-y-auto scroll-stable px-[64px] pt-[64px] pb-[62px]'}>
-        {children}
+        : 'flex-1 min-w-0 overflow-y-auto scroll-stable'}>
+        {bare ? children : <div className="px-[64px] pt-[64px] pb-[62px]">{children}</div>}
       </div>
     </div>
   )

@@ -1253,7 +1253,9 @@ export default function Sales() {
             {/* 요약 카드 — 고객 > 고객 현황의 StatCard 와 같은 규칙:
                 회색 박스(#F2F2F2 · r10), 라벨 12/medium, 숫자는 굵게 하지 않고 medium.
                 전엔 흰 카드 + 그림자 + extrabold 28px 라 이 화면만 톤이 떠 있었다. */}
-            <div className="grid grid-cols-3 gap-3">
+            {/* 고객 현황 지표와 같은 규칙 — 칸 수를 고정하지 않고 들어가는 만큼만 만든다.
+                좁아지면 3 → 2 → 1 로 접히고, 안의 글자는 min-w-0 + truncate 로 … 처리된다. */}
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
               <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">

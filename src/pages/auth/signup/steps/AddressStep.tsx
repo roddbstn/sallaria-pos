@@ -100,7 +100,7 @@ export default function AddressStep({ data, onChange, onNext }: StepProps) {
           onClick={() => setAddressModalOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl w-[420px] h-[520px] overflow-hidden flex flex-col"
+            className="modal-in bg-white rounded-2xl w-[420px] h-[520px] overflow-hidden flex flex-col"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 flex-shrink-0">

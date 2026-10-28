@@ -113,7 +113,7 @@ export default function DiagnosticReportModal({
           </pre>
         </div>
 
-        <div className="flex items-center gap-[8px] px-[28px] py-[18px] modal-footer">
+        <div className="bg-[#FCFCFC] flex items-center gap-[8px] px-[28px] py-[18px]">
           {/* 복사는 전송이 실패했을 때만 — 평소엔 선택지를 하나로 둔다 */}
           {state === 'failed' && (
             <button

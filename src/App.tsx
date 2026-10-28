@@ -1143,6 +1143,7 @@ export default function App() {
         onSaveRegularHolidays={saveRegularHolidays}
         onSaveBreakTime={saveBreakTime}
         onSignOut={handleSignOut}
+        onDeleteAccount={() => setDeleteConfirmOpen(true)}
         operatingHours={operatingHours}
         breakTime={breakTime}
         vacationDays={vacationDays}
@@ -1653,7 +1654,7 @@ export default function App() {
               </div>
 
               {/* 하단 버튼 */}
-              <div className="px-6 py-4 flex-shrink-0 flex gap-2 modal-footer">
+              <div className="bg-white px-6 py-4 flex-shrink-0 flex gap-2">
                 <button
                   onClick={() => setVacationOpen(false)}
                   className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
@@ -1793,28 +1794,42 @@ export default function App() {
         {/* ── 회원탈퇴 확인 모달 ── */}
         {/* 바깥 클릭으로 닫지 않는다(의도) — 회원탈퇴는 되돌릴 수 없다. ModalOverlay 를 쓰지 않는 이유다. */}
         {deleteConfirmOpen && (
-          <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50">
-            <div className="modal-in bg-white rounded-2xl shadow-xl w-[320px] px-9 py-9 flex flex-col gap-4">
-              <div>
-                <div className="text-[17px] font-semibold text-ink mb-1">정말 탈퇴하시겠습니까?</div>
-                <div className="text-[13px] text-gray-text leading-relaxed">
-                  계정과 매장의 모든 데이터가 삭제되며<br />복구할 수 없습니다.
+          <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/40">
+            {/* 매장 설정의 로그아웃 확인창과 **같은 시스템** —
+                #FCFCFC · rounded-18 · 본문/푸터 분리 · 우측 CTA.
+                전엔 흰 카드 + #00DD67 녹색 버튼이었는데, 그 녹색은 지금 디자인
+                시스템에 없는 옛 브랜드색이라 이 창만 다른 제품처럼 보였다.
+
+                버튼 순서는 로그아웃 창과 **일부러 반대**다. 로그아웃은 되돌릴 수
+                있어서 위험한 쪽을 오른쪽(주 동작 자리)에 두지만, 탈퇴는 매장
+                데이터까지 지워지고 되돌릴 수 없다. 그래서 오른쪽 주 동작 자리는
+                '유지하기'가 갖고, 탈퇴는 왼쪽에서 조용한 danger 로 둔다. */}
+            <div
+              className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[420px] max-w-[92vw] flex flex-col overflow-hidden"
+            >
+              <div className="px-[28px] pt-[28px] pb-[22px]">
+                <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[6px]">정말 탈퇴하시겠어요?</div>
+                <div className="text-[13px] font-normal text-[#787878] leading-relaxed">
+                  계정과 매장의 모든 데이터가 삭제되며 되돌릴 수 없어요.<br />
+                  거래처 잔액과 지난 주문 기록도 함께 사라집니다.
                 </div>
               </div>
-              <button
-                onClick={handleDeleteAccount}
-                disabled={deleteLoading}
-                className="text-center text-[13px] text-gray-300 font-normal hover:opacity-70 disabled:opacity-40 transition-opacity"
-              >
-                {deleteLoading ? '탈퇴 처리 중...' : '그래도 탈퇴하기'}
-              </button>
-              <button
-                onClick={() => setDeleteConfirmOpen(false)}
-                disabled={deleteLoading}
-                className="w-full py-3 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                유지하기
-              </button>
+              <div className="px-[28px] py-[16px] flex justify-end gap-[10px]">
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleteLoading}
+                  className="h-[50px] px-[26px] rounded-[13px] bg-[#FFEFEF] text-[#FF676F] text-[16px] font-medium hover:brightness-95 disabled:opacity-40 transition-all"
+                >
+                  {deleteLoading ? '탈퇴 처리 중…' : '탈퇴하기'}
+                </button>
+                <button
+                  onClick={() => setDeleteConfirmOpen(false)}
+                  disabled={deleteLoading}
+                  className="h-[50px] px-[26px] rounded-[13px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:brightness-110 disabled:opacity-40 transition-all"
+                >
+                  유지하기
+                </button>
+              </div>
             </div>
           </div>
         )}

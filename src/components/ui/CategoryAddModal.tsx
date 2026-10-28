@@ -175,7 +175,7 @@ export default function CategoryAddModal({
         )}
 
         {/* 푸터 — 2단계에선 좌측에 적용 메뉴 개수, 우측에 이전/완료 */}
-        <div className="flex items-center justify-between gap-[14px] px-[30px] py-[20px] flex-shrink-0 mt-auto modal-footer">
+        <div className="flex items-center justify-between gap-[14px] px-[30px] py-[20px] flex-shrink-0 mt-auto">
           <span className="text-[14px] text-[#8C8379] truncate">
             {step === 2 ? `'${trimmed}' 분류에 넣을 메뉴 개수 (${picked.size}/${visible.length})` : ''}
           </span>

@@ -17,7 +17,9 @@ export interface QrSheetItem {
 
 export async function printQrSheet(
   items: QrSheetItem[],
-  opts: { paper: QrPaper; storeName: string; notice: string; showPin: boolean },
+  opts: { paper: QrPaper; storeName: string; notice: string; showPin: boolean
+          /** 설정에 저장된 일반 프린터. 있으면 대화상자 없이 바로 보낸다 */
+          docPrinter?: string },
 ): Promise<void> {
   if (items.length === 0) return
   const spec = PAPER_OPTIONS.find(p => p.key === opts.paper)!
@@ -79,6 +81,19 @@ export async function printQrSheet(
   /* PIN 은 기본으로 안 찍는다. 종이가 사무실 벽에 붙으므로 — 켤 때만 보인다 */
   .pin    { font-size: ${f.notice.toFixed(2)}mm; font-weight: 600; letter-spacing: ${(f.notice*0.25).toFixed(2)}mm; color: #6A635E; }
 </style></head><body>${cells}</body></html>`
+
+  // 설정에 일반 프린터가 있으면 **대화상자 없이** 메인 프로세스로 보낸다.
+  // 영수증은 설정해 두면 바로 나가는데 A4 만 매번 프린터를 고르는 게 앞뒤가 안 맞았다.
+  // 실패하면 아래 iframe 방식으로 떨어진다 — 못 찍는 것보다 한 번 더 누르는 게 낫다.
+  if (opts.docPrinter) {
+    const api = (window as unknown as {
+      api?: { printSheet?: (p: { html: string; deviceName?: string }) => Promise<{ ok: boolean }> }
+    }).api
+    try {
+      const r = await api?.printSheet?.({ html, deviceName: opts.docPrinter })
+      if (r?.ok) return
+    } catch { /* 아래 대화상자 방식으로 */ }
+  }
 
   const iframe = document.createElement('iframe')
   iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:0;visibility:hidden;'

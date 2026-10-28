@@ -45,7 +45,7 @@ export default function MenuFormModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-[40px]" onClick={onClose}>
       <div
-        className="bg-[#FCFCFC] rounded-[18px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
         style={{ width: 900 }}
         onClick={e => e.stopPropagation()}
       >
@@ -233,7 +233,7 @@ export default function MenuFormModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-[10px] px-[62px] py-[20px] flex-shrink-0 modal-footer">
+        <div className="bg-[#FCFCFC] flex items-center justify-end gap-[10px] px-[62px] py-[20px] flex-shrink-0">
           <button onClick={onClose} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-medium hover:opacity-90 transition-opacity">
             닫기
           </button>

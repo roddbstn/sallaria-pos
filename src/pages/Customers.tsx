@@ -10,6 +10,9 @@ import type { Order } from '../lib/mock-data'
 import { mapOrderRow } from '../lib/mappers'
 import { PLAN_LIMITS, PLAN_NAMES } from '../lib/plans'
 import DonutChart from '../components/DonutChart'
+import DatePopover from '../components/ui/DatePopover'
+import AccountFilterPopover from '../components/customer/AccountFilterPopover'
+import AmountKeypad from '../components/ui/AmountKeypad'
 import EyeIcon from '../components/ui/EyeIcon'
 import { maskName, maskPhone } from '../lib/mask'
 import { buildPinColumns } from '../lib/pin-crypto'
@@ -153,7 +156,25 @@ function PinField({ value, onChange, placeholder, className = '' }: {
 
 // 계정 추가 모달(Figma node 532:3039) 큰 사이즈 폼 — 라벨 28px + 테두리 rounded-15 인풋
 // px는 Figma 원본 × FIGMA_SCALE — src/lib/figma-scale.ts 참고
-const CUST_INPUT_CLS = 'field-soft w-full border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] text-ink outline-none focus:border-ink bg-transparent'
+// 폭을 뺀 본체. 한 줄에 둘 이상 놓을 때 `w-full` 과 `w-[...]` 가 충돌해
+// (둘 다 width 속성이라 Tailwind 출력 순서에 따라 이기는 쪽이 달라진다)
+// 한쪽이 줄 전체를 먹는 사고가 났다 — 실제로 '실제 선결제 일시' 행이 그랬다.
+type TableSort =
+  | 'recentOrder' | 'oldReg' | 'oldOrder' | 'members' | 'recentReg'
+  | 'orderMany'   | 'orderFew'
+
+const TABLE_SORTS: { key: TableSort; label: string }[] = [
+  { key: 'recentOrder', label: '최근 주문순' },
+  { key: 'oldReg',      label: '등록 오래된순' },
+  { key: 'oldOrder',    label: '주문 오래된순' },
+  { key: 'members',     label: '인원 많은순' },
+  { key: 'recentReg',   label: '최근 등록순' },
+  { key: 'orderMany',   label: '주문 많은순' },
+  { key: 'orderFew',    label: '주문 적은순' },
+]
+
+const CUST_INPUT_BASE = 'field-soft border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] text-ink outline-none focus:border-ink bg-transparent'
+const CUST_INPUT_CLS = `${CUST_INPUT_BASE} w-full`
 function CustFormField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mb-[22px]">
@@ -205,9 +226,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [monthlyDeposits, setMonthlyDeposits] = useState<Record<string, number>>({}) // 이번달 선결제(충전) 합계
   const [orderTrend, setOrderTrend] = useState<Record<string, number>>({})          // 추이 = 이번달 주문건수 - 저번달 주문건수
   const [monthlyOrderCount, setMonthlyOrderCount] = useState<Record<string, number>>({}) // 이번달 주문건수 (가장 많이 주문한 고객 랭킹용)
-  const [active30dCount, setActive30dCount] = useState(0)                           // 최근 30일 내 주문 1건 이상인 계정 수
-  const [yearlyDeposits, setYearlyDeposits] = useState<number[]>(Array(12).fill(0))  // 선결제 추이 — 올해 1~12월 합계
-  const [yearlyOrders,   setYearlyOrders]   = useState<number[]>(Array(12).fill(0))  // 주문 추이 — 올해 1~12월 건수
+  // 아래 셋은 **값을 안 쓴다** — 패널이 원본 행(yearlyDepositRows·yearlyOrderRows)에서
+  // 거래처 필터를 걸어 다시 세기 때문이다. 집계 루프를 지우면 원본 행도 같이 사라지므로
+  // setter 만 남겨 둔다(이 파일이 이미 쓰는 관용구 — setMonthlyUsage 참고).
+  const [, setActive30dCount] = useState(0)                           // 최근 30일 내 주문 1건 이상인 계정 수
+  const [, setYearlyDeposits] = useState<number[]>(Array(12).fill(0))  // 선결제 추이 — 올해 1~12월 합계
+  const [, setYearlyOrders]   = useState<number[]>(Array(12).fill(0))  // 주문 추이 — 올해 1~12월 건수
   const [phoneRevealed, setPhoneRevealed] = useState(false) // 우측 패널 — 관리자 연락처 중간 4자리 공개 토글
   const [yearlyDepositRows, setYearlyDepositRows] = useState<{ account_code: string; amount: number; created_at: string }[]>([]) // 바 차트 호버 툴팁용 — 월별 합계의 원본 행
   const [yearlyOrderRows,   setYearlyOrderRows]   = useState<{ account_code: string; total_amount: number; ordered_at: string }[]>([]) // 주문 추이 툴팁용 — 위와 같은 용도
@@ -217,6 +241,16 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [donutTooltip, setDonutTooltip] = useState<{ type: DbAccount['account_type']; x: number; y: number } | null>(null)
   const [trendInfoTooltip, setTrendInfoTooltip] = useState<{ x: number; y: number } | null>(null)
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  /** 고객현황 패널 전용 거래처 필터. 좌측 표의 typeFilter 와는 별개다.
+   *  null = 전체 · 빈 집합 = 아무 곳도 선택 안 함 · 그 외 = 그 거래처들만 */
+  const [panelFilter, setPanelFilter] = useState<Set<string> | null>(null)
+  const [panelFilterOpen, setPanelFilterOpen] = useState(false)
+  /** 거래처별 마지막 주문 일시(전체 기간) — 주문 기준 정렬에 쓴다 */
+  const [lastOrderAt, setLastOrderAt] = useState<Record<string, string>>({})
+  /** 거래처별 전체 기간 주문 건수 — 주문 건수 기준 정렬에 쓴다 */
+  const [orderCountAll, setOrderCountAll] = useState<Record<string, number>>({})
+  const [tableSort, setTableSort] = useState<TableSort>('recentOrder')
+  const [tableSortOpen, setTableSortOpen] = useState(false)
 
   // 고객 유형(부서/기업/개인) 커스텀 관리 — Figma node 503:786.
   // stores.customer_types(최대 6개)가 이 매장에서 쓸 수 있는 유형 목록의 원본.
@@ -338,11 +372,13 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [chargeOpen,   setChargeOpen]   = useState(false)
   const [chargeAmt,    setChargeAmt]    = useState('')
   const [chargeMemo,   setChargeMemo]   = useState('')
+  /** 선결제 일시 캘린더 팝오버 열림 여부 */
+  const [chargeCalOpen, setChargeCalOpen] = useState(false)
   const [chargeError,  setChargeError]  = useState('')
   const [search,       setSearch]       = useState('')
   const [kioskQr,      setKioskQr]      = useState(false)
   const [accountQr,    setAccountQr]    = useState<string | null>(null) // account_code
-  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members' | 'statement' | 'people'>('orders')
+  const [detailTab,    setDetailTab]    = useState<'orders' | 'charges' | 'members' | 'statement' | 'people'>('charges')
   const [members,      setMembers]      = useState<{ id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]>([])
   const [adminUsers,   setAdminUsers]   = useState<{ role: string; status: string; name: string | null; phone: string | null; approved_at: string | null; created_at: string }[]>([])
   const [, setOrderPage]  = useState(0)   // 값은 안 쓰고 초기화 용도로만 호출
@@ -457,9 +493,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     const [membersRes, depositsRes, ordersRes] = await Promise.all([
       supabase.from('account_members').select('account_code').in('account_code', accountCodes),
       supabase.from('deposits').select('account_code, amount, created_at').in('account_code', accountCodes).gte('created_at', yearStart.toISOString()),
-      // 올해 전체로 넓힌다 — 선결제 추이와 나란히 놓을 '주문 추이'를 그리려면
-      // 12개월치가 필요하다. orders 가 수백 행이라 범위를 넓혀도 부담이 없다.
-      supabase.from('orders').select('account_code, ordered_at, status, total_amount').in('account_code', accountCodes).gte('ordered_at', yearStart.toISOString()),
+      // **기간 제한 없이** 받는다. 올해치만 받으면 '주문 오래된순' 정렬이 틀린다 —
+      // 그 정렬은 휴면 거래처를 찾는 용도인데, 마지막 주문이 작년이면 올해 범위에
+      // 안 잡혀 '주문 없음'으로 뭉뚱그려진다. 1월에 보면 '지난달 주문'과 '최근 30일'도
+      // 작년 12월을 통째로 놓쳤다(같은 뿌리의 버그였다).
+      // 월별 추이(yOrders)만 올해로 가둔다 — 안 그러면 작년 같은 달에 더해진다.
+      supabase.from('orders').select('account_code, ordered_at, status, total_amount').in('account_code', accountCodes),
     ])
 
     const mCounts: Record<string, number> = {}
@@ -480,11 +519,20 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     const thisCount: Record<string, number> = {}
     const lastCount: Record<string, number> = {}
     const active30d = new Set<string>()
+    const lastAt: Record<string, string> = {}
+    /** 전체 기간 주문 건수 — '주문 많은/적은순' 정렬용. 이번 달만 세는
+     *  monthlyOrderCount 와 다르다(그건 랭킹 카드가 쓴다). */
+    const allCount: Record<string, number> = {}
     const yOrders = Array(12).fill(0)
+    const thisYear = now.getFullYear()
     for (const row of (ordersRes.data ?? [])) {
       if (row.status === '취소') continue
       const d = new Date(row.ordered_at)
-      yOrders[d.getMonth()] += 1
+      if (!lastAt[row.account_code] || row.ordered_at > lastAt[row.account_code]) {
+        lastAt[row.account_code] = row.ordered_at
+      }
+      allCount[row.account_code] = (allCount[row.account_code] ?? 0) + 1
+      if (d.getFullYear() === thisYear) yOrders[d.getMonth()] += 1
       if (d >= thisMonthStart) thisCount[row.account_code] = (thisCount[row.account_code] ?? 0) + 1
       // 범위를 올해 전체로 넓혔으므로 '지난달'을 명시적으로 가둬야 한다.
       // 안 그러면 1월 주문까지 전부 '지난달'로 세어져 추이가 엉킨다.
@@ -492,9 +540,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       if (d >= d30) active30d.add(row.account_code)
     }
     setYearlyOrders(yOrders)
-    // 취소분은 빼고 담는다 — 위 집계(yOrders)와 툴팁 숫자가 어긋나면 안 된다
+    setLastOrderAt(lastAt)
+    setOrderCountAll(allCount)
+    // 취소분은 빼고 **올해치만** 담는다 — 차트와 툴팁이 쓰는 값이라
+    // 쿼리를 전체 기간으로 넓힌 뒤에도 올해로 가둬야 yOrders 와 숫자가 맞는다.
     setYearlyOrderRows((ordersRes.data ?? [])
-      .filter(r => r.status !== '취소')
+      .filter(r => r.status !== '취소' && new Date(r.ordered_at).getFullYear() === thisYear)
       .map(r => ({ account_code: r.account_code, total_amount: r.total_amount ?? 0, ordered_at: r.ordered_at })))
     setMonthlyOrderCount(thisCount)
     setActive30dCount(active30d.size)
@@ -747,7 +798,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     setChargeAmt('')
     setChargeError('')
     setPhoneRevealed(false)
-    setDetailTab('orders')
+    // 거래처를 바꾸면 첫 탭으로 되돌린다 — 탭 순서(충전이력 · 주문내역 · 구성원)의
+    // 첫 번째와 같아야 한다. 안 맞추면 두 번째 탭이 선택된 채로 열린다.
+    setDetailTab('charges')
   }, [selected?.account_code])
 
   // ── 마운트 / showInactive 변경 시 목록 재조회 ────────────────────────────────
@@ -813,6 +866,28 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     if (typeFilter !== 'all' && a.account_type !== typeFilter) return false
     if (search && !a.account_name.includes(search) && !(a.organization_name ?? '').includes(search) && !(a.contact_person ?? '').includes(search)) return false
     return true
+  }).sort((a, b) => {
+    // 주문 기준 정렬에서 **주문이 한 번도 없는 거래처는 항상 맨 뒤**로 보낸다.
+    // '주문 오래된순'에서 앞자리를 차지하면 "가장 오래 안 온 곳"을 찾는다는 목적이
+    // 무너진다 — 온 적이 없는 곳과 오래 안 온 곳은 다른 이야기다.
+    const byOrder = (dir: 1 | -1) => {
+      const x = lastOrderAt[a.account_code], y = lastOrderAt[b.account_code]
+      if (!x && !y) return a.account_name.localeCompare(b.account_name, 'ko')
+      if (!x) return 1
+      if (!y) return -1
+      return x < y ? dir : x > y ? -dir : 0
+    }
+    switch (tableSort) {
+      case 'recentOrder': return byOrder(1)      // 최신이 위
+      case 'oldOrder':    return byOrder(-1)     // 오래된 게 위
+      case 'members':     return (memberCounts[b.account_code] ?? 0) - (memberCounts[a.account_code] ?? 0)
+      // 건수는 **0도 뜻이 있는 값**이라 날짜 정렬처럼 뒤로 빼지 않는다 —
+      // '주문 적은순'에서 한 번도 안 시킨 곳이 맨 앞인 게 맞다.
+      case 'orderMany':   return (orderCountAll[b.account_code] ?? 0) - (orderCountAll[a.account_code] ?? 0)
+      case 'orderFew':    return (orderCountAll[a.account_code] ?? 0) - (orderCountAll[b.account_code] ?? 0)
+      case 'oldReg':      return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0
+      case 'recentReg':   return a.created_at > b.created_at ? -1 : a.created_at < b.created_at ? 1 : 0
+    }
   })
 
   // ── 거래처 추가 ───────────────────────────────────────────────────────────────
@@ -1147,20 +1222,47 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   // ── 고객현황 사이드바 집계 (Figma node 494:1051) ─────────────────────────────
   const typeCounts: Record<string, number> = {}
   for (const a of accounts) typeCounts[a.account_type] = (typeCounts[a.account_type] ?? 0) + 1
-  const typeTotal = accounts.length || 1
   // 표의 유형 태그 색 — 우측 계정유형 도넛과 같은 기준(건수 많은 순)으로 팔레트를 배정해 둘이 어긋나지 않게 한다
   const typeColorOrder = [...customerTypes].sort((a, b) => (typeCounts[b] ?? 0) - (typeCounts[a] ?? 0))
   const typeColorOf = (t: string) => {
     const i = typeColorOrder.indexOf(t)
     return TYPE_DONUT_COLORS[(i < 0 ? 0 : i) % TYPE_DONUT_COLORS.length]
   }
-  const totalMembers = Object.values(memberCounts).reduce((s, n) => s + n, 0)
-  const active30dPct = accounts.length > 0 ? Math.round((active30dCount / accounts.length) * 100) : 0
-  const topOrderedAccounts = [...accounts]
+
+  // ── 고객현황 패널 — 거래처 필터가 걸린 값들 ─────────────────────────────
+  // 위의 typeCounts·typeColorOf 는 **좌측 표의 유형 태그 색**도 쓰므로 건드리지 않는다.
+  // 패널 필터 때문에 표의 색이 바뀌면 안 되니, 패널용 집계는 따로 만든다.
+  //
+  // 원본 행(yearlyDepositRows·yearlyOrderRows)에서 다시 센다. 미리 합쳐둔
+  // yearlyDeposits·yearlyOrders·active30dCount 를 쓰면 **일부 카드만 필터되고
+  // 나머지는 전체 숫자가 남아** 서로 안 맞는 화면이 된다.
+  const panelAll     = panelFilter === null
+  const inPanel      = (code: string) => panelAll || panelFilter!.has(code)
+  const pAccounts    = panelAll ? accounts : accounts.filter(a => inPanel(a.account_code))
+  const pTotalMembers = pAccounts.reduce((s, a) => s + (memberCounts[a.account_code] ?? 0), 0)
+
+  const pDepositRows = panelAll ? yearlyDepositRows : yearlyDepositRows.filter(r => inPanel(r.account_code))
+  const pOrderRows   = panelAll ? yearlyOrderRows   : yearlyOrderRows.filter(r => inPanel(r.account_code))
+
+  const pYearlyDeposits = Array(12).fill(0) as number[]
+  for (const r of pDepositRows) pYearlyDeposits[new Date(r.created_at).getMonth()] += r.amount
+  const pMaxYearlyDeposit = Math.max(1, ...pYearlyDeposits)
+
+  const pYearlyOrders = Array(12).fill(0) as number[]
+  for (const r of pOrderRows) pYearlyOrders[new Date(r.ordered_at).getMonth()] += 1
+
+  const p30dStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const pActive30d = new Set(pOrderRows.filter(r => new Date(r.ordered_at) >= p30dStart).map(r => r.account_code))
+  const pActive30dPct = pAccounts.length > 0 ? Math.round((pActive30d.size / pAccounts.length) * 100) : 0
+
+  const pTypeCounts: Record<string, number> = {}
+  for (const a of pAccounts) pTypeCounts[a.account_type] = (pTypeCounts[a.account_type] ?? 0) + 1
+  const pTypeTotal = pAccounts.length || 1
+
+  const pTopOrdered = [...pAccounts]
     .filter(a => (monthlyOrderCount[a.account_code] ?? 0) > 0)
     .sort((a, b) => (monthlyOrderCount[b.account_code] ?? 0) - (monthlyOrderCount[a.account_code] ?? 0))
     .slice(0, 3)
-  const maxYearlyDeposit = Math.max(1, ...yearlyDeposits)
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-canvas">
@@ -1205,8 +1307,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             ) : (
               <button
                 onClick={startTypeEdit}
-                className="absolute flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
-                style={{ right: 26, top: 3 }}
+                className="hover-chip absolute flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink"
+                style={{ right: 17, top: -2 }}
               >
                 화면 편집 ✎
               </button>
@@ -1220,7 +1322,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <button
                 onClick={() => setTypeFilter('all')}
                 className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors ${
-                  typeFilter === 'all' ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink'
+                  typeFilter === 'all' ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink hover:bg-[#E8E4E2]'
                 }`}
               >
                 전체
@@ -1262,7 +1364,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     <button
                       onClick={() => typeEditMode ? setEditingTypeIdx(i) : setTypeFilter(t)}
                       className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors flex items-center gap-[6px] ${
-                        !typeEditMode && typeFilter === t ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink'
+                        !typeEditMode && typeFilter === t ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink hover:bg-[#E8E4E2]'
                       }`}
                     >
                       {t}
@@ -1287,20 +1389,60 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               {typeEditMode && typeDraft.length < 6 && (
                 <button
                   onClick={addTypeDraft}
-                  className="px-[10px] py-[6px] text-[15px] font-medium text-[#6A635E] whitespace-nowrap flex items-center gap-[4px] hover:text-ink transition-colors"
+                  className="px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium text-[#6A635E] whitespace-nowrap flex items-center gap-[4px] hover:text-ink hover:bg-[#E8E4E2] transition-colors"
                 >
                   유형 추가
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
                 </button>
               )}
             </div>
+            {/* 비활성 보기 + 정렬 — **한 묶음**으로 둔다.
+                바깥이 justify-between 이라 자식이 셋이 되면 '비활성 보기'가 가운데로
+                밀려난다. 오른쪽 끝에 나란히 두려면 둘을 한 자식으로 감싸야 한다. */}
             {!typeEditMode && (
+            <div className="flex items-center gap-[10px] flex-shrink-0">
               <button
                 onClick={() => setShowInactive(v => !v)}
-                className={`text-[13px] font-medium whitespace-nowrap transition-colors flex-shrink-0 ${showInactive ? 'text-danger' : 'text-[#6A635E] hover:text-ink'}`}
+                className={`hover-chip text-[13px] font-medium whitespace-nowrap flex-shrink-0 ${showInactive ? 'text-danger' : 'text-[#6A635E] hover:text-ink'}`}
               >
                 {showInactive ? '비활성 고객 보는 중' : '비활성 보기'}
               </button>
+              {/* 정렬 — 계정 관리 화면(CustomerHub)의 드롭다운과 같은 모양.
+                  꺾쇠는 열리면 뒤집힌다(아래 ↔ 위) — 열려 있는지를 버튼만 보고 알 수 있게. */}
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={() => setTableSortOpen(v => !v)}
+                  className="h-[30px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[13px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors whitespace-nowrap"
+                >
+                  {TABLE_SORTS.find(x => x.key === tableSort)?.label}
+                  <svg
+                    width="10" height="6" viewBox="0 0 16 10" fill="none"
+                    className={`transition-transform duration-200 ${tableSortOpen ? 'rotate-180' : ''}`}
+                  >
+                    <path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                {tableSortOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setTableSortOpen(false)} />
+                    <div className="modal-in absolute right-0 top-[34px] z-30 bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] py-[5px] w-[150px]"
+                         style={{ transformOrigin: 'top right' }}>
+                      {TABLE_SORTS.map(x => (
+                        <button
+                          key={x.key}
+                          onClick={() => { setTableSort(x.key); setTableSortOpen(false) }}
+                          className={`w-full text-left px-[13px] py-[7px] text-[13px] hover:bg-[#F2F2F2] transition-colors ${
+                            tableSort === x.key ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'
+                          }`}
+                        >
+                          {x.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
             )}
           </div>
 
@@ -1415,7 +1557,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               눌렀을 때 어디로 가는지는 아무 말도 안 한다. 글자로 적고 오른쪽 끝에 붙인다.
               버튼 모양은 주문 화면의 미선택 탭(Orders.tsx:699)과 같은 값이다 —
               h-30 / px-13 / r-9 / 12px / #F2F2F2 · #787878. */}
-          <div className="flex items-center justify-between self-stretch">
+          <div className="flex items-center gap-[8px] self-stretch">
             <span className="text-[21px] font-medium text-ink whitespace-nowrap">고객현황</span>
             {onOpenDetail && (
               <button
@@ -1425,16 +1567,43 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 자세히 보기
               </button>
             )}
+            {/* 거래처 필터 — 오른쪽 끝(전에 '자세히 보기'가 있던 자리).
+                아래 카드·추이·도넛·랭킹이 전부 이 선택을 따른다. 켜져 있을 때는
+                숫자가 전체가 아니라는 걸 버튼만 봐도 알 수 있게 색을 바꾼다. */}
+            <div className="relative ml-auto flex-shrink-0">
+              <button
+                onClick={() => setPanelFilterOpen(v => !v)}
+                className={`pressable-tab h-[30px] px-[13px] rounded-[9px] text-[12px] font-normal flex items-center gap-[5px] transition-colors ${
+                  panelFilter !== null
+                    ? 'bg-[#6A635E] text-[#FCFCFC] hover:brightness-110'
+                    : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
+                }`}
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                  <path d="M1.5 2.5h11L8.2 7.6v4L5.8 12.5V7.6L1.5 2.5z"
+                        stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                </svg>
+                {panelFilter === null ? '거래처' : `${panelFilter.size}곳`}
+              </button>
+              {panelFilterOpen && (
+                <AccountFilterPopover
+                  accounts={accounts}
+                  selected={panelFilter}
+                  onChange={setPanelFilter}
+                  onClose={() => setPanelFilterOpen(false)}
+                />
+              )}
+            </div>
           </div>
 
           <div className="flex gap-[6px]">
             <StatCard className="bg-[#F2F2F2] rounded-[13px]" padding={13} gap={9} style={{ width: 196 }}>
               <div className="text-[13px] font-medium text-[#2C261F] tracking-[-0.5px]">계정/이용자수</div>
-              <div className="text-[21px] font-medium text-ink whitespace-nowrap">{accounts.length}팀/{totalMembers}명</div>
+              <div className="text-[21px] font-medium text-ink whitespace-nowrap">{pAccounts.length}팀/{pTotalMembers}명</div>
             </StatCard>
             <StatCard className="bg-[#F2F2F2] rounded-[13px] flex-1" padding={13} gap={9}>
               <div className="text-[13px] font-medium text-[#2C261F] tracking-[-0.5px] whitespace-nowrap">최근 30일 주문율</div>
-              <div className="text-[18px] font-medium text-ink">{active30dPct}%</div>
+              <div className="text-[18px] font-medium text-ink">{pActive30dPct}%</div>
             </StatCard>
           </div>
 
@@ -1442,7 +1611,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13 }}>
             <div className="text-[15px] font-semibold text-[#2C261F]">선결제 추이</div>
             <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
-              {yearlyDeposits.map((amt, i) => (
+              {pYearlyDeposits.map((amt, i) => (
                 <div
                   key={i}
                   className="flex-1 flex flex-col items-center justify-end h-full px-[1px] cursor-pointer"
@@ -1450,12 +1619,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   onMouseMove={e => setBarTooltip(t => t && { ...t, x: e.clientX, y: e.clientY })}
                   onMouseLeave={() => setBarTooltip(null)}
                 >
-                  <div className="bar-rise w-full bg-[#6A635E] rounded-t-[2px] transition-opacity" style={{ height: Math.max(2, (amt / maxYearlyDeposit) * 51), opacity: barTooltip && barTooltip.monthIdx !== i ? 0.4 : 1, animationDelay: `${i * 25}ms` }} />
+                  <div className="bar-rise w-full bg-[#6A635E] rounded-t-[2px] transition-opacity" style={{ height: Math.max(2, (amt / pMaxYearlyDeposit) * 51), opacity: barTooltip && barTooltip.monthIdx !== i ? 0.4 : 1, animationDelay: `${i * 25}ms` }} />
                 </div>
               ))}
             </div>
             {barTooltip && (() => {
-              const monthRows = yearlyDepositRows.filter(r => new Date(r.created_at).getMonth() === barTooltip.monthIdx)
+              const monthRows = pDepositRows.filter(r => new Date(r.created_at).getMonth() === barTooltip.monthIdx)
               const byAccount = new Map<string, { name: string; total: number; dates: string[] }>()
               for (const r of monthRows) {
                 const name = accounts.find(a => a.account_code === r.account_code)?.account_name ?? '(삭제된 계정)'
@@ -1473,7 +1642,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     ? { right: window.innerWidth - barTooltip.x + 12, top: barTooltip.y - 8 }
                     : { left: barTooltip.x + 12, top: barTooltip.y - 8 }}
                 >
-                  <div className="font-bold text-ink mb-1.5">{barTooltip.monthIdx + 1}월 · {won(yearlyDeposits[barTooltip.monthIdx])} ({rows.length}개 과)</div>
+                  <div className="font-bold text-ink mb-1.5">{barTooltip.monthIdx + 1}월 · {won(pYearlyDeposits[barTooltip.monthIdx])} ({rows.length}개 과)</div>
                   {rows.length === 0 ? (
                     <div className="text-gray-text">선결제 내역 없음</div>
                   ) : (
@@ -1502,13 +1671,13 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           <div className="relative bg-[#F2F2F2] rounded-[13px] mt-[13px]" style={{ padding: 13 }}>
             <div className="flex items-baseline justify-between">
               <div className="text-[15px] font-semibold text-[#2C261F]">주문 추이</div>
-              <div className={`text-[11px] ${NUM_MUTED}`}>올해 {yearlyOrders.reduce((a, b) => a + b, 0)}건</div>
+              <div className={`text-[11px] ${NUM_MUTED}`}>올해 {pYearlyOrders.reduce((a, b) => a + b, 0)}건</div>
             </div>
             {/* 막대 호버 — 전엔 title 속성이었다. 브라우저 기본 툴팁은 1초쯤 기다려야 뜨고
                 "3월 12건"까지만 말해서, 그 달에 **누가 얼마를 언제** 썼는지는 알 수 없었다.
                 위 선결제 추이와 같은 말풍선으로 맞춘다. */}
             <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
-              {yearlyOrders.map((n, i) => (
+              {pYearlyOrders.map((n, i) => (
                 <div
                   key={i}
                   className="flex-1 flex flex-col items-center justify-end h-full px-[1px] cursor-pointer"
@@ -1519,7 +1688,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   <div
                     className="bar-rise w-full bg-[#8C8379] rounded-t-[2px] transition-opacity"
                     style={{
-                      height: Math.max(2, (n / Math.max(1, ...yearlyOrders)) * 51),
+                      height: Math.max(2, (n / Math.max(1, ...pYearlyOrders)) * 51),
                       opacity: orderBarTooltip && orderBarTooltip.monthIdx !== i ? 0.4 : 1,
                       animationDelay: `${i * 25}ms`,
                     }}
@@ -1531,7 +1700,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               // 한 줄만 — "7월 154건 1,340,000원".
               // 전엔 거래처별 n건·금액·날짜까지 펼쳤는데, 월별 막대에 올렸을 때 알고 싶은 건
               // 그 달의 크기 하나다. 거래처별로 쪼개 보는 건 아래 표와 고객 상세가 맡는다.
-              const monthRows = yearlyOrderRows.filter(
+              const monthRows = pOrderRows.filter(
                 r => new Date(r.ordered_at).getMonth() === orderBarTooltip.monthIdx,
               )
               const monthTotal = monthRows.reduce((a, r) => a + r.total_amount, 0)
@@ -1544,7 +1713,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 >
                   <span className="font-semibold text-ink">{orderBarTooltip.monthIdx + 1}월</span>
                   <span className="text-gray-text">
-                    {' '}{yearlyOrders[orderBarTooltip.monthIdx]}건 · {won(monthTotal)}
+                    {' '}{pYearlyOrders[orderBarTooltip.monthIdx]}건 · {won(monthTotal)}
                   </span>
                 </div>
               )
@@ -1562,7 +1731,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
           {/* 계정유형 도넛 — 비율 높은 순으로 정렬해 범례도 위→아래, 도넛도 12시(위)부터 시계방향으로 큰 비율부터 */}
           {(() => {
-            const typesSorted = [...customerTypes].sort((a, b) => (typeCounts[b] ?? 0) - (typeCounts[a] ?? 0))
+            const typesSorted = [...customerTypes].sort((a, b) => (pTypeCounts[b] ?? 0) - (pTypeCounts[a] ?? 0))
             const colorOf = (i: number) => TYPE_DONUT_COLORS[i % TYPE_DONUT_COLORS.length]
             // 유형이 1개뿐이면 범례가 짧아 박스 높이가 도넛(top 28 + size 109)보다 작아져
             // 원그래프가 박스 아래로 삐져나왔다 — minHeight로 도넛이 들어갈 높이를 보장한다
@@ -1570,7 +1739,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13, minHeight: 150 }}>
                 <div className="text-[15px] font-semibold text-[#2C261F]">계정유형</div>
                 <div className="flex flex-col gap-[8px] mt-[19px]" style={{ width: 193 }}>
-                  {typesSorted.filter(t => typeCounts[t]).map((t, i) => (
+                  {typesSorted.filter(t => pTypeCounts[t]).map((t, i) => (
                     <div
                       key={t}
                       className="flex items-center gap-[3px] cursor-pointer"
@@ -1580,7 +1749,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     >
                       <span className="w-[13px] h-[13px] rounded-full flex-shrink-0" style={{ backgroundColor: colorOf(i) }} />
                       <span className="text-[12px] text-[#2C261F] tracking-[-0.46px] whitespace-nowrap">
-                        {TYPE_LABEL[t] ?? t} ({Math.round((typeCounts[t] / typeTotal) * 100)}%, {typeCounts[t]}팀)
+                        {TYPE_LABEL[t] ?? t} ({Math.round((pTypeCounts[t] / pTypeTotal) * 100)}%, {pTypeCounts[t]}팀)
                       </span>
                     </div>
                   ))}
@@ -1593,7 +1762,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   <DonutChart
                     size={109} strokeWidth={21}
                     segments={typesSorted.map((t, i) => ({
-                      pct: typeCounts[t] ? Math.round((typeCounts[t] / typeTotal) * 100) : 0,
+                      pct: pTypeCounts[t] ? Math.round((pTypeCounts[t] / pTypeTotal) * 100) : 0,
                       color: colorOf(i),
                     }))}
                     onSegmentHover={(idx, e) => {
@@ -1630,11 +1799,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           {/* 가장 많이 주문한 고객 (이번달 기준) — 위 계정유형 박스와, 그리고 제목과 1번 항목 사이를 더 띄움 */}
           <div className="flex flex-col gap-[16px] mt-[14px]">
             <div className="text-[15px] font-semibold text-[#2C261F] whitespace-nowrap">가장 많이 주문한 고객</div>
-            {topOrderedAccounts.length === 0 ? (
+            {pTopOrdered.length === 0 ? (
               <div className="text-[10px] text-[#ADADAD] py-[13px]">이번달 주문한 고객이 없습니다.</div>
             ) : (
               <div className="space-y-[13px]">
-                {topOrderedAccounts.map((acc, i) => (
+                {pTopOrdered.map((acc, i) => (
                   <div key={acc.account_code} className="flex items-center gap-[10px]">
                     <span className={`w-[19px] h-[19px] rounded-full flex items-center justify-center text-[12px] font-bold flex-shrink-0 ${
                       i === 0 ? 'bg-[#E8E4E2] text-[#8C8379]' : 'bg-[#E5E5E5] text-[#ADADAD]'
@@ -1702,7 +1871,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       {addOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setAddOpen(false); setAddDupAccount(null) }}>
           <div
-            className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
             style={{ width: 900 }}
             onClick={e => e.stopPropagation()}
           >
@@ -1822,7 +1991,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
             </div>
 
-            <div className="flex items-center justify-end gap-[10px] px-[62px] py-[20px] flex-shrink-0 modal-footer">
+            <div className="bg-[#FCFCFC] flex items-center justify-end gap-[10px] px-[62px] py-[20px] flex-shrink-0">
               <button onClick={() => { setAddOpen(false); setAddDupAccount(null) }} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-semibold hover:opacity-90 transition-opacity">
                 닫기
               </button>
@@ -1961,7 +2130,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               </CustFormField>
             </div>
 
-            <div className="flex-shrink-0 flex items-center px-[62px] pt-[18px] pb-[32px] modal-footer">
+            <div className="bg-[#FCFCFC] flex-shrink-0 flex items-center px-[62px] pt-[18px] pb-[32px]">
               <div className="flex items-center gap-[10px] ml-auto">
               <button
                 onClick={() => { setEditOpen(false); setEditPinError('') }}
@@ -2017,63 +2186,93 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
       {/* ── 충전 등록 모달 — scale 제거, FIGMA_SCALE로 고정 px 재계산 ── */}
       {chargeOpen && selected && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setChargeOpen(false); setChargeError('') }}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false) }}>
           <div
-            className="bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
-            style={{ width: 900 }}
+            className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            style={{ width: 1040 }}
             onClick={e => e.stopPropagation()}
           >
             {!chargeConfirm ? (
               <>
-                <div className="flex-shrink-0 px-[62px] pt-[39px] pb-[15px]">
+                <div className="flex-shrink-0 px-[46px] pt-[39px] pb-[15px]">
                   <h2 className="text-[26px] font-semibold text-ink">선결제 충전</h2>
                   <p className="text-[13px] text-[#6A635E] mt-[5px]">{selected.account_name}</p>
                 </div>
 
-                <div className="overflow-y-auto flex-1 px-[62px] pb-[26px]">
-                  <CustFormField label="충전 금액">
-                    <div className="field-wrap flex items-center border border-[#ADADAD] rounded-[10px] px-[19px] py-[17px]">
-                      <input
-                        value={chargeAmt ? Number(chargeAmt).toLocaleString('ko-KR') : ''}
-                        onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, ''))}
-                        placeholder="0" inputMode="numeric"
-                        className="field-bare flex-1 outline-none text-[18px] font-semibold text-ink"
-                      />
-                      <span className="text-[18px] text-ink">원</span>
-                    </div>
-                  </CustFormField>
+                {/* 2열 — 왼쪽은 '얼마'(금액+키패드), 오른쪽은 '어떻게·언제·메모'.
+                    금액이 이 화면의 주인공이라 왼쪽 위 첫 자리에 두고, 나머지 세 개는
+                    한 줄짜리 입력이라 오른쪽에 1열 3행으로 몰아 세로 흐름을 끊지 않는다. */}
+                <div className="overflow-y-auto flex-1 px-[46px] pb-[26px] flex gap-[40px]">
+                  <div className="w-[300px] flex-shrink-0">
+                    <CustFormField label="충전 금액">
+                      <div className="field-wrap flex items-baseline border border-[#ADADAD] rounded-[10px] px-[19px] py-[15px]">
+                        <input
+                          value={chargeAmt ? Number(chargeAmt).toLocaleString('ko-KR') : ''}
+                          onChange={e => setChargeAmt(e.target.value.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, ''))}
+                          placeholder="0" inputMode="numeric"
+                          className="field-bare flex-1 min-w-0 outline-none text-[26px] font-semibold text-ink text-right"
+                        />
+                        <span className="text-[17px] text-ink ml-[6px] flex-shrink-0">원</span>
+                      </div>
+                    </CustFormField>
+                    <AmountKeypad value={chargeAmt} onChange={setChargeAmt} />
+                  </div>
 
-                  <CustFormField label="결제수단">
-                    <div className="flex flex-wrap gap-[6px]">
-                      {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
-                        <button key={m} onClick={() => setChargeMethod(m)}
-                          className={`px-[13px] py-[8px] rounded-[10px] text-[15px] font-medium whitespace-nowrap transition-colors ${
-                            chargeMethod === m ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878]'
-                          }`}>
-                          {m}
-                        </button>
-                      ))}
-                    </div>
-                  </CustFormField>
+                  <div className="flex-1 min-w-0">
+                    <CustFormField label="결제수단">
+                      <div className="flex flex-wrap gap-[6px]">
+                        {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
+                          <button key={m} onClick={() => setChargeMethod(m)}
+                            className={`px-[13px] py-[8px] rounded-[10px] text-[15px] font-medium whitespace-nowrap transition-colors ${
+                              chargeMethod === m ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878]'
+                            }`}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </CustFormField>
 
-                  <CustFormField label="선결제 일시 (실제 결제한 날짜·시간)">
-                    <div className="flex gap-[8px]">
-                      <input type="date" value={chargeDate} onChange={e => setChargeDate(e.target.value)}
-                        max={new Date().toLocaleDateString('en-CA')}
-                        className={CUST_INPUT_CLS} />
-                      <input type="time" value={chargeTime} onChange={e => setChargeTime(e.target.value)}
-                        className={`${CUST_INPUT_CLS} w-[167px] flex-shrink-0`} />
-                    </div>
-                  </CustFormField>
+                    <CustFormField label="실제 선결제 일시">
+                      <div className="flex gap-[8px]">
+                        {/* 날짜는 팝오버로 고른다 — 브라우저 기본 date 위젯은 Windows 와
+                            macOS 가 서로 다른 모양이라 우리 디자인이 하나도 안 먹는다. */}
+                        <div className="relative flex-1 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => setChargeCalOpen(v => !v)}
+                            className={`${CUST_INPUT_BASE} w-full text-left flex items-center justify-between whitespace-nowrap ${chargeCalOpen ? 'border-ink' : ''}`}
+                          >
+                            <span>{chargeDate ? chargeDate.replace(/-/g, '. ') : '날짜 선택'}</span>
+                            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 ml-[8px]">
+                              <rect x="2" y="3" width="12" height="11" rx="2" stroke="#787878" strokeWidth="1.4"/>
+                              <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="#787878" strokeWidth="1.4" strokeLinecap="round"/>
+                            </svg>
+                          </button>
+                          {chargeCalOpen && (
+                            <DatePopover
+                              value={chargeDate}
+                              max={new Date().toLocaleDateString('en-CA')}
+                              onPick={setChargeDate}
+                              onClose={() => setChargeCalOpen(false)}
+                            />
+                          )}
+                        </div>
+                        {/* 폭은 인라인 style 로 못박는다 — 클래스로 주면 base 의 폭과 또 싸운다 */}
+                        <input type="time" value={chargeTime} onChange={e => setChargeTime(e.target.value)}
+                          style={{ width: 124 }}
+                          className={`${CUST_INPUT_BASE} flex-shrink-0`} />
+                      </div>
+                    </CustFormField>
 
-                  <CustFormField label="비고 (선택)">
-                    <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
-                      placeholder="예: 7월 법인카드" className={CUST_INPUT_CLS} />
-                  </CustFormField>
+                    <CustFormField label="비고 (선택)">
+                      <input value={chargeMemo} onChange={e => setChargeMemo(e.target.value)}
+                        placeholder="예: 7월 법인카드" className={CUST_INPUT_CLS} />
+                    </CustFormField>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] flex-shrink-0 modal-footer">
-                  <button onClick={() => { setChargeOpen(false); setChargeError('') }}
+                <div className="bg-[#FCFCFC] flex items-center justify-end gap-[9px] px-[46px] py-[15px] flex-shrink-0">
+                  <button onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false) }}
                     className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
                     취소
                   </button>
@@ -2107,7 +2306,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       <span className="text-[12px] font-semibold text-ink">{chargeMethod}</span>
                     </div>
                     <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
-                      <span className="text-[12px] text-[#6A635E]">선결제 일시</span>
+                      <span className="text-[12px] text-[#6A635E]">실제 선결제 일시</span>
                       <span className="text-[12px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
                     </div>
                     {chargeMemo && (
@@ -2127,7 +2326,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   )}
                 </div>
 
-                <div className="flex items-center justify-end gap-[9px] px-[62px] py-[15px] flex-shrink-0 modal-footer">
+                <div className="bg-[#FCFCFC] flex items-center justify-end gap-[9px] px-[46px] py-[15px] flex-shrink-0">
                   <button onClick={() => { setChargeConfirm(false); setChargeError('') }}
                     className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
                     취소
@@ -2288,7 +2487,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 )}
               </div>
 
-              <div className="flex items-center justify-end px-[41px] py-[13px] flex-shrink-0 modal-footer">
+              <div className="bg-[#FCFCFC] flex items-center justify-end px-[41px] py-[13px] flex-shrink-0">
                 <button onClick={() => setStatementOpen(false)} className="px-[18px] py-[9px] rounded-[8px] bg-[#E8E4E2] text-[#6A635E] text-[10px] font-semibold hover:opacity-90 transition-opacity">
                   닫기
                 </button>
@@ -2385,12 +2584,17 @@ function CustomerDetailPanel({
   return (
     <div className="h-full flex flex-col">
       <div className="flex-shrink-0 flex flex-col gap-[13px] px-[26px] pt-[26px]">
-        {/* 제목 + 액션 버튼 — 긴 계정명이 버튼과 겹치지 않도록 한 줄 flex, 제목은 말줄임 */}
-        <div className="flex items-center justify-between">
-          <div className="min-w-0">
-            <span className="text-[21px] font-medium text-ink truncate">{selected.account_name}</span>
+        {/* 제목 + 액션 버튼.
+            전엔 <span> 에 truncate 를 걸어 뒀는데 **인라인 요소라 안 먹는다** —
+            overflow/text-overflow 는 블록 박스에서만 동작한다. 그래서 '북구청
+            행정지원과 서무팀' 같은 긴 이름이 잘리지 않고 버튼 밑으로 흘렀다.
+            이름을 자르지 않고 두 줄까지 접어 내린다(line-clamp-2). 버튼은
+            items-start 로 첫 줄에 붙여 두고, 왼쪽 패딩으로 글자와 거리를 둔다. */}
+        <div className="flex items-start justify-between">
+          <div className="min-w-0 flex-1">
+            <span className="block text-[21px] font-medium text-ink leading-[1.3] break-keep line-clamp-2">{selected.account_name}</span>
           </div>
-          <div className="flex-shrink-0 flex items-center gap-[6px]">
+          <div className="flex-shrink-0 flex items-center gap-[6px] pl-[14px]">
             <button onClick={onEdit} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">수정</button>
             <button onClick={onOpenStatement} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">이용내역서</button>
             <button onClick={onQr} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">QR보기</button>
@@ -2450,7 +2654,7 @@ function CustomerDetailPanel({
 
         {/* 탭 */}
         <div className="flex items-center gap-[21px]">
-          {([['orders', '주문내역'], ['charges', '충전이력'], ['members', '구성원']] as const).map(([t, label]) => (
+          {([['charges', '충전이력'], ['orders', '주문내역'], ['members', '구성원']] as const).map(([t, label]) => (
             <button
               key={t}
               onClick={() => setDetailTab(t)}
@@ -2519,8 +2723,12 @@ function CustomerDetailPanel({
                 return (
                   <div key={d.deposit_id} className="bg-[#F2F2F2] rounded-[10px] px-[13px] py-[10px] flex items-center justify-between">
                     <div>
-                      <div className="text-[10px] font-semibold text-ink">{d.payment_method}</div>
-                      <div className="text-[9px] text-[#787878]">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
+                      {/* 날짜를 9px → 12px 로 키웠다. 충전 이력에서 먼저 찾는 건
+                          '언제 넣었나'인데 9px 은 훑어서 읽히는 크기가 아니었다.
+                          결제수단도 10 → 12 로 같이 올린다 — 날짜만 키우면 제목(결제수단)이
+                          부제(날짜)보다 작아져 위아래가 뒤집혀 보인다. */}
+                      <div className="text-[12px] font-semibold text-ink">{d.payment_method}</div>
+                      <div className="text-[12px] text-[#787878] mt-[1px] tabular-nums">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
                     </div>
                     <div className="text-right">
                       <div className={`text-[12px] ${deltaClass(d.amount)}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>

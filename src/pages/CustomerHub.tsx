@@ -128,6 +128,14 @@ interface DetailStats {
   repeatThisMonth:   RateBase
   repeatLastMonth:   RateBase
   repeat3Months:     RateBase
+  /** 이번달에 한 번이라도 주문한 계정 수 — 주문율(%)의 분자 */
+  orderedAccounts:   number
+  /** 이번달에 한 번이라도 주문한 **사람** 수 (주문자명 기준) */
+  orderedPeople:     number
+  /** 이번달 충전 건수 — 선결제액이 몇 번에 나눠 들어왔는지 */
+  depositCount:      number
+  /** 단골 비율 네 칸의 기간 이름. '9월 36명/44명' 처럼 앞에 붙인다 */
+  windowLabels:      { thisMonth: string; lastMonth: string; threeMonths: string }
 }
 
 /** 월 한 칸 — 주문율과 재주문율을 같이 들고 다닌다(차트 두 개가 같은 배열을 쓴다) */
@@ -177,10 +185,24 @@ interface LapsedRegular {
   account_code:  string
   account_name:  string
   orders:        number
+  total_amount:  number
   cycle_days:    number
+  first_ordered_at: string
+  last_ordered_at:  string
   days_since:    number
   lapse_ratio:   number
   contact_phone: string | null
+}
+
+/** '8월 20일 ~ 9월 10일'. 하루만 오갔으면 한쪽만 적는다.
+ *  ⚠️ KST 로 읽는다 — ordered_at 은 UTC 라 그대로 자르면 9시간이 밀린다. */
+function orderSpan(firstIso: string, lastIso: string): string {
+  const fmt = (iso: string) => {
+    const k = new Date(new Date(iso).getTime() + 9 * 3600_000)
+    return `${k.getUTCMonth() + 1}월 ${k.getUTCDate()}일`
+  }
+  const a = fmt(firstIso), b = fmt(lastIso)
+  return a === b ? a : `${a} ~ ${b}`
 }
 
 /** 2.0 → '이틀에 한 번', 7.0 → '일주일에 한 번' — 숫자보다 말이 빨리 읽힌다 */
@@ -242,13 +264,32 @@ function RateBars({ title, hint, data, color }: {
 }
 
 /** 재주문율 칸 — 비율 + "주문자 N명 중 M명" 근거를 같이 보여준다 */
-function repeatCell(label: string, r: RateBase) {
+/** 단골 비율 네 칸에 붙일 기간 이름. '이번달/저번달'이 몇 월인지 글자로 보여준다 */
+function monthWindowLabels(now: Date = new Date()) {
+  const m = (d: Date) => `${d.getMonth() + 1}월`
+  const thisM  = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastM  = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const threeM = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+  return {
+    thisMonth:   m(thisM),
+    lastMonth:   m(lastM),
+    threeMonths: `${m(threeM)}~${m(thisM)}`,
+  }
+}
+
+function repeatCell(label: string, r: RateBase, windowLabel?: string) {
+  // 숫자만 짧게. 정의 문장('전부터 오던 손님')을 네 칸에 다 넣었더니 칸 폭(~190px)을
+  // 넘겨 옆 칸 글자 위로 겹쳤다. 설명은 박스 오른쪽 아래에 한 번만 둔다.
+  //
+  // 앞에 기간 이름을 붙인다 — '이번달/저번달'만으로는 **몇 월인지** 알 수 없어서,
+  // 화면을 캡처해 두거나 월이 바뀐 뒤 다시 보면 어느 달 숫자인지 분간이 안 됐다.
+  // 기간은 **뒤에 괄호로** 둔다. 앞에 붙이면 눈이 '10월'부터 읽어서 숫자가 한 박자
+  // 늦게 들어온다 — 네 칸을 나란히 훑을 때 보고 싶은 건 숫자 쪽이다.
+  const tail = windowLabel ? ` (${windowLabel})` : ''
   return {
     label,
     value: r.rate === null ? EMPTY : `${r.rate}%`,
-    // 여기엔 숫자만. 정의 문장('전부터 오던 손님')을 네 칸에 다 넣었더니 칸 폭(~190px)을
-    // 넘겨 옆 칸 글자 위로 겹쳤다. 설명은 박스 오른쪽 아래에 한 번만 둔다.
-    sub:   r.total === 0 ? '주문 없음' : `주문자 ${r.total}명 중 ${r.repeat}명`,
+    sub:   r.total === 0 ? `주문 없음${tail}` : `${r.repeat}명/${r.total}명${tail}`,
   }
 }
 
@@ -299,6 +340,8 @@ function CustomerDetailPanel() {
             repeatRate: null, repeatBase: { repeat: 0, total: 0 },
             typeRatio: [], topCustomers: [], monthly: [],
             repeatThisMonth: EMPTY_RATE, repeatLastMonth: EMPTY_RATE, repeat3Months: EMPTY_RATE,
+            orderedAccounts: 0, orderedPeople: 0, depositCount: 0,
+            windowLabels: monthWindowLabels(),
           })
           setLoading(false)
         }
@@ -317,7 +360,7 @@ function CustomerDetailPanel() {
 
       const [{ data: monthOrders }, { data: monthDeposits }, { data: allDeposits }, { data: members }, { data: recentOrders }, { data: halfYearOrders }] =
         await Promise.all([
-          supabase.from('orders').select('account_code, total_amount, status').in('account_code', codes).gte('ordered_at', mStart),
+          supabase.from('orders').select('account_code, orderer_name, total_amount, status').in('account_code', codes).gte('ordered_at', mStart),
           supabase.from('deposits').select('amount').in('account_code', codes).gte('created_at', mStart),
           supabase.from('deposits').select('account_code, created_at').in('account_code', codes).order('created_at'),
           supabase.from('account_members').select('account_code').in('account_code', codes),
@@ -421,6 +464,14 @@ function CustomerDetailPanel() {
         halfRows.filter(r => r.ordered_at >= from && (!to || r.ordered_at < to))
 
       const orderedAccounts = Object.keys(countByAccount).length
+      // 사람 수 기준. 거래처(팀) 수로 세면 "한 과에서 10명이 시킨 것"과
+      // "한 과에서 1명이 시킨 것"이 똑같이 1로 잡힌다.
+      // ⚠️ 사람 식별은 orderer_name 뿐이라 동명이인은 한 사람으로 합쳐진다(파일 상단 주석).
+      const orderedPeople = new Set(
+        (monthOrders ?? [])
+          .filter((o: { status: string; orderer_name: string | null }) => o.status !== '취소' && o.orderer_name)
+          .map((o: { orderer_name: string | null }) => o.orderer_name as string),
+      ).size
       const nameByCode = Object.fromEntries(accounts.map(a => [a.account_code, a.account_name]))
 
       const next: DetailStats = {
@@ -438,6 +489,10 @@ function CustomerDetailPanel() {
         repeatThisMonth:    regularRateOf(inRange(thisStart), firstSeen, thisStart),
         repeatLastMonth:    regularRateOf(inRange(lastStart, thisStart), firstSeen, lastStart),
         repeat3Months:      regularRateOf(inRange(threeStart), firstSeen, threeStart),
+        orderedAccounts,
+        orderedPeople,
+        depositCount:       (monthDeposits ?? []).length,
+        windowLabels:       monthWindowLabels(now),
         typeRatio: Object.entries(typeCounts)
           .sort((a, b) => b[1] - a[1])
           .map(([label, count], i) => ({ label, count, color: TYPE_COLORS[i % TYPE_COLORS.length] })),
@@ -461,13 +516,19 @@ function CustomerDetailPanel() {
   // 행을 손으로 쪼개 두면 지표를 하나 더할 때마다 레이아웃을 다시 짜게 된다.
   const cells: { label: string; value: string; sub?: string; link?: boolean; info?: string }[] = stats ? [
     { label: '이번달 주문액',   value: won(stats.monthOrderAmount),   link: true },
-    { label: '이번달 선결제액', value: won(stats.monthDepositAmount), link: true },
-    { label: '총계정수',        value: `${stats.accountCount}팀` },
-    { label: '이번달 신규 계정', value: `${stats.newAccountCount}팀` },
-    { label: '이번달 주문수',   value: `${stats.monthOrderCount}건` },
+    { label: '이번달 선결제액', value: won(stats.monthDepositAmount), link: true,
+      sub: stats.depositCount === 0 ? '충전 없음' : `${stats.depositCount}건 충전` },
+    { label: '총계정수',        value: `${stats.accountCount}개` },
+    { label: '이번달 신규 계정', value: `${stats.newAccountCount}개` },
+    { label: '이번달 주문수',   value: `${stats.monthOrderCount}건`,
+      sub: stats.orderedPeople === 0 ? '주문 없음' : `${stats.orderedPeople}명이 주문` },
     { label: '선결제 주기',     value: stats.depositCycleDays === null ? EMPTY : `${stats.depositCycleDays}일` },
     { label: '총이용자수',      value: `${stats.memberCount}명` },
-    { label: '이번달 주문율',   value: `${stats.monthOrderRate}%` },
+    // 주문율도 사람 기준으로 맞춘다 — 분자가 '주문한 사람'인데 분모가 '계정'이면
+    // 퍼센트가 무엇의 비율인지 말이 안 된다.
+    { label: '이번달 주문율',
+      value: stats.memberCount === 0 ? EMPTY : `${Math.round((stats.orderedPeople / stats.memberCount) * 100)}%`,
+      sub: `${stats.orderedPeople}명/${stats.memberCount}명` },
     // 단골 비율 네 개 — 창(window)만 다른 같은 지표라 **한 줄에 나란히** 둔다.
     // 정의가 "그 기간 이전에도 주문한 적 있는 사람"이라 창 길이에 휘둘리지 않아, 이제 나란히
     // 놓고 비교해도 된다(전 정의로는 창이 길수록 기계적으로 높아져서 거짓 비교가 됐다).
@@ -476,14 +537,14 @@ function CustomerDetailPanel() {
       label: '최근 2주 단골 비율',
       value: stats.repeatRate === null ? EMPTY : `${stats.repeatRate}%`,
       sub:   stats.repeatBase.total === 0
-        ? '최근 2주 주문 없음'
-        : `주문자 ${stats.repeatBase.total}명 중 ${stats.repeatBase.repeat}명`,
+        ? '주문 없음 (최근 2주)'
+        : `${stats.repeatBase.repeat}명/${stats.repeatBase.total}명 (최근 2주)`,
       // 정의는 네 칸 중 첫 칸에만 단다 — 같은 지표라 한 번이면 충분하다
-      info: '해당 기간 이전에도\n주문한 손님 비율이에요',
+      info: '주문자 중 이전에도\n주문했던 손님 비율이에요',
     },
-    repeatCell('이번달 단골 비율',   stats.repeatThisMonth),
-    repeatCell('저번달 단골 비율',   stats.repeatLastMonth),
-    repeatCell('최근 3개월 단골 비율', stats.repeat3Months),
+    repeatCell('이번달 단골 비율',   stats.repeatThisMonth, stats.windowLabels.thisMonth),
+    repeatCell('저번달 단골 비율',   stats.repeatLastMonth, stats.windowLabels.lastMonth),
+    repeatCell('최근 3개월 단골 비율', stats.repeat3Months,  stats.windowLabels.threeMonths),
   ] : []
 
   const typeTotal = stats?.typeRatio.reduce((s, t) => s + t.count, 0) ?? 0
@@ -520,25 +581,34 @@ function CustomerDetailPanel() {
         </div>
       ) : (
         <div className="bg-[#F2F2F2] rounded-[20px] px-[46px] py-[36px] flex items-start gap-[40px]">
-          <div className="flex-1 min-w-0 grid grid-cols-4 gap-x-[26px] gap-y-[36px]">
+          {/* 칸 수를 고정하지 않는다. auto-fit 이라 **들어가는 만큼만** 열을 만들고
+              좁아지면 4 → 3 → 2 로 스스로 접힌다. 화면 폭(breakpoint)이 아니라
+              이 박스의 실제 폭을 따르므로, 옆 차트 칸이 커져도 알아서 맞는다.
+              전엔 grid-cols-4 라 좁아지면 칸이 40px 로 눌렸고, 그 안에서 라벨이
+              한 글자씩 세로로 쌓이며 숫자끼리 겹쳤다. */}
+          <div
+            className="flex-1 min-w-0 grid gap-x-[26px] gap-y-[36px]"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))' }}
+          >
             {cells.map(stat => (
-              <div key={stat.label}>
-                <div className="flex items-center gap-[4px] text-[13px] font-normal text-[#6A635E] mb-[10px]">
+              <div key={stat.label} className="min-w-0">
+                <div className="flex items-center gap-[4px] text-[13px] font-normal text-[#6A635E] mb-[10px] min-w-0">
                   {/* i 는 '단골' 바로 뒤에 붙인다 — 라벨 끝(…비율)에 달면 무엇의 설명인지 흐려진다 */}
-                  {stat.info
-                    ? <>
-                        {stat.label.split('단골')[0]}단골
-                        <InfoTip text={stat.info} label="단골 설명" />
-                        {stat.label.split('단골')[1]}
-                      </>
-                    : stat.label}
+                  {/* 라벨은 잘리면 … 로. min-w-0 이 없으면 flex 자식이 안 줄어들어
+                      truncate 가 먹지 않고 글자가 세로로 쌓인다.
+                      i 는 라벨 **끝**에 붙인다 — 전엔 '단골 ⓘ 비율' 처럼 말 중간을
+                      끊어 놓아서 라벨이 두 토막으로 읽혔다. */}
+                  <span className="truncate">{stat.label}</span>
+                  {stat.info && <InfoTip text={stat.info} label="단골 비율 설명" />}
                   {stat.link && (
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   )}
                 </div>
-                <div className="text-[22px] font-medium text-[#1E1E1E] whitespace-nowrap">{stat.value}</div>
+                {/* truncate = nowrap + overflow hidden + …  —  전엔 nowrap 만 있어서
+                    칸을 넘친 숫자가 옆 칸 글자 위로 그대로 지나갔다 */}
+                <div className="text-[22px] font-medium text-[#1E1E1E] truncate" title={stat.value}>{stat.value}</div>
                 {stat.sub && (
-                  <div className="text-[11px] font-normal text-[#ADADAD] mt-[4px] leading-snug">{stat.sub}</div>
+                  <div className="text-[11px] font-normal text-[#ADADAD] mt-[4px] leading-snug truncate" title={stat.sub}>{stat.sub}</div>
                 )}
               </div>
             ))}
@@ -584,10 +654,10 @@ function CustomerDetailPanel() {
               <span className="w-[58px] text-right">주문</span>
               <span className="w-[96px] text-right">금액</span>
               <span className="w-[112px] text-right flex items-center justify-end gap-[4px]">
-                주문 비중
-                <InfoTip text={'그 거래처 주문 중\n이 분이 차지하는 몫이에요'} label="주문 비중 설명" />
+                계정 내 주문비중
+                <InfoTip text={'그 거래처 주문 중\n이 분이 차지하는 몫이에요'} label="계정 내 주문비중 설명" />
               </span>
-              <span className="flex-1 min-w-0 pl-[14px]">자주 시킨 메뉴</span>
+              <span className="flex-1 min-w-0 pl-[34px]">자주 시킨 메뉴</span>
               <span className="w-[84px] text-right">상태</span>
             </div>
             {topOrderers.map((c, i) => {
@@ -612,7 +682,7 @@ function CustomerDetailPanel() {
                       <>{c.share_pct}%<span className="text-[#ADADAD] font-normal"> ({c.orders}/{c.account_orders})</span></>
                     )}
                   </span>
-                  <span className="flex-1 pl-[14px] min-w-0 text-[12px] font-normal text-[#787878] truncate">
+                  <span className="flex-1 pl-[34px] min-w-0 text-[12px] font-normal text-[#787878] truncate">
                     {c.top_menu
                       ? <>{c.top_menu}<span className="text-[#ADADAD]"> {c.top_menu_count}회</span></>
                       : EMPTY}
@@ -629,7 +699,7 @@ function CustomerDetailPanel() {
         )}
         {topOrderers.some(c => (c.share_pct ?? 0) >= 45 && c.account_members > 1) && (
           <p className="mt-[8px] text-[11px] font-normal text-[#ADADAD]">
-            주문 비중이 빨간 분은 그 거래처 주문의 절반 가까이를 혼자 맡고 있어요. 이 분이 빠지면 그 거래처 주문이 크게 줄어요.
+            계정 내 주문비중이 빨간 분은 그 거래처 주문의 절반 가까이를 혼자 맡고 있어요. 이 분이 빠지면 그 거래처 주문이 크게 줄어요.
           </p>
         )}
       </div>
@@ -648,10 +718,12 @@ function CustomerDetailPanel() {
                 행을 눌러보기 전엔 알 수 없었다. */}
             <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[11px] font-medium text-[#787878]">
               <span className="w-[96px]">주문자</span>
-              <span className="w-[150px]">거래처</span>
+              <span className="w-[130px]">거래처</span>
               <span className="flex-1 min-w-0">평소 주기</span>
+              <span className="w-[96px] text-right">누적 주문액</span>
+              <span className="w-[152px] pl-[18px]">주문 기간</span>
+              <span className="w-[72px] text-right">주문 건수</span>
               <span className="w-[90px] text-right">안 온 기간</span>
-              <span className="w-[72px] text-right">주문</span>
             </div>
             {lapsed.slice(0, 8).map(c => (
               <div
@@ -660,15 +732,26 @@ function CustomerDetailPanel() {
                 className="pressable-row flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer border-t border-[#F2F2F2]"
               >
                 <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
-                <span className="w-[150px] text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
+                <span className="w-[130px] text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
                 <span className="flex-1 min-w-0 text-[12px] font-normal text-[#6A635E] truncate">
                   {cycleWords(c.cycle_days)}
                 </span>
+                {/* 안 온 기간·건수만으로는 '얼마짜리 손님이 빠졌는지'가 안 보인다 —
+                    4건 2만원과 4건 40만원은 같은 줄로 읽힐 이유가 없다. */}
+                <span className="w-[96px] text-right text-[13px] font-medium text-[#1E1E1E] tabular-nums">
+                  {won(c.total_amount)}
+                </span>
+                {/* 첫 주문 ~ 마지막 주문. '안 온 기간'만으로는 그 사람이 **언제**
+                    오던 사람인지 알 수 없다 — 지난달까지 오던 사람과 여름에만
+                    오다 만 사람이 같은 '+100일째'로 보였다. */}
+                <span className="w-[152px] pl-[18px] text-[12px] font-normal text-[#787878] tabular-nums truncate">
+                  {orderSpan(c.first_ordered_at, c.last_ordered_at)}
+                </span>
+                <span className="w-[72px] text-right text-[12px] font-normal text-[#787878] tabular-nums">
+                  {c.orders}건
+                </span>
                 <span className="w-[90px] text-right text-[13px] font-medium text-danger tabular-nums">
                   +{c.days_since}일째
-                </span>
-                <span className="w-[72px] text-right text-[11px] font-normal text-[#ADADAD] tabular-nums">
-                  {c.orders}건 주문
                 </span>
               </div>
             ))}

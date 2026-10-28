@@ -113,15 +113,28 @@ export default function CustomerProfileModal({
             <div className="py-[50px] text-center text-[13px] font-normal text-[#ADADAD]">주문 기록이 없어요</div>
           ) : (
             <>
-              {/* 요약 한 줄 — 관계의 길이와 크기 */}
-              <div className="rounded-[11px] bg-[#F2F2F2] px-[16px] py-[13px] mb-[20px]">
-                <div className="text-[14px] font-medium text-[#1E1E1E]">
+              {/* 요약 — 관계의 길이(문장)와 크기(숫자)를 나눠 놓는다.
+                  전엔 "2건 · 45,900원 · 평균 22,950원 · 평소 17.8일마다" 처럼 가운뎃점으로
+                  이어 붙인 한 줄이었다. 네 개가 전부 같은 크기·같은 색이라 어디까지가
+                  한 값인지 읽으면서 끊어야 했고, '45,900'과 '22,950'이 나란히 있는데
+                  무엇이 누적이고 무엇이 평균인지는 앞의 '평균' 두 글자에만 달려 있었다.
+                  라벨을 값 위에 올려 네 칸으로 나눈다. */}
+              <div className="rounded-[11px] bg-[#F2F2F2] px-[16px] py-[14px] mb-[20px]">
+                <div className="text-[14px] font-medium text-[#1E1E1E] mb-[12px]">
                   {p.first_at?.slice(0, 10)}부터 {p.months}개월째 오고 계세요
                 </div>
-                <div className="text-[12px] font-normal text-[#6A635E] mt-[4px] tabular-nums">
-                  {p.orders}건 · {won(p.amount)}
-                  {p.avg_amount != null && <> · 평균 {won(p.avg_amount)}</>}
-                  {p.cycle_days != null && <> · 평소 {p.cycle_days}일마다</>}
+                <div className="grid grid-cols-2 gap-[7px]">
+                  {([
+                    { label: '주문 횟수',   value: `${p.orders}건` },
+                    { label: '누적 주문액', value: won(p.amount) },
+                    ...(p.avg_amount != null ? [{ label: '평균 주문액', value: won(p.avg_amount) }] : []),
+                    ...(p.cycle_days != null ? [{ label: '주문 주기',   value: `${p.cycle_days}일` }] : []),
+                  ]).map(st => (
+                    <div key={st.label} className="bg-[#FCFCFC] rounded-[9px] px-[12px] py-[9px]">
+                      <div className="text-[11px] font-normal text-[#787878]">{st.label}</div>
+                      <div className="text-[15px] font-semibold text-[#1E1E1E] tabular-nums mt-[2px]">{st.value}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -260,7 +273,7 @@ export default function CustomerProfileModal({
           )}
         </div>
 
-        <div className="flex justify-end px-[28px] py-[16px] modal-footer">
+        <div className="bg-[#FCFCFC] flex justify-end px-[28px] py-[16px]">
           <button
             onClick={onClose}
             className="pressable w-[86px] h-[42px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[14px] font-medium hover:opacity-90"

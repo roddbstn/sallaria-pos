@@ -11,6 +11,7 @@ import PrinterDiagnosticModal, { buildDiagnosticText, type PrinterDiagnostic } f
 import DiagnosticReportModal, { type DiagnosticReport } from '../components/ui/DiagnosticReportModal'
 import * as Sentry from '@sentry/electron/renderer'
 import { usePrinterConfig } from '../hooks/usePrinterConfig'
+import { usePrinterStatus, setPrinterStatus } from '../hooks/usePrinterStatus'
 import {
   PAPER_CHOICES, LINK_CHOICES, BAUD_RATES, DEFAULT_TCP_PORT,
   paperChoice, effectiveLineChars, configProblem,
@@ -304,18 +305,23 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
   /** 시리얼로는 안 잡히지만 OS 는 알고 있는 프린터 — "0개" 라고 거짓말하지 않기 위해 */
   const [osPrinters, setOsPrinters] = useState<OsPrinter[]>([])
   const [selected,  setSelected]  = usePersistentState('printer_port', '')
-  const [connected, setConnected] = useState(false)
+  // 모듈 캐시에서 읽는다 — 화면을 다시 열어도 아는 값부터 보여준다.
+  // null = 아직 모름(끊김이 아니다). hooks/usePrinterStatus.ts 주석 참고.
+  const status    = usePrinterStatus()
+  const connected = status?.connected === true
+  const unknown   = status === null
+  const setConnected = (v: boolean) => setPrinterStatus({ connected: v, queueLength: status?.queueLength ?? 0 })
   const [scanning,  setScanning]  = useState(false)
   const [scanned,   setScanned]   = useState(false)
-  const [testing,   setTesting]   = useState(false)
 
   // 문서별 매수 — 0이면 출력 안 함
   const [copies, setCopies] = usePersistentState('print_copies', { kitchen: 1, customer: 0, qr: 0 })
 
   useEffect(() => {
     api().getSettings?.().then(s => { if (s?.printer?.portName) setSelected(s.printer.portName) })
-    api().onPrinterStatus?.(s => setConnected(s.connected))
-    return () => api().offPrinterStatus?.()
+    // printer:status 구독은 usePrinterStatus 가 **한 곳에서만** 건다.
+    // 여기서 또 걸면 preload 의 offPrinterStatus(removeAllListeners)가
+    // 이 화면을 떠날 때 다른 구독까지 같이 끊는다.
   }, [])
 
   /** 지금 출력 대상의 이름 — 시리얼이면 COM 포트, USB 면 OS 프린터 이름 */
@@ -365,13 +371,6 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
     showToast(r?.ok ? '프린터에 연결됐어요' : `연결 실패: ${r?.error ?? '알 수 없는 오류'}`)
   }
 
-  async function test() {
-    setTesting(true)
-    const r = await api().testPrint?.()
-    setTesting(false)
-    showToast(r?.ok ? '테스트 영수증을 출력했어요' : `출력 실패: ${r?.error ?? '프린터를 먼저 연결해주세요'}`)
-  }
-
   const diagnostic: PrinterDiagnostic = {
     storeName, connected, selected, ports, copies, appVersion: diagAppVersion,
     paper: {
@@ -402,23 +401,30 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
     <div>
       <HubSection
         title="프린터 연결"
-        action={<SmallButton onClick={test} disabled={!connected || testing}>{testing ? '출력 중…' : '테스트 출력'}</SmallButton>}
       />
 
       {/* 연결 상태 */}
+      {/* '아직 모름'을 끊김과 구분한다. 전엔 둘 다 빨간 글씨라, 화면을 다시 열 때마다
+          멀쩡히 연결된 프린터를 두고 "아직 연결 전이에요"가 몇 초씩 떴다. */}
       <div className={`rounded-[11px] px-[20px] py-[14px] mb-[20px] flex items-center gap-[9px] ${
-        connected ? 'bg-[#E6F4EC]' : 'bg-[#FFEFEF]'
+        unknown ? 'bg-[#F2F2F2]' : connected ? 'bg-[#E6F4EC]' : 'bg-[#FFEFEF]'
       }`}>
-        <span className={`w-[8px] h-[8px] rounded-full flex-shrink-0 ${connected ? 'bg-[#00DD67]' : 'bg-[#C92A2A]'}`} />
-        <span className={`text-[13px] ${connected ? 'text-[#017333]' : 'text-[#C92A2A]'}`}>
+        <span className={`w-[8px] h-[8px] rounded-full flex-shrink-0 ${
+          unknown ? 'bg-[#ADADAD]' : connected ? 'bg-[#00DD67]' : 'bg-[#C92A2A]'
+        }`} />
+        <span className={`text-[13px] ${
+          unknown ? 'text-[#787878]' : connected ? 'text-[#017333]' : 'text-[#C92A2A]'
+        }`}>
           {/* 연결 대상 이름은 시리얼이면 포트, USB 면 OS 프린터 이름이다.
               전엔 selected(포트)만 썼더니 USB 로 연결했을 때 '연결됨 — ' 처럼
               뒤가 비어 보였다. 구분선(—)도 뺀다. */}
-          {connected
-            ? `연결됨 ${targetLabel}`
-            : targetLabel
-              ? `${targetLabel} 를 찾았지만 아직 연결 전이에요`
-              : '연결된 프린터가 없어요'}
+          {unknown
+            ? (targetLabel ? `${targetLabel} 상태 확인 중…` : '프린터 상태 확인 중…')
+            : connected
+              ? `연결됨 ${targetLabel}`
+              : targetLabel
+                ? `${targetLabel} 를 찾았지만 아직 연결 전이에요`
+                : '연결된 프린터가 없어요'}
         </span>
       </div>
 
@@ -441,7 +447,9 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
       <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mb-[12px]">
         {ports.filter(x => !isSystemPort(x.path)).length === 0 ? (
           <div className="bg-[#FCFCFC] px-[20px] py-[26px]">
-            <div className="text-center text-[13px] font-normal text-[#ADADAD]">
+            {/* 바탕 없이 회색 글자만 두니 "빈 영역"처럼 보여서 안내가 눈에 안 들어왔다.
+                한 단계 어두운 바탕을 깔아 '지금 이게 상태다'로 읽히게 한다. */}
+            <div className="rounded-[10px] bg-[#E8E4E2] px-[16px] py-[18px] text-center text-[13px] font-normal text-[#6A635E]">
               연결된 프린터를 못 찾았어요
             </div>
 
@@ -452,17 +460,13 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                 이제 메인 프로세스가 스풀러/CUPS 에 원시 ESC/POS 를 보낼 수 있다. */}
             {osPrinters.length > 0 && (
               <div className="mt-[18px]">
-                {/* ⚠️ "꽂힌" 이 아니라 "등록된" 이다.
-                    USB 프린터를 뽑아도 CUPS/스풀러의 큐는 남아서 목록에 계속 보인다.
-                    전엔 그걸 "USB로 꽂힌 프린터 1개" 라고 적어서, 케이블을 뽑아둔
-                    상태에서도 꽂혀 있는 것처럼 읽혔다. 지금 쓸 수 있는 것만 따로 센다. */}
+                {/* ⚠️ "꽂힌" 이 아니라 "등록된" 이다 — USB 프린터를 뽑아도
+                    CUPS/스풀러의 큐는 남아서 목록에 계속 보인다.
+                    꺼진 기기가 몇 개인지는 여기서 빨갛게 세지 않는다. 바로 아래
+                    목록의 각 줄에 '연결 안 됨' 배지로 이미 적혀 있고, 머리줄에서까지
+                    빨간 글씨로 말하면 같은 말을 두 번 하면서 경고처럼만 읽힌다. */}
                 <div className="text-[12px] font-medium text-[#6A635E] mb-[8px]">
-                  이 컴퓨터에 등록된 프린터 {osPrinters.length}개
-                  {osPrinters.some(o => o.offline) && (
-                    <span className="font-normal text-[#C92A2A]">
-                      {' '}· 지금 연결된 건 {osPrinters.filter(o => !o.offline).length}개
-                    </span>
-                  )}
+                  등록된 프린터 {osPrinters.length}개
                 </div>
                 <div className="rounded-[10px] border border-[#E8E4E2] overflow-hidden">
                   {osPrinters.map((op, i) => {
@@ -527,6 +531,73 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
             </button>
           )
         })}
+      </div>
+
+      {/* ── 일반 프린터(A4) — 영수증 프린터와 **따로** 둔다 ──
+          감열 영수증기와 A4 레이저를 같이 쓰는 매장이 많다. 전엔 영수증만 설정에
+          저장해 두고 A4(QR 종이)는 뽑을 때마다 브라우저 인쇄 대화상자에서 손으로
+          골라야 했다 — 같은 앱 안에서 앞뒤가 안 맞는 동작이었다.
+          여기서 골라 두면 대화상자 없이 바로 나간다. 비워 두면 예전 그대로다. */}
+      <div className="mt-[26px]">
+        <div className="flex items-center justify-between mb-[8px]">
+          <span className="text-[12px] font-medium text-[#6A635E]">
+            일반 프린터 (QR 종이·A4)
+          </span>
+          {cfg.docPrinter && (
+            <button
+              onClick={() => patch({ docPrinter: '' })}
+              className="text-[12px] font-normal text-[#6A635E] hover:text-ink transition-colors"
+            >
+              해제
+            </button>
+          )}
+        </div>
+
+        {osPrinters.length === 0 ? (
+          <div className="rounded-[10px] bg-[#F2F2F2] px-[16px] py-[14px] text-[12px] font-normal text-[#787878]">
+            이 컴퓨터에 등록된 프린터가 없어요. 안 골라도 괜찮아요 — 그때는 인쇄 창이 떠요.
+          </div>
+        ) : (
+          <div className="rounded-[10px] border border-[#E8E4E2] overflow-hidden">
+            {osPrinters.map((op, i) => {
+              const on = cfg.docPrinter === op.name
+              return (
+                <button
+                  key={op.name}
+                  onClick={() => patch({ docPrinter: on ? '' : op.name })}
+                  disabled={op.offline}
+                  className={`pressable-row w-full flex items-center px-[16px] h-[48px] bg-[#FCFCFC] text-left hover:bg-[#F9F9F9] disabled:hover:bg-[#FCFCFC] disabled:cursor-not-allowed ${
+                    i > 0 ? 'border-t border-[#F2F2F2]' : ''
+                  }`}
+                >
+                  <span className={`w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                    op.offline ? 'border-[#E0E0E0]' : on ? 'border-[#6A635E]' : 'border-[#ADADAD]'
+                  }`}>
+                    {on && !op.offline && <span className="w-[7px] h-[7px] rounded-full bg-[#6A635E]" />}
+                  </span>
+                  <span className="min-w-0 ml-[11px] flex-1">
+                    <span className={`block text-[13px] truncate ${op.offline ? 'text-[#ADADAD]' : 'text-[#1E1E1E]'}`}>
+                      {op.displayName}
+                    </span>
+                    <span className="block text-[11px] text-[#787878] truncate">
+                      {op.offline ? '케이블이 빠졌거나 전원이 꺼져 있어요' : 'QR 종이를 여기로 보내요'}
+                    </span>
+                  </span>
+                  {/* 영수증 프린터로도 같은 기기를 골라 둔 경우 — 감열지에 A4 를 보내면
+                      종이만 버린다. 막지는 않되(쓰는 방식이 매장마다 다르다) 알려준다. */}
+                  {on && cfg.osPrinter === op.name && (
+                    <span className="flex-shrink-0 ml-[10px] text-[11px] font-medium text-[#B35C00] px-[8px] py-[3px] rounded-[6px] bg-[#FFF4E8]">
+                      영수증과 같은 기기
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <div className="text-[11px] font-normal text-[#ADADAD] mt-[6px] leading-relaxed">
+          안 고르면 QR 종이를 뽑을 때 인쇄 창이 떠요.
+        </div>
       </div>
 
       {/* 용지 넓이와 연결 수단 — 출력 비율이 여기서 정해진다.
@@ -669,7 +740,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
     <div>
       <HubSection title="영수증 · 증빙" />
 
-      <Group title="영수증 모양">
+      <Group title="영수증 양식">
         <PaperWidthRow />
         <Row label="메뉴명 글자 크기">
           <SegButtons value={menuSize} options={SIZE_OPTS} onChange={v => patch({ menuSize: v })} />

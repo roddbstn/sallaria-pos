@@ -226,7 +226,7 @@ export default function MonthlyBalanceModal({ storeId, currentTotal, onClose }: 
           )}
         </div>
 
-        <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex justify-end items-center gap-[8px]">
+        <div className="bg-[#FCFCFC] flex-shrink-0 px-[28px] py-[14px] flex justify-end items-center gap-[8px]">
           {/* 거래처 필터 — 위로 펼친다(푸터라 아래가 없다) */}
           <div className="relative">
             <button

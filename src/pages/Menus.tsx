@@ -504,6 +504,7 @@ export default function Menus() {
   // 메뉴 추가/수정 모달 (Figma node 491:2237 "메뉴 상세")
   // 메뉴 추가/수정 폼 — 상태와 저장 로직은 use-menu-form 훅에 있다 (ProductHub 와 공용)
   const menuForm = useMenuForm({
+    storeId,
     onCreated: menu => { setMenus(prev => [...prev, menu]); },
     onUpdated: menu => {
       applyLocalUpdate(menu)
@@ -585,8 +586,9 @@ export default function Menus() {
   //
   // 전에는 fetchCategories() 가 끝나야 그 id 들로 메뉴를 받았다(2단 웨이터폴).
   // 왕복 한 번이 90~120ms, 가끔 1초가 넘으므로 단계를 하나 줄이는 게 그대로 체감이 된다.
-  // categories!inner 로 매장을 직접 걸면 카테고리를 기다릴 필요가 없다
-  // — 건수가 같은 것을 확인했다(155건).
+  // 2026-10-26: menus.store_id 가 생기면서 categories!inner 조인도 없앴다.
+  // 조인이 있을 땐 **카테고리 없는 메뉴가 통째로 빠졌다** — inner join 이라서다.
+  // 이제 카테고리를 안 고른 메뉴도 목록에 뜬다(화면에선 '미분류'로 묶인다).
   async function fetchMenus() {
     if (!storeId) { setMenus([]); return }
     const { data } = await supabase
@@ -594,7 +596,6 @@ export default function Menus() {
       .select(`
         id, category_id, name, description, base_price, image_url,
         is_sold_out, sold_out_until, is_hidden, display_order, is_popular, is_recommended, is_new,
-        categories!inner ( store_id ),
         menu_option_groups (
           display_order,
           option_groups (
@@ -605,7 +606,7 @@ export default function Menus() {
           )
         )
       `)
-      .eq('categories.store_id', storeId)
+      .eq('store_id', storeId)
       .order('display_order')
     const mapped = (data ?? []).map(row => mapMenuRow(row))
     setMenus(mapped)
@@ -858,6 +859,8 @@ export default function Menus() {
     const maxOrder = menus.reduce((m, mn) => Math.max(m, mn.order), 0)
 
     const inserts = validRows.map((r, i) => ({
+      // store_id 가 소유의 기준이다. category_id 는 비어 있어도 된다 — '미분류'로 들어간다.
+      store_id:      storeId,
       category_id:   categoryId || null,
       name:          r.name.trim(),
       base_price:    parseInt(r.price, 10),
@@ -918,7 +921,6 @@ export default function Menus() {
     const price = parseInt(detailForm.price, 10)
     if (!detailForm.name.trim()) { setAddError('메뉴명을 입력해주세요.'); return }
     if (isNaN(price) || price < 0)  { setAddError('가격을 올바르게 입력해주세요.'); return }
-
     let categoryId = addCategoryId
     if (addingNewCat) {
       if (!newCatInModal.trim()) { setAddError('카테고리 이름을 입력해주세요.'); return }
@@ -949,6 +951,7 @@ export default function Menus() {
     const { data, error } = await supabase
       .from('menus')
       .insert({
+        store_id:      storeId,
         category_id:   categoryId || null,
         name:          detailForm.name.trim(),
         description:   detailForm.description.trim() || null,
@@ -1231,6 +1234,19 @@ export default function Menus() {
             return acc
           }, [])
 
+        // 카테고리를 안 고른 메뉴 — 맨 뒤에 '미분류'로 묶는다.
+        // 2026-10-26 menus.store_id 가 생기기 전엔 이런 메뉴를 만들 수도, 조회할 수도
+        // 없었다(RLS 가 category_id 로 소유를 판단했다). 이제 만들 수 있으니 보일 자리도
+        // 있어야 한다 — 안 그러면 "저장은 됐다는데 어디에도 없는" 메뉴가 된다.
+        // 진짜 카테고리가 아니므로 편집/순서변경 대상인 좌측 카테고리 카드에는 넣지 않는다.
+        const uncategorized = menus.filter(m => !m.categoryId)
+        if (uncategorized.length > 0) {
+          individualGroups.push({
+            cat: { id: '__uncategorized__', name: '미분류', displayOrder: Number.MAX_SAFE_INTEGER },
+            items: uncategorized,
+          })
+        }
+
         return (
           <div className="relative bg-gray-100 flex flex-1 overflow-hidden min-h-0">
             {/* 좌측: 카테고리 카드 그리드 / 개별메뉴 그리드 / 편집모드 그리드 — 검색창+버튼 영역은 고정, 그 아래만 스크롤 */}
@@ -1250,24 +1266,24 @@ export default function Menus() {
 
               {/* 카테고리 추가 / 메뉴 추가 — 현재 모드에 맞는 것만 노출 + "모드 변경"/화면편집. flex-gap으로 버튼 간 간격 항상 동일 — 편집모드일 땐 숨김 */}
               {!menuEditMode && (
-                <div className="absolute flex items-center gap-[26px]" style={{ right: 26, top: 3, zIndex: 11 }}>
+                <div className="absolute flex items-center gap-[8px]" style={{ right: 17, top: -2, zIndex: 11 }}>
                   <button
                     onClick={toggleMenuViewMode}
-                    className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                    className="hover-chip flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                   >
                     모드 변경
                     <img src={rotateIcon} alt="" width={13} height={13} />
                   </button>
                   <button
                     onClick={enterMenuEditMode}
-                    className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                    className="hover-chip flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                   >
                     화면 편집 ✎
                   </button>
                   {menuViewMode === 'category' ? (
                     <button
                       onClick={() => setCategoryAddOpen(true)}
-                      className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                      className="hover-chip flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                     >
                       카테고리 추가
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1275,7 +1291,7 @@ export default function Menus() {
                   ) : (
                     <button
                       onClick={openMenuFormAdd}
-                      className="flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink transition-colors"
+                      className="hover-chip flex items-center gap-[4px] text-[13px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                     >
                       메뉴 추가
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -2418,7 +2434,7 @@ export default function Menus() {
               </div>
 
               {/* 푸터 */}
-              <div className="flex gap-2 px-8 py-4 flex-shrink-0 modal-footer">
+              <div className="bg-white flex gap-2 px-8 py-4 flex-shrink-0">
                 <button onClick={() => setCatEditModalId(null)}
                   className="flex-1 py-3 bg-gray-100 text-ink rounded-lg text-[13px] font-semibold hover:bg-gray-200 transition-colors">
                   취소
@@ -2508,7 +2524,7 @@ export default function Menus() {
                 const allMapped = catMenus.every(m => !!catDeleteRemap[m.code])
                 const canDelete = catMenus.length === 0 || allMapped
                 return (
-                  <div className="flex gap-2.5 px-5 py-3 flex-shrink-0 modal-footer">
+                  <div className="bg-white flex gap-2.5 px-5 py-3 flex-shrink-0">
                     <button onClick={() => setCatDeleteModalId(null)}
                       className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold hover:bg-gray-200 transition-colors">
                       취소
@@ -2753,7 +2769,7 @@ export default function Menus() {
             )}
 
             {/* 푸터 */}
-            <div className="flex justify-end px-5 py-4 flex-shrink-0 modal-footer">
+            <div className="bg-white flex justify-end px-5 py-4 flex-shrink-0">
               {addModalTab === 'bulk' ? (
                 <ModalCTAButton onClick={confirmAddMenu} disabled={addLoading}>
                   {addLoading ? '저장 중...' : `${addRows.filter(r => r.name.trim() && r.price.trim()).length}개 추가`}
@@ -2834,17 +2850,29 @@ export default function Menus() {
       {/* 삭제 확인 다이얼로그 */}
       {/* 바깥 클릭으로 닫지 않는다(의도) — 삭제는 되돌릴 수 없다. ModalOverlay 를 쓰지 않는 이유다. */}
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-          <div className="modal-in bg-white rounded-2xl shadow-2xl w-[320px] p-6">
-            <h3 className="text-[11px] font-bold text-ink mb-2">
-              {deleteConfirm === 'bulk'
-                ? `${checked.size}개 메뉴를 삭제할까요?`
-                : `'${selected?.name}'을(를) 삭제할까요?`}
-            </h3>
-            <p className="text-[11px] text-gray-text mb-6">삭제하면 되돌릴 수 없습니다.</p>
-            <div className="flex gap-2.5">
-              <button onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-2 border border-gray-border rounded-xl text-[11px] font-semibold text-gray-text hover:bg-gray-bg">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          {/* 매장 설정의 로그아웃·회원탈퇴 확인창과 같은 시스템 —
+              #FCFCFC · rounded-18 · 본문/푸터 분리 · 우측 CTA.
+              전엔 흰 카드에 11px 글씨(본문보다도 작아 경고가 작게 읽혔다)와
+              bg-danger 정색 빨강 버튼이었다. 지금 시스템의 danger 는 연분홍 바탕에
+              빨강 글씨(#FFEFEF/#FF676F)다 — 주문 거부·로그아웃과 같은 결. */}
+          <div className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[420px] max-w-[92vw] flex flex-col overflow-hidden">
+            <div className="px-[28px] pt-[28px] pb-[22px]">
+              <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[6px]">
+                {deleteConfirm === 'bulk'
+                  ? `메뉴 ${checked.size}개를 삭제할까요?`
+                  : `'${selected?.name}'을(를) 삭제할까요?`}
+              </div>
+              <div className="text-[13px] font-normal text-[#787878] leading-relaxed">
+                삭제하면 되돌릴 수 없어요. 지난 주문 기록의 메뉴 이름과 금액은
+                주문 시점 그대로 남습니다.
+              </div>
+            </div>
+            <div className="px-[28px] py-[16px] flex justify-end gap-[10px] modal-footer">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="h-[50px] px-[26px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all"
+              >
                 취소
               </button>
               <button
@@ -2852,7 +2880,8 @@ export default function Menus() {
                   if (deleteConfirm === 'bulk') deleteMenus([...checked])
                   else if (selected) deleteMenus([selected.code])
                 }}
-                className="flex-1 py-2 bg-danger text-white rounded-xl text-[11px] font-bold hover:bg-red-700">
+                className="h-[50px] px-[26px] rounded-[13px] bg-[#FFEFEF] text-[#FF676F] text-[16px] font-medium hover:brightness-95 transition-all"
+              >
                 삭제
               </button>
             </div>
@@ -3204,7 +3233,7 @@ function OptionGroupPanel({
               </div>
             </div>
             {/* 푸터 */}
-            <div className="modal-footer flex gap-2.5 px-6 pt-5 pb-6">
+            <div className="bg-white flex gap-2.5 px-6 pt-5 pb-6">
               {!deleteGroupConfirm ? (
                 <button onClick={() => setDeleteGroupConfirm(true)}
                   className="flex-1 py-2.5 rounded-xl bg-red-50 text-danger font-bold text-[13px] hover:bg-red-100 transition-colors focus:outline-none">

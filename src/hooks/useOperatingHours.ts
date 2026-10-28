@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { kstDateString } from '../lib/datetime'
 
 type DayHours = { enabled: boolean; open: string; close: string }
 type OperatingHours = Record<string, DayHours>
@@ -84,7 +85,8 @@ export function useOperatingHours(
         setRegularHolidays((data.regular_holidays as RegularHolidaysValue | null) ?? null)
 
         const ov = data.today_override as { date: string; type: string; time?: string } | null
-        const today = new Date().toISOString().slice(0, 10)
+        // DB 의 auto_close_stores_by_schedule() 이 KST 로 비교하므로 여기도 KST 여야 한다
+        const today = kstDateString()
         if (ov?.date === today) {
           const t = ov.type as 'holiday' | 'early' | 'force_open'
           setOverrideType(t)
@@ -102,7 +104,7 @@ export function useOperatingHours(
       .from('store_vacation_days')
       .select('id, date, type, open_time, close_time')
       .eq('store_id', storeId)
-      .gte('date', new Date().toISOString().slice(0, 10))
+      .gte('date', kstDateString())
       .order('date')
       .then(({ data }) => {
         if (!data) return
@@ -134,7 +136,10 @@ export function useOperatingHours(
   // ── 헬퍼: today_override DB 업데이트 ─────────────────────────────────────────
   async function applyOverride(type: 'holiday' | 'early' | 'force_open', time?: string) {
     if (!storeId) return
-    const today    = new Date().toISOString().slice(0, 10)
+    // ⚠️ 여기가 2026-10-27 사고의 진원지였다 — UTC 날짜로 저장하면
+    //    KST 00:00~09:00 사이에 '어제' 날짜가 박히고, DB 스케줄러가 그 override 를
+    //    버린 뒤 1분 안에 가게를 다시 닫아버린다. (lib/datetime.ts 주석 참고)
+    const today    = kstDateString()
     const override = { date: today, type, ...(time ? { time } : {}) }
     const { error } = await supabase.from('stores').update({ today_override: override }).eq('id', storeId)
     if (error) { showToast(`설정 저장 실패: ${error.message}`); return }
@@ -292,7 +297,7 @@ export function useOperatingHours(
   // 휴가 예약 저장
   async function saveVacationDays(days: VacationDay[]) {
     if (!storeId) return
-    const today = new Date().toISOString().slice(0, 10)
+    const today = kstDateString()
 
     // 기존 미래 휴가 모두 삭제 후 재삽입 (간단한 전략)
     await supabase

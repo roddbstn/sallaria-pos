@@ -34,13 +34,15 @@ const EMPTY_FORM: MenuFormValues = {
 }
 
 export interface UseMenuFormOptions {
+  /** 메뉴의 소유 매장. menus.store_id 로 들어가고 RLS 가 이걸로 소유를 판단한다 */
+  storeId: string | null
   /** 저장 결과를 화면에 반영할 방법 — 화면마다 다르다 */
   onCreated: (menu: MenuDetail) => void
   onUpdated: (menu: MenuDetail) => void
   showToast?: (msg: string) => void
 }
 
-export function useMenuForm({ onCreated, onUpdated, showToast }: UseMenuFormOptions) {
+export function useMenuForm({ storeId, onCreated, onUpdated, showToast }: UseMenuFormOptions) {
   const [mode,    setMode]    = useState<'add' | 'edit' | null>(null)
   const [editing, setEditing] = useState<MenuDetail | null>(null)
   const [form,    setForm]    = useState<MenuFormValues>(EMPTY_FORM)
@@ -137,6 +139,7 @@ export function useMenuForm({ onCreated, onUpdated, showToast }: UseMenuFormOpti
       base_price:     priceNum,
       description:    form.description || null,
       image_url:      imageUrl ?? null,
+      store_id:       storeId,
       category_id:    form.categoryId || null,
       is_hidden:      !form.active,
       is_popular:     form.isPopular,

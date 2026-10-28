@@ -110,7 +110,7 @@ export default function RegularHolidayModal({ initial, onConfirm, onClose }: Pro
         </div>
 
         {/* 하단 바 — Figma 664:775: 윗방향 그림자가 있는 구분선 + 닫기/확인 */}
-        <div className="flex-shrink-0 modal-footer px-[34px] py-[16px] flex justify-end gap-[10px]">
+        <div className="bg-[#FCFCFC] flex-shrink-0 px-[34px] py-[16px] flex justify-end gap-[10px]">
           <button
             type="button"
             onClick={onClose}

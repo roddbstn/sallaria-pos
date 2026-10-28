@@ -170,7 +170,7 @@ export default function VerbalOrderModal({
               )
             )
           `)
-          .in('category_id', catList.map(c => c.id))
+          .eq('store_id', storeId)
           .eq('is_hidden', false)
           .order('display_order')
         setMenus((menuRows ?? []).map(mapMenu))
@@ -566,7 +566,7 @@ export default function VerbalOrderModal({
                 </div>
 
                 {/* 우하단 고정: 담긴 메뉴 요약 칩(제거 가능) + 총액 + 주문하기 CTA — 한 화면에서 바로 클릭 */}
-                <div className="flex-shrink-0 bg-gray-bg modal-footer">
+                <div className="flex-shrink-0 bg-white">
                   {cart.length > 0 && (
                     <div className="flex gap-2 overflow-x-auto px-4 py-2.5">
                       {cart.map(c => (
