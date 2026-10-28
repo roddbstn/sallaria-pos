@@ -6,7 +6,7 @@ import { supabase } from './lib/supabase'
 import { checkPhoneLoginState, PASSWORD_MIN_LEN } from './lib/auth-helpers'
 import { track } from './lib/firebase'
 import { StoreContext, type StoreSession } from './lib/store-context'
-import { playOrderSound, startOrderAlarm, stopOrderAlarm, getSavedVolume } from './lib/sound'
+import { playOrderSound, startOrderAlarm, stopOrderAlarm, getSavedVolume, alertKindOf } from './lib/sound'
 import { readSetting } from './hooks/usePersistentState'
 
 import storeIcon from './assets/icons/store.svg'
@@ -810,11 +810,16 @@ export default function App() {
   const prevQueueLen = useRef(0)
   useEffect(() => {
     if (queue.length > prevQueueLen.current) {
+      // 이용방법별로 다른 소리를 낸다 — 소리만 듣고 배달인지 포장인지 알아야
+      // 주방이 화면을 보기 전에 움직인다. 전용 파일이 없는 종류는 기본음이다.
+      // 새 주문은 큐 뒤에 붙으므로 맨 뒤가 방금 들어온 것이다.
+      const latest = queue[queue.length - 1]
+      const kind   = latest ? alertKindOf(latest.method) : undefined
       const mode = readSetting<'count' | 'until-ack'>('alarm_mode', 'count')
       if (mode === 'until-ack') {
-        startOrderAlarm(getSavedVolume(), readSetting('repeat_sec', 10))
+        startOrderAlarm(getSavedVolume(), readSetting('repeat_sec', 10), kind)
       } else {
-        playOrderSound()
+        playOrderSound(undefined, undefined, kind)
       }
     }
     prevQueueLen.current = queue.length

@@ -36,6 +36,17 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src'),
     build: {
+      // 알림음 mp3 는 **반드시 data URL 로 인라인**한다.
+      //
+      // 프로덕션은 file:// + ASAR 이라 별도 파일로 떨어지면 경로가 불안하다.
+      // 전에는 그래서 base64 를 sound.ts 에 손으로 붙여놨었다(65,000자).
+      // import.meta.glob 의 query:'?inline' 은 인라인시키지 못하고 에셋 URL 뒤에
+      // '?inline' 을 **문자로 붙여버린다** — 그래서 여기서 정한다.
+      //
+      // 함수 형태라 mp3 만 고른다. true=인라인 강제, undefined=기본 규칙(4KB).
+      // 폰트·히어로 이미지는 기본 규칙 그대로 외부 파일로 둔다.
+      assetsInlineLimit: (filePath: string) =>
+        filePath.endsWith('.mp3') ? true : undefined,
       rollupOptions: {
         input: resolve(__dirname, 'src/index.html'),
       },

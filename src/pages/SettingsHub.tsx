@@ -5,7 +5,10 @@ import { usePersistentState } from '../hooks/usePersistentState'
 import CountStepper from '../components/ui/CountStepper'
 import QrPrintPanel from './QrPrintPanel'
 import HubLayout, { HubSection, type HubNavItem } from '../components/hub/HubLayout'
-import { playOrderSound, startOrderAlarm, stopOrderAlarm, getSavedVolume, saveVolume } from '../lib/sound'
+import {
+  playOrderSound, startOrderAlarm, stopOrderAlarm, getSavedVolume, saveVolume,
+  hasKindSound, KIND_LABEL, type AlertKind,
+} from '../lib/sound'
 import { useStore } from '../lib/store-context'
 import ReceiptPreview, { DEFAULT_RECEIPT_CONFIG, type ReceiptPreviewConfig } from '../components/ui/ReceiptPreview'
 import PrinterDiagnosticModal, { buildDiagnosticText, type PrinterDiagnostic } from '../components/ui/PrinterDiagnosticModal'
@@ -864,6 +867,11 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   // 설정 화면을 떠날 때 미리 듣기가 계속 울리면 안 된다
   useEffect(() => () => stopOrderAlarm(), [])
 
+  // 주문 종류별 알림음 — 종류마다 한 번씩 들어볼 수 있어야 한다.
+  // 여기서는 방식(횟수·반복)을 따르지 않고 **1회만** 낸다. 어떤 소리인지 확인하는
+  // 자리이고, 세 개를 연달아 눌러 비교하는 게 목적이라 반복이 방해가 된다.
+  const KINDS: AlertKind[] = ['delivery', 'takeout', 'dinein']
+
   async function checkUpdate() {
     setChecking(true); setUpdateMsg('')
     try {
@@ -962,6 +970,21 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
           />
           <span className="text-[12px] text-[#787878] w-[26px] text-right">{volume}</span>
           <SmallButton onClick={previewAlarm}>{previewing ? '멈추기' : '미리 듣기'}</SmallButton>
+        </Row>
+        <Row
+          label="주문 종류별 알림음"
+          hint={
+            KINDS.every(hasKindSound)
+              ? '배달·포장·내점을 다른 소리로 알려드려요'
+              : '소리가 준비되지 않은 종류는 기본 알림음으로 울려요'
+          }
+        >
+          {KINDS.map(k => (
+            <SmallButton key={k} onClick={() => playOrderSound(volume, 1, k)}>
+              {KIND_LABEL[k]}
+              {!hasKindSound(k) && <span className="text-[#ADADAD]"> · 기본</span>}
+            </SmallButton>
+          ))}
         </Row>
         <Row label="알림 방식" hint="피크타임에 주문음을 한 번 놓치면 그 주문은 증발해요">
           <SegButtons
