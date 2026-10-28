@@ -42,7 +42,9 @@ export default function InfoTip({ text, label = '설명 보기' }: {
             bottom: (window.innerHeight - at.y) / rootZoom() + 6,
           }}
         >
-          <span className="block text-[12px] font-semibold text-ink text-center leading-[1.2] whitespace-pre-line">
+          {/* max-w 가 없으면 한 줄짜리 긴 문장이 들어왔을 때 말풍선이 그만큼
+              옆으로 늘어나 화면 밖으로 나간다. \n 이 없어도 알아서 접히게 둔다. */}
+          <span className="block max-w-[240px] text-[12px] font-semibold text-ink text-center leading-[1.35] whitespace-pre-line break-keep">
             {text}
           </span>
         </div>

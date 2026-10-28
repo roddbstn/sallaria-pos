@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import Working from './Working'
 
 // 되돌릴 수 없는 일을 하기 전에 한 번 묻는 공용 다이얼로그.
 // Figma 491:1293.
@@ -73,7 +74,7 @@ export default function ConfirmDialog({
               tone === 'danger' ? 'bg-[#C92A2A]' : 'bg-[#2C261F]'
             }`}
           >
-            {busy ? '처리 중…' : confirmLabel}
+            {busy ? <Working label="처리 중" /> : confirmLabel}
           </button>
         </div>
       </div>

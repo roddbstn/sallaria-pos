@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import Working from '../components/ui/Working'
 import { HubSection } from '../components/hub/HubLayout'
 import { supabase, type DbAccount } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
@@ -312,7 +313,7 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                 disabled={sendable.length === 0 || sending || !draft.trim()}
                 className="mt-[14px] w-full h-[44px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[14px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
               >
-                {sending ? '보내는 중…' : `${sendable.length}명에게 보내기`}
+                {sending ? <Working label="보내는 중" /> : `${sendable.length}명에게 보내기`}
               </button>
               {result && (
                 <div className="mt-[8px] text-[12px] font-normal text-[#017333] text-center">{result}</div>

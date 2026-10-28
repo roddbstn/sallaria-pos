@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import Working from '../components/ui/Working'
 import { getAppVersion } from '../lib/ipc'
 import { usePersistentState } from '../hooks/usePersistentState'
 import CountStepper from '../components/ui/CountStepper'
@@ -419,7 +420,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
               전엔 selected(포트)만 썼더니 USB 로 연결했을 때 '연결됨 — ' 처럼
               뒤가 비어 보였다. 구분선(—)도 뺀다. */}
           {unknown
-            ? (targetLabel ? `${targetLabel} 상태 확인 중…` : '프린터 상태 확인 중…')
+            ? <Working label={targetLabel ? `${targetLabel} 상태 확인 중` : '프린터 상태 확인 중'} />
             : connected
               ? `연결됨 ${targetLabel}`
               : targetLabel
@@ -439,9 +440,9 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                 const sys = ports.filter(x => isSystemPort(x.path)).length
                 return `찾은 프린터 ${ports.length - sys}개${sys > 0 ? ` (시스템 포트 ${sys}개 제외)` : ''}`
               })()
-            : '프린터를 찾는 중…'}
+            : <Working label="프린터를 찾는 중" />}
         </span>
-        <SmallButton onClick={scan} disabled={scanning}>{scanning ? '찾는 중…' : '다시 찾기'}</SmallButton>
+        <SmallButton onClick={scan} disabled={scanning}>{scanning ? <Working label="찾는 중" /> : '다시 찾기'}</SmallButton>
       </div>
 
       <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mb-[12px]">
@@ -1009,7 +1010,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
         <Row label="앱 버전">
           <span className="text-[13px] text-[#1E1E1E] tabular-nums">{appVersion}</span>
           <SmallButton onClick={checkUpdate} disabled={checking}>
-            {checking ? '확인 중…' : '업데이트 확인'}
+            {checking ? <Working label="확인 중" /> : '업데이트 확인'}
           </SmallButton>
         </Row>
         {updateMsg && (

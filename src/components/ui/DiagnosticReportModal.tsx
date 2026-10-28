@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Working from './Working'
 
 // 설정 > 기타 > '진단 리포트 보내기' — 누르면 **바로 전송**되는 모달.
 //
@@ -136,7 +137,7 @@ export default function DiagnosticReportModal({
               disabled={state === 'sending'}
               className="pressable w-[130px] h-[42px] rounded-[10px] bg-[#2C261F] text-[#FCFCFC] text-[14px] font-medium hover:opacity-90 disabled:opacity-40"
             >
-              {state === 'sending' ? '보내는 중…' : state === 'failed' ? '다시 보내기' : '보내기'}
+              {state === 'sending' ? <Working label="보내는 중" /> : state === 'failed' ? '다시 보내기' : '보내기'}
             </button>
           )}
         </div>

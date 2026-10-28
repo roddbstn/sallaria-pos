@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import Working from '../components/ui/Working'
 import { getCached, setCached } from '../lib/query-cache'
 import { rootZoom } from '../lib/figma-scale'
 import QRCode from 'qrcode'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
+import { usePersistentState } from '../hooks/usePersistentState'
 import { track } from '../lib/firebase'
 import type { Order } from '../lib/mock-data'
 import { mapOrderRow } from '../lib/mappers'
@@ -29,7 +31,7 @@ import { DEFAULT_QR_NOTICE } from '../lib/qr-order'
 import LoadingTimer from '../components/ui/LoadingTimer'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import CustomerProfileModal from '../components/customer/CustomerProfileModal'
-import { NUM, NUM_STRONG, NUM_UP, NUM_DOWN, NUM_MUTED, deltaClass } from '../lib/number-style'
+import { NUM, NUM_STRONG, NUM_UP, NUM_MUTED, deltaClass } from '../lib/number-style'
 import { signColor } from '../lib/sign-color'
 import ModalOverlay from '../components/ui/ModalOverlay'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -159,6 +161,10 @@ function PinField({ value, onChange, placeholder, className = '' }: {
 // 폭을 뺀 본체. 한 줄에 둘 이상 놓을 때 `w-full` 과 `w-[...]` 가 충돌해
 // (둘 다 width 속성이라 Tailwind 출력 순서에 따라 이기는 쪽이 달라진다)
 // 한쪽이 줄 전체를 먹는 사고가 났다 — 실제로 '실제 선결제 일시' 행이 그랬다.
+/** 랭킹 기간 선택지 — '최근 N' 상대 기간이라 캘린더가 아니라 버튼이다 */
+const RANK_RANGES = [30, 60, 90, 180, 365] as const
+const rankRangeLabel = (d: number) => (d === 365 ? '1년' : d >= 180 ? `${d / 30}개월` : `${d}일`)
+
 type TableSort =
   | 'recentOrder' | 'oldReg' | 'oldOrder' | 'members' | 'recentReg'
   | 'orderMany'   | 'orderFew'
@@ -221,11 +227,14 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [printerToast, setPrinterToast] = useState('')
   const [accountOrders, setAccountOrders] = useState<Order[]>([])
   const [deposits,     setDeposits]     = useState<DbDeposit[]>([])
-  const [, setMonthlyUsage] = useState<Record<string, number>>({})   // 값은 안 쓰고 집계만 채운다
+  /** 거래처별 **이번달 주문액**(취소 제외). 표의 '이번달 주문' 칸이 쓴다 */
+  const [monthlyUsage, setMonthlyUsage] = useState<Record<string, number>>({})
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({})      // 고객현황 사이드바 — 계정별 이용자(account_members) 수
   const [monthlyDeposits, setMonthlyDeposits] = useState<Record<string, number>>({}) // 이번달 선결제(충전) 합계
   const [orderTrend, setOrderTrend] = useState<Record<string, number>>({})          // 추이 = 이번달 주문건수 - 저번달 주문건수
-  const [monthlyOrderCount, setMonthlyOrderCount] = useState<Record<string, number>>({}) // 이번달 주문건수 (가장 많이 주문한 고객 랭킹용)
+  // 값은 안 쓴다 — 랭킹이 거래처 단위에서 **사람 단위**(topOrderers)로 바뀌면서
+  // 소비처가 사라졌다. 집계 루프가 orderTrend 를 만들 때 함께 쓰므로 setter 만 남긴다.
+  const [, setMonthlyOrderCount] = useState<Record<string, number>>({})
   // 아래 셋은 **값을 안 쓴다** — 패널이 원본 행(yearlyDepositRows·yearlyOrderRows)에서
   // 거래처 필터를 걸어 다시 세기 때문이다. 집계 루프를 지우면 원본 행도 같이 사라지므로
   // setter 만 남겨 둔다(이 파일이 이미 쓰는 관용구 — setMonthlyUsage 참고).
@@ -249,6 +258,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [lastOrderAt, setLastOrderAt] = useState<Record<string, string>>({})
   /** 거래처별 전체 기간 주문 건수 — 주문 건수 기준 정렬에 쓴다 */
   const [orderCountAll, setOrderCountAll] = useState<Record<string, number>>({})
+  /** 최근 1년 주문을 **사람 단위 행**으로. 랭킹 기간을 화면에서 바꾸므로 합계가 아니라 행이다 */
+  const [peopleRows, setPeopleRows] = useState<{ accountCode: string; name: string; at: string; amount: number }[]>([])
+  /** 랭킹 기간(일). 다시 들어와도 고른 값이 남아야 해서 저장한다 */
+  const [rankDays, setRankDays] = usePersistentState('customers_rank_days', 30)
+  const [rankOpen, setRankOpen] = useState(false)
   const [tableSort, setTableSort] = useState<TableSort>('recentOrder')
   const [tableSortOpen, setTableSortOpen] = useState(false)
 
@@ -498,7 +512,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       // 안 잡혀 '주문 없음'으로 뭉뚱그려진다. 1월에 보면 '지난달 주문'과 '최근 30일'도
       // 작년 12월을 통째로 놓쳤다(같은 뿌리의 버그였다).
       // 월별 추이(yOrders)만 올해로 가둔다 — 안 그러면 작년 같은 달에 더해진다.
-      supabase.from('orders').select('account_code, ordered_at, status, total_amount').in('account_code', accountCodes),
+      supabase.from('orders').select('account_code, orderer_name, ordered_at, status, total_amount').in('account_code', accountCodes),
     ])
 
     const mCounts: Record<string, number> = {}
@@ -520,6 +534,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     const lastCount: Record<string, number> = {}
     const active30d = new Set<string>()
     const lastAt: Record<string, string> = {}
+    const peopleRows: { accountCode: string; name: string; at: string; amount: number }[] = []
+    const rankWindowStart = new Date(now.getTime() - 365 * 86400000)
     /** 전체 기간 주문 건수 — '주문 많은/적은순' 정렬용. 이번 달만 세는
      *  monthlyOrderCount 와 다르다(그건 랭킹 카드가 쓴다). */
     const allCount: Record<string, number> = {}
@@ -530,6 +546,19 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
       const d = new Date(row.ordered_at)
       if (!lastAt[row.account_code] || row.ordered_at > lastAt[row.account_code]) {
         lastAt[row.account_code] = row.ordered_at
+      }
+      // 이번달 **사람별** 주문 건수. 랭킹은 거래처가 아니라 사람 단위다 —
+      // 한 과에서 10명이 한 번씩 시킨 것과 1명이 열 번 시킨 것은 다른 이야기다.
+      // ⚠️ 사람 식별은 orderer_name 뿐이라 동명이인은 합쳐진다.
+      // 랭킹 기간을 화면에서 고를 수 있어야 해서 **합계 대신 행을 들고 있는다**.
+      // 최근 1년치만 — 그보다 긴 기간은 선택지에 없고, 다 들고 있으면 메모리만 먹는다.
+      if (d >= rankWindowStart && row.orderer_name) {
+        peopleRows.push({
+          accountCode: row.account_code,
+          name:        row.orderer_name,
+          at:          row.ordered_at,
+          amount:      row.total_amount ?? 0,
+        })
       }
       allCount[row.account_code] = (allCount[row.account_code] ?? 0) + 1
       if (d.getFullYear() === thisYear) yOrders[d.getMonth()] += 1
@@ -542,6 +571,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     setYearlyOrders(yOrders)
     setLastOrderAt(lastAt)
     setOrderCountAll(allCount)
+    setPeopleRows(peopleRows)
     // 취소분은 빼고 **올해치만** 담는다 — 차트와 툴팁이 쓰는 값이라
     // 쿼리를 전체 기간으로 넓힌 뒤에도 올해로 가둬야 yOrders 와 숫자가 맞는다.
     setYearlyOrderRows((ordersRes.data ?? [])
@@ -1259,10 +1289,26 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   for (const a of pAccounts) pTypeCounts[a.account_type] = (pTypeCounts[a.account_type] ?? 0) + 1
   const pTypeTotal = pAccounts.length || 1
 
-  const pTopOrdered = [...pAccounts]
-    .filter(a => (monthlyOrderCount[a.account_code] ?? 0) > 0)
-    .sort((a, b) => (monthlyOrderCount[b.account_code] ?? 0) - (monthlyOrderCount[a.account_code] ?? 0))
-    .slice(0, 3)
+  /** 고른 기간 + 거래처 필터로 상위 10명을 다시 센다.
+   *  건수 → 같으면 주문액 → 그래도 같으면 이름순(안정 정렬) */
+  const pTopOrderers = (() => {
+    const from = Date.now() - rankDays * 86400000
+    const acc: Record<string, { accountCode: string; name: string; orders: number; amount: number }> = {}
+    for (const r of peopleRows) {
+      if (new Date(r.at).getTime() < from) continue
+      if (!inPanel(r.accountCode)) continue
+      const k = `${r.accountCode}\u0000${r.name}`
+      const cur = acc[k] ?? { accountCode: r.accountCode, name: r.name, orders: 0, amount: 0 }
+      cur.orders += 1
+      cur.amount += r.amount
+      acc[k] = cur
+    }
+    return Object.values(acc)
+      .sort((a, b) => b.orders - a.orders || b.amount - a.amount || a.name.localeCompare(b.name, 'ko'))
+      .slice(0, 10)
+  })()
+  const accNameOf = (code: string) =>
+    accounts.find(a => a.account_code === code)?.account_name ?? '(삭제된 계정)'
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-canvas">
@@ -1468,7 +1514,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   </span>
                 </span>
                 <span style={{ width: 97 }} className="text-right">이용자수</span>
-                <span style={{ width: 116 }} className="text-right">잔액</span>
+                {/* 잔액을 뺀 자리다. 잔액은 누적값이라 '이번달에 얼마나 쓰고 있나'를
+                    말해주지 못한다 — 그건 오른쪽 패널에서 크게 본다.
+                    대신 넣은 돈(선결제)과 쓴 돈(주문)을 **나란히** 둔다. */}
+                <span style={{ width: 116 }} className="text-right">이번달 주문</span>
                 <span style={{ width: 141 }} className="text-right">이번달 선결제</span>
               </div>
 
@@ -1501,7 +1550,22 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       style={{ height: 46, paddingLeft: 15, paddingRight: 15 }}
                     >
                       <span style={{ width: 51 }}>{i + 1}</span>
-                      <span className="flex-1 truncate">{acc.account_name}</span>
+                      {/* 잔액 칸을 뺀 대신 **경고만** 이름 옆에 남긴다.
+                          선결제 제품에서 '누가 바닥났나'는 표를 훑는 가장 큰 이유인데,
+                          숫자를 통째로 빼면 거래처를 하나씩 눌러 봐야 알 수 있다.
+                          숫자는 패널에서 보고, 여기서는 '봐야 할 곳'만 집어준다. */}
+                      <span className="flex-1 min-w-0 flex items-center gap-[6px]">
+                        <span className="truncate">{acc.account_name}</span>
+                        {acc.current_balance < 0 ? (
+                          <span className="flex-shrink-0 px-[7px] py-[2px] rounded-[6px] text-[11px] font-medium bg-[#E8EEFF] text-[#3374FF] whitespace-nowrap">
+                            잔액 마이너스
+                          </span>
+                        ) : acc.current_balance <= (acc.warning_threshold ?? 0) && (acc.warning_threshold ?? 0) > 0 ? (
+                          <span className="flex-shrink-0 px-[7px] py-[2px] rounded-[6px] text-[11px] font-medium bg-[#FFF4E8] text-[#B35C00] whitespace-nowrap">
+                            잔액 부족
+                          </span>
+                        ) : null}
+                      </span>
                       <span style={{ width: 80 }}>
                         {(() => {
                           const c = typeColorOf(acc.account_type)
@@ -1519,8 +1583,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                         {trend > 0 ? `+${trend}건` : trend < 0 ? `${trend}건` : '-'}
                       </span>
                       <span style={{ width: 97 }} className={`text-right ${NUM}`}>{memberCounts[acc.account_code] ?? 0}명</span>
-                      <span style={{ width: 116 }} className={`text-right ${acc.current_balance < 0 ? NUM_DOWN : NUM_STRONG}`}>
-                        {acc.current_balance < 0 ? `-${won(Math.abs(acc.current_balance))}` : won(acc.current_balance)}
+                      <span style={{ width: 116 }} className={`text-right ${(monthlyUsage[acc.account_code] ?? 0) > 0 ? NUM_STRONG : NUM_MUTED}`}>
+                        {won(monthlyUsage[acc.account_code] ?? 0)}
                       </span>
                       <span style={{ width: 141 }} className={`text-right ${(monthlyDeposits[acc.account_code] ?? 0) > 0 ? NUM_UP : NUM_MUTED}`}>
                         {(monthlyDeposits[acc.account_code] ?? 0) > 0 ? `+${won(monthlyDeposits[acc.account_code])}` : won(0)}
@@ -1796,20 +1860,66 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             )
           })()}
 
-          {/* 가장 많이 주문한 고객 (이번달 기준) — 위 계정유형 박스와, 그리고 제목과 1번 항목 사이를 더 띄움 */}
+          {/* 가장 많이 주문한 고객 — 기간을 고를 수 있다(저장됨).
+              전엔 '이번달' 고정이었는데, 달이 막 바뀐 날엔 한두 건으로 순위가 정해져
+              랭킹이라고 부르기 어려웠다. '최근 N일'은 그 영향을 안 받는다. */}
           <div className="flex flex-col gap-[16px] mt-[14px]">
-            <div className="text-[15px] font-semibold text-[#2C261F] whitespace-nowrap">가장 많이 주문한 고객</div>
-            {pTopOrdered.length === 0 ? (
-              <div className="text-[10px] text-[#ADADAD] py-[13px]">이번달 주문한 고객이 없습니다.</div>
+            <div className="flex items-center justify-between">
+              <span className="text-[15px] font-semibold text-[#2C261F] whitespace-nowrap">가장 많이 주문한 고객</span>
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={() => setRankOpen(v => !v)}
+                  className="h-[24px] px-[8px] rounded-[7px] bg-[#F2F2F2] text-[#6A635E] text-[11px] font-normal flex items-center gap-[4px] hover:bg-[#E8E4E2] transition-colors whitespace-nowrap"
+                >
+                  최근 {rankRangeLabel(rankDays)}
+                  <svg width="8" height="5" viewBox="0 0 16 10" fill="none"
+                       className={`transition-transform ${rankOpen ? 'rotate-180' : ''}`}>
+                    <path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                {rankOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setRankOpen(false)} />
+                    <div className="modal-in absolute right-0 top-[28px] z-30 w-[108px] py-[5px] rounded-[10px] bg-[#FCFCFC] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)]"
+                         style={{ transformOrigin: 'top right' }}>
+                      {RANK_RANGES.map(d => (
+                        <button
+                          key={d}
+                          onClick={() => { setRankDays(d); setRankOpen(false) }}
+                          className={`w-full text-left px-[12px] py-[6px] text-[12px] hover:bg-[#F2F2F2] transition-colors ${
+                            rankDays === d ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'
+                          }`}
+                        >
+                          최근 {rankRangeLabel(d)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            {pTopOrderers.length === 0 ? (
+              <div className="text-[10px] text-[#ADADAD] py-[13px]">이 기간에 주문한 고객이 없습니다.</div>
             ) : (
-              <div className="space-y-[13px]">
-                {pTopOrdered.map((acc, i) => (
-                  <div key={acc.account_code} className="flex items-center gap-[10px]">
-                    <span className={`w-[19px] h-[19px] rounded-full flex items-center justify-center text-[12px] font-bold flex-shrink-0 ${
-                      i === 0 ? 'bg-[#E8E4E2] text-[#8C8379]' : 'bg-[#E5E5E5] text-[#ADADAD]'
+              <div className="space-y-[11px]">
+                {/* 사람 → 어느 선결제 계정 → 몇 건. 이름이 먼저다 —
+                    '누가' 많이 시켰는지가 이 목록의 주제고, 계정은 그 사람을
+                    어디서 찾을지 알려주는 보조 정보다. */}
+                {pTopOrderers.map((t, i) => (
+                  <div key={`${t.accountCode}-${t.name}`} className="flex items-center gap-[10px]">
+                    <span className={`w-[19px] h-[19px] rounded-full flex items-center justify-center text-[11px] font-normal tabular-nums flex-shrink-0 ${
+                      i === 0 ? 'bg-[#E8E4E2] text-[#8C8379]' : 'bg-[#F2F2F2] text-[#ADADAD]'
                     }`}>{i + 1}</span>
-                    <span className={`text-[13px] ${i === 0 ? 'text-[#2C261F] font-medium' : 'text-[#6A635E]'}`}>
-                      {acc.account_name} ({monthlyOrderCount[acc.account_code]}건)
+                    <span className="min-w-0 flex-1 flex flex-col">
+                      <span className={`text-[13px] truncate ${i === 0 ? 'text-[#2C261F] font-medium' : 'text-[#2C261F] font-normal'}`}>
+                        {t.name}
+                      </span>
+                      <span className="text-[11px] font-normal text-[#ADADAD] truncate">{accNameOf(t.accountCode)}</span>
+                    </span>
+                    {/* 건수 위, 금액 아래 — 순위를 정하는 값이 건수라 그쪽을 먼저 읽게 둔다 */}
+                    <span className="flex-shrink-0 flex flex-col items-end">
+                      <span className="text-[12px] font-normal text-[#6A635E] tabular-nums">{t.orders}건</span>
+                      <span className="text-[11px] font-normal text-[#ADADAD] tabular-nums">{won(t.amount)}</span>
                     </span>
                   </div>
                 ))}
@@ -1825,6 +1935,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               deposits={deposits}
               members={members}
               memberCounts={memberCounts}
+              monthlyUsage={monthlyUsage}
               phoneRevealed={phoneRevealed}
               setPhoneRevealed={setPhoneRevealed}
               detailTab={detailTab}
@@ -2008,7 +2119,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 }
                 className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[15px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                {addSubmitting ? '등록 중...' : '저장'}
+                {addSubmitting ? <Working label="등록 중" /> : '저장'}
               </button>
             </div>
           </div>
@@ -2335,7 +2446,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     onClick={handleCharge}
                     disabled={chargeLoading}
                     className="px-[21px] py-[10px] rounded-[9px] bg-ink text-white text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40">
-                    {chargeLoading ? '처리 중...' : '충전 확정'}
+                    {chargeLoading ? <Working label="처리 중" /> : '충전 확정'}
                   </button>
                 </div>
               </>
@@ -2540,7 +2651,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
 // 우측 사이드 패널 — 고객 선택 시 "고객현황" 집계 대신 해당 고객 상세정보로 전환 (Figma node 644:372)
 function CustomerDetailPanel({
-  selected, accountOrders, deposits, members, memberCounts,
+  selected, accountOrders, deposits, members, memberCounts, monthlyUsage,
   phoneRevealed, setPhoneRevealed, detailTab, setDetailTab, onQr, onOpenStatement,
   showInactive, onEdit, onRestore, storeId,
 }: {
@@ -2550,6 +2661,8 @@ function CustomerDetailPanel({
   deposits: DbDeposit[]
   members: { id: string; name: string; phone: string | null; order_count: number; last_ordered_at: string | null }[]
   memberCounts: Record<string, number>
+  /** 거래처별 이번달 주문액 — 표에서 잔액 칸을 뺀 대신 여기서 본다 */
+  monthlyUsage: Record<string, number>
   phoneRevealed: boolean
   setPhoneRevealed: (v: boolean | ((prev: boolean) => boolean)) => void
   detailTab: 'orders' | 'charges' | 'members' | 'statement' | 'people'
@@ -2575,6 +2688,19 @@ function CustomerDetailPanel({
     })()
     return () => { cancelled = true }
   }, [selected.account_code])
+
+  // ── 탭 밑줄 — 상단 네비(App.tsx)처럼 **미끄러지게** ──────────────────────
+  // 전엔 활성 탭이 자기 밑줄을 직접 그려서 탭을 누를 때마다 뚝 끊겨 옮겨졌다.
+  // 바 하나를 두고 활성 버튼의 실제 위치·폭을 재서 옮긴다. 라벨 길이가
+  // 제각각(충전이력·주문내역·구성원)이라 left 만으로는 안 되고 width 도 같이 민다.
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const [bar, setBar] = useState<{ left: number; width: number } | null>(null)
+
+  // useLayoutEffect — 그리기 전에 재야 첫 렌더에서 바가 0 에서 날아오지 않는다
+  useLayoutEffect(() => {
+    const el = tabRefs.current[detailTab]
+    if (el) setBar({ left: el.offsetLeft, width: el.offsetWidth })
+  }, [detailTab, selected.account_code])
 
   const phoneParts = (selected.contact_phone ?? '').split('-')
   const phoneMid = phoneParts.length === 3 ? phoneParts[1] : null
@@ -2626,24 +2752,59 @@ function CustomerDetailPanel({
         </div>
 
 
-        {/* 선결제잔액 / 이용자수 */}
+        {/* 선결제 잔액 — 이 패널에서 **가장 큰 숫자**다.
+            표에서 잔액 칸을 뺐으니(거기선 이번달 주문액을 본다) 여기가 잔액을
+            확인하는 자리가 됐다. 전엔 '이용자수'와 같은 크기로 나란히 있어서
+            둘 중 무엇이 중요한지 말하지 않는 배치였다. */}
+        {/* 이 패널 안 모든 박스의 안쪽 여백은 **14** 로 통일한다.
+            지표 카드(10)와 아래 목록 카드(13)가 제각각이라 세로로 훑을 때
+            왼쪽 선이 미세하게 어긋나 보였다. StatCard 의 padding 은 사방에 같이 걸린다. */}
+        <StatCard className="bg-[#F2F2F2] rounded-[10px]" padding={14} gap={6}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-[#2C261F] tracking-[-0.03em]">선결제 잔액</span>
+            {selected.current_balance < 0 ? (
+              <span className="px-[7px] py-[2px] rounded-[6px] text-[10px] font-medium bg-[#E8EEFF] text-[#3374FF]">
+                다음 충전 때 정산
+              </span>
+            ) : selected.current_balance <= (selected.warning_threshold ?? 0) && (selected.warning_threshold ?? 0) > 0 ? (
+              <span className="px-[7px] py-[2px] rounded-[6px] text-[10px] font-medium bg-[#FFF4E8] text-[#B35C00]">
+                충전이 필요해요
+              </span>
+            ) : null}
+          </div>
+          {/* 아래 두 카드(17px)보다 한 단계만 크면 충분하다. 30px 은 너무 컸고,
+              '1,168,900원' 같은 긴 값이 400px 패널에서 답답했다. */}
+          <div className={`text-[23px] font-medium whitespace-nowrap tabular-nums leading-none ${
+            selected.current_balance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'
+          }`}>
+            {selected.current_balance < 0 ? `-${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
+          </div>
+        </StatCard>
+
+        {/* 이번달 주문 / 이용자수 — 잔액 아래 한 단계 작게 */}
         <div className="flex gap-[4px]">
-          <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={10} gap={6}>
-            <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">선결제 잔액</div>
-            <div className={`text-[18px] font-medium whitespace-nowrap ${selected.current_balance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
-              {selected.current_balance < 0 ? `-${won(Math.abs(selected.current_balance))}` : won(selected.current_balance)}
+          <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={14} gap={6}>
+            <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">이번달 주문</div>
+            <div className="text-[17px] font-medium text-[#1E1E1E] tabular-nums whitespace-nowrap">
+              {won(monthlyUsage[selected.account_code] ?? 0)}
             </div>
           </StatCard>
-          <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={10} gap={6}>
+          <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={14} gap={6}>
             <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">이용자수</div>
             <div className="text-[17px] font-medium text-[#1E1E1E]">{memberCounts[selected.account_code] ?? 0}명</div>
           </StatCard>
         </div>
 
-        {/* 선결제 유효기간 + 만료 경고, 계정 비활성화/복구 */}
+        {/* 선결제 유효기간 + 만료 경고, 계정 비활성화/복구.
+            유효기간을 안 걸어뒀으면 이 줄 자체를 안 그린다 — 빈 자리가 남으면
+            아래 탭이 괜히 내려가고, 거래처 대부분이 그 경우다. */}
+        {(() => {
+          const validityText = prepayValidityDisplay(selected.prepay_validity, deposits[0]?.created_at)
+          if (!validityText && !showInactive) return null
+          return (
         <div className="flex items-center justify-between">
           <span className={`text-[10px] ${isPrepayExpired(selected.prepay_validity, deposits[0]?.created_at) ? 'text-danger font-semibold' : 'text-[#6A635E]'}`}>
-            {prepayValidityDisplay(selected.prepay_validity, deposits[0]?.created_at)}
+            {validityText}
           </span>
           {/* 계정 비활성화는 "계정정보 수정" 모달 하단으로 옮겼다 — 되돌리기 어려운 동작이
               목록 옆에 노출돼 있으면 잘못 누르기 쉽다. 여기엔 복구만 남긴다. */}
@@ -2651,19 +2812,27 @@ function CustomerDetailPanel({
             <button onClick={onRestore} className="text-[10px] font-semibold text-green hover:underline">비활성 계정 복구</button>
           )}
         </div>
+          )
+        })()}
 
-        {/* 탭 */}
-        <div className="flex items-center gap-[21px]">
+        {/* 탭 — 밑줄 하나가 좌우로 미끄러진다(상단 네비와 같은 방식) */}
+        <div className="relative flex items-center gap-[21px]">
           {([['charges', '충전이력'], ['orders', '주문내역'], ['members', '구성원']] as const).map(([t, label]) => (
             <button
               key={t}
+              ref={el => { tabRefs.current[t] = el }}
               onClick={() => setDetailTab(t)}
-              className={`relative text-[14px] font-medium pb-[5px] transition-colors ${detailTab === t ? 'text-ink' : 'text-[#ADADAD]'}`}
+              className={`text-[14px] font-medium pb-[5px] transition-colors ${detailTab === t ? 'text-ink' : 'text-[#ADADAD] hover:text-[#6A635E]'}`}
             >
               {label}
-              {detailTab === t && <span className="absolute left-0 bottom-0 w-full h-[2px] bg-[#414141]" />}
             </button>
           ))}
+          {bar && (
+            <span
+              className="absolute bottom-0 h-[2px] bg-[#414141] transition-[left,width] duration-200 ease-out"
+              style={{ left: bar.left, width: bar.width }}
+            />
+          )}
         </div>
       </div>
 
@@ -2677,7 +2846,7 @@ function CustomerDetailPanel({
                 const dt = new Date(o.createdAt)
                 const dateStr = `${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
                 return (
-                  <div key={o.code} className="bg-[#F2F2F2] rounded-[10px] px-[13px] py-[10px]">
+                  <div key={o.code} className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[10px]">
                     <div className="flex items-center justify-between mb-[5px]">
                       <span className="text-[9px] text-[#787878]">{dateStr} · {o.method}</span>
                       <div className="flex items-center gap-[5px]">
@@ -2721,7 +2890,7 @@ function CustomerDetailPanel({
                 const dt = new Date(d.created_at)
                 const dateStr = `${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
                 return (
-                  <div key={d.deposit_id} className="bg-[#F2F2F2] rounded-[10px] px-[13px] py-[10px] flex items-center justify-between">
+                  <div key={d.deposit_id} className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[10px] flex items-center justify-between">
                     <div>
                       {/* 날짜를 9px → 12px 로 키웠다. 충전 이력에서 먼저 찾는 건
                           '언제 넣었나'인데 9px 은 훑어서 읽히는 크기가 아니었다.
@@ -2756,7 +2925,7 @@ function CustomerDetailPanel({
                   onClick={() => selected && setProfileOf({
                     name: m.name, code: selected.account_code, account: selected.account_name,
                   })}
-                  className="bg-[#F2F2F2] hover:bg-[#E8E4E2] cursor-pointer transition-colors rounded-[10px] px-[13px] py-[10px] flex items-center justify-between"
+                  className="bg-[#F2F2F2] hover:bg-[#E8E4E2] cursor-pointer transition-colors rounded-[10px] px-[14px] py-[10px] flex items-center justify-between"
                 >
                   <div className="flex flex-col items-start gap-[3px] min-w-0">
                     {/* 이름은 10 → 13 → 12px. 13px 은 카드 안에서 혼자 커 보였다 —

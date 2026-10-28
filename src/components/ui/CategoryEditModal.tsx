@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Working from './Working'
 import ConfirmDialog from './ConfirmDialog'
 import { won } from '../../lib/ipc'
 
@@ -144,7 +145,7 @@ export default function CategoryEditModal({
                 onClick={save} disabled={!canSave}
                 className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {busy ? '저장 중…' : '저장'}
+                {busy ? <Working label="저장 중" /> : '저장'}
               </button>
             </div>
           </div>

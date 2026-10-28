@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import Working from '../components/ui/Working'
 import { getCached, setCached } from '../lib/query-cache'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { formatPriceDisplay, FloatingCellInput, FloatingCellTextarea, GhostButton, ModalCTAButton, StepperButton } from '../components/ModalFormControls'
@@ -20,6 +21,7 @@ import LoadingTimer from '../components/ui/LoadingTimer'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import ModalOverlay from '../components/ui/ModalOverlay'
 import CategoryAddModal from '../components/ui/CategoryAddModal'
+import UndoRedoPair from '../components/ui/UndoRedoPair'
 import {
   initHistory, pushHistory, undoHistory, redoHistory,
   canUndo, canRedo, currentOf, orderChanged, type EditHistory,
@@ -27,43 +29,6 @@ import {
 
 /** 보기 모드 로컬 캐시 키 — 서버값(stores.menu_display_mode)이 올 때까지 쓴다 */
 const MENU_MODE_KEY = 'sallaria_pos_menu_view_mode'
-
-/**
- * 되돌리기 / 다시실행 한 쌍 — 카테고리 편집과 개별메뉴 편집이 같이 쓴다.
- *
- * 할 수 없을 때 **숨기지 않고 연하게** 둔다. 자리가 사라지면 버튼이 생겼다 없어졌다 해서
- * 눈이 그 자리를 매번 다시 찾는다. 편집 중 내내 같은 자리에 있어야 손이 기억한다.
- */
-function UndoRedoPair({ canUndo, canRedo, onUndo, onRedo }: {
-  canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void
-}) {
-  const BTNS = [
-    { key: 'undo', on: canUndo, run: onUndo, label: '되돌리기',
-      head: 'M9 5L4 10l5 5',  tail: 'M4 10h9a5 5 0 0 1 0 10H8' },
-    { key: 'redo', on: canRedo, run: onRedo, label: '다시 실행',
-      head: 'M15 5l5 5-5 5',  tail: 'M20 10h-9a5 5 0 0 0 0 10h5' },
-  ] as const
-  return (
-    <>
-      {BTNS.map(b => (
-        <button
-          key={b.key}
-          onClick={b.run}
-          disabled={!b.on}
-          title={b.label}
-          aria-label={b.label}
-          className="pressable w-[26px] h-[24px] flex items-center justify-center disabled:cursor-default"
-          style={{ opacity: b.on ? 1 : 0.3 }}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path d={b.head} stroke="#414449" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            <path d={b.tail} stroke="#414449" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      ))}
-    </>
-  )
-}
 
 // ── 품절 상태 헬퍼 ────────────────────────────────────────────────────────────
 function getSoldOutState(soldOut: boolean, soldOutUntil: string | null | undefined): SoldOutState {
@@ -2444,7 +2409,7 @@ export default function Menus() {
                   disabled={!catEditNameDraft.trim() || catEditSaving}
                   className="flex-1 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[13px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-40"
                 >
-                  {catEditSaving ? '저장 중…' : '저장'}
+                  {catEditSaving ? <Working label="저장 중" /> : '저장'}
                 </button>
               </div>
             </div>
@@ -2772,11 +2737,11 @@ export default function Menus() {
             <div className="bg-white flex justify-end px-5 py-4 flex-shrink-0">
               {addModalTab === 'bulk' ? (
                 <ModalCTAButton onClick={confirmAddMenu} disabled={addLoading}>
-                  {addLoading ? '저장 중...' : `${addRows.filter(r => r.name.trim() && r.price.trim()).length}개 추가`}
+                  {addLoading ? <Working label="저장 중" /> : `${addRows.filter(r => r.name.trim() && r.price.trim()).length}개 추가`}
                 </ModalCTAButton>
               ) : (
                 <ModalCTAButton onClick={confirmDetailMenu} disabled={addLoading}>
-                  {addLoading ? '저장 중...' : '추가'}
+                  {addLoading ? <Working label="저장 중" /> : '추가'}
                 </ModalCTAButton>
               )}
             </div>

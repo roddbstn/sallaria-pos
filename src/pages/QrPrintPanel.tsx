@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import Working from '../components/ui/Working'
 import { HubSection } from '../components/hub/HubLayout'
 import { supabase, type DbAccount } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
@@ -145,7 +146,7 @@ function PaperPreview({ paper, storeName, notice, pin, labels, totalLabels }: {
   const { cfg } = usePrinterConfig()
   const rp   = paperChoice(cfg.paperWidth)
   const geo  = paperGeometry(paper, rp.printMM)
-  const f    = fontSizesFor(geo.qrMM)
+  const f    = fontSizesFor(geo.fontMM)
   const isReceipt = paper === 'receipt'
 
   // 종이 실치수(mm)와 인쇄 여백 — QrSheetPrinter 의 @page margin 과 같은 값
@@ -474,7 +475,7 @@ export default function QrPrintPanel() {
               disabled={totalLabels === 0 || printing}
               className="pressable w-full h-[52px] mt-[12px] rounded-[11px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
             >
-              {printing ? '출력 중…' : `${totalLabels}장 인쇄하기`}
+              {printing ? <Working label="출력 중" /> : `${totalLabels}장 인쇄하기`}
             </button>
           </div>
 

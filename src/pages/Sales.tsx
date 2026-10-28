@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
+import Working from '../components/ui/Working'
 import LoadingTimer from '../components/ui/LoadingTimer'
 import { supabase, type DbAccount } from '../lib/supabase'
 import { won } from '../lib/ipc'
@@ -633,7 +634,7 @@ export function UpgradeModal({ open, onClose }: { open: boolean; onClose: () => 
                 disabled={loading}
                 style={{ padding:'10px 20px', borderRadius:10, background:'#1A1A1A', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', border:'none', opacity: loading ? 0.5 : 1 }}
               >
-                {loading ? '저장 중...' : `${UPGRADE_PLANS.find(p => p.id === selectedPlan)?.name} 플랜으로 변경`}
+                {loading ? <Working label="저장 중" /> : `${UPGRADE_PLANS.find(p => p.id === selectedPlan)?.name} 플랜으로 변경`}
               </button>
             </div>
           </div>

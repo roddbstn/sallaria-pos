@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Working from '../../components/ui/Working'
 import Wordmark from '../../components/ui/Wordmark'
 import BackButton from '../../components/auth/BackButton'
 import PrimaryButton from '../../components/auth/PrimaryButton'
@@ -124,7 +125,7 @@ export default function LoginScreen({ onBack, onLoginSuccess, onOpenPasswordSetu
             className="w-[350px] mx-auto mt-1"
             style={{ paddingTop: 10, paddingBottom: 10 }}
           >
-            {loading ? '로그인 중...' : '로그인'}
+            {loading ? <Working label="로그인 중" /> : '로그인'}
           </PrimaryButton>
         </form>
       </div>

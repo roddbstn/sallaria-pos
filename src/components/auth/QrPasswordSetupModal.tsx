@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import LoadingTimer from '../ui/LoadingTimer'
 import QRCode from 'qrcode'
 import ModalOverlay from '../ui/ModalOverlay'
 
@@ -40,7 +41,7 @@ export default function QrPasswordSetupModal({ open, onClose }: QrPasswordSetupM
         >
           {qrDataUrl
             ? <img src={qrDataUrl} alt="QR 코드" className="w-full h-full" />
-            : <div className="w-8 h-8 rounded-full border-4 border-gray-200 animate-spin" style={{ borderTopColor: '#6A635E' }} />}
+            : <LoadingTimer size={34} />}
         </div>
 
         <button

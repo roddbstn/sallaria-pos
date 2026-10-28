@@ -21,7 +21,11 @@ export const PREPAY_VALIDITY_MONTHS: Record<PrepayValidity, number | null> = {
 /** 가장 최근 충전일 + 유효기간 → "1년 · 2027.03.14까지" / "⚠ … 만료됨" */
 export function prepayValidityDisplay(validity: PrepayValidity, lastDepositAt: string | undefined): string {
   const months = PREPAY_VALIDITY_MONTHS[validity]
-  if (months === null) return '없음'
+  // 유효기간을 안 걸어둔 경우는 **아무 말도 하지 않는다.**
+  // 전엔 '없음' 한 단어만 떴는데, 라벨이 없어서 무엇이 없다는 건지 알 수 없었다
+  // (충전 이력이 없다는 뜻으로 읽히기도 했다). 게다가 거래처 대부분이 'none' 이라
+  // 거의 모든 화면에 그 한 단어가 떠 있었다. 빈 값이면 호출부가 안 그린다.
+  if (months === null) return ''
   if (!lastDepositAt) return `${PREPAY_VALIDITY_LABEL[validity]} · 충전 이력 없음`
   const expiresAt = new Date(lastDepositAt)
   expiresAt.setMonth(expiresAt.getMonth() + months)

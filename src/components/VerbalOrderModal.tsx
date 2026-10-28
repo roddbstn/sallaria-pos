@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import Working from './ui/Working'
 import { supabase } from '../lib/supabase'
 import { won } from '../lib/ipc'
 import { type MenuDetail, type Category } from '../lib/mock-data'
@@ -597,7 +598,7 @@ export default function VerbalOrderModal({
                         disabled={!canSubmit}
                         className="flex-1 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors"
                       >
-                        {submitting ? '주문 처리 중...' : '주문하기'}
+                        {submitting ? <Working label="주문 처리 중" /> : '주문하기'}
                       </button>
                     </div>
                   </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import Working from '../components/ui/Working'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { playOrderSound, getSavedVolume, saveVolume } from '../lib/sound'
 import { useStore } from '../lib/store-context'
@@ -287,7 +288,7 @@ export default function Settings({ onOpenHours, onOpenProfile, operatingHours, b
                       disabled={delivery.savingLocation || !delivery.draftAddress.trim()}
                       className="px-5 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
                     >
-                      {delivery.savingLocation ? '저장 중...' : '저장'}
+                      {delivery.savingLocation ? <Working label="저장 중" /> : '저장'}
                     </button>
                   </div>
                 </div>
@@ -382,7 +383,7 @@ export default function Settings({ onOpenHours, onOpenProfile, operatingHours, b
                       disabled={delivery.savingTip}
                       className="px-5 py-2.5 bg-ink text-white rounded-xl text-[13px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
                     >
-                      {delivery.savingTip ? '저장 중...' : '저장'}
+                      {delivery.savingTip ? <Working label="저장 중" /> : '저장'}
                     </button>
                   </div>
                 </div>
@@ -527,7 +528,7 @@ export default function Settings({ onOpenHours, onOpenProfile, operatingHours, b
               className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 disabled:opacity-60 transition-colors mb-3"
             >
               {loading
-                ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />불러오는 중…</>
+                ? <>불러오는 중<span className="dot-bounce inline-flex gap-[1px]"><span>.</span><span>.</span><span>.</span></span></>
                 : <><SearchIcon />포트 목록 새로고침</>}
             </button>
 
@@ -580,7 +581,7 @@ export default function Settings({ onOpenHours, onOpenProfile, operatingHours, b
               className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-ink rounded-lg text-[11px] font-semibold hover:bg-gray-200 disabled:opacity-50 transition-colors"
             >
               {connecting
-                ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />확인 중…</>
+                ? <>확인 중<span className="dot-bounce inline-flex gap-[1px]"><span>.</span><span>.</span><span>.</span></span></>
                 : '연결하기'}
             </button>
             {connectErr && (
@@ -604,7 +605,7 @@ export default function Settings({ onOpenHours, onOpenProfile, operatingHours, b
               ].join(' ')}
             >
               {testing
-                ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />출력 중…</>
+                ? <>출력 중<span className="dot-bounce inline-flex gap-[1px]"><span>.</span><span>.</span><span>.</span></span></>
                 : <><PrintIcon />테스트 영수증 출력</>}
             </button>
             {!printer.portName && (

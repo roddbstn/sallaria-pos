@@ -43,7 +43,7 @@ export async function printQrSheet(
       ${opts.showPin && it.pin ? `<div class="pin">PIN ${esc(it.pin)}</div>` : ''}
     </div>`).join('')
 
-  const f = fontSizesFor(geo.qrMM)
+  const f = fontSizesFor(geo.fontMM)
 
   const isReceipt = opts.paper === 'receipt'
   const pageSize  = isReceipt ? '58mm auto' : 'A4'

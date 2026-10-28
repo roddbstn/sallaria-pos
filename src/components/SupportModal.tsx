@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Working from './ui/Working'
 import { supabase } from '../lib/supabase'
 import { getAppVersion } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
@@ -135,7 +136,7 @@ export default function SupportModal({ onClose, showToast }: {
                 disabled={sending || body.trim().length === 0}
                 className="h-[50px] px-[26px] rounded-[13px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-all"
               >
-                {sending ? '보내는 중…' : '보내기'}
+                {sending ? <Working label="보내는 중" /> : '보내기'}
               </button>
             </div>
           </>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import Working from './components/ui/Working'
 import { useOperatingHours } from './hooks/useOperatingHours'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
@@ -29,6 +30,7 @@ import CustomerHub, { type CustomerHubTab } from './pages/CustomerHub'
 import ProductHub, { type ProductHubTab } from './pages/ProductHub'
 import SupportModal from './components/SupportModal'
 import NotificationBell from './components/ui/NotificationBell'
+import LoadingTimer from './components/ui/LoadingTimer'
 import ModalOverlay from './components/ui/ModalOverlay'
 import BottomToast from './components/BottomToast'
 import { decideOnLostSession, nextRetryDelay, AUTH_RETRY_START_MS } from './lib/auth-retry'
@@ -999,8 +1001,8 @@ export default function App() {
     return (
       <div className="flex h-full w-full items-center justify-center bg-gray-bg">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-full border-4 border-gray-200 border-t-green animate-spin" />
-          <span className="text-[13px] text-gray-text">불러오는 중...</span>
+          <LoadingTimer size={40} />
+          <span className="text-[13px] text-gray-text">불러오는 중</span>
         </div>
       </div>
     )
@@ -1044,8 +1046,8 @@ export default function App() {
       return (
         <div className="flex h-full w-full items-center justify-center bg-gray-bg">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 rounded-full border-4 border-gray-200 border-t-green animate-spin" />
-            <span className="text-[13px] text-gray-text">불러오는 중...</span>
+            <LoadingTimer size={40} />
+            <span className="text-[13px] text-gray-text">불러오는 중</span>
           </div>
         </div>
       )
@@ -1328,7 +1330,7 @@ export default function App() {
             <button
               onClick={toggleIsOpen}
               title={isOpen ? '운영중 — 클릭해서 종료' : '운영종료 — 클릭해서 시작'}
-              className={`absolute w-[54px] h-[31px] rounded-full transition-colors duration-200 ${
+              className={`absolute w-[60px] h-[31px] rounded-full transition-colors duration-200 ${
                 isOpen ? 'bg-[#6A635E]' : 'bg-[#ADADAD]'
               }`}
               style={{ right: 26, top: 12 }}
@@ -1336,13 +1338,13 @@ export default function App() {
               {/* 텍스트 — Figma node 496:660, knob 반대편에 위치(ON=왼쪽/OFF=오른쪽 미러) */}
               <span
                 className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-[13px] font-semibold text-[#FCFCFC] whitespace-nowrap transition-all duration-200`}
-                style={{ left: isOpen ? 16 : 38 }}
+                style={{ left: isOpen ? 17 : 42 }}
               >
                 {isOpen ? 'ON' : 'OFF'}
               </span>
               <span
                 className={`absolute top-[4px] left-[4px] w-[23px] h-[23px] rounded-full bg-[#FCFCFC] shadow-sm transition-transform duration-200 ${
-                  isOpen ? 'translate-x-[23px]' : 'translate-x-0'
+                  isOpen ? 'translate-x-[29px]' : 'translate-x-0'
                 }`}
               />
             </button>
@@ -1820,7 +1822,7 @@ export default function App() {
                   disabled={deleteLoading}
                   className="h-[50px] px-[26px] rounded-[13px] bg-[#FFEFEF] text-[#FF676F] text-[16px] font-medium hover:brightness-95 disabled:opacity-40 transition-all"
                 >
-                  {deleteLoading ? '탈퇴 처리 중…' : '탈퇴하기'}
+                  {deleteLoading ? <Working label="탈퇴 처리 중" /> : '탈퇴하기'}
                 </button>
                 <button
                   onClick={() => setDeleteConfirmOpen(false)}
@@ -1869,7 +1871,7 @@ export default function App() {
                 disabled={newPwSaving || !newPw || !newPwConfirm}
                 className="w-full py-3 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[14px] hover:opacity-90 disabled:opacity-40 transition-opacity"
               >
-                {newPwSaving ? '저장 중...' : '비밀번호 변경하기'}
+                {newPwSaving ? <Working label="저장 중" /> : '비밀번호 변경하기'}
               </button>
             </div>
           </div>

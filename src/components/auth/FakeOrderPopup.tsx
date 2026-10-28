@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, orderToPayload } from '../../lib/ipc'
+import LoadingTimer from '../ui/LoadingTimer'
 import type { Order } from '../../lib/mock-data'
 
 interface Props {
@@ -113,8 +114,10 @@ export default function FakeOrderPopup({ order, storeName, onDone }: Props) {
 
           {stage === 'printing' && (
             <div className="flex flex-col items-center py-8 gap-3">
-              <div className="w-10 h-10 rounded-full border-4 border-gray-200 animate-spin" style={{ borderTopColor: '#6A635E' }} />
-              <span className="text-[13px] text-gray-text">영수증 출력 중...</span>
+              <LoadingTimer size={40} />
+              <span className="text-[13px] text-gray-text">
+                영수증 출력 중<span className="dot-bounce ml-[1px]"><span>.</span><span>.</span><span>.</span></span>
+              </span>
             </div>
           )}
         </div>

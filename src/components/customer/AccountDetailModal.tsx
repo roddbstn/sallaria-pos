@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import Working from '../ui/Working'
 import QRCode from 'qrcode'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store-context'
@@ -893,7 +894,7 @@ export default function AccountDetailModal({ target, onClose }: {
                   disabled={!chargeAmt || charging}
                   className="pressable w-[96px] h-[40px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium disabled:bg-[#E8E4E2] disabled:text-[#ADADAD] hover:opacity-90"
                 >
-                  {charging ? '저장 중…' : '충전'}
+                  {charging ? <Working label="저장 중" /> : '충전'}
                 </button>
               </div>
             </div>

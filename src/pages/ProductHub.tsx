@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import Working from '../components/ui/Working'
 import HubLayout, { HubSection, type HubNavItem } from '../components/hub/HubLayout'
 import { supabase, type DbMenu, type DbCategory, type DbOptionGroup } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
@@ -15,6 +16,11 @@ import LoadingBlock from '../components/ui/LoadingBlock'
 import InfoTip from '../components/ui/InfoTip'
 import CategoryEditModal, { type CategoryTarget } from '../components/ui/CategoryEditModal'
 import CategoryAddModal from '../components/ui/CategoryAddModal'
+import UndoRedoPair from '../components/ui/UndoRedoPair'
+import {
+  initHistory, pushHistory, undoHistory, redoHistory,
+  canUndo, canRedo, currentOf, type EditHistory,
+} from '../lib/edit-history'
 
 // 햄버거 드로어 "상품" 그룹 — Figma node 672:1120(메뉴 상세) · 682:204(옵션 상세) · 672:1358(카테고리 상세).
 // 세 프레임 모두 아직 비어 있어서, `선포스-전체메뉴-화면기획.md` §1~3의 기획을 와이어프레임으로
@@ -441,7 +447,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 >
                   취소
                 </button>
-                <PrimaryAction onClick={saveOrder}>{saving ? '저장 중…' : '순서 저장'}</PrimaryAction>
+                <PrimaryAction onClick={saveOrder}>{saving ? <Working label="저장 중" /> : '순서 저장'}</PrimaryAction>
               </>
             ) : (
               <>
@@ -988,6 +994,38 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
   /** 드래그로 끝난 클릭은 상세를 열지 않는다 — 놓는 순간 편집 모달이 뜨면 당황스럽다 */
   const draggedRef = useRef(false)
 
+  /**
+   * 되돌리기 이력 — 메뉴 화면과 **성격이 다르다.**
+   *
+   * 메뉴 > 화면 편집은 '완료' 를 누를 때까지 아무것도 저장하지 않으니 되돌리기가
+   * 배열을 오가는 것으로 끝난다. 여기는 드래그를 놓는 **즉시** reorder_categories 가
+   * 돌아서 이미 저장이 끝나 있다. 그래서 되돌리기도 저장을 한 번 더 해야 한다 —
+   * 화면만 돌려놓으면 손님 화면은 바뀐 순서로 남는다.
+   *
+   * null = 이 화면에 들어온 뒤 아직 순서를 바꾼 적이 없다(버튼 둘 다 연하게).
+   */
+  const [hist, setHist] = useState<EditHistory<string> | null>(null)
+  /** 드래그 시작 직전의 순서 — 첫 되돌리기가 돌아갈 자리다 */
+  const beforeDragRef = useRef<string[]>([])
+
+  /** 저장까지 포함한 순서 적용. 실패하면 이력을 움직이지 않는다 */
+  async function applyOrder(next: EditHistory<string>) {
+    const ids = currentOf(next)
+    setSaving(true)
+    const { error } = await supabase.rpc('reorder_categories', { category_ids: ids })
+    setSaving(false)
+    if (error) { showToast(`순서를 저장하지 못했어요: ${error.message}`); return }
+    setHist(next)
+    setOrder(ids)
+    reload()
+  }
+
+  /** 카테고리가 생기거나 없어지면 이력의 id 목록이 더는 지금 목록이 아니다 — 버린다 */
+  function resetHistory() {
+    setHist(null)
+    setOrder(null)
+  }
+
   const categories = useMemo(() => {
     if (!data) return []
     if (!order) return data.categories
@@ -1025,6 +1063,8 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
       return
     }
     showToast('카테고리 순서를 바꿨어요')
+    // 이력은 드래그 **직전** 순서부터 쌓는다. 되돌리기 한 번이 그 자리로 돌아가야 한다.
+    setHist(h => h ? pushHistory(h, order) : pushHistory(initHistory(beforeDragRef.current), order))
     reload()
   }
 
@@ -1045,7 +1085,20 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
     <div>
       <HubSection
         title="카테고리 정보"
-        action={<PrimaryAction onClick={() => setAdding(true)}>+ 카테고리 추가</PrimaryAction>}
+        action={
+          /* 되돌리기는 '+ 카테고리 추가' **왼쪽**, 같은 줄에 둔다.
+             이 줄이 표 바로 위 화면 단위 툴바라 메뉴 화면의 편집 툴바와 위치가 맞고,
+             순서 칸(표 왼쪽)에 끼워 넣으면 행 하나하나가 좁아진다. */
+          <div className="flex items-center gap-[10px]">
+            <UndoRedoPair
+              canUndo={!!hist && canUndo(hist) && !saving}
+              canRedo={!!hist && canRedo(hist) && !saving}
+              onUndo={() => { if (hist) applyOrder(undoHistory(hist)) }}
+              onRedo={() => { if (hist) applyOrder(redoHistory(hist)) }}
+            />
+            <PrimaryAction onClick={() => setAdding(true)}>+ 카테고리 추가</PrimaryAction>
+          </div>
+        }
       />
 
       {loading || !data ? <Loading /> : (
@@ -1063,7 +1116,10 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
               <div
                 key={c.id}
                 draggable={armed}
-                onDragStart={() => setDragId(c.id)}
+                onDragStart={() => {
+                  beforeDragRef.current = categories.map(x => x.id)
+                  setDragId(c.id)
+                }}
                 onDragOver={e => handleDragOver(e, c.id)}
                 onDragEnd={commitOrder}
                 onDrop={e => { e.preventDefault(); commitOrder() }}
@@ -1152,6 +1208,7 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                 .update({ category_id: created.id }).in('id', [...codes])
               if (moveErr) throw moveErr
             }
+            resetHistory()
             reload()
             showToast(codes.size > 0 ? `분류를 만들고 메뉴 ${codes.size}개를 넣었어요` : '분류를 만들었어요')
           }}
@@ -1179,6 +1236,7 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
             if (unlinkErr) throw unlinkErr
             const { error } = await supabase.from('categories').delete().eq('id', editing.id)
             if (error) throw error
+            resetHistory()
             reload()
             showToast(editing.menus.length > 0
               ? `분류를 지웠어요. 메뉴 ${editing.menus.length}개는 '분류 없음'에 있어요`

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import Working from '../components/ui/Working'
 import { useStore } from '../lib/store-context'
 import { supabase } from '../lib/supabase'
 import { formatPhone, isValidPhone } from '../lib/phone-format'
@@ -540,7 +541,7 @@ function StoreSettingsPanel({
                   disabled={delivery.savingLocation || !delivery.draftAddress.trim()}
                   className="h-[32px] px-[16px] bg-[#6A635E] text-[#FCFCFC] rounded-[9px] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-colors"
                 >
-                  {delivery.savingLocation ? '저장 중...' : '저장'}
+                  {delivery.savingLocation ? <Working label="저장 중" /> : '저장'}
                 </button>
               </div>
             </div>

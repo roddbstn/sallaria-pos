@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Working from '../../../../components/ui/Working'
 import FloatingLabelInput from '../../../../components/auth/FloatingLabelInput'
 import PrimaryButton from '../../../../components/auth/PrimaryButton'
 import { supabase } from '../../../../lib/supabase'
@@ -66,7 +67,7 @@ export default function PasswordStep({ onNext }: StepProps) {
       )}
 
       <PrimaryButton onClick={handleSubmit} disabled={saving} hidden={!valid} className="w-full mt-[220px]">
-        {saving ? '설정 중...' : '확인'}
+        {saving ? <Working label="설정 중" /> : '확인'}
       </PrimaryButton>
     </div>
   )

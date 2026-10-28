@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Working from '../ui/Working'
 import { supabase } from '../../lib/supabase'
 import { PASSWORD_MIN_LEN } from '../../lib/auth-helpers'
 import { toE164 } from '../../pages/auth/signup/phone-format'
@@ -112,7 +113,7 @@ export default function PasswordChangeModal({ phone, onClose, onDone }: Props) {
                 취소
               </button>
               <button onClick={sendOtp} disabled={busy} className="flex-1 h-[42px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity">
-                {busy ? '전송 중...' : '인증번호 받기'}
+                {busy ? <Working label="전송 중" /> : '인증번호 받기'}
               </button>
             </div>
           </>
@@ -149,7 +150,7 @@ export default function PasswordChangeModal({ phone, onClose, onDone }: Props) {
                 취소
               </button>
               <button onClick={verify} disabled={busy || otp.length !== OTP_LEN} className="flex-1 h-[42px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity">
-                {busy ? '확인 중...' : '인증하기'}
+                {busy ? <Working label="확인 중" /> : '인증하기'}
               </button>
             </div>
           </>
@@ -179,7 +180,7 @@ export default function PasswordChangeModal({ phone, onClose, onDone }: Props) {
                 취소
               </button>
               <button onClick={savePassword} disabled={busy} className="flex-1 h-[42px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity">
-                {busy ? '저장 중...' : '변경하기'}
+                {busy ? <Working label="저장 중" /> : '변경하기'}
               </button>
             </div>
           </>

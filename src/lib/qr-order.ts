@@ -128,10 +128,28 @@ export interface PaperGeometry {
   /** 칸 하나의 크기(mm) */
   cellW: number
   cellH: number
-  /** 그 칸에 들어가는 QR 한 변(mm) — 가로·세로 중 좁은 쪽에 맞춘다 */
+  /** 실제로 찍히는 QR 한 변(mm). A4 는 칸에 꽉 채우지 않고 QR_SCALE 만큼 줄인다 */
   qrMM:  number
+  /**
+   * 글자 크기를 정하는 기준(mm) — **줄이기 전** QR 크기다.
+   *
+   * 글자가 qrMM 에 비례하다 보니, QR 만 줄이려 해도 글자가 같이 작아졌다.
+   * 거래처 이름은 붙여 놓고 멀리서 읽는 값이라 QR 과 같이 줄면 안 된다.
+   * 그래서 둘을 떼어 놓는다.
+   */
+  fontMM: number
   perPage: number
 }
+
+/**
+ * A4 칸 안에서 QR 이 차지하는 비율.
+ *
+ * 1.0 이면 칸 높이에 QR+글자가 꽉 들어차는 최대 크기다. 그대로 뽑아 보니
+ * QR 이 칸을 다 먹어 여백이 없고, 잘라서 붙였을 때 답답했다.
+ * 0.8 로 두면 주변에 숨 쉴 자리가 생기고, 스캔은 지금 크기로도 충분하다
+ * (A4 4등분 기준 한 변 약 7cm → 5.6cm. 휴대폰은 2cm 도 읽는다).
+ */
+const QR_SCALE = 0.8
 
 /** 영수증 기본 인쇄폭(mm) — 설정이 없을 때. 80mm 감열지의 인쇄 가능 폭 */
 export const DEFAULT_RECEIPT_MM = 72
@@ -147,15 +165,22 @@ export function paperGeometry(paper: QrPaper, receiptMM: number = DEFAULT_RECEIP
   if (paper === 'receipt') {
     // 영수증은 폭이 고정이라 QR 을 먼저 정하고 글자 높이를 거기에 맞춘다.
     // 좌우 2mm씩 띄운다 — 감열지는 가장자리가 롤러에 눌려 잘 안 찍힌다.
+    // 영수증은 줄이지 않는다 — 폭이 좁아 이미 작고, 감열지는 선이 번져 더 줄이면 안 읽힌다
     const w = Math.max(40, Math.min(80, receiptMM))
     const qrMM = w - 4
-    return { cellW: w, cellH: qrMM + textHeightFor(qrMM), qrMM, perPage: 1 }
+    return { cellW: w, cellH: qrMM + textHeightFor(qrMM), qrMM, fontMM: qrMM, perPage: 1 }
   }
   const spec = PAPER_OPTIONS.find(p => p.key === paper)!
   const cellW = (A4_W - CELL_GAP * (spec.cols - 1)) / spec.cols
   const cellH = (A4_H - CELL_GAP * (spec.rows - 1)) / spec.rows
-  const qrMM  = fitQr(cellW, cellH)
-  return { cellW, cellH, qrMM, perPage: spec.cols * spec.rows }
+  // 칸에 꽉 채운 크기를 먼저 구하고(= 글자 기준), QR 만 QR_SCALE 로 줄인다
+  const fitted = fitQr(cellW, cellH)
+  return {
+    cellW, cellH,
+    qrMM:   fitted * QR_SCALE,
+    fontMM: fitted,
+    perPage: spec.cols * spec.rows,
+  }
 }
 
 /** 23.4 → '2.3cm' */

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import Working from './ui/Working'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { StoreSession } from '../lib/store-context'
@@ -197,7 +198,7 @@ export default function ProfileModal({ open, onClose, session, setSession, authO
                 onClick={handleSaveStoreName}
                 disabled={profileSaving || !nameInput.trim()}
                 className="flex-1 py-2.5 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[13px] font-bold hover:opacity-85 disabled:opacity-50 transition-opacity"
-              >{profileSaving ? '저장 중...' : '저장'}</button>
+              >{profileSaving ? <Working label="저장 중" /> : '저장'}</button>
             </div>
           </div>
         </div>

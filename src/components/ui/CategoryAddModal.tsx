@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import Working from './Working'
 
 // 카테고리 추가 — 2단계(설정 → 적용할 메뉴 선택).
 //
@@ -192,7 +193,7 @@ export default function CategoryAddModal({
               disabled={step === 1 ? !trimmed : saving}
               className="px-[34px] h-[52px] rounded-[12px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
             >
-              {step === 1 ? '다음' : (saving ? '만드는 중…' : '완료')}
+              {step === 1 ? '다음' : (saving ? <Working label="만드는 중" /> : '완료')}
             </button>
           </div>
         </div>

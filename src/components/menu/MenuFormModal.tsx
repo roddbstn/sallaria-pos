@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
+import Working from '../ui/Working'
 import BigToggle from './BigToggle'
 import { TAG_BADGES } from './tag-badges'
 import type { MenuFormValues, MenuFormCategory, MenuFormOptionGroup } from './menu-form-types'
@@ -242,7 +243,7 @@ export default function MenuFormModal({
             disabled={saving || !canSave}
             className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[15px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
           >
-            {saving ? '저장 중...' : (mode === 'edit' ? '저장' : '추가')}
+            {saving ? <Working label="저장 중" /> : (mode === 'edit' ? '저장' : '추가')}
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import Working from './Working'
 
 // 주문 취소 — 사유를 고르는 모달. Figma 827:708(닫힘) · 494:895(펼침).
 //
@@ -151,7 +152,7 @@ export default function CancelReasonModal({ orderNumber, onClose, onConfirm, bus
               className="pressable flex-1 rounded-[13px] bg-[#FFA8AC] text-[#F9F9F9] text-[19px] font-semibold disabled:opacity-40"
               style={{ height: 57 }}
             >
-              {busy ? '취소 중…' : '네'}
+              {busy ? <Working label="취소 중" /> : '네'}
             </button>
           </div>
         </div>

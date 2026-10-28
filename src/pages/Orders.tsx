@@ -433,6 +433,23 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
   // 팝오버용 — 전체 거래처 목록 (필터 무관)
   const allAccountSales = useMemo(() => calcAccountSales(orders), [orders])
 
+  /**
+   * 거래처 필터 목록 — 기간 매출 + **제외 중인데 이 기간 주문이 없는 거래처**.
+   *
+   * calcAccountSales 는 그 기간 주문에서만 만들어진다. 그래서 제외해 둔 거래처가
+   * 그 기간에 주문이 없으면 목록에서 통째로 사라졌다 — 버튼에는 '제외 중'이라고
+   * 떠 있는데 정작 그 창에서는 풀 방법이 없었다(한 번 제외하면 그 계정이 다시
+   * 주문할 때까지 못 되돌린다). 0건으로라도 자리를 만들어 준다.
+   */
+  const filterRows = useMemo(() => {
+    const present = new Set(allAccountSales.map(a => a.name))
+    const missing = [...excludedAccounts]
+      .filter(n => !present.has(n))
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+      .map(name => ({ name, count: 0, ordererCount: 0, total: 0 }))
+    return [...allAccountSales, ...missing]
+  }, [allAccountSales, excludedAccounts])
+
   // 삭제된 주문 토글 · 거래처 필터는 **탭 줄 오른쪽 끝**에 아이콘으로 둔다.
   // 전에는 공유 헤더 바(setHeaderRight)에 주입해서, 화면 레이아웃에 속하지 않고
   // 상단에 혼자 떠 있었다 — 어느 화면의 버튼인지 알기 어려웠다.
@@ -749,7 +766,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     <div className="flex items-center justify-between mb-[8px]">
                       <span className="text-[13px] font-medium text-[#1E1E1E]">거래처 필터</span>
                       <span className="text-[11px] font-normal text-[#ADADAD]">
-                        {allAccountSales.length - excludedAccounts.size}/{allAccountSales.length}곳
+                        {filterRows.length - excludedAccounts.size}/{filterRows.length}곳
                       </span>
                     </div>
                     {/* 전체선택 — 한 곳만 보고 싶을 때 '전체 해제 → 하나 체크'가 가장 빠르다 */}
@@ -762,8 +779,8 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                         전체 선택
                       </button>
                       <button
-                        onClick={() => setExcludedAccounts(new Set(allAccountSales.map(a => a.name)))}
-                        disabled={excludedAccounts.size === allAccountSales.length}
+                        onClick={() => setExcludedAccounts(new Set(filterRows.map(a => a.name)))}
+                        disabled={excludedAccounts.size === filterRows.length}
                         className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[11px] font-normal transition-colors hover:bg-[#E8E4E2] disabled:opacity-40 disabled:hover:bg-[#F2F2F2]"
                       >
                         전체 해제
@@ -771,9 +788,9 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     </div>
                   </div>
                   <div className="max-h-[420px] overflow-y-auto">
-                    {allAccountSales.length === 0 ? (
+                    {filterRows.length === 0 ? (
                       <div className="px-4 py-5 text-center text-[12px] font-normal text-[#ADADAD]">이 기간에 주문이 없어요</div>
-                    ) : allAccountSales.map(acc => (
+                    ) : filterRows.map(acc => (
                       <label key={acc.name} className="flex items-center gap-2.5 px-3 py-2 hover:bg-[#F2F2F2] cursor-pointer">
                         <input
                           type="checkbox"
@@ -789,10 +806,18 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                           className="w-4 h-4 flex-shrink-0"
                         />
                         <span className="flex-1 text-[12px] text-ink truncate">{acc.name}</span>
-                        <div className="text-right flex-shrink-0">
-                          <div className="text-[11px] font-normal text-[#ADADAD]">{acc.count}건</div>
-                          <div className="text-[11px] font-medium text-[#1E1E1E]">{won(acc.total)}</div>
-                        </div>
+                        {/* 0건은 '이 기간에 주문이 없다'는 뜻이지 '매출 0원'이 아니다.
+                            숫자만 두면 실적이 0 인 거래처로 읽힌다. */}
+                        {acc.count === 0 ? (
+                          <span className="flex-shrink-0 text-[11px] font-normal text-[#ADADAD] whitespace-nowrap">
+                            해당 기간 미주문
+                          </span>
+                        ) : (
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-[11px] font-normal text-[#ADADAD]">{acc.count}건</div>
+                            <div className="text-[11px] font-medium text-[#1E1E1E]">{won(acc.total)}</div>
+                          </div>
+                        )}
                       </label>
                     ))}
                   </div>

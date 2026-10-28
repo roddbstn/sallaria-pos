@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Working from '../../../../components/ui/Working'
 import PhoneKeypad, { PHONE_KEYPAD_WIDTH } from '../../../../components/auth/PhoneKeypad'
 import DigitDisplay from '../../../../components/auth/DigitDisplay'
 import { supabase } from '../../../../lib/supabase'
@@ -103,7 +104,7 @@ export default function OtpStep({ data, onChange, onNext, otpRemainingSec, onSen
           onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background = 'var(--gray-bg)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
         >
-          {resending ? '재전송 중...' : '인증번호 다시 받기'}
+          {resending ? <Working label="재전송 중" /> : '인증번호 다시 받기'}
         </button>
       </div>
     </div>

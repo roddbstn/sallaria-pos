@@ -228,14 +228,11 @@ function RateBars({ title, hint, data, color }: {
     <div>
       <div className="flex items-center gap-[5px] mb-[12px]">
         <span className="text-[13px] font-normal text-[#6A635E]">{title}</span>
-        {hint && (
-          <span
-            title={hint}
-            className="w-[13px] h-[13px] rounded-full bg-[#E8E4E2] text-[#787878] text-[9px] flex items-center justify-center cursor-default flex-shrink-0"
-          >
-            i
-          </span>
-        )}
+        {/* ⚠️ 브라우저 기본 title 속성을 쓰면 안 된다.
+            똑같이 생긴 'i' 인데 **1~2초 기다려야** OS 툴팁이 뜨고 모양도 우리 것과
+            다르다. 바로 옆 지표 칸의 i 는 InfoTip 이라 즉시 뜨는데 여기만 안 떠서
+            "왜 이건 말풍선이 안 나오냐"가 됐다. 같은 모양이면 같게 동작해야 한다. */}
+        {hint && <InfoTip text={hint} label={`${title} 설명`} />}
       </div>
       <div className="flex items-end gap-[8px]" style={{ height: H }}>
         {data.map(d => (
@@ -619,7 +616,7 @@ function CustomerDetailPanel() {
           <div className="flex-shrink-0 w-[300px] flex flex-col gap-[26px]">
             <RateBars
               title="월별 주문율 추이"
-              hint="그 달에 한 번이라도 주문한 거래처 비율이에요. 분모는 그 달까지 등록된 거래처 수입니다."
+              hint={'그 달에 한 번이라도 주문한 거래처 비율이에요\n분모는 그 달까지 등록된 거래처 수입니다'}
               color="#6A635E"
               data={stats.monthly.map(m => ({ label: m.label, value: m.orderRate }))}
             />

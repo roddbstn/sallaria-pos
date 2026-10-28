@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Working from '../../../../components/ui/Working'
 import PrimaryButton from '../../../../components/auth/PrimaryButton'
 import FakeOrderPopup from '../../../../components/auth/FakeOrderPopup'
 import { api } from '../../../../lib/ipc'
@@ -100,7 +101,7 @@ export default function PrinterSetupStep({ data, onNext }: StepProps) {
             className="w-full border border-dashed rounded-xl px-4 py-3.5 text-[14px] text-left mb-3 transition-colors disabled:opacity-60"
             style={{ borderColor: 'var(--gray-border)', color: 'var(--gray-text)' }}
           >
-            {scanning ? '포트 찾는 중...' : '프린터 연결하기'}
+            {scanning ? <Working label="포트 찾는 중" /> : '프린터 연결하기'}
           </button>
 
           {comPorts.length > 0 && (
@@ -126,7 +127,7 @@ export default function PrinterSetupStep({ data, onNext }: StepProps) {
           )}
 
           <PrimaryButton onClick={handleConnect} disabled={connecting} hidden={!portName} className="w-full">
-            {connecting ? '연결 중...' : '연결하기'}
+            {connecting ? <Working label="연결 중" /> : '연결하기'}
           </PrimaryButton>
 
           <button

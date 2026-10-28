@@ -1,4 +1,5 @@
 import SelectableCard from '../../../../components/auth/SelectableCard'
+import Working from '../../../../components/ui/Working'
 import PrimaryButton from '../../../../components/auth/PrimaryButton'
 import type { StepProps } from '../types'
 
@@ -46,7 +47,7 @@ export default function PlanStep({ data, onChange, onNext, submitting, submitErr
 
       {/* mt-auto로 매장명 화면 버튼과 같은 높이(고정 396px 박스 하단)에 맞춤 */}
       <PrimaryButton onClick={onNext} disabled={submitting} className="w-full mt-auto">
-        {submitting ? '저장하는 중...' : data.plan === 'free' ? '무료로 시작하기' : '신청하고 시작하기'}
+        {submitting ? <Working label="저장하는 중" /> : data.plan === 'free' ? '무료로 시작하기' : '신청하고 시작하기'}
       </PrimaryButton>
     </div>
   )

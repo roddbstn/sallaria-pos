@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Working from './Working'
 import { supabase, type DbOptionGroup, type DbOptionItem, type DbMenu } from '../../lib/supabase'
 
 // 옵션 그룹 수정 — 이름·필수여부·선택방식·선택 개수·항목(이름/추가가격/수량버튼)·연결 메뉴·삭제.
@@ -407,7 +408,7 @@ export default function OptionGroupEditModal({
               닫기
             </button>
             <button onClick={save} disabled={saving} className="h-[38px] px-[20px] rounded-[10px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity">
-              {saving ? '저장 중…' : '저장'}
+              {saving ? <Working label="저장 중" /> : '저장'}
             </button>
           </div>
         </div>
