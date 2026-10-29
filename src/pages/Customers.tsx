@@ -1289,6 +1289,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   for (const a of pAccounts) pTypeCounts[a.account_type] = (pTypeCounts[a.account_type] ?? 0) + 1
   const pTypeTotal = pAccounts.length || 1
 
+  /** 순위에서 눌러 펼쳐 볼 손님 — 구성원 목록에서 쓰는 모달과 **같은 것**이다.
+   *  CustomerDetailPanel 의 profileOf 와 따로 두는 이유: 이 목록은 거래처를
+   *  고르지 않은 기본 패널에 있어서 그 컴포넌트 안에 없다. */
+  const [rankProfile, setRankProfile] = useState<{ name: string; code: string; account: string } | null>(null)
+
   /** 고른 기간 + 거래처 필터로 상위 10명을 다시 센다.
    *  건수 → 같으면 주문액 → 그래도 같으면 이름순(안정 정렬) */
   const pTopOrderers = (() => {
@@ -1905,8 +1910,20 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 {/* 사람 → 어느 선결제 계정 → 몇 건. 이름이 먼저다 —
                     '누가' 많이 시켰는지가 이 목록의 주제고, 계정은 그 사람을
                     어디서 찾을지 알려주는 보조 정보다. */}
+                {/* 눌러서 그 사람 프로필을 연다 — 구성원 목록과 같은 모달이다.
+                    "많이 시킨 사람"을 보는 자리에서 바로 "그래서 뭘 시키나"로
+                    넘어가야 한다. 전엔 거래처를 찾아 들어가 구성원 탭에서
+                    같은 이름을 다시 찾아야 했다.
+                    -mx/px 로 눌리는 면을 글자 밖까지 넓힌다 — 좁은 패널에서
+                    글자 폭만 누를 수 있으면 자주 빗나간다. */}
                 {pTopOrderers.map((t, i) => (
-                  <div key={`${t.accountCode}-${t.name}`} className="flex items-center gap-[10px]">
+                  <button
+                    key={`${t.accountCode}-${t.name}`}
+                    onClick={() => setRankProfile({
+                      name: t.name, code: t.accountCode, account: accNameOf(t.accountCode),
+                    })}
+                    className="w-full text-left flex items-center gap-[10px] -mx-[6px] px-[6px] py-[3px] rounded-[7px] hover:bg-[#F2F2F2] transition-colors"
+                  >
                     <span className={`w-[19px] h-[19px] rounded-full flex items-center justify-center text-[11px] font-normal tabular-nums flex-shrink-0 ${
                       i === 0 ? 'bg-[#E8E4E2] text-[#8C8379]' : 'bg-[#F2F2F2] text-[#ADADAD]'
                     }`}>{i + 1}</span>
@@ -1921,7 +1938,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       <span className="text-[12px] font-normal text-[#6A635E] tabular-nums">{t.orders}건</span>
                       <span className="text-[11px] font-normal text-[#ADADAD] tabular-nums">{won(t.amount)}</span>
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -2292,6 +2309,17 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           storeId={storeId}
           onPrintReceipt={qrPrint.printQrReceipt}
           onClose={() => setAccountQr(null)}
+        />
+      )}
+
+      {/* 가장 많이 주문한 고객에서 누른 사람의 프로필 */}
+      {rankProfile && (
+        <CustomerProfileModal
+          storeId={storeId}
+          ordererName={rankProfile.name}
+          accountCode={rankProfile.code}
+          accountName={rankProfile.account}
+          onClose={() => setRankProfile(null)}
         />
       )}
 
