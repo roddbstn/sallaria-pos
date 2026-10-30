@@ -43,12 +43,12 @@ const DEFAULTS: Tip = {
   tierDistanceM: 100, tierFee: 100,
 }
 
-/** 미리보기용 거리 */
-const PREVIEW_M = [500, 1000, 2000, 3000, 5000]
-
 /**
  * 거리 → 배달팁. **DB 의 calculate_delivery_fee 와 같은 규칙이어야 한다.**
- * 다르면 설정 화면이 보여준 금액과 손님이 실제로 낸 금액이 어긋난다.
+ *
+ * 거리별 표를 걷어내면서 화면에서는 안 쓰게 됐지만 남겨둔다 —
+ * 이 규칙이 DB 와 같은지 검증하는 테스트(delivery-fee.test.ts)가 여기를 본다.
+ * 규칙이 갈라지면 그 테스트가 먼저 운다.
  */
 export function estimate(distanceM: number, t: Tip): number {
   if (distanceM <= t.baseDistanceM) return t.baseFee
@@ -155,8 +155,7 @@ export default function DeliveryPanel({ storeId, showToast }: {
     <div>
       <div className="text-[18px] font-semibold leading-[22px] text-[#1E1E1E] mb-[12px]">배달 정보</div>
       <div className="text-[14px] font-normal text-[#787878] mb-[46px] leading-relaxed">
-        매장에서 배달지까지의 거리로 배달팁이 자동 계산돼요.<br />
-        손님이 주문할 때 이 설정으로 금액이 매겨집니다.
+        매장에서 배달지까지의 거리로 배달팁이 자동 계산돼요.
       </div>
 
       <div className="flex gap-[48px] items-start">
@@ -165,11 +164,7 @@ export default function DeliveryPanel({ storeId, showToast }: {
           {/* 기본 배달거리 — 자유 입력이 아니라 선택 */}
           <div>
             <FieldLabel>기본 배달거리</FieldLabel>
-            <div className="text-[13px] text-[#787878] leading-relaxed mt-[7px] mb-[16px]">
-              기본 배달팁을 적용할 거리를 선택해주세요.<br />
-              기본 배달거리에는 할증 배달팁이 적용되지 않습니다.
-            </div>
-            <div className="flex gap-[8px]">
+            <div className="flex gap-[8px] mt-[16px]">
               {BASE_DISTANCES.map(m => {
                 const on = tip.baseDistanceM === m
                 return (
@@ -204,7 +199,6 @@ export default function DeliveryPanel({ storeId, showToast }: {
               />
               <span className="text-[14px] text-[#787878]">원</span>
             </div>
-            <Hint>{distanceLabel(tip.baseDistanceM)} 안쪽은 이 금액만 받아요</Hint>
           </div>
 
           {/* 추가거리당 할증 배달팁 — 단위는 버튼으로 고른다 */}
@@ -247,59 +241,14 @@ export default function DeliveryPanel({ storeId, showToast }: {
 
         </div>
 
-        {/* ── 가운데: 반경 지도 ──
-            숫자만 보면 "1.5km 면 어디까지지"가 안 그려진다. 매장을 중심으로 원을
-            얹으면 아는 동네 이름으로 읽힌다 — 거리 버튼을 바꾸면 원이 같이 커진다.
+        {/* ── 오른쪽: 배달 반경 지도 ──
+            거리별 배달팁 표를 걷어내고 지도를 키웠다. 표는 숫자 다섯 줄이라
+            한 번 보면 규칙이 다 읽히는데, 지도는 거리를 바꿀 때마다 새로 읽을 게
+            생긴다 — 같은 자리를 차지한다면 지도 쪽이 훨씬 많이 말한다.
             좌표가 없는 매장(주소 미등록)은 지도를 띄우지 않는다. */}
-        {loc && (
-          <div className="flex-shrink-0 w-[300px]">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-[16px]">
             <FieldLabel>배달 반경</FieldLabel>
-            <div className="mt-[16px]">
-              <StoreRadiusMap lat={loc.lat} lng={loc.lng} radiusM={tip.baseDistanceM} />
-            </div>
-          </div>
-        )}
-
-        {/* ── 오른쪽: 거리별 미리보기 ──
-            숫자를 고치면 바로 움직인다. "그래서 2km 손님은 얼마를 내지?"를
-            머릿속으로 계산하지 않아도 되게. */}
-        <div className="flex-1 min-w-0 max-w-[320px]">
-          <FieldLabel>거리별 배달팁</FieldLabel>
-          <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mt-[16px]">
-            <div className="flex items-center bg-[#E8E4E2] px-[18px] h-[38px] text-[12px] font-normal text-[#6A635E]">
-              <span className="flex-1">배달 거리</span>
-              <span className="w-[100px] text-right">배달팁</span>
-            </div>
-            {PREVIEW_M.map((m, i) => {
-              const inBase = m <= tip.baseDistanceM
-              return (
-                <div
-                  key={m}
-                  className={`flex items-center px-[18px] h-[42px] bg-[#FCFCFC] ${
-                    i > 0 ? 'border-t border-[#F2F2F2]' : ''
-                  }`}
-                >
-                  <span className="flex-1 text-[13px] text-[#1E1E1E] tabular-nums">
-                    {distanceLabel(m)}
-                    {inBase && (
-                      <span className="ml-[7px] text-[11px] text-[#787878]">기본 거리</span>
-                    )}
-                  </span>
-                  <span className="w-[100px] text-right text-[13px] font-medium text-[#1E1E1E] tabular-nums">
-                    {valid ? won(estimate(m, tip)) : '—'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-          <div className="text-[12px] text-[#ADADAD] mt-[12px] leading-relaxed">
-            직선 거리 기준이에요. 실제 도로 거리와는 차이가 있을 수 있어요.
-          </div>
-
-          {/* 저장은 **표 아래 오른쪽**에 둔다. 설정값 옆에 두면 "방금 고친 그 칸만
-              저장되나" 싶은데, 실제로는 네 값이 한 번에 나간다. 결과(표)를 보고
-              누르는 자리에 있어야 "이대로 저장"이 된다. */}
-          <div className="flex justify-end mt-[16px]">
             <button
               onClick={save}
               disabled={!dirty || !valid || saving}
@@ -307,6 +256,16 @@ export default function DeliveryPanel({ storeId, showToast }: {
             >
               {saving ? '저장 중…' : dirty ? '저장' : '저장됨'}
             </button>
+          </div>
+          {loc ? (
+            <StoreRadiusMap lat={loc.lat} lng={loc.lng} radiusM={tip.baseDistanceM} />
+          ) : (
+            <div className="h-[460px] rounded-[11px] border border-[#E8E4E2] bg-[#FCFCFC] flex items-center justify-center text-[13px] text-[#ADADAD] text-center leading-relaxed">
+              매장 주소를 먼저 등록하면<br />배달 반경을 지도로 볼 수 있어요
+            </div>
+          )}
+          <div className="text-[12px] text-[#ADADAD] mt-[12px] leading-relaxed">
+            직선 거리 기준이에요. 실제 도로 거리와는 차이가 있을 수 있어요.
           </div>
         </div>
       </div>
