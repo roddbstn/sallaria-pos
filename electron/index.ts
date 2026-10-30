@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker, session } from 'electron'
 import os from 'node:os'
 import fs from 'node:fs/promises'
 import { autoUpdater } from 'electron-updater'
@@ -877,8 +877,38 @@ function handleDeeplinkOnStart(): void {
   }
 }
 
+/**
+ * 카카오 지도 SDK 요청에 Referer 를 붙인다.
+ *
+ * ── 왜 필요한가 ───────────────────────────────────────────────────────────
+ * 카카오는 JavaScript 키를 **등록된 도메인에서 온 요청인지**로 막는다(키 도용 방지).
+ * 그런데 이 앱은 프로덕션에서 화면이 file:// 로 뜨고(아래 loadFile), file:// 은
+ * Referer 를 보내지 않는다 — 등록할 도메인 자체가 없어서 지도가 통째로 안 뜬다.
+ *
+ * 그래서 메인 프로세스에서 Referer 를 채워 보낸다. 우회가 아니다 —
+ * **우리 카카오 앱의 우리 키**이고, 아래 도메인도 우리가 등록한 우리 서비스다.
+ * 카카오의 도메인 검사는 남이 키를 훔쳐 쓰는 걸 막자는 것이지 같은 제품의
+ * 데스크탑 클라이언트를 막자는 게 아니다.
+ *
+ * ⚠️ 이 도메인이 개발자센터 > 플랫폼 > Web 에서 빠지면 POS 지도가 조용히 죽는다.
+ *    (QR웹은 진짜 https 도메인에서 떠서 이 처리가 필요 없다)
+ */
+const KAKAO_REFERER = 'https://sunpos-kakao.vercel.app'
+
+function attachKakaoReferer() {
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://dapi.kakao.com/*', 'https://*.daumcdn.net/*'] },
+    (details, callback) => {
+      callback({
+        requestHeaders: { ...details.requestHeaders, Referer: KAKAO_REFERER },
+      })
+    },
+  )
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('kr.sallaria.pos')
+  attachKakaoReferer()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
 
   // sunpos:// 프로토콜 핸들러로 등록 (설치된 앱에서만 동작)

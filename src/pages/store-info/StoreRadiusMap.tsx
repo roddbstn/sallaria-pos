@@ -1,27 +1,43 @@
 import { useEffect, useRef, useState } from 'react'
 
-// 매장 주변 배달 반경 — 기본 배달거리를 지도 위 원으로 보여준다.
+// 매장 주변 배달 반경 — 기본 배달거리를 지도 위 원으로 보여준다. (카카오맵 JS SDK)
 //
-// ── 왜 OSM 타일인가 ────────────────────────────────────────────────────────
-// POS 는 Electron 이고 프로덕션에서 화면이 file:// 로 뜬다. 카카오·네이버 지도
-// JS SDK 는 **등록된 도메인**에서 온 요청인지로 막는데, file:// 은 Referer 를
-// 보내지 않아 등록할 도메인 자체가 없다. (QR웹은 https 라 카카오맵을 쓴다)
-// OSM 래스터 타일은 키도 도메인 제한도 없고, 여기서 필요한 건 "어디쯤 어느 만큼"뿐이다.
+// ── file:// 에서 어떻게 뜨나 ───────────────────────────────────────────────
+// 카카오는 JavaScript 키를 **등록된 도메인에서 온 요청인지**로 막는데, 이 앱은
+// 프로덕션에서 화면이 file:// 로 뜨고 file:// 은 Referer 를 보내지 않는다.
+// 그래서 메인 프로세스가 Referer 를 채워 보낸다 — electron/index.ts 의
+// attachKakaoReferer(). 그 처리가 빠지면 여기는 조용히 '불러오지 못했어요'가 된다.
+//
+// ── 원은 SDK 가 그린다 ─────────────────────────────────────────────────────
+// kakao.maps.Circle 은 **미터 단위 반지름**을 그대로 받는다. 줌이 바뀌어도 원의
+// 실제 크기가 유지되므로, 픽셀 환산을 직접 할 필요가 없다.
+// (전엔 OSM 타일 위에 SVG 원을 그리느라 미터→픽셀 환산을 손으로 했다)
 //
 // 지도를 끌거나 확대하지 않는다. 설정값을 확인하는 그림이지 탐색하는 지도가 아니다.
-//
-// ⚠️ OSM 이용 정책상 출처 표기가 필수다. 아래 attribution 을 지우지 말 것.
 
-const TILE = 256
+const JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY as string | undefined
 
-const lngToX = (lng: number, z: number) => ((lng + 180) / 360) * 2 ** z
-function latToY(lat: number, z: number) {
-  const r = (lat * Math.PI) / 180
-  return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z
-}
-/** 그 위도·줌에서 1픽셀이 몇 미터인가 */
-function metersPerPixel(lat: number, z: number) {
-  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z
+/** SDK 는 한 번만 받는다 */
+let sdkPromise: Promise<void> | null = null
+function loadKakaoSdk(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((window as any).kakao?.maps?.LatLng) return Promise.resolve()
+  if (sdkPromise) return sdkPromise
+
+  sdkPromise = new Promise<void>((resolve, reject) => {
+    if (!JS_KEY) { reject(new Error('no key')); return }
+    const el = document.createElement('script')
+    el.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${JS_KEY}&autoload=false`
+    el.async = true
+    el.onload = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).kakao.maps.load(() => resolve())
+    }
+    el.onerror = () => reject(new Error('sdk load failed'))
+    document.head.appendChild(el)
+  })
+  return sdkPromise
 }
 
 export default function StoreRadiusMap({ lat, lng, radiusM, height = 260 }: {
@@ -32,95 +48,77 @@ export default function StoreRadiusMap({ lat, lng, radiusM, height = 260 }: {
   height?: number
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(0)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapRef    = useRef<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const circleRef = useRef<any>(null)
+  const [failed, setFailed] = useState(false)
 
+  // 지도는 한 번만 만든다. 거리만 바뀔 때 지도를 다시 그리면 타일이 매번 깜빡인다.
   useEffect(() => {
-    const el = boxRef.current
-    if (!el) return
-    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width))
-    ro.observe(el)
-    setWidth(el.clientWidth)
-    return () => ro.disconnect()
-  }, [])
+    let dead = false
+    loadKakaoSdk()
+      .then(() => {
+        if (dead || !boxRef.current || mapRef.current) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const kakao = (window as any).kakao
+        const center = new kakao.maps.LatLng(lat, lng)
 
-  const ready = width > 0
-  const tiles: { key: string; src: string; left: number; top: number }[] = []
-  let zoom = 13
-  let radiusPx = 0
-  let cx = 0
-  let cy = 0
+        const map = new kakao.maps.Map(boxRef.current, { center, level: 6 })
+        map.setDraggable(false)
+        map.setZoomable(false)
+        mapRef.current = map
 
-  if (ready) {
-    // 원이 **다 들어오는** 가장 가까운 줌. 여백 26px — 원이 가장자리에 닿으면
-    // 어디까지가 배달 범위인지 끊겨 보인다.
-    const fit = Math.min(width, height) / 2 - 26
-    for (let z = 17; z >= 6; z--) {
-      zoom = z
-      if (radiusM / metersPerPixel(lat, z) <= fit) break
-    }
-    radiusPx = radiusM / metersPerPixel(lat, zoom)
-
-    const centerX = lngToX(lng, zoom)
-    const centerY = latToY(lat, zoom)
-    const originX = centerX - width / 2 / TILE
-    const originY = centerY - height / 2 / TILE
-    cx = width / 2
-    cy = height / 2
-
-    const max = 2 ** zoom
-    for (let x = Math.floor(originX); x <= Math.floor(originX + width / TILE); x++) {
-      for (let y = Math.floor(originY); y <= Math.floor(originY + height / TILE); y++) {
-        if (y < 0 || y >= max) continue
-        const wx = ((x % max) + max) % max
-        tiles.push({
-          key: `${zoom}/${wx}/${y}`,
-          src: `https://tile.openstreetmap.org/${zoom}/${wx}/${y}.png`,
-          left: (x - originX) * TILE,
-          top:  (y - originY) * TILE,
+        // 배달 반경 — 연한 갈색(디자인 시스템 #6A635E 계열).
+        // 채움을 옅게 둬야 아래 지도가 비쳐서 "어느 동네까지"가 읽힌다.
+        // 불투명하게 깔면 그냥 색 원이 되고 지도를 띄운 뜻이 사라진다.
+        circleRef.current = new kakao.maps.Circle({
+          center, radius: radiusM,
+          strokeWeight: 2, strokeColor: '#8C8379', strokeOpacity: 0.9, strokeStyle: 'solid',
+          fillColor: '#6A635E', fillOpacity: 0.18,
         })
-      }
-    }
-  }
+        circleRef.current.setMap(map)
+
+        // 매장 — 원의 중심
+        const dot = document.createElement('div')
+        dot.style.cssText =
+          'width:11px;height:11px;border-radius:999px;background:#2C261F;border:2px solid #fff;'
+          + 'box-shadow:0 1px 3px rgba(0,0,0,0.35)'
+        new kakao.maps.CustomOverlay({ map, position: center, content: dot }).setMap(map)
+      })
+      .catch(() => { if (!dead) setFailed(true) })
+    return () => { dead = true }
+  }, [lat, lng])
+
+  // 거리가 바뀌면 원만 키우고 화면을 그 원에 맞춘다
+  useEffect(() => {
+    const map = mapRef.current
+    const circle = circleRef.current
+    if (!map || !circle) return
+    circle.setRadius(radiusM)
+    // 원이 다 들어오게. setBounds 가 여백까지 계산해 줌을 고른다 —
+    // 미터→픽셀 환산을 직접 하지 않아도 된다.
+    map.setBounds(circle.getBounds(), 18, 18, 18, 18)
+  }, [radiusM])
 
   return (
     <div
-      ref={boxRef}
       className="relative w-full overflow-hidden rounded-[11px] bg-[#EDEDED] border border-[#E8E4E2]"
       style={{ height }}
     >
-      {tiles.map(t => (
-        <img
-          key={t.key} src={t.src} alt="" aria-hidden
-          width={TILE} height={TILE} loading="lazy" draggable={false}
-          className="absolute max-w-none select-none"
-          style={{ left: t.left, top: t.top }}
-        />
-      ))}
+      <div ref={boxRef} className="absolute inset-0" />
 
-      {ready && (
-        <svg className="absolute inset-0 pointer-events-none" width={width} height={height}>
-          {/* 배달 반경 — 연한 갈색(디자인 시스템 #6A635E 계열).
-              채움을 옅게 둬야 아래 지도가 비쳐서 "어느 동네까지"가 읽힌다.
-              불투명하게 깔면 그냥 색 원이 되고 지도를 띄운 뜻이 사라진다. */}
-          <circle
-            cx={cx} cy={cy} r={radiusPx}
-            fill="#6A635E" fillOpacity="0.18"
-            stroke="#8C8379" strokeWidth="2"
-          />
-          {/* 매장 — 원의 중심 */}
-          <circle cx={cx} cy={cy} r={5} fill="#2C261F" stroke="#fff" strokeWidth="2" />
-        </svg>
+      {failed && (
+        <div className="absolute inset-0 flex items-center justify-center text-[12px] text-[#ADADAD]">
+          지도를 불러오지 못했어요
+        </div>
       )}
 
-      {ready && (
-        <span className="absolute left-[10px] top-[10px] rounded-[7px] bg-[#2C261F]/85 px-[9px] py-[4px] text-[11px] font-medium text-white">
+      {!failed && (
+        <span className="absolute left-[10px] top-[10px] z-10 rounded-[7px] bg-[#2C261F]/85 px-[9px] py-[4px] text-[11px] font-medium text-white">
           매장 반경 {radiusM >= 1000 ? `${(radiusM / 1000).toFixed(radiusM % 1000 === 0 ? 0 : 1)}km` : `${radiusM}m`}
         </span>
       )}
-
-      <span className="absolute bottom-0 right-0 bg-white/75 px-[5px] text-[9px] leading-[13px] text-[#727272]">
-        © OpenStreetMap
-      </span>
     </div>
   )
 }
