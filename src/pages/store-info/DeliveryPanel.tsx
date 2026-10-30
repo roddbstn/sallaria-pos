@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { won } from '../../lib/ipc'
 import StoreRadiusMap from './StoreRadiusMap'
@@ -60,6 +60,78 @@ export function estimate(distanceM: number, t: Tip): number {
 /** m → 사람이 읽는 거리 */
 function distanceLabel(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)}km` : `${m}m`
+}
+
+/**
+ * 할증 단위(100m·500m) 드롭다운. [Figma 491:3357]
+ *
+ * 선택지가 둘뿐이라 버튼 두 개로 뒀었는데, 그러면 **둘 다 고른 것처럼** 읽힌다.
+ * 드롭다운은 "지금 값은 하나"라는 게 모양만으로 전해진다.
+ *
+ * 여는 방식·바깥 클릭·Esc 처리는 TimeSelect 와 같은 어법이다.
+ * 테두리만 #ADADAD 로, 옆 금액칸(#EDEDED)보다 진하다 — 피그마대로이고,
+ * 입력칸은 '비어 있을 수 있는 칸'이지만 드롭다운은 **항상 값이 들어 있는 칸**이라
+ * 그 차이가 테두리로 드러나는 게 맞다.
+ */
+function TierDistanceSelect({ value, onChange }: {
+  value: number
+  onChange: (m: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDocDown(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={wrapRef} className="relative w-[118px] flex-shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full h-[42px] px-[14px] rounded-[9px] border border-[#ADADAD] bg-white flex items-center justify-between hover:border-[#6A635E] transition-colors"
+      >
+        <span className="text-[14px] leading-[17px] text-[#1E1E1E]">{value}m당</span>
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+             className={`flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path d="M3.5 6L8 10.5L12.5 6" stroke="#787878" strokeWidth="1.8"
+                strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-[46px] z-30 bg-[#FCFCFC] border border-[#E8E4E2] rounded-[10px] shadow-[0_6px_20px_rgba(0,0,0,0.12)] py-[6px]">
+          {TIER_DISTANCES.map(m => {
+            const selected = m === value
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { onChange(m); setOpen(false) }}
+                className={`w-full h-[34px] px-[14px] text-left text-[13px] transition-colors ${
+                  selected ? 'bg-[#F2F2F2] text-[#2C261F] font-medium' : 'text-[#414141] font-normal hover:bg-[#F2F2F2]'
+                }`}
+              >
+                {m}m당
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -203,31 +275,14 @@ export default function DeliveryPanel({ storeId, storeName, showToast }: {
             </div>
           </div>
 
-          {/* 추가거리당 할증 배달팁 — 단위는 버튼으로 고른다 */}
+          {/* 추가거리당 할증 배달팁 — 단위는 드롭다운으로 고른다 */}
           <div>
             <FieldLabel>추가거리당 할증 배달팁</FieldLabel>
-            {/* 단위(100m·500m)는 **위아래로** 세운다. 옆으로 나열하면 바로 오른쪽
-                금액칸과 한 줄에 섞여 "500m당 100원"처럼 한 덩어리로 읽히는데,
-                실제로는 둘 중 **하나만** 골라진 상태다. */}
-            <div className="flex items-start gap-[14px] mt-[16px]">
-              <div className="flex flex-col gap-[8px]">
-                {TIER_DISTANCES.map(m => {
-                  const on = tip.tierDistanceM === m
-                  return (
-                    <button
-                      key={m}
-                      onClick={() => setTip({ ...tip, tierDistanceM: m })}
-                      className={`h-[38px] w-[92px] rounded-[9px] text-[14px] whitespace-nowrap transition-colors ${
-                        on
-                          ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
-                          : 'bg-[#F2F2F2] text-[#787878] font-normal hover:bg-[#E8E4E2]'
-                      }`}
-                    >
-                      {m}m당
-                    </button>
-                  )
-                })}
-              </div>
+            <div className="flex items-start gap-[10px] mt-[16px]">
+              <TierDistanceSelect
+                value={tip.tierDistanceM}
+                onChange={m => setTip({ ...tip, tierDistanceM: m })}
+              />
               <div>
                 <div className="flex items-center gap-[9px]">
                   <input

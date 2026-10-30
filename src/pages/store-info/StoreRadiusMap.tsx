@@ -106,7 +106,9 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const circleRef  = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const overlaysRef = useRef<any[]>([])
+  const pinRef  = useRef<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tagsRef = useRef<any[]>([])
   const roRef = useRef<ResizeObserver | null>(null)
   /**
    * 점주가 직접 지도를 움직였나.
@@ -119,6 +121,12 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
   const touchedRef = useRef(false)
   const [failed, setFailed] = useState(false)
   const [areas,  setAreas]  = useState<AreaLabel[]>([])
+  /**
+   * 지도가 만들어졌나 — **ref 가 아니라 state 로 둔다.**
+   * ref 에 담아두면 오버레이 effect 가 "지도 아직 없음"으로 한 번 돌고 끝난다.
+   * ref 가 채워져도 리렌더가 안 되니 다시 돌 일이 없기 때문이다.
+   */
+  const [ready, setReady] = useState(false)
 
   // 지도는 한 번만 만든다. 거리만 바뀔 때 다시 그리면 타일이 매번 깜빡인다.
   useEffect(() => {
@@ -138,6 +146,7 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
         // 끌어서 옮기고 휠로 확대·축소할 수 있다(카카오맵 기본값이라 따로 켤 게 없다).
         const map = new kakao.maps.Map(boxRef.current, { center, level: 6 })
         mapRef.current = map
+        setReady(true)
 
         // 사용자가 손댄 순간을 잡는다.
         // zoom_changed 는 쓰지 않는다 — setBounds 가 스스로 발생시켜서
@@ -231,7 +240,11 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
 
         Promise.all(points.map(p => new Promise<AreaLabel | null>(resolve => {
           geocoder.coord2RegionCode(p.lng, p.lat, (res: unknown[], status: string) => {
-            if (status !== kakao.maps.services.Status.OK || !res?.length) { resolve(null); return }
+            if (status !== kakao.maps.services.Status.OK || !res?.length) {
+              // 조용히 비우면 "동 이름이 왜 안 뜨지"를 영영 못 쫓는다.
+              console.warn('[StoreRadiusMap] coord2RegionCode', status, p.lat, p.lng)
+              resolve(null); return
+            }
             // 법정동(B) 쪽 이름을 쓴다 — 행정동(H)은 '○○1동' 처럼 쪼개져서 길다
             const r = (res as { region_type: string; region_3depth_name: string }[])
               .find(x => x.region_type === 'B') ?? (res[0] as { region_3depth_name: string })
@@ -263,43 +276,32 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
           setAreas(out)
         })
       })
-      .catch(() => { /* 동 이름은 없어도 지도는 보인다 */ })
+      .catch(e => {
+        // 동 이름은 없어도 지도와 매장 핀은 보인다(아래 effect 가 따로 그린다).
+        console.warn('[StoreRadiusMap] 동 이름 조회 실패', e)
+      })
     return () => { dead = true }
   }, [lat, lng, radiusM])
 
-  // 동 이름표를 지도에 얹는다
+  // 매장 핀 — 이름을 단 태그 + 꼬리 + 점. (sunpos-kakao 의 지도 핀과 같은 어법)
+  //
+  // ⚠️ 동 이름표와 **반드시 따로** 그린다. 전에는 한 effect 안에 같이 있었고
+  //    맨 위가 `if (!map || !areas.length) return` 이었다. 그래서 동 이름 조회가
+  //    실패하면(= areas 가 0개) 매장 핀까지 통째로 사라졌다 — 실제로 그렇게 됐다.
+  //    핀은 지오코딩과 아무 상관이 없다. 좌표는 이미 props 로 들어와 있다.
+  //
+  // yAnchor:1 이 콘텐츠 맨 아래(점)를 좌표에 맞추므로 transform 을 따로 주지 않는다 —
+  // 거기서 한 번 더 보정하면 핀이 떠서 가리키는 곳이 어긋난다(QR웹에서 겪었다).
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !areas.length) return
+    if (!ready || !map) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const kakao = (window as any).kakao
 
-    for (const o of overlaysRef.current) o.setMap(null)
-    overlaysRef.current = []
-
-    // 주변 동 — 원 안쪽에 조그만 알약으로
-    for (const a of areas) {
-      if (a.self) continue
-      const el = document.createElement('div')
-      el.textContent = a.name
-      el.style.cssText =
-        'background:rgba(255,255,255,0.92);color:#414141;font-size:11px;font-weight:600;'
-        + 'padding:3px 8px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2)'
-      overlaysRef.current.push(
-        new kakao.maps.CustomOverlay({
-          map, position: new kakao.maps.LatLng(a.lat, a.lng), content: el, zIndex: 2,
-        }),
-      )
-    }
-
-    // 매장 — 가운데. 이름을 단 태그 + 꼬리 + 점.
-    // sunpos-kakao 의 지도 핀과 같은 어법이다(라벨 아래 꼬리, 그 끝이 실제 좌표).
-    // yAnchor:1 이 콘텐츠 맨 아래(점)를 좌표에 맞추므로 transform 을 따로 주지 않는다 —
-    // 거기서 한 번 더 보정하면 핀이 떠서 가리키는 곳이 어긋난다(QR웹에서 겪었다).
-    const selfArea = areas.find(a => a.self)
+    // 이름이 아직 없으면 매장이 속한 동으로, 그것도 없으면 '매장'으로 버틴다
+    const label = storeName || areas.find(a => a.self)?.name || '매장'
     const pin = document.createElement('div')
     pin.style.cssText = 'display:flex;flex-direction:column;align-items:center'
-    const label = storeName || selfArea?.name || '매장'
     pin.innerHTML =
       `<span style="background:#2C261F;color:#fff;font-size:12px;font-weight:700;`
       + `padding:4px 11px;border-radius:999px;white-space:nowrap;`
@@ -307,16 +309,42 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
       + `<span style="width:2px;height:8px;background:#2C261F"></span>`
       + `<span style="width:9px;height:9px;border-radius:999px;background:#2C261F;`
       + `border:2px solid #fff;margin-top:-3px;box-shadow:0 1px 2px rgba(0,0,0,0.3)"></span>`
-    overlaysRef.current.push(
-      new kakao.maps.CustomOverlay({
-        map, position: new kakao.maps.LatLng(lat, lng), content: pin, yAnchor: 1, zIndex: 4,
-      }),
-    )
+
+    const overlay = new kakao.maps.CustomOverlay({
+      map, position: new kakao.maps.LatLng(lat, lng), content: pin, yAnchor: 1, zIndex: 4,
+    })
+    pinRef.current = overlay
     return () => {
-      for (const o of overlaysRef.current) o.setMap(null)
-      overlaysRef.current = []
+      overlay.setMap(null)
+      pinRef.current = null
     }
-  }, [areas, lat, lng, storeName])
+  }, [ready, lat, lng, storeName, areas])
+
+  // 주변 동 이름표 — 원 안쪽에 조그만 알약으로
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const kakao = (window as any).kakao
+
+    for (const a of areas) {
+      if (a.self) continue
+      const el = document.createElement('div')
+      el.textContent = a.name
+      el.style.cssText =
+        'background:rgba(255,255,255,0.92);color:#414141;font-size:11px;font-weight:600;'
+        + 'padding:3px 8px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2)'
+      tagsRef.current.push(
+        new kakao.maps.CustomOverlay({
+          map, position: new kakao.maps.LatLng(a.lat, a.lng), content: el, zIndex: 2,
+        }),
+      )
+    }
+    return () => {
+      for (const o of tagsRef.current) o.setMap(null)
+      tagsRef.current = []
+    }
+  }, [ready, areas])
 
   return (
     <div
