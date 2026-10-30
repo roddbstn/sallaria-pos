@@ -6,6 +6,7 @@ import { formatPhone, isValidPhone } from '../lib/phone-format'
 import { useDeliveryInfo } from '../hooks/useDeliveryInfo'
 import DaumPostcodeEmbed from '../components/DaumPostcodeEmbed'
 import HubLayout, { type HubNavItem } from '../components/hub/HubLayout'
+import DeliveryPanel from './store-info/DeliveryPanel'
 import TimeSelect from '../components/ui/TimeSelect'
 import MiniCalendar from '../components/ui/MiniCalendar'
 import RegularHolidayModal, { type RegularHolidays } from '../components/ui/RegularHolidayModal'
@@ -157,9 +158,13 @@ function formatVacationDate(iso: string): string {
   return `${y}.${m}.${d}(${dow})`
 }
 
-type StoreInfoTab = 'store' | 'representative'
+type StoreInfoTab = 'store' | 'delivery' | 'representative'
+// 대표자 정보를 세 번째로 내렸다. 앞의 둘은 **매장을 운영하면서 자주 고치는 것**이고
+// (영업시간·휴무·배달팁), 대표자 정보는 가입할 때 한 번 넣고 거의 안 본다.
+// 자주 쓰는 순서가 위에 있어야 한다.
 const STORE_INFO_NAV: HubNavItem<StoreInfoTab>[] = [
   { key: 'store',          label: '매장 설정' },
+  { key: 'delivery',       label: '배달 정보' },
   { key: 'representative', label: '대표자 정보' },
 ]
 
@@ -198,7 +203,9 @@ export default function StoreInfo({
       onChange={setNavTab}
       onBack={onBack}
     >
-      {navTab === 'store' ? (
+      {navTab === 'delivery' ? (
+        <DeliveryPanel storeId={storeId} showToast={showToast} />
+      ) : navTab === 'store' ? (
         <StoreSettingsPanel
           storeId={storeId}
           clientId={clientId}
