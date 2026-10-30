@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { won } from '../../lib/ipc'
+import StoreRadiusMap from './StoreRadiusMap'
 
 // 매장 정보 > 배달 정보 — 거리에 따른 배달팁 설정.
 // 구조는 배민 셀프서비스의 '가게배달 추가 배달팁'을 따른다.
@@ -9,14 +10,13 @@ import { won } from '../../lib/ipc'
 // stores 의 네 컬럼이다(이미 있었다. 0068 에서 계산 함수까지 만들어 뒀고 화면만 없었다):
 //     delivery_tip_base_distance_m   기본 배달거리 (m)
 //     delivery_tip_base_fee          기본 배달팁 (원)
-//     delivery_tip_tier_distance_m   할증 단위 거리 (m) — 100 고정
+//     delivery_tip_tier_distance_m   할증 단위 거리 (m) — 100 또는 500
 //     delivery_tip_tier_fee          단위당 할증 (원)
 //
 // ── 왜 자유 입력이 아니라 선택지인가 ───────────────────────────────────────
 // 기본 배달거리는 1~3km 를 0.5km 단위로 고른다. 전엔 m 단위 숫자칸이었는데,
 // 1,437m 같은 값을 넣을 이유가 없고 넣으면 손님에게 설명하기만 어려워진다.
-// 할증 단위도 100m 로 고정했다 — 바꿀 일이 없는 값을 입력칸으로 두면
-// "여길 뭘로 해야 하지"라는 고민만 만든다.
+// 할증 단위도 100m·500m 중에서 고른다 — 자유 입력이면 237m 같은 값이 들어온다.
 //
 // 계산은 DB 가 한다 — calculate_delivery_fee(). 손님 앱이 주문할 때 부르는 그 함수다.
 // 아래 estimate 는 **그 함수와 같은 규칙**이어야 한다(미리보기가 거짓말하면 안 된다).
@@ -28,8 +28,8 @@ interface Tip {
   tierFee:       number
 }
 
-/** 할증 단위는 100m 고정 */
-const TIER_DISTANCE_M = 100
+/** 할증 단위 선택지 — 100m 또는 500m */
+const TIER_DISTANCES = [100, 500]
 
 /** 기본 배달거리 선택지 — 1km ~ 3km, 0.5km 단위 */
 const BASE_DISTANCES = [1000, 1500, 2000, 2500, 3000]
@@ -40,7 +40,7 @@ const TIER_FEE_MAX = 300
 
 const DEFAULTS: Tip = {
   baseDistanceM: 1500, baseFee: 4000,
-  tierDistanceM: TIER_DISTANCE_M, tierFee: 100,
+  tierDistanceM: 100, tierFee: 100,
 }
 
 /** 미리보기용 거리 */
@@ -89,6 +89,8 @@ export default function DeliveryPanel({ storeId, showToast }: {
   const [saved,   setSaved]   = useState<Tip>(DEFAULTS)
   const [loading, setLoading] = useState(true)
   const [saving,  setSaving]  = useState(false)
+  /** 매장 좌표 — 반경 지도를 그리는 데 쓴다. 없으면 지도를 띄우지 않는다 */
+  const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
     if (!storeId) return
@@ -96,20 +98,25 @@ export default function DeliveryPanel({ storeId, showToast }: {
     void (async () => {
       const { data } = await supabase
         .from('stores')
-        .select('delivery_tip_base_distance_m, delivery_tip_base_fee, delivery_tip_tier_distance_m, delivery_tip_tier_fee')
+        .select('delivery_tip_base_distance_m, delivery_tip_base_fee, delivery_tip_tier_distance_m, delivery_tip_tier_fee, lat, lng')
         .eq('id', storeId)
         .maybeSingle()
       if (cancelled) return
       const next: Tip = {
         baseDistanceM: data?.delivery_tip_base_distance_m ?? DEFAULTS.baseDistanceM,
         baseFee:       data?.delivery_tip_base_fee        ?? DEFAULTS.baseFee,
-        // 단위는 100m 고정이다. 예전 행에 다른 값이 들어 있어도 여기서 맞춘다 —
-        // 화면이 "100m당"이라고 적어놓고 뒤에서 500m 로 계산하면 안 된다.
-        tierDistanceM: TIER_DISTANCE_M,
+        // 선택지(100·500) 밖의 값이 들어 있으면 가장 가까운 쪽으로 맞춘다 —
+        // 화면이 "100m당"이라고 적어놓고 뒤에서 다른 값으로 계산하면 안 된다.
+        tierDistanceM: TIER_DISTANCES.includes(data?.delivery_tip_tier_distance_m ?? 0)
+          ? (data!.delivery_tip_tier_distance_m as number)
+          : DEFAULTS.tierDistanceM,
         tierFee:       data?.delivery_tip_tier_fee        ?? DEFAULTS.tierFee,
       }
       setTip(next)
       setSaved(next)
+      if (data?.lat != null && data?.lng != null) {
+        setLoc({ lat: data.lat as number, lng: data.lng as number })
+      }
       setLoading(false)
     })()
     return () => { cancelled = true }
@@ -152,7 +159,7 @@ export default function DeliveryPanel({ storeId, showToast }: {
         손님이 주문할 때 이 설정으로 금액이 매겨집니다.
       </div>
 
-      <div className="flex gap-[72px]">
+      <div className="flex gap-[48px] items-start">
         {/* ── 왼쪽: 설정값 ── */}
         <div className="flex flex-col gap-[40px] flex-shrink-0">
           {/* 기본 배달거리 — 자유 입력이 아니라 선택 */}
@@ -200,11 +207,28 @@ export default function DeliveryPanel({ storeId, showToast }: {
             <Hint>{distanceLabel(tip.baseDistanceM)} 안쪽은 이 금액만 받아요</Hint>
           </div>
 
-          {/* 추가거리당 할증 배달팁 — 단위는 100m 고정 */}
+          {/* 추가거리당 할증 배달팁 — 단위는 버튼으로 고른다 */}
           <div>
             <FieldLabel>추가거리당 할증 배달팁</FieldLabel>
-            <div className="flex items-center gap-[9px] mt-[16px]">
-              <span className="text-[14px] text-[#414141] whitespace-nowrap">100m당</span>
+            <div className="flex gap-[8px] mt-[16px]">
+              {TIER_DISTANCES.map(m => {
+                const on = tip.tierDistanceM === m
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setTip({ ...tip, tierDistanceM: m })}
+                    className={`h-[38px] px-[16px] rounded-[9px] text-[14px] whitespace-nowrap transition-colors ${
+                      on
+                        ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
+                        : 'bg-[#F2F2F2] text-[#787878] font-normal hover:bg-[#E8E4E2]'
+                    }`}
+                  >
+                    {m}m당
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-[9px] mt-[12px]">
               <input
                 type="number" min={TIER_FEE_MIN} max={TIER_FEE_MAX} step={50}
                 value={Number.isFinite(tip.tierFee) ? tip.tierFee : ''}
@@ -221,16 +245,20 @@ export default function DeliveryPanel({ storeId, showToast }: {
             </Hint>
           </div>
 
-          <div className="flex justify-start pt-[2px]">
-            <button
-              onClick={save}
-              disabled={!dirty || !valid || saving}
-              className="h-[42px] px-[28px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[14px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
-            >
-              {saving ? '저장 중…' : dirty ? '저장' : '저장됨'}
-            </button>
-          </div>
         </div>
+
+        {/* ── 가운데: 반경 지도 ──
+            숫자만 보면 "1.5km 면 어디까지지"가 안 그려진다. 매장을 중심으로 원을
+            얹으면 아는 동네 이름으로 읽힌다 — 거리 버튼을 바꾸면 원이 같이 커진다.
+            좌표가 없는 매장(주소 미등록)은 지도를 띄우지 않는다. */}
+        {loc && (
+          <div className="flex-shrink-0 w-[300px]">
+            <FieldLabel>배달 반경</FieldLabel>
+            <div className="mt-[16px]">
+              <StoreRadiusMap lat={loc.lat} lng={loc.lng} radiusM={tip.baseDistanceM} />
+            </div>
+          </div>
+        )}
 
         {/* ── 오른쪽: 거리별 미리보기 ──
             숫자를 고치면 바로 움직인다. "그래서 2km 손님은 얼마를 내지?"를
@@ -266,6 +294,19 @@ export default function DeliveryPanel({ storeId, showToast }: {
           </div>
           <div className="text-[12px] text-[#ADADAD] mt-[12px] leading-relaxed">
             직선 거리 기준이에요. 실제 도로 거리와는 차이가 있을 수 있어요.
+          </div>
+
+          {/* 저장은 **표 아래 오른쪽**에 둔다. 설정값 옆에 두면 "방금 고친 그 칸만
+              저장되나" 싶은데, 실제로는 네 값이 한 번에 나간다. 결과(표)를 보고
+              누르는 자리에 있어야 "이대로 저장"이 된다. */}
+          <div className="flex justify-end mt-[16px]">
+            <button
+              onClick={save}
+              disabled={!dirty || !valid || saving}
+              className="h-[42px] px-[28px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[14px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
+            >
+              {saving ? '저장 중…' : dirty ? '저장' : '저장됨'}
+            </button>
           </div>
         </div>
       </div>
