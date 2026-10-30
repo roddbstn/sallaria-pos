@@ -3,23 +3,23 @@ import { supabase } from '../../lib/supabase'
 import { won } from '../../lib/ipc'
 
 // 매장 정보 > 배달 정보 — 거리에 따른 배달팁 설정.
+// 구조는 배민 셀프서비스의 '가게배달 추가 배달팁'을 따른다.
 //
 // ── 어디에 저장되나 ────────────────────────────────────────────────────────
 // stores 의 네 컬럼이다(이미 있었다. 0068 에서 계산 함수까지 만들어 뒀고 화면만 없었다):
 //     delivery_tip_base_distance_m   기본 배달거리 (m)
 //     delivery_tip_base_fee          기본 배달팁 (원)
-//     delivery_tip_tier_distance_m   할증 단위 거리 (m)
+//     delivery_tip_tier_distance_m   할증 단위 거리 (m) — 100 고정
 //     delivery_tip_tier_fee          단위당 할증 (원)
 //
-// 계산은 DB 가 한다 — calculate_delivery_fee(). 손님 앱이 주문할 때 부르는 그 함수다.
-// 그래서 여기서 미리보기를 만들 때도 **같은 규칙**을 써야 한다(아래 estimate):
-//   기본거리 이내면 기본팁, 넘으면 초과분을 단위거리로 **올림**해서 단위당 할증을 더한다.
-//   올림이 중요하다 — 1,050m 초과는 100m 단위에서 11칸이 아니라 11칸이다(ceil).
+// ── 왜 자유 입력이 아니라 선택지인가 ───────────────────────────────────────
+// 기본 배달거리는 1~3km 를 0.5km 단위로 고른다. 전엔 m 단위 숫자칸이었는데,
+// 1,437m 같은 값을 넣을 이유가 없고 넣으면 손님에게 설명하기만 어려워진다.
+// 할증 단위도 100m 로 고정했다 — 바꿀 일이 없는 값을 입력칸으로 두면
+// "여길 뭘로 해야 하지"라는 고민만 만든다.
 //
-// ── 왜 미리보기를 붙였나 ───────────────────────────────────────────────────
-// 네 숫자만 보여주면 점주는 "그래서 2km 손님은 얼마를 내지?"를 머릿속으로 계산해야 한다.
-// 실제로 옛 MVP 에서 그 질문이 반복됐다. 거리별 금액을 바로 보여주면 숫자를 고치는
-// 순간 결과가 같이 움직여서, 설정값이 맞는지 눈으로 확인된다.
+// 계산은 DB 가 한다 — calculate_delivery_fee(). 손님 앱이 주문할 때 부르는 그 함수다.
+// 아래 estimate 는 **그 함수와 같은 규칙**이어야 한다(미리보기가 거짓말하면 안 된다).
 
 interface Tip {
   baseDistanceM: number
@@ -28,9 +28,22 @@ interface Tip {
   tierFee:       number
 }
 
-const DEFAULTS: Tip = { baseDistanceM: 1500, baseFee: 4000, tierDistanceM: 100, tierFee: 100 }
+/** 할증 단위는 100m 고정 */
+const TIER_DISTANCE_M = 100
 
-/** 미리보기용 거리 — 기본거리 안쪽 하나, 바깥 셋 */
+/** 기본 배달거리 선택지 — 1km ~ 3km, 0.5km 단위 */
+const BASE_DISTANCES = [1000, 1500, 2000, 2500, 3000]
+
+/** 할증 배달팁 허용 범위 */
+const TIER_FEE_MIN = 100
+const TIER_FEE_MAX = 300
+
+const DEFAULTS: Tip = {
+  baseDistanceM: 1500, baseFee: 4000,
+  tierDistanceM: TIER_DISTANCE_M, tierFee: 100,
+}
+
+/** 미리보기용 거리 */
 const PREVIEW_M = [500, 1000, 2000, 3000, 5000]
 
 /**
@@ -51,36 +64,19 @@ function distanceLabel(m: number): string {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[16px] font-medium leading-[19px] text-[#414141] mb-[14px]">
-      {children}
-    </div>
+    <div className="text-[16px] font-medium leading-[19px] text-[#414141]">{children}</div>
   )
 }
 
-/** 숫자 입력 한 칸 — 뒤에 단위를 붙인다 */
-function NumField({ value, onChange, unit, step = 1, max }: {
-  value: number
-  onChange: (n: number) => void
-  unit: string
-  step?: number
-  max?: number
+function Hint({ children, tone = 'muted' }: {
+  children: React.ReactNode
+  tone?: 'muted' | 'danger'
 }) {
   return (
-    <div className="flex items-center gap-[9px]">
-      <input
-        type="number"
-        value={Number.isFinite(value) ? value : ''}
-        min={0}
-        max={max}
-        step={step}
-        onChange={e => {
-          const n = Number(e.target.value)
-          // 빈칸이나 음수는 0 으로 본다 — NaN 이 들어가면 미리보기가 통째로 깨진다
-          onChange(Number.isFinite(n) && n >= 0 ? n : 0)
-        }}
-        className="w-[128px] h-[42px] border border-[#D9D9D9] rounded-[9px] px-[14px] text-[14px] text-[#1E1E1E] outline-none focus:border-[#6A635E] tabular-nums"
-      />
-      <span className="text-[14px] text-[#787878]">{unit}</span>
+    <div className={`text-[13px] leading-relaxed mt-[8px] ${
+      tone === 'danger' ? 'text-[#C92A2A]' : 'text-[#ADADAD]'
+    }`}>
+      {children}
     </div>
   )
 }
@@ -104,11 +100,12 @@ export default function DeliveryPanel({ storeId, showToast }: {
         .eq('id', storeId)
         .maybeSingle()
       if (cancelled) return
-      // 컬럼이 null 일 수 있다(기본값이 걸려 있지만 예전 행은 비어 있을 수 있다)
       const next: Tip = {
         baseDistanceM: data?.delivery_tip_base_distance_m ?? DEFAULTS.baseDistanceM,
         baseFee:       data?.delivery_tip_base_fee        ?? DEFAULTS.baseFee,
-        tierDistanceM: data?.delivery_tip_tier_distance_m ?? DEFAULTS.tierDistanceM,
+        // 단위는 100m 고정이다. 예전 행에 다른 값이 들어 있어도 여기서 맞춘다 —
+        // 화면이 "100m당"이라고 적어놓고 뒤에서 500m 로 계산하면 안 된다.
+        tierDistanceM: TIER_DISTANCE_M,
         tierFee:       data?.delivery_tip_tier_fee        ?? DEFAULTS.tierFee,
       }
       setTip(next)
@@ -118,9 +115,9 @@ export default function DeliveryPanel({ storeId, showToast }: {
     return () => { cancelled = true }
   }, [storeId])
 
-  const dirty = JSON.stringify(tip) !== JSON.stringify(saved)
-  // 단위거리가 0이면 나눗셈이 터진다. 저장 자체를 막는다
-  const valid = tip.tierDistanceM > 0 && tip.baseDistanceM > 0
+  const dirty    = JSON.stringify(tip) !== JSON.stringify(saved)
+  const feeInRange = tip.tierFee >= TIER_FEE_MIN && tip.tierFee <= TIER_FEE_MAX
+  const valid    = feeInRange && tip.baseFee >= 0
 
   async function save() {
     if (!storeId || !dirty || !valid || saving) return
@@ -137,6 +134,12 @@ export default function DeliveryPanel({ storeId, showToast }: {
     showToast('배달팁을 저장했어요')
   }
 
+  // 평소엔 연한 테두리, 손을 대면 진해진다. 입력칸이 여러 개 있는 화면에서
+  // 모두 진한 테두리면 **칸들이 먼저 보이고 글자가 나중에 보인다.**
+  const FIELD =
+    'h-[42px] rounded-[9px] border border-[#EDEDED] px-[14px] text-[14px] text-[#1E1E1E] '
+    + 'outline-none focus:border-[#6A635E] transition-colors tabular-nums'
+
   if (loading) {
     return <div className="text-[14px] text-[#ADADAD] py-[40px]">불러오는 중…</div>
   }
@@ -151,51 +154,74 @@ export default function DeliveryPanel({ storeId, showToast }: {
 
       <div className="flex gap-[72px]">
         {/* ── 왼쪽: 설정값 ── */}
-        <div className="flex flex-col gap-[34px]">
+        <div className="flex flex-col gap-[40px] flex-shrink-0">
+          {/* 기본 배달거리 — 자유 입력이 아니라 선택 */}
           <div>
             <FieldLabel>기본 배달거리</FieldLabel>
-            <NumField
-              value={tip.baseDistanceM} unit="m 까지" step={100}
-              onChange={n => setTip({ ...tip, baseDistanceM: n })}
-            />
-            <div className="text-[13px] text-[#ADADAD] mt-[8px]">
-              {distanceLabel(tip.baseDistanceM)} 안쪽은 기본 배달팁만 받아요
+            <div className="text-[13px] text-[#787878] leading-relaxed mt-[7px] mb-[16px]">
+              기본 배달팁을 적용할 거리를 선택해주세요.<br />
+              기본 배달거리에는 할증 배달팁이 적용되지 않습니다.
+            </div>
+            <div className="flex gap-[8px]">
+              {BASE_DISTANCES.map(m => {
+                const on = tip.baseDistanceM === m
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setTip({ ...tip, baseDistanceM: m })}
+                    className={`h-[38px] px-[16px] rounded-[9px] text-[14px] whitespace-nowrap transition-colors ${
+                      on
+                        ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
+                        : 'bg-[#F2F2F2] text-[#787878] font-normal hover:bg-[#E8E4E2]'
+                    }`}
+                  >
+                    {distanceLabel(m)}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
+          {/* 기본 배달팁 — 위에서 고른 거리까지 받는 금액 */}
           <div>
             <FieldLabel>기본 배달팁</FieldLabel>
-            <NumField
-              value={tip.baseFee} unit="원" step={500}
-              onChange={n => setTip({ ...tip, baseFee: n })}
-            />
-          </div>
-
-          <div>
-            <FieldLabel>할증 단위</FieldLabel>
-            <NumField
-              value={tip.tierDistanceM} unit="m 마다" step={100}
-              onChange={n => setTip({ ...tip, tierDistanceM: n })}
-            />
-            {!valid && (
-              <div className="text-[13px] text-[#C92A2A] mt-[8px]">
-                0보다 큰 값을 넣어주세요
-              </div>
-            )}
-          </div>
-
-          <div>
-            <FieldLabel>할증 배달팁</FieldLabel>
-            <NumField
-              value={tip.tierFee} unit="원씩 추가" step={100}
-              onChange={n => setTip({ ...tip, tierFee: n })}
-            />
-            <div className="text-[13px] text-[#ADADAD] mt-[8px]">
-              기본 거리를 넘으면 {distanceLabel(tip.tierDistanceM)}마다 {won(tip.tierFee)}씩 붙어요
+            <div className="flex items-center gap-[9px] mt-[16px]">
+              <input
+                type="number" min={0} step={500}
+                value={Number.isFinite(tip.baseFee) ? tip.baseFee : ''}
+                onChange={e => {
+                  const n = Number(e.target.value)
+                  setTip({ ...tip, baseFee: Number.isFinite(n) && n >= 0 ? n : 0 })
+                }}
+                className={`${FIELD} w-[128px]`}
+              />
+              <span className="text-[14px] text-[#787878]">원</span>
             </div>
+            <Hint>{distanceLabel(tip.baseDistanceM)} 안쪽은 이 금액만 받아요</Hint>
           </div>
 
-          <div className="flex justify-start pt-[6px]">
+          {/* 추가거리당 할증 배달팁 — 단위는 100m 고정 */}
+          <div>
+            <FieldLabel>추가거리당 할증 배달팁</FieldLabel>
+            <div className="flex items-center gap-[9px] mt-[16px]">
+              <span className="text-[14px] text-[#414141] whitespace-nowrap">100m당</span>
+              <input
+                type="number" min={TIER_FEE_MIN} max={TIER_FEE_MAX} step={50}
+                value={Number.isFinite(tip.tierFee) ? tip.tierFee : ''}
+                onChange={e => {
+                  const n = Number(e.target.value)
+                  setTip({ ...tip, tierFee: Number.isFinite(n) ? n : 0 })
+                }}
+                className={`${FIELD} w-[104px] ${!feeInRange ? 'border-[#C92A2A]' : ''}`}
+              />
+              <span className="text-[14px] text-[#787878]">원</span>
+            </div>
+            <Hint tone={feeInRange ? 'muted' : 'danger'}>
+              {won(TIER_FEE_MIN)} ~ {won(TIER_FEE_MAX)}까지 입력이 가능해요.
+            </Hint>
+          </div>
+
+          <div className="flex justify-start pt-[2px]">
             <button
               onClick={save}
               disabled={!dirty || !valid || saving}
@@ -211,7 +237,7 @@ export default function DeliveryPanel({ storeId, showToast }: {
             머릿속으로 계산하지 않아도 되게. */}
         <div className="flex-1 min-w-0 max-w-[320px]">
           <FieldLabel>거리별 배달팁</FieldLabel>
-          <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden">
+          <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mt-[16px]">
             <div className="flex items-center bg-[#E8E4E2] px-[18px] h-[38px] text-[12px] font-normal text-[#6A635E]">
               <span className="flex-1">배달 거리</span>
               <span className="w-[100px] text-right">배달팁</span>

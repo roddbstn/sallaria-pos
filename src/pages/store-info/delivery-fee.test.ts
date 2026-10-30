@@ -37,14 +37,22 @@ describe('estimate — 거리별 배달팁', () => {
     expect(estimate(5000, T)).toBe(7500)   // 초과 3500 → 35칸
   })
 
-  it('설정을 바꾸면 결과도 바뀐다 — 500m마다 300원', () => {
-    const t = { baseDistanceM: 1000, baseFee: 3000, tierDistanceM: 500, tierFee: 300 }
+  // 화면에서 고를 수 있는 조합 — 기본거리 1~3km, 할증 100~300원, 단위는 100m 고정
+  it('기본거리 1km · 할증 300원', () => {
+    const t = { baseDistanceM: 1000, baseFee: 3000, tierDistanceM: 100, tierFee: 300 }
     expect(estimate(1000, t)).toBe(3000)
-    expect(estimate(1001, t)).toBe(3300)   // ceil(1/500) = 1
-    expect(estimate(2000, t)).toBe(3600)   // ceil(1000/500) = 2
+    expect(estimate(1001, t)).toBe(3300)   // ceil(1/100) = 1
+    expect(estimate(2000, t)).toBe(6000)   // ceil(1000/100) = 10 → 3000 + 3000
   })
 
-  // 단위거리 0 은 저장을 막지만, 저장 전 입력 중에는 화면이 이 값을 그린다.
+  it('기본거리 3km 로 올리면 그 안쪽은 전부 기본팁', () => {
+    const t = { baseDistanceM: 3000, baseFee: 5000, tierDistanceM: 100, tierFee: 100 }
+    expect(estimate(2999, t)).toBe(5000)
+    expect(estimate(3000, t)).toBe(5000)
+    expect(estimate(3100, t)).toBe(5100)
+  })
+
+  // 단위거리는 이제 화면에서 100m 로 고정이지만, 예전 행에 0이 들어 있을 수 있다.
   // 0으로 나누면 Infinity 가 나와 금액 자리에 'Infinity원' 이 찍힌다.
   it('단위거리가 0이면 기본팁으로 버틴다 (0으로 나누지 않는다)', () => {
     const t = { ...T, tierDistanceM: 0 }
