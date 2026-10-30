@@ -108,12 +108,26 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const overlaysRef = useRef<any[]>([])
   const roRef = useRef<ResizeObserver | null>(null)
+  /**
+   * 점주가 직접 지도를 움직였나.
+   *
+   * 자동 맞춤(setBounds)과 손으로 하는 조작은 서로 싸운다 — 한참 끌어서 보고 있는데
+   * 창 크기가 조금 바뀌었다고 원래 자리로 튕겨 돌아가면 그건 고장으로 보인다.
+   * 그래서 **한 번이라도 끌거나 휠을 굴리면 자동 맞춤을 멈춘다.**
+   * 반경 버튼을 새로 누르는 건 명시적인 행동이니 그때는 다시 맞추고 이 표시를 지운다.
+   */
+  const touchedRef = useRef(false)
   const [failed, setFailed] = useState(false)
   const [areas,  setAreas]  = useState<AreaLabel[]>([])
 
   // 지도는 한 번만 만든다. 거리만 바뀔 때 다시 그리면 타일이 매번 깜빡인다.
   useEffect(() => {
     let dead = false
+    const box = boxRef.current
+    const markTouched = () => { touchedRef.current = true }
+    // 휠은 SDK 로드와 상관없이 DOM 에 붙여 둔다 — 정리(remove)까지 한 자리에서 끝난다
+    box?.addEventListener('wheel', markTouched, { passive: true })
+
     loadKakaoSdk()
       .then(() => {
         if (dead || !boxRef.current || mapRef.current) return
@@ -121,10 +135,15 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
         const kakao = (window as any).kakao
         const center = new kakao.maps.LatLng(lat, lng)
 
+        // 끌어서 옮기고 휠로 확대·축소할 수 있다(카카오맵 기본값이라 따로 켤 게 없다).
         const map = new kakao.maps.Map(boxRef.current, { center, level: 6 })
-        map.setDraggable(false)
-        map.setZoomable(false)
         mapRef.current = map
+
+        // 사용자가 손댄 순간을 잡는다.
+        // zoom_changed 는 쓰지 않는다 — setBounds 가 스스로 발생시켜서
+        // "내가 바꾼 것"과 "사용자가 바꾼 것"이 구분이 안 된다.
+        // dragstart 와 휠은 사람 손에서만 나온다.
+        kakao.maps.event.addListener(map, 'dragstart', markTouched)
 
         // 배달 반경 — 연한 갈색(디자인 시스템 #6A635E 계열).
         // 채움을 옅게 둬야 아래 지도가 비쳐서 "어느 동네까지"가 읽힌다.
@@ -145,10 +164,12 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
         //         지도 뷰포트가 0×0 이다. 0×0 에 맞춘 줌은 뜻이 없어서 결국
         //         level 6 그대로처럼 보였다.
         //    그래서 크기를 지켜보다가 처음 0이 아닌 순간에 relayout + setBounds 한다.
-        //    창 크기가 바뀔 때도 같은 경로로 다시 맞는다.
+        //    창 크기가 바뀔 때도 같은 경로로 다시 맞는다 —
+        //    단 점주가 직접 움직인 뒤라면 relayout 만 하고 자리는 건드리지 않는다.
         const ro = new ResizeObserver(() => {
           if (!boxRef.current || boxRef.current.clientWidth === 0) return
           map.relayout()
+          if (touchedRef.current) return
           const c = circleRef.current
           if (c) map.setBounds(c.getBounds(), 24, 24, 24, 24)
         })
@@ -158,6 +179,7 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
       .catch(() => { if (!dead) setFailed(true) })
     return () => {
       dead = true
+      box?.removeEventListener('wheel', markTouched)
       roRef.current?.disconnect()
       roRef.current = null
     }
@@ -169,6 +191,9 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
     const circle = circleRef.current
     if (!map || !circle) return
     circle.setRadius(radiusM)
+    // 반경 버튼을 누른 건 "이 거리를 보여줘"라는 뜻이다. 끌어놓은 자리가 있어도
+    // 여기서는 다시 맞추고, 그 뒤로는 또 사용자 쪽에 맡긴다.
+    touchedRef.current = false
     map.setBounds(circle.getBounds(), 24, 24, 24, 24)
   }, [radiusM])
 
@@ -307,7 +332,7 @@ export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 
       )}
 
       {!failed && (
-        <span className="absolute left-[12px] top-[12px] z-10 rounded-[7px] bg-[#2C261F]/85 px-[10px] py-[5px] text-[12px] font-medium text-white">
+        <span className="pointer-events-none absolute left-[12px] top-[12px] z-10 rounded-[7px] bg-[#2C261F]/85 px-[10px] py-[5px] text-[12px] font-medium text-white">
           매장 반경 {radiusM >= 1000 ? `${(radiusM / 1000).toFixed(radiusM % 1000 === 0 ? 0 : 1)}km` : `${radiusM}m`}
         </span>
       )}
