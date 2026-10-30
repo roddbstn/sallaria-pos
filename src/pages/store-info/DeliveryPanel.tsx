@@ -217,8 +217,12 @@ export default function DeliveryPanel({ storeId, storeName, showToast }: {
 
   // 평소엔 연한 테두리, 손을 대면 진해진다. 입력칸이 여러 개 있는 화면에서
   // 모두 진한 테두리면 **칸들이 먼저 보이고 글자가 나중에 보인다.**
+  //
+  // #D9D9D9 는 매장 설정의 주소 입력칸과 **같은 값**이다 (StoreInfo.tsx:529).
+  // 같은 화면 안에서 같은 역할을 하는 칸이 서로 다른 테두리를 두르면
+  // 그 차이가 뜻이 있는 줄 알게 된다. 없는 뜻이다.
   const FIELD =
-    'h-[42px] rounded-[9px] border border-[#EDEDED] px-[14px] text-[14px] text-[#1E1E1E] '
+    'h-[42px] rounded-[9px] border border-[#D9D9D9] px-[14px] text-[14px] text-[#1E1E1E] '
     + 'outline-none focus:border-[#6A635E] transition-colors tabular-nums'
 
   if (loading) {
