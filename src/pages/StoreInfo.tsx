@@ -204,7 +204,7 @@ export default function StoreInfo({
       onBack={onBack}
     >
       {navTab === 'delivery' ? (
-        <DeliveryPanel storeId={storeId} showToast={showToast} />
+        <DeliveryPanel storeId={storeId} storeName={storeName} showToast={showToast} />
       ) : navTab === 'store' ? (
         <StoreSettingsPanel
           storeId={storeId}

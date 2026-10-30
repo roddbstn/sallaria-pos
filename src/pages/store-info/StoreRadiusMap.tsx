@@ -10,8 +10,16 @@ import { useEffect, useRef, useState } from 'react'
 //
 // ── 동 이름을 왜 찍나 ──────────────────────────────────────────────────────
 // 반경을 km 로만 보면 "그래서 어디까지?"가 안 풀린다. 점주가 아는 단위는 동 이름이다.
-// 원 둘레를 여덟 방향으로 찍어 역지오코딩하면 "이 원이 칠성동·침산동까지"가 바로 읽힌다.
+// 역지오코딩으로 "이 원이 칠성동·평리동·산격동까지"를 바로 읽히게 한다.
 // 그래서 SDK 를 libraries=services 로 받는다(Geocoder 가 거기 들어 있다).
+//
+// ── 찍는 곳과 적는 곳이 다르다 ─────────────────────────────────────────────
+// 침산점·2.5km 로 실제 재보고 정한 방식이다:
+//     원 안쪽(0.45r·0.8r, 12점) → 침산동 8 / 칠성동2가 2 / 그 외 2  = 4종
+//     원 둘레(0.92r, 12점)      → 12점이 거의 다 다른 동          = 12종
+// 동 경계는 매장에서 한참 떨어진 곳에 있으니 당연하다. 안쪽을 찍으면 매장 동만
+// 반복해서 나온다. **그래서 이름은 둘레에서 얻고, 적기는 안쪽에 적는다** —
+// 같은 방향으로 거리를 LABEL_PULL 만큼 줄인 자리에 얹으면 태그가 원 안에 들어온다.
 
 const JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY as string | undefined
 
@@ -54,11 +62,42 @@ function offset(lat: number, lng: number, distM: number, bearingDeg: number) {
 
 interface AreaLabel { name: string; lat: number; lng: number; self: boolean }
 
-export default function StoreRadiusMap({ lat, lng, radiusM, height = 460 }: {
+/**
+ * 이름을 얻은 방향으로 거리를 이만큼 줄여 적는다.
+ * 1.0 이면 태그가 테두리에 걸터앉아 반쯤 원 밖으로 나간다. 0.72 면
+ * 2.5km 기준 안쪽으로 약 700m — 태그 전체가 갈색 영역 안에 들어온다.
+ */
+const LABEL_PULL = 0.72
+
+/**
+ * 태그끼리 최소 이만큼(반지름 대비) 떨어뜨린다. 가까운 뒤쪽 태그는 버린다.
+ * 매장 핀 주변도 같은 기준으로 비워 둔다.
+ *
+ * 0.36 인 이유 — 원은 늘 뷰포트에 꽉 차게 맞춰지니 비율로 따지면 배율과 무관하다.
+ * 460px 높이에 지름이 들어가면 1px ≈ 반지름의 1/216 이다. 둘레 열두 방향을
+ * 다 적으면 이웃 태그 간격이 0.343r(≈74px)인데 '칠성동1가' 태그 폭이 ≈71px 라
+ * 사실상 맞닿는다. 0.36r 로 잡으면 한 칸 건너씩 남아 60° 간격(≈148px)이 된다 —
+ * 이름이 많은 것보다 **읽히는 게** 먼저다.
+ */
+const MIN_SEP = 0.36
+
+/** 두 좌표 사이 거리(m) — 태그 간격을 재는 용도라 하버사인으로 충분하다 */
+function metersBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371000
+  const dLat = ((bLat - aLat) * Math.PI) / 180
+  const dLng = ((bLng - aLng) * Math.PI) / 180
+  const m = ((aLat + bLat) / 2) * (Math.PI / 180)
+  const x = dLng * Math.cos(m)
+  return Math.sqrt(dLat * dLat + x * x) * R
+}
+
+export default function StoreRadiusMap({ lat, lng, radiusM, storeName, height = 460 }: {
   lat: number
   lng: number
   /** 기본 배달거리 — 이 반경으로 원을 그린다 */
   radiusM: number
+  /** 가운데 핀에 적을 매장 이름 */
+  storeName?: string
   height?: number
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
@@ -68,6 +107,7 @@ export default function StoreRadiusMap({ lat, lng, radiusM, height = 460 }: {
   const circleRef  = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const overlaysRef = useRef<any[]>([])
+  const roRef = useRef<ResizeObserver | null>(null)
   const [failed, setFailed] = useState(false)
   const [areas,  setAreas]  = useState<AreaLabel[]>([])
 
@@ -96,14 +136,31 @@ export default function StoreRadiusMap({ lat, lng, radiusM, height = 460 }: {
         circle.setMap(map)
         circleRef.current = circle
 
-        // ⚠️ 여기서 **바로** 화면을 원에 맞춘다.
-        //    전엔 이 일을 [radiusM] effect 에만 맡겼는데, 그 effect 는 SDK 가 로드되기
-        //    전에 한 번 돌고 끝난다(mapRef 가 아직 null 이라 그냥 return).
-        //    그래서 처음 들어오면 level 6 그대로여서 원이 화면을 꽉 덮었다.
-        map.setBounds(circle.getBounds(), 24, 24, 24, 24)
+        // ⚠️ 화면 맞춤은 **컨테이너에 크기가 생긴 뒤에** 해야 한다.
+        //
+        //    두 번 틀렸다:
+        //      1) [radiusM] effect 에만 맡겼더니, 그 effect 는 SDK 로드 전에 한 번
+        //         돌고 끝나서(mapRef 가 null) 아예 안 불렸다.
+        //      2) 생성 직후에 바로 불렀더니, 그 시점엔 flex 레이아웃이 아직 안 잡혀
+        //         지도 뷰포트가 0×0 이다. 0×0 에 맞춘 줌은 뜻이 없어서 결국
+        //         level 6 그대로처럼 보였다.
+        //    그래서 크기를 지켜보다가 처음 0이 아닌 순간에 relayout + setBounds 한다.
+        //    창 크기가 바뀔 때도 같은 경로로 다시 맞는다.
+        const ro = new ResizeObserver(() => {
+          if (!boxRef.current || boxRef.current.clientWidth === 0) return
+          map.relayout()
+          const c = circleRef.current
+          if (c) map.setBounds(c.getBounds(), 24, 24, 24, 24)
+        })
+        ro.observe(boxRef.current)
+        roRef.current = ro
       })
       .catch(() => { if (!dead) setFailed(true) })
-    return () => { dead = true }
+    return () => {
+      dead = true
+      roRef.current?.disconnect()
+      roRef.current = null
+    }
   }, [lat, lng])
 
   // 거리가 바뀌면 원만 키우고 화면을 그 원에 맞춘다
@@ -126,12 +183,25 @@ export default function StoreRadiusMap({ lat, lng, radiusM, height = 460 }: {
         const kakao = (window as any).kakao
         const geocoder = new kakao.maps.services.Geocoder()
 
-        // 중심 + 여덟 방향. 더 촘촘히 찍어도 같은 동이 반복될 뿐이다.
+        // 둘레 가까이(0.92r) 를 30° 간격으로 열두 방향 — 서로 다른 동이 거의
+        // 한 점당 하나씩 나오는 자리다. 중간(0.55r)도 여섯 방향 더 찍어서
+        // 둘레에서 안 걸리는 동(원 안에만 들어오는 작은 동)을 줍는다.
+        // bearing·dist 를 들고 다니는 이유는 **적는 자리를 따로 계산**하기 때문이다.
+        const RINGS: [number, number, number][] = [
+          // [반지름 비율, 방향 간격, 시작 방향]
+          [0.92, 30,  0],
+          [0.55, 60, 15],
+        ]
         const points = [
-          { lat, lng, self: true },
-          ...[0, 45, 90, 135, 180, 225, 270, 315].map(b => ({
-            ...offset(lat, lng, radiusM * 0.92, b), self: false,
-          })),
+          { lat, lng, bearing: 0, dist: 0, self: true },
+          ...RINGS.flatMap(([frac, step, from]) => {
+            const out: { lat: number; lng: number; bearing: number; dist: number; self: boolean }[] = []
+            for (let b = from; b < from + 360; b += step) {
+              const dist = radiusM * frac
+              out.push({ ...offset(lat, lng, dist, b), bearing: b, dist, self: false })
+            }
+            return out
+          }),
         ]
 
         Promise.all(points.map(p => new Promise<AreaLabel | null>(resolve => {
@@ -141,16 +211,27 @@ export default function StoreRadiusMap({ lat, lng, radiusM, height = 460 }: {
             const r = (res as { region_type: string; region_3depth_name: string }[])
               .find(x => x.region_type === 'B') ?? (res[0] as { region_3depth_name: string })
             const name = (r as { region_3depth_name?: string }).region_3depth_name
-            resolve(name ? { name, lat: p.lat, lng: p.lng, self: p.self } : null)
+            if (!name) { resolve(null); return }
+            // 찍은 자리가 아니라 **당긴 자리**를 담는다 (위 LABEL_PULL 설명 참고)
+            const at = p.self ? { lat, lng } : offset(lat, lng, p.dist * LABEL_PULL, p.bearing)
+            resolve({ name, lat: at.lat, lng: at.lng, self: p.self })
           })
         }))).then(list => {
           if (dead) return
           const seen = new Set<string>()
           const out: AreaLabel[] = []
+          const sep = radiusM * MIN_SEP
           for (const a of list) {
             if (!a) continue
             // 매장 동은 반드시 넣고, 주변은 중복을 뺀다
             if (!a.self && seen.has(a.name)) continue
+            if (!a.self) {
+              // 매장 핀을 가리거나 앞서 넣은 태그에 붙는 자리는 버린다.
+              // 둘레를 촘촘히 찍는 건 **이름을 고르게 긁어오려고** 하는 것이고,
+              // 긁어온 걸 다 적을 필요는 없다.
+              if (metersBetween(lat, lng, a.lat, a.lng) < sep) continue
+              if (out.some(b => !b.self && metersBetween(b.lat, b.lng, a.lat, a.lng) < sep)) continue
+            }
             seen.add(a.name)
             out.push(a)
           }
@@ -171,26 +252,46 @@ export default function StoreRadiusMap({ lat, lng, radiusM, height = 460 }: {
     for (const o of overlaysRef.current) o.setMap(null)
     overlaysRef.current = []
 
+    // 주변 동 — 원 안쪽에 조그만 알약으로
     for (const a of areas) {
+      if (a.self) continue
       const el = document.createElement('div')
-      el.textContent = a.self ? `${a.name} (매장)` : a.name
-      el.style.cssText = a.self
-        ? 'background:#2C261F;color:#fff;font-size:12px;font-weight:700;padding:4px 10px;'
-          + 'border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3)'
-        : 'background:rgba(255,255,255,0.92);color:#414141;font-size:11px;font-weight:600;'
-          + 'padding:3px 8px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2)'
+      el.textContent = a.name
+      el.style.cssText =
+        'background:rgba(255,255,255,0.92);color:#414141;font-size:11px;font-weight:600;'
+        + 'padding:3px 8px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2)'
       overlaysRef.current.push(
         new kakao.maps.CustomOverlay({
-          map, position: new kakao.maps.LatLng(a.lat, a.lng), content: el,
-          zIndex: a.self ? 3 : 2,
+          map, position: new kakao.maps.LatLng(a.lat, a.lng), content: el, zIndex: 2,
         }),
       )
     }
+
+    // 매장 — 가운데. 이름을 단 태그 + 꼬리 + 점.
+    // sunpos-kakao 의 지도 핀과 같은 어법이다(라벨 아래 꼬리, 그 끝이 실제 좌표).
+    // yAnchor:1 이 콘텐츠 맨 아래(점)를 좌표에 맞추므로 transform 을 따로 주지 않는다 —
+    // 거기서 한 번 더 보정하면 핀이 떠서 가리키는 곳이 어긋난다(QR웹에서 겪었다).
+    const selfArea = areas.find(a => a.self)
+    const pin = document.createElement('div')
+    pin.style.cssText = 'display:flex;flex-direction:column;align-items:center'
+    const label = storeName || selfArea?.name || '매장'
+    pin.innerHTML =
+      `<span style="background:#2C261F;color:#fff;font-size:12px;font-weight:700;`
+      + `padding:4px 11px;border-radius:999px;white-space:nowrap;`
+      + `box-shadow:0 1px 4px rgba(0,0,0,0.3)">${label}</span>`
+      + `<span style="width:2px;height:8px;background:#2C261F"></span>`
+      + `<span style="width:9px;height:9px;border-radius:999px;background:#2C261F;`
+      + `border:2px solid #fff;margin-top:-3px;box-shadow:0 1px 2px rgba(0,0,0,0.3)"></span>`
+    overlaysRef.current.push(
+      new kakao.maps.CustomOverlay({
+        map, position: new kakao.maps.LatLng(lat, lng), content: pin, yAnchor: 1, zIndex: 4,
+      }),
+    )
     return () => {
       for (const o of overlaysRef.current) o.setMap(null)
       overlaysRef.current = []
     }
-  }, [areas])
+  }, [areas, lat, lng, storeName])
 
   return (
     <div

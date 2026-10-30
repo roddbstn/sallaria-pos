@@ -81,8 +81,10 @@ function Hint({ children, tone = 'muted' }: {
   )
 }
 
-export default function DeliveryPanel({ storeId, showToast }: {
+export default function DeliveryPanel({ storeId, storeName, showToast }: {
   storeId: string | null
+  /** 지도 가운데 핀에 적을 이름 */
+  storeName?: string
   showToast: (msg: string) => void
 }) {
   const [tip,     setTip]     = useState<Tip>(DEFAULTS)
@@ -155,7 +157,7 @@ export default function DeliveryPanel({ storeId, showToast }: {
     <div>
       <div className="text-[18px] font-semibold leading-[22px] text-[#1E1E1E] mb-[12px]">배달 정보</div>
       <div className="text-[14px] font-normal text-[#787878] mb-[46px] leading-relaxed">
-        매장에서 배달지까지의 거리로 배달팁이 자동 계산돼요.
+        매장에서 배달지까지의 거리로 계산돼요.
       </div>
 
       <div className="flex gap-[48px] items-start">
@@ -204,39 +206,46 @@ export default function DeliveryPanel({ storeId, showToast }: {
           {/* 추가거리당 할증 배달팁 — 단위는 버튼으로 고른다 */}
           <div>
             <FieldLabel>추가거리당 할증 배달팁</FieldLabel>
-            <div className="flex gap-[8px] mt-[16px]">
-              {TIER_DISTANCES.map(m => {
-                const on = tip.tierDistanceM === m
-                return (
-                  <button
-                    key={m}
-                    onClick={() => setTip({ ...tip, tierDistanceM: m })}
-                    className={`h-[38px] px-[16px] rounded-[9px] text-[14px] whitespace-nowrap transition-colors ${
-                      on
-                        ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
-                        : 'bg-[#F2F2F2] text-[#787878] font-normal hover:bg-[#E8E4E2]'
-                    }`}
-                  >
-                    {m}m당
-                  </button>
-                )
-              })}
+            {/* 단위(100m·500m)는 **위아래로** 세운다. 옆으로 나열하면 바로 오른쪽
+                금액칸과 한 줄에 섞여 "500m당 100원"처럼 한 덩어리로 읽히는데,
+                실제로는 둘 중 **하나만** 골라진 상태다. */}
+            <div className="flex items-start gap-[14px] mt-[16px]">
+              <div className="flex flex-col gap-[8px]">
+                {TIER_DISTANCES.map(m => {
+                  const on = tip.tierDistanceM === m
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => setTip({ ...tip, tierDistanceM: m })}
+                      className={`h-[38px] w-[92px] rounded-[9px] text-[14px] whitespace-nowrap transition-colors ${
+                        on
+                          ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
+                          : 'bg-[#F2F2F2] text-[#787878] font-normal hover:bg-[#E8E4E2]'
+                      }`}
+                    >
+                      {m}m당
+                    </button>
+                  )
+                })}
+              </div>
+              <div>
+                <div className="flex items-center gap-[9px]">
+                  <input
+                    type="number" min={TIER_FEE_MIN} max={TIER_FEE_MAX} step={50}
+                    value={Number.isFinite(tip.tierFee) ? tip.tierFee : ''}
+                    onChange={e => {
+                      const n = Number(e.target.value)
+                      setTip({ ...tip, tierFee: Number.isFinite(n) ? n : 0 })
+                    }}
+                    className={`${FIELD} w-[104px] ${!feeInRange ? 'border-[#C92A2A]' : ''}`}
+                  />
+                  <span className="text-[14px] text-[#787878]">원</span>
+                </div>
+                <Hint tone={feeInRange ? 'muted' : 'danger'}>
+                  {TIER_FEE_MIN} ~ {won(TIER_FEE_MAX)}까지 입력 가능
+                </Hint>
+              </div>
             </div>
-            <div className="flex items-center gap-[9px] mt-[12px]">
-              <input
-                type="number" min={TIER_FEE_MIN} max={TIER_FEE_MAX} step={50}
-                value={Number.isFinite(tip.tierFee) ? tip.tierFee : ''}
-                onChange={e => {
-                  const n = Number(e.target.value)
-                  setTip({ ...tip, tierFee: Number.isFinite(n) ? n : 0 })
-                }}
-                className={`${FIELD} w-[104px] ${!feeInRange ? 'border-[#C92A2A]' : ''}`}
-              />
-              <span className="text-[14px] text-[#787878]">원</span>
-            </div>
-            <Hint tone={feeInRange ? 'muted' : 'danger'}>
-              {won(TIER_FEE_MIN)} ~ {won(TIER_FEE_MAX)}까지 입력이 가능해요.
-            </Hint>
           </div>
 
         </div>
@@ -254,11 +263,11 @@ export default function DeliveryPanel({ storeId, showToast }: {
               disabled={!dirty || !valid || saving}
               className="h-[42px] px-[28px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[14px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
             >
-              {saving ? '저장 중…' : dirty ? '저장' : '저장됨'}
+              {saving ? '저장 중…' : '저장'}
             </button>
           </div>
           {loc ? (
-            <StoreRadiusMap lat={loc.lat} lng={loc.lng} radiusM={tip.baseDistanceM} />
+            <StoreRadiusMap lat={loc.lat} lng={loc.lng} radiusM={tip.baseDistanceM} storeName={storeName} />
           ) : (
             <div className="h-[460px] rounded-[11px] border border-[#E8E4E2] bg-[#FCFCFC] flex items-center justify-center text-[13px] text-[#ADADAD] text-center leading-relaxed">
               매장 주소를 먼저 등록하면<br />배달 반경을 지도로 볼 수 있어요
