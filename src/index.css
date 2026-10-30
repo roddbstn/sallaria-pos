@@ -625,3 +625,21 @@ button:not(:disabled):active,
 @media (prefers-reduced-motion: reduce) {
   .timer-wobble, .timer-hand { animation: none; }
 }
+
+/* ── 아래로 더 있다는 신호 ───────────────────────────────────────────────────
+   주문팝업 왼쪽(주문 내역)이 넘칠 때 띄우는 동그란 꺾쇠. Figma 497:1775 의
+   고객 표에서 쓰던 그 모양이다.
+
+   무한으로 튕긴다 — 한 번만 움직이면 점주가 피크타임에 못 본다. 다만 아래로
+   '밀려났다 돌아오는' 곡선이라 시선을 끌되 재촉하지는 않는다.
+   스크롤이 끝에 닿으면 컴포넌트가 떼므로 계속 흔들리지는 않는다. */
+@keyframes scroll-nudge {
+  0%, 60%, 100% { transform: translateY(0);   }
+  25%           { transform: translateY(5px); }
+  40%           { transform: translateY(2px); }
+}
+.scroll-nudge { animation: scroll-nudge 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-nudge { animation: none; }
+}

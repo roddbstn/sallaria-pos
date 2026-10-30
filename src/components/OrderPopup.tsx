@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import ScrollMoreHint from './ui/ScrollMoreHint'
 import { type Order } from '../lib/mock-data'
 import { won, orderToPayload, parseNote } from '../lib/ipc'
 import { supabase } from '../lib/supabase'
@@ -50,7 +51,8 @@ interface Props {
   onError?:   (msg: string) => void
 }
 
-type Stage = 'summary' | 'approve' | 'reject'
+// 'approve' 는 없앴다 — 시간 설정이 summary 오른쪽으로 들어왔다(2026-10-30)
+type Stage = 'summary' | 'reject'
 
 const REJECT_REASONS = ['재료 소진', '마감시간 초과', '주문 폭주', '매장 사정', '기타']
 // Figma 733:673 의 칩 8개 (5~40분, 5분 간격). 그 위 ±버튼으로 1분 단위 미세조정.
@@ -58,7 +60,12 @@ const PREP_PRESETS   = [5, 10, 15, 20, 25, 30, 35, 40]
 
 // Figma 733:652 / 733:673 — 네이티브 캔버스 638×789.
 // 프로젝트 공통 비율 FIGMA_SCALE(0.643)로 환산한 고정 px를 쓴다(lib/figma-scale.ts 참고).
-const CARD_W   = 410  // 638 × 0.643
+// 가로로 펼친 한 장짜리 카드. 410(주문 내역) + 구분선 + 330(시간·버튼).
+// 전엔 410 짜리 두 화면을 오갔다 — 승인 → 시간설정 → 접수.
+// POS 최소 폭이 1040 이라(#root min-width) 760 은 넉넉히 들어간다.
+const CARD_W   = 760
+const LEFT_W   = 410  // 638 × 0.643 — 기존 카드 폭 그대로
+const RIGHT_W  = 330
 const CARD_GAP = 20   // 대기 카드 사이 간격 — Figma엔 없는 우리 큐 UI 값
 
 // 마지막 승인 소요시간 기억 (세션 내 유지)
@@ -70,6 +77,8 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
   const [prepMins, setPrepMins] = useState(lastPrepMins)
   const [reason,   setReason]   = useState('')
   const [sliding,  setSliding]  = useState(false)  // 슬라이드 애니메이션 중
+  /** 왼쪽 주문 내역 스크롤 영역 — '아래로 더 있어요' 신호가 이걸 본다 */
+  const listRef = useRef<HTMLDivElement>(null)
 
   const order = queue[0]
 
@@ -86,12 +95,14 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
     }, 320)
   }
 
-  // 승인 화면 진입 — 소요시간 기본값을 손님이 고른 수령시간으로 맞춘다.
+  // 소요시간 기본값을 손님이 고른 수령시간으로 맞춘다.
   // 한가하면 그대로 "접수"만 누르면 되고, 바쁘면 그 자리에서 덮어쓴다.
-  function openApprove() {
+  //
+  // 전엔 '승인' 을 누르는 순간 맞췄는데, 이제 그 단계가 없다 —
+  // 시간 UI 가 처음부터 보이므로 **주문이 바뀔 때** 맞춰야 한다.
+  useEffect(() => {
     setPrepMins(defaultPrepMins(order.requestedPickupMinutes, lastPrepMins))
-    setStage('approve')
-  }
+  }, [order.code, order.requestedPickupMinutes])
 
   // 접수/거부는 "낙관적"으로 처리한다.
   //
@@ -269,8 +280,19 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                 <>
                   {/* ─────────── 1단계: 주문 요약 (Figma 733:652) ─────────── */}
                   {stage === 'summary' && (
-                    <>
-                      <div className="flex-1 overflow-y-auto px-[26px] pt-[40px] pb-[14px]">
+                    /* ── 한 장짜리 화면 ──
+                       전엔 승인 → 시간설정 → 접수로 두 번 넘겼다. 피크타임엔 주문 하나에
+                       손이 두 번 가고, 더 나쁜 건 **시간을 고를 때 주문 내용이 안 보였다**는
+                       점이다. 몇 분이 걸릴지는 메뉴를 보고 정하는 건데 그걸 가리고 물었다.
+                       왼쪽에 주문, 오른쪽에 시간과 버튼을 두면 보면서 고르고 바로 누른다.
+
+                       왼쪽은 높이가 고정이고 넘치면 스크롤한다 — 메뉴가 많다고 오른쪽
+                       접수 버튼이 화면 밖으로 밀려나면 안 된다. 잘린 걸 모르고 접수하는
+                       일이 없도록 ScrollMoreHint 가 아래에 신호를 띄운다. */
+                    <div className="flex-1 flex min-h-0">
+                      {/* 왼쪽 — 주문 내역 */}
+                      <div className="relative flex-1 min-w-0" style={{ width: LEFT_W }}>
+                        <div ref={listRef} className="h-full overflow-y-auto px-[26px] pt-[30px] pb-[34px]">
                         {/* 메뉴 목록 — 메뉴명 | 수량, 그 아래 └ 단가 / └ 옵션 */}
                         {o.items.map((item, i) => (
                           <div key={i} className={`flex gap-[14px] ${i > 0 ? 'mt-[24px]' : ''}`}>
@@ -344,31 +366,16 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                           )
                         })()}
                       </div>
-
-                      {/* 하단 버튼 — 거부(연분홍/빨강) : 승인(짙은 먹) = 171 : 377 */}
-                      <div className="flex-shrink-0 px-[26px] pb-[26px] flex gap-[6px]">
-                        <button
-                          onClick={() => setStage('reject')}
-                          className={`${BTN} w-[110px] flex-shrink-0 bg-[#FFEFEF] text-[#FF676F] hover:brightness-95`}
-                        >
-                          거부
-                        </button>
-                        <button
-                          onClick={openApprove}
-                          className={`${BTN} flex-1 bg-[#2C261F] text-[#F9F9F9] hover:opacity-90`}
-                        >
-                          승인
-                        </button>
+                        <ScrollMoreHint targetRef={listRef} />
                       </div>
-                    </>
-                  )}
 
-                  {/* ─────────── 2A단계: 소요시간 (Figma 733:673) ─────────── */}
-                  {stage === 'approve' && (
-                    <>
-                      {/* Figma 733:673 세로 좌표(원본 → ×0.643, 헤더 102 제외한 본문 기준):
-                          스테퍼 178→76 · 칩1행 260 · 칩2행 306 · 안내박스 360 · 버튼 431 */}
-                      <div className="flex-1 overflow-y-auto px-[26px] pt-[24px] pb-[14px] flex flex-col">
+                      {/* 오른쪽 — 시간 설정 + 거부/접수.
+                          구분선은 왼쪽 스크롤 영역과 분리해서 세로 전체를 긋는다 */}
+                      <div
+                        className="flex-shrink-0 border-l border-[#E8E4E2] flex flex-col"
+                        style={{ width: RIGHT_W }}
+                      >
+                        <div className="flex-1 overflow-y-auto px-[22px] pt-[24px] pb-[14px] flex flex-col">
                         {/* 손님 기준 결과를 맨 위에 — 아래 스테퍼·칩은 "분"만 다루지만
                             점주가 실제로 판단할 때 필요한 건 몇 시에 가져가느냐다.
                             스테퍼를 돌리면 분과 시각이 같이 움직인다. */}
@@ -449,21 +456,23 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                         })()}
                       </div>
 
-                      <div className="flex-shrink-0 px-[26px] pb-[26px] flex gap-[6px]">
-                        <button
-                          onClick={() => setStage('summary')}
-                          className={`${BTN} w-[110px] flex-shrink-0 bg-[#F2F2F2] text-[#414141] hover:brightness-95`}
-                        >
-                          이전
-                        </button>
-                        <button
-                          onClick={handleApprove}
-                          className={`${BTN} flex-1 bg-[#2C261F] text-[#F9F9F9] hover:opacity-90`}
-                        >
-                          접수
-                        </button>
+                        {/* 거부 : 접수 = 1 : 2.2 (Figma 733:652/673) */}
+                        <div className="flex-shrink-0 px-[22px] pb-[26px] flex gap-[6px]">
+                          <button
+                            onClick={() => setStage('reject')}
+                            className={`${BTN} w-[92px] flex-shrink-0 bg-[#FFEFEF] text-[#FF676F] hover:brightness-95`}
+                          >
+                            거부
+                          </button>
+                          <button
+                            onClick={handleApprove}
+                            className={`${BTN} flex-1 bg-[#2C261F] text-[#F9F9F9] hover:opacity-90`}
+                          >
+                            접수
+                          </button>
+                        </div>
                       </div>
-                    </>
+                    </div>
                   )}
 
                   {/* ─────────── 2B단계: 거부 사유 (Figma 없음 — 같은 디자인 언어로) ─────────── */}
