@@ -259,13 +259,13 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                     위아래로 쌓여 있을 땐 눈이 두 번 멈췄는데, 피크타임에 팝업에서
                     먼저 읽어야 하는 건 이 둘뿐이다. 한 줄이면 한 번에 들어온다.
                     남는 세로 공간만큼 글자를 키웠다(23 → 30px).
-                    그 왼쪽에 시간 박스를 붙인다 — 아래 HeaderTimeBox 주석 참고. */}
+                    그 오른쪽에 시간 박스를 붙인다 — 아래 HeaderTimeBox 주석 참고. */}
                 <div className="flex items-center gap-[13px]">
-                  <HeaderTimeBox order={o} now={now} />
                   <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">
                     #{o.orderNumber ?? String(idx + 1)}
                   </span>
                   <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">{o.method}</span>
+                  <HeaderTimeBox order={o} now={now} />
                 </div>
                 <div className="pt-[13px] flex flex-col items-end min-w-0">
                   {/* 날짜를 시각 왼쪽에 붙인다 — 팝업이 밤새 떠 있거나 여러 장이
@@ -616,13 +616,11 @@ function HeaderTimeBox({ order, now }: { order: Order; now: number }) {
   }
 
   return (
-    // 라벨과 값은 한 줄로 — 라벨은 얇게, 값은 크게.
-    // 위아래로 쌓으면 두 줄 다 비슷한 무게로 보여서 눈이 어느 쪽을 읽을지 고른다.
-    // 여기서 읽어야 하는 건 수(N분)이고, '픽업까지'는 그 수의 단위에 가깝다.
-    // items-baseline 이라 크기가 두 배 차이나도 글자 밑선이 맞는다.
-    <div className="flex-shrink-0 flex items-baseline gap-[8px] rounded-[10px] bg-[#E8E4E2] px-[14px] py-[9px]">
-      <span className="text-[13px] font-normal leading-none text-[#2C261F]">{label}</span>
-      <span className="text-[26px] font-bold leading-none text-[#2C261F] tabular-nums">{value}</span>
+    // 라벨 위, 값 아래. 라벨은 얇게 값은 크게 — 읽어야 하는 건 수(N분)이고
+    // '픽업까지'는 그 수가 무엇인지 알려주는 꼬리표다.
+    <div className="flex-shrink-0 rounded-[10px] bg-[#E8E4E2] px-[14px] py-[9px] text-center">
+      <div className="text-[13px] font-normal leading-none text-[#2C261F]">{label}</div>
+      <div className="mt-[7px] text-[26px] font-bold leading-none text-[#2C261F] tabular-nums">{value}</div>
     </div>
   )
 }
