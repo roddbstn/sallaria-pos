@@ -363,9 +363,16 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                                         <CopyButton text={deliveryDetail} variant="black" />
                                       </div>
                                     )}
+                                    {/* 요청사항도 복사된다 — 주소만 복사되고 '문 앞에 놔주세요'는
+                                        손으로 옮겨 적어야 했다. 배달 기사에게 넘길 땐 둘 다 필요하다.
+                                        주소와 달리 truncate 하지 않는다. 주소는 잘려도 뒤가 짐작되지만
+                                        요청사항은 잘린 뒷부분이 **정작 중요한 말**인 경우가 많다. */}
                                     {deliveryNote && (
-                                      <div className="mt-[10px] pt-[10px] border-t border-[#D9D9D9] text-[13px] font-normal text-[#414141]">
-                                        {deliveryNote}
+                                      <div className="mt-[10px] pt-[10px] border-t border-[#D9D9D9] flex items-start justify-between gap-2">
+                                        <span className="text-[13px] font-normal text-[#414141] flex-1 min-w-0 whitespace-pre-wrap break-words">
+                                          {deliveryNote}
+                                        </span>
+                                        <CopyButton text={deliveryNote} variant="black" />
                                       </div>
                                     )}
                                   </div>
@@ -379,12 +386,19 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                       </div>
 
                       {/* 오른쪽 — 시간 설정 + 거부/접수.
-                          구분선은 왼쪽 스크롤 영역과 분리해서 세로 전체를 긋는다 */}
+                          세로 구분선은 뺐다. 좌우가 하는 일이 이미 다르고(주문 내용 / 처리),
+                          선을 그으면 한 장짜리로 합친 뜻이 도로 반으로 갈린다. */}
                       <div
-                        className="flex-shrink-0 border-l border-[#E8E4E2] flex flex-col"
+                        className="flex-shrink-0 flex flex-col"
                         style={{ width: RIGHT_W }}
                       >
                         <div className="flex-1 overflow-y-auto px-[22px] pt-[24px] pb-[14px] flex flex-col">
+                        {/* 내용을 아래로 붙인다 — 점주가 마지막에 보는 건 "몇 분으로 안내되나"이고,
+                            그게 누를 버튼에서 멀리 떨어져 있으면 눈이 위아래로 한 번 더 간다.
+                            justify-end 가 아니라 mt-auto 인 이유: 스크롤 컨테이너에 justify-end 를
+                            주면 내용이 넘칠 때 **위쪽이 잘린 채 스크롤로도 못 올라간다.**
+                            margin auto 는 넘치는 순간 0으로 풀려서 그 문제가 없다. */}
+                        <div className="mt-auto">
                         {/* 손님 기준 결과를 맨 위에 — 아래 스테퍼·칩은 "분"만 다루지만
                             점주가 실제로 판단할 때 필요한 건 몇 시에 가져가느냐다.
                             스테퍼를 돌리면 분과 시각이 같이 움직인다. */}
@@ -467,6 +481,7 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                             </div>
                           )
                         })()}
+                        </div>
                       </div>
 
                         {/* 거부 : 접수 = 1 : 2.2 (Figma 733:652/673) */}
