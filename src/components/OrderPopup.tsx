@@ -7,6 +7,7 @@ import { track } from '../lib/firebase'
 import { useStore } from '../lib/store-context'
 import { maskName, maskPhone } from '../lib/mask'
 import { defaultPrepMins, readyClock } from '../lib/pickup-time'
+import { formatKstShortDateTime } from '../lib/datetime'
 import RevealText from './ui/RevealText'
 
 // 복사 버튼 — 아이콘만. 전엔 [복사] 글자 배지라 옆의 전화번호·주소와 글자끼리 경쟁했다.
@@ -255,16 +256,20 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                   <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">{o.method}</span>
                 </div>
                 <div className="pt-[13px] flex flex-col items-end min-w-0">
+                  {/* 날짜를 시각 왼쪽에 붙인다 — 팝업이 밤새 떠 있거나 여러 장이
+                      쌓이면 "이게 오늘 건가"가 시각만으로는 안 풀린다.
+                      toLocaleTimeString 을 쓰지 않는 이유는 datetime.ts 주석 참고
+                      (매장 PC 표준시가 틀어져 있어도 서버와 같은 값이 나와야 한다). */}
                   <span className="text-[#FCFCFC] text-[13px] font-normal leading-none">
-                    {new Date(o.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                    {formatKstShortDateTime(new Date(o.createdAt))}
                   </span>
                   {/* 주문자 이름도 가린 채로 — 팝업은 카운터 앞에서 손님에게 그대로 보인다 */}
-                  <span className="mt-[30px] text-[#FCFCFC] text-[15px] font-semibold leading-none flex items-center gap-[5px] max-w-full truncate">
+                  <span className="mt-[26px] text-[#FCFCFC] text-[22px] font-semibold leading-none flex items-center gap-[7px] max-w-full truncate">
                     {o.accountName === o.orderer ? o.accountName : (
                       <>
                         <span className="truncate">{o.accountName}</span>
                         <span>|</span>
-                        <RevealText value={o.orderer} masked={maskName(o.orderer)} iconSize={13} onDark />
+                        <RevealText value={o.orderer} masked={maskName(o.orderer)} iconSize={17} onDark />
                       </>
                     )}
                   </span>
@@ -389,6 +394,10 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                             점주의 입력을 손님의 요청인 척 되돌려주는 꼴이었다. */}
                         {(() => {
                           const req = o.requestedPickupMinutes
+                          // 배달은 손님이 수령 시간을 고르는 자리가 애초에 없다.
+                          // 고르지 않은 게 아니라 **물어본 적이 없는 것**이라,
+                          // 안 골랐다고 적으면 손님이 건너뛴 것처럼 읽힌다.
+                          if (req == null && o.method === '배달') return null
                           if (req == null) return (
                             <div className="text-[15px] font-normal text-[#787878] mb-[28px]">
                               손님이 수령 시간을 고르지 않았어요

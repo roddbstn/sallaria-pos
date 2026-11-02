@@ -20,6 +20,22 @@ export function formatKstTime(d: Date): string {
 }
 
 /**
+ * KST 기준 '11.1 11:08' — 주문 팝업 헤더처럼 좁은 자리에 쓰는 짧은 표기.
+ *
+ * 월·일은 0을 채우지 않는다(11.1). 시각은 채운다(09:05) — 자리수가 흔들리면
+ * 여러 장이 겹쳐 뜰 때 세로로 안 맞는다.
+ *
+ * 여기도 위 kstDateString 과 같은 이유로 toLocale* 를 쓰지 않는다.
+ * 매장 PC 의 표준시가 잘못 잡혀 있어도 서버(KST)와 같은 값이 나와야 한다.
+ */
+export function formatKstShortDateTime(d: Date): string {
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  const hh = String(kst.getUTCHours()).padStart(2, '0')
+  const mi = String(kst.getUTCMinutes()).padStart(2, '0')
+  return `${kst.getUTCMonth() + 1}.${kst.getUTCDate()} ${hh}:${mi}`
+}
+
+/**
  * KST 기준 'YYYY-MM-DD'.
  *
  * ⚠️ `new Date().toISOString().slice(0, 10)` 을 쓰면 안 된다 — 그건 **UTC 날짜**다.
