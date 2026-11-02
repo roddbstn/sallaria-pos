@@ -1,4 +1,5 @@
 import { type Order, type OrderStatus, type MenuDetail, type OptionGroup, type OptionItem } from './mock-data'
+import { isPriceOnlyOption } from './order-options'
 
 // DB method 컬럼 → UI 표시값 매핑
 export const DB_METHOD_MAP: Record<string, Order['method']> = {
@@ -48,7 +49,13 @@ export function mapOrderRow(row: any): Order {
       price:         item.unit_price,
       imageUrl:      item.menus?.image_url ?? undefined,
       // 수량 버튼으로 2개 이상 담은 옵션은 "발사믹 소스 ×2"로 표시 (order_item_options.quantity)
-      options:       (item.order_item_options ?? []).map((o: any) => (o.quantity && o.quantity > 1 ? `${o.option_name} ×${o.quantity}` : o.option_name) as string),
+      //
+      // 값만 적힌 옵션('13,000원')은 뺀다 — 이유는 lib/order-options.ts 참고.
+      // optionDetails 는 **거르지 않는다.** 그쪽은 영수증·정산이 쓰는 원본이라
+      // 화면에서 안 보이는 것과 기록에서 없는 것은 다른 얘기다.
+      options:       (item.order_item_options ?? [])
+        .filter((o: any) => !isPriceOnlyOption(String(o.option_name ?? ''), o.extra_price ?? 0))
+        .map((o: any) => (o.quantity && o.quantity > 1 ? `${o.option_name} ×${o.quantity}` : o.option_name) as string),
       optionDetails: (item.order_item_options ?? []).map((o: any) => ({
         name:       o.option_name,
         extraPrice: o.extra_price ?? 0,

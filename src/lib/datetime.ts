@@ -20,6 +20,18 @@ export function formatKstTime(d: Date): string {
 }
 
 /**
+ * KST 기준 '17시31분'.
+ *
+ * 24시간제다. '5시31분' 이라고만 쓰면 오전인지 오후인지 모른다 —
+ * 아침·저녁 두 번 피크가 있는 매장에서 그 둘은 전혀 다른 주문이다.
+ * 여기도 toLocale* 를 쓰지 않는다(아래 kstDateString 주석 참고).
+ */
+export function formatKstHourMinute(d: Date): string {
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  return `${kst.getUTCHours()}시${String(kst.getUTCMinutes()).padStart(2, '0')}분`
+}
+
+/**
  * KST 기준 '11.1 11:08' — 주문 팝업 헤더처럼 좁은 자리에 쓰는 짧은 표기.
  *
  * 월·일은 0을 채우지 않는다(11.1). 시각은 채운다(09:05) — 자리수가 흔들리면

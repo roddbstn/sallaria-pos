@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { kstDateString, formatKstShortDateTime } from './datetime'
+import { kstDateString, formatKstShortDateTime, formatKstHourMinute } from './datetime'
 
 describe('kstDateString — KST 달력 날짜', () => {
   it('KST 00:27 은 그날 날짜다 (UTC 로는 아직 전날 15:27)', () => {
@@ -40,5 +40,17 @@ describe('formatKstShortDateTime', () => {
   it('UTC 날짜가 아직 어제인 KST 새벽에도 KST 날짜로 찍는다', () => {
     // 2026-11-02 00:27 KST = 2026-11-01T15:27Z — UTC 로는 11월 1일이다
     expect(formatKstShortDateTime(new Date('2026-11-01T15:27:00Z'))).toBe('11.2 00:27')
+  })
+})
+
+describe('formatKstHourMinute', () => {
+  it('KST 24시간제 N시MM분', () => {
+    expect(formatKstHourMinute(new Date('2026-11-02T08:31:00Z'))).toBe('17시31분')
+    expect(formatKstHourMinute(new Date('2026-11-02T00:05:00Z'))).toBe('9시05분')
+  })
+
+  it('오전 5시와 오후 5시가 구분된다', () => {
+    expect(formatKstHourMinute(new Date('2026-11-01T20:00:00Z'))).toBe('5시00분')   // 11/2 05:00 KST
+    expect(formatKstHourMinute(new Date('2026-11-02T08:00:00Z'))).toBe('17시00분')
   })
 })

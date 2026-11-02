@@ -7,7 +7,7 @@ import { track } from '../lib/firebase'
 import { useStore } from '../lib/store-context'
 import { maskName, maskPhone } from '../lib/mask'
 import { defaultPrepMins, readyClock } from '../lib/pickup-time'
-import { formatKstShortDateTime } from '../lib/datetime'
+import { formatKstShortDateTime, formatKstHourMinute } from '../lib/datetime'
 import RevealText from './ui/RevealText'
 
 // 복사 버튼 — 아이콘만. 전엔 [복사] 글자 배지라 옆의 전화번호·주소와 글자끼리 경쟁했다.
@@ -80,6 +80,16 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
   const [sliding,  setSliding]  = useState(false)  // 슬라이드 애니메이션 중
   /** 왼쪽 주문 내역 스크롤 영역 — '아래로 더 있어요' 신호가 이걸 본다 */
   const listRef = useRef<HTMLDivElement>(null)
+
+  // 헤더 시간 박스의 '남은 N분'을 흐르게 한다.
+  // 팝업은 보통 몇 초 만에 넘어가지만 손이 바쁘면 그대로 몇 분씩 떠 있다 —
+  // 그때 "픽업까지 15분"이 멈춰 있으면 **틀린 수를 자신 있게 보여주는** 꼴이다.
+  // 20초면 분 단위 표시가 한 번 이상 밀리기 전에 따라잡는다.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 20_000)
+    return () => clearInterval(id)
+  }, [])
 
   const order = queue[0]
 
@@ -248,8 +258,10 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                 {/* 주문번호와 이용방법은 **한 줄로** 둔다.
                     위아래로 쌓여 있을 땐 눈이 두 번 멈췄는데, 피크타임에 팝업에서
                     먼저 읽어야 하는 건 이 둘뿐이다. 한 줄이면 한 번에 들어온다.
-                    남는 세로 공간만큼 글자를 키웠다(23 → 30px). */}
+                    남는 세로 공간만큼 글자를 키웠다(23 → 30px).
+                    그 왼쪽에 시간 박스를 붙인다 — 아래 HeaderTimeBox 주석 참고. */}
                 <div className="flex items-center gap-[13px]">
+                  <HeaderTimeBox order={o} now={now} />
                   <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">
                     #{o.orderNumber ?? String(idx + 1)}
                   </span>
@@ -431,13 +443,15 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                           )
                         })()}
 
-                        {/* 스테퍼 — Figma는 +가 왼쪽, −가 오른쪽 */}
+                        {/* 스테퍼 — −가 왼쪽, +가 오른쪽.
+                            Figma 는 반대였는데, 수를 왼쪽부터 읽는 자리에서 왼쪽이 +면
+                            늘리려다 줄이는 일이 생긴다. 계산기·수량 버튼의 관례를 따른다. */}
                         <div className="flex items-center justify-between px-[51px]">
-                          <StepBtn onClick={() => setPrepMins(p => Math.min(90, p + 1))} kind="plus" />
+                          <StepBtn onClick={() => setPrepMins(p => Math.max(1, p - 1))} kind="minus" />
                           <span className="text-[31px] font-semibold text-[#1E1E1E] leading-none tabular-nums">
                             {prepMins}분
                           </span>
-                          <StepBtn onClick={() => setPrepMins(p => Math.max(1, p - 1))} kind="minus" />
+                          <StepBtn onClick={() => setPrepMins(p => Math.min(90, p + 1))} kind="plus" />
                         </div>
 
                         {/* 프리셋 칩 4×2 */}
@@ -568,6 +582,47 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
 }
 
 /** Figma 578:1092 — 메뉴 하위 줄 앞의 └ 꺾쇠. 1.2px 선 2개(18px)를 테두리로 그린다 */
+/**
+ * 헤더 맨 왼쪽 시간 박스.
+ *
+ * 주문번호·이용방법 옆에서 **"언제까지냐"** 하나만 말한다.
+ *   포장    → '픽업까지'  · 남은 N분
+ *   매장식사 → '방문까지'  · 남은 N분
+ *   배달    → '주문 시간' · 들어온 시각
+ *
+ * 배달만 다른 이유 — 배달은 손님이 수령 시간을 고르는 자리가 없다.
+ * 셀 기준이 없으니 '배달까지 N분'은 지어낸 수가 된다. 대신 들어온 시각을 적는다.
+ * (포장·매장식사인데 손님이 시간을 안 골랐을 때도 같은 이유로 시각을 적는다)
+ *
+ * 남은 시간은 **지금 기준**이다. 손님이 고른 분수를 그대로 적으면 팝업이 떠 있는
+ * 동안 점점 거짓말이 된다. now 가 20초마다 흐른다.
+ */
+function HeaderTimeBox({ order, now }: { order: Order; now: number }) {
+  const req     = order.requestedPickupMinutes
+  const noClock = order.method === '배달' || req == null
+
+  const label = noClock
+    ? '주문 시간'
+    : order.method === '포장' ? '픽업까지' : '방문까지'
+
+  let value: string
+  if (noClock) {
+    value = formatKstHourMinute(new Date(order.createdAt))
+  } else {
+    const leftMs = new Date(order.createdAt).getTime() + req * 60_000 - now
+    // 올림이라 30초 남았을 때 '1분'이 된다. 내림이면 '0분'이 되어 이미 지난 것처럼 읽힌다.
+    const left = Math.ceil(leftMs / 60_000)
+    value = left <= 0 ? '지금' : `${left}분`
+  }
+
+  return (
+    <div className="flex-shrink-0 rounded-[10px] bg-[#E8E4E2] px-[14px] py-[8px] text-center">
+      <div className="text-[12px] font-semibold leading-none text-[#2C261F]">{label}</div>
+      <div className="mt-[6px] text-[20px] font-bold leading-none text-[#2C261F] tabular-nums">{value}</div>
+    </div>
+  )
+}
+
 function BranchLine({ children, small = false }: { children: React.ReactNode; small?: boolean }) {
   const arm = small ? 9 : 12
   return (
