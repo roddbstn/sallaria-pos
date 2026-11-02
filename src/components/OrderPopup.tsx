@@ -244,11 +244,15 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
               {/* ── 헤더 (Figma 578:1078 — h 158→102, bg #6A635E) ──
                   좌: 주문번호 + 이용방법 / 우: 주문시각 · 거래처|주문자 · 연락처 */}
               <div className="bg-[#6A635E] h-[102px] flex-shrink-0 px-[26px] flex justify-between">
-                <div className="pt-[19px] flex flex-col gap-[6px]">
-                  <span className="text-[#FCFCFC] text-[23px] font-semibold leading-[28px]">
+                {/* 주문번호와 이용방법은 **한 줄로** 둔다.
+                    위아래로 쌓여 있을 땐 눈이 두 번 멈췄는데, 피크타임에 팝업에서
+                    먼저 읽어야 하는 건 이 둘뿐이다. 한 줄이면 한 번에 들어온다.
+                    남는 세로 공간만큼 글자를 키웠다(23 → 30px). */}
+                <div className="flex items-center gap-[13px]">
+                  <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">
                     #{o.orderNumber ?? String(idx + 1)}
                   </span>
-                  <span className="text-[#FCFCFC] text-[23px] font-semibold leading-[28px]">{o.method}</span>
+                  <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">{o.method}</span>
                 </div>
                 <div className="pt-[13px] flex flex-col items-end min-w-0">
                   <span className="text-[#FCFCFC] text-[13px] font-normal leading-none">
