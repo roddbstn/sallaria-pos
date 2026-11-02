@@ -7,7 +7,7 @@ import { track } from '../lib/firebase'
 import { useStore } from '../lib/store-context'
 import { maskName, maskPhone } from '../lib/mask'
 import { defaultPrepMins, readyClock } from '../lib/pickup-time'
-import { formatKstShortDateTime, formatKstHourMinute } from '../lib/datetime'
+import { formatKstShortDateTime } from '../lib/datetime'
 import RevealText from './ui/RevealText'
 
 // 복사 버튼 — 아이콘만. 전엔 [복사] 글자 배지라 옆의 전화번호·주소와 글자끼리 경쟁했다.
@@ -271,9 +271,7 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                   <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">{o.method}</span>
                 </div>
 
-                <div className="flex-shrink-0 flex items-center px-[14px]">
-                  <HeaderTimeBox order={o} now={now} />
-                </div>
+                <HeaderTimeBox order={o} now={now} />
 
                 <div className="flex-1 min-w-0 pt-[13px] flex flex-col items-end">
                   {/* 날짜를 시각 왼쪽에 붙인다 — 팝업이 밤새 떠 있거나 여러 장이
@@ -606,27 +604,26 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
  * 동안 점점 거짓말이 된다. now 가 20초마다 흐른다.
  */
 function HeaderTimeBox({ order, now }: { order: Order; now: number }) {
-  const req     = order.requestedPickupMinutes
-  const noClock = order.method === '배달' || req == null
+  const req = order.requestedPickupMinutes
 
-  const label = noClock
-    ? '주문 시간'
-    : order.method === '포장' ? '픽업까지' : '방문까지'
+  // 셀 기준이 없으면 박스를 아예 안 띄운다.
+  //   · 배달 — 손님이 수령 시간을 고르는 자리가 애초에 없다
+  //   · 포장·매장식사인데 손님이 안 고른 경우
+  // 전엔 이때 '주문 시간 + 시각'을 대신 적었는데, 그 시각은 이미 헤더 오른쪽에
+  // '11.2 17:31' 로 나와 있다. 같은 사실을 두 번 적으면서 자리만 차지했다.
+  // 이 박스가 답하는 질문은 "얼마나 남았나" 하나다. 답이 없으면 질문도 치운다.
+  if (order.method === '배달' || req == null) return null
 
-  let value: string
-  if (noClock) {
-    value = formatKstHourMinute(new Date(order.createdAt))
-  } else {
-    const leftMs = new Date(order.createdAt).getTime() + req * 60_000 - now
-    // 올림이라 30초 남았을 때 '1분'이 된다. 내림이면 '0분'이 되어 이미 지난 것처럼 읽힌다.
-    const left = Math.ceil(leftMs / 60_000)
-    value = left <= 0 ? '지금' : `${left}분`
-  }
+  const label = order.method === '포장' ? '픽업까지' : '방문까지'
+  const leftMs = new Date(order.createdAt).getTime() + req * 60_000 - now
+  // 올림이라 30초 남았을 때 '1분'이 된다. 내림이면 '0분'이 되어 이미 지난 것처럼 읽힌다.
+  const left  = Math.ceil(leftMs / 60_000)
+  const value = left <= 0 ? '지금' : `${left}분`
 
   return (
     // 라벨 위, 값 아래. 라벨은 얇게 값은 크게 — 읽어야 하는 건 수(N분)이고
     // '픽업까지'는 그 수가 무엇인지 알려주는 꼬리표다.
-    <div className="flex-shrink-0 rounded-[10px] bg-[#E8E4E2] px-[14px] py-[9px] text-center">
+    <div className="flex-shrink-0 self-center mx-[14px] rounded-[10px] bg-[#E8E4E2] px-[14px] py-[9px] text-center">
       <div className="text-[13px] font-normal leading-none text-[#2C261F]">{label}</div>
       <div className="mt-[7px] text-[26px] font-bold leading-none text-[#2C261F] tabular-nums">{value}</div>
     </div>
