@@ -616,9 +616,13 @@ function HeaderTimeBox({ order, now }: { order: Order; now: number }) {
   }
 
   return (
-    <div className="flex-shrink-0 rounded-[10px] bg-[#E8E4E2] px-[14px] py-[8px] text-center">
-      <div className="text-[12px] font-semibold leading-none text-[#2C261F]">{label}</div>
-      <div className="mt-[6px] text-[20px] font-bold leading-none text-[#2C261F] tabular-nums">{value}</div>
+    // 라벨과 값은 한 줄로 — 라벨은 얇게, 값은 크게.
+    // 위아래로 쌓으면 두 줄 다 비슷한 무게로 보여서 눈이 어느 쪽을 읽을지 고른다.
+    // 여기서 읽어야 하는 건 수(N분)이고, '픽업까지'는 그 수의 단위에 가깝다.
+    // items-baseline 이라 크기가 두 배 차이나도 글자 밑선이 맞는다.
+    <div className="flex-shrink-0 flex items-baseline gap-[8px] rounded-[10px] bg-[#E8E4E2] px-[14px] py-[9px]">
+      <span className="text-[13px] font-normal leading-none text-[#2C261F]">{label}</span>
+      <span className="text-[26px] font-bold leading-none text-[#2C261F] tabular-nums">{value}</span>
     </div>
   )
 }
