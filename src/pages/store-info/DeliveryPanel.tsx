@@ -69,9 +69,11 @@ function distanceLabel(m: number): string {
  * 드롭다운은 "지금 값은 하나"라는 게 모양만으로 전해진다.
  *
  * 여는 방식·바깥 클릭·Esc 처리는 TimeSelect 와 같은 어법이다.
- * 테두리만 #ADADAD 로, 옆 금액칸(#EDEDED)보다 진하다 — 피그마대로이고,
- * 입력칸은 '비어 있을 수 있는 칸'이지만 드롭다운은 **항상 값이 들어 있는 칸**이라
- * 그 차이가 테두리로 드러나는 게 맞다.
+ *
+ * 테두리는 피그마의 #ADADAD 가 아니라 옆 입력칸과 같은 #D9D9D9 를 쓴다.
+ * 피그마 노드는 이 칸 하나만 떼어 놓고 그린 것이고, 실제로는 금액칸 바로 옆에
+ * 붙어 선다. 거기서 둘의 테두리가 다르면 **그 차이에 뜻이 있는 줄 알게 된다** —
+ * 없는 뜻이다. 한 줄에 선 칸들은 같은 무게로 보이는 게 맞다.
  */
 function TierDistanceSelect({ value, onChange }: {
   value: number
@@ -101,7 +103,7 @@ function TierDistanceSelect({ value, onChange }: {
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full h-[42px] px-[14px] rounded-[9px] border border-[#ADADAD] bg-white flex items-center justify-between hover:border-[#6A635E] transition-colors"
+        className="w-full h-[42px] px-[14px] rounded-[9px] border border-[#D9D9D9] bg-white flex items-center justify-between hover:border-[#6A635E] transition-colors"
       >
         <span className="text-[14px] leading-[17px] text-[#1E1E1E]">{value}m당</span>
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
