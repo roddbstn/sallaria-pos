@@ -254,20 +254,28 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
             >
               {/* ── 헤더 (Figma 578:1078 — h 158→102, bg #6A635E) ──
                   좌: 주문번호 + 이용방법 / 우: 주문시각 · 거래처|주문자 · 연락처 */}
-              <div className="bg-[#6A635E] h-[102px] flex-shrink-0 px-[26px] flex justify-between">
+              {/* 좌 / 가운데(시간 박스) / 우 세 칸.
+                  양옆을 flex-1 로 두면 가운데 박스가 **카드 정가운데**에 선다.
+                  absolute 로 가운데 박스를 띄우지 않는 이유: 오른쪽 거래처·주문자명은
+                  길면 truncate 되는데, 흐름 밖으로 빼면 그 글자가 박스 밑으로
+                  파고들어도 아무도 못 막는다. 흐름 안에 두면 서로 밀어낸다. */}
+              <div className="bg-[#6A635E] h-[102px] flex-shrink-0 px-[26px] flex items-stretch">
                 {/* 주문번호와 이용방법은 **한 줄로** 둔다.
                     위아래로 쌓여 있을 땐 눈이 두 번 멈췄는데, 피크타임에 팝업에서
                     먼저 읽어야 하는 건 이 둘뿐이다. 한 줄이면 한 번에 들어온다.
-                    남는 세로 공간만큼 글자를 키웠다(23 → 30px).
-                    그 오른쪽에 시간 박스를 붙인다 — 아래 HeaderTimeBox 주석 참고. */}
-                <div className="flex items-center gap-[13px]">
+                    남는 세로 공간만큼 글자를 키웠다(23 → 30px). */}
+                <div className="flex-1 min-w-0 flex items-center gap-[13px]">
                   <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">
                     #{o.orderNumber ?? String(idx + 1)}
                   </span>
                   <span className="text-[#FCFCFC] text-[30px] font-semibold leading-[36px]">{o.method}</span>
+                </div>
+
+                <div className="flex-shrink-0 flex items-center px-[14px]">
                   <HeaderTimeBox order={o} now={now} />
                 </div>
-                <div className="pt-[13px] flex flex-col items-end min-w-0">
+
+                <div className="flex-1 min-w-0 pt-[13px] flex flex-col items-end">
                   {/* 날짜를 시각 왼쪽에 붙인다 — 팝업이 밤새 떠 있거나 여러 장이
                       쌓이면 "이게 오늘 건가"가 시각만으로는 안 풀린다.
                       toLocaleTimeString 을 쓰지 않는 이유는 datetime.ts 주석 참고
