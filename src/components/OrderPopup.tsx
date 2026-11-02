@@ -393,12 +393,12 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                         style={{ width: RIGHT_W }}
                       >
                         <div className="flex-1 overflow-y-auto px-[22px] pt-[24px] pb-[14px] flex flex-col">
-                        {/* 내용을 아래로 붙인다 — 점주가 마지막에 보는 건 "몇 분으로 안내되나"이고,
-                            그게 누를 버튼에서 멀리 떨어져 있으면 눈이 위아래로 한 번 더 간다.
-                            justify-end 가 아니라 mt-auto 인 이유: 스크롤 컨테이너에 justify-end 를
-                            주면 내용이 넘칠 때 **위쪽이 잘린 채 스크롤로도 못 올라간다.**
-                            margin auto 는 넘치는 순간 0으로 풀려서 그 문제가 없다. */}
-                        <div className="mt-auto">
+                        {/* 세로 가운데로 둔다. 위에 붙으면 버튼까지가 멀고, 아래에 붙이면
+                            이번엔 헤더와 사이가 비어 떠 보였다. 가운데가 양쪽 다 가깝다.
+                            justify-center 가 아니라 my-auto 인 이유: 스크롤 컨테이너에
+                            justify-* 를 주면 내용이 넘칠 때 **위쪽이 잘린 채 스크롤로도
+                            못 올라간다.** margin auto 는 넘치는 순간 0으로 풀려서 그 문제가 없다. */}
+                        <div className="my-auto">
                         {/* 손님 기준 결과를 맨 위에 — 아래 스테퍼·칩은 "분"만 다루지만
                             점주가 실제로 판단할 때 필요한 건 몇 시에 가져가느냐다.
                             스테퍼를 돌리면 분과 시각이 같이 움직인다. */}
