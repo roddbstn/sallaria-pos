@@ -699,9 +699,15 @@ export default function Sales() {
   const [prevTotals, setPrevTotals] = useState<{ deposit: number; order: number } | null>(null)
   // 선택한 달의 **마감 잔액** — 그 달 말일 23:59 까지의 원장 누적.
   // '지금 잔액'이 아니다: 6월을 보고 있으면 6월 30일 기준이어야 그 달 숫자와 말이 맞는다.
-  const [closingBalance, setClosingBalance] = useState<number | null>(null)
-  // 전월에서 넘어온 잔액. '충전 − 주문'이 마감 잔액과 왜 다른지 설명하려면 이게 있어야 한다.
-  const [openingBalance, setOpeningBalance] = useState<number | null>(null)
+  //
+  // ⚠️ 합계 하나가 아니라 **거래처별로** 들고 있는다.
+  //    전엔 fetchData 가 전체 거래처 합계 한 숫자만 만들어 뒀다. 그래서 거래처 필터를
+  //    걸어도 잔액 카드만 전체 금액 그대로였고, 더 나쁜 건 아래 '마감 잔액 풀이'의
+  //    식이 안 맞게 된 것이다 — 충전·주문은 필터를 따르는데 기초잔액·마감잔액·조정은
+  //    안 따라서, 더하면 답이 안 나오는 표를 보여주고 있었다.
+  //    거래처별로 쪼개 두면 보이는 거래처만 골라 다시 더하면 된다(쿼리는 그대로다).
+  const [closingByAccount, setClosingByAccount] = useState<Record<string, number> | null>(null)
+  const [openingByAccount, setOpeningByAccount] = useState<Record<string, number> | null>(null)
   // 그 달의 수기 조정 내역 — 금액만이 아니라 **건별 사유**까지 보여준다.
   // 6월 침산점처럼 출시 직전에 구두 주문을 손으로 깎은 달은 이게 없으면 숫자가 설명되지 않는다.
   const [monthAdjustments, setMonthAdjustments] = useState<MonthAdjustment[]>([])
@@ -760,7 +766,10 @@ export default function Sales() {
         accountCodes.length > 0
           ? supabase.from('orders')
               .select('order_code, order_number, account_code, orderer_name, method, total_amount, ordered_at, order_items(menu_name, quantity)')
-              .eq('store_id', storeId).neq('status', '취소')
+              // is_deleted 를 빼먹으면 **아래 잔액 원장과 기준이 달라진다.**
+              // 침산점 7월에 삭제된 주문이 25건(512,000원) 있는데, 전엔 이 목록에만
+              // 들어가고 원장에선 빠져서 '마감 잔액 풀이'가 그만큼 안 맞았다.
+              .eq('store_id', storeId).neq('status', '취소').eq('is_deleted', false)
               .in('account_code', accountCodes)
               .gte('ordered_at', start).lt('ordered_at', end)
           : Promise.resolve({ data: [] as any[], error: null }),
@@ -800,7 +809,8 @@ export default function Sales() {
             .gte('created_at', prevRange.start).lt('created_at', prevRange.end),
           supabase.from('orders')
             .select('total_amount')
-            .eq('store_id', storeId).neq('status', '취소')
+            // 이번 달과 같은 기준이어야 증감률이 뜻을 갖는다
+            .eq('store_id', storeId).neq('status', '취소').eq('is_deleted', false)
             .in('account_code', accountCodes)
             .gte('ordered_at', prevRange.start).lt('ordered_at', prevRange.end),
         ])
@@ -819,21 +829,23 @@ export default function Sales() {
       if (accountCodes.length > 0) {
         const monthEnd   = new Date(Date.UTC(year, month + 1, 1) - KST_OFFSET_MS).toISOString()
         const monthStart = new Date(Date.UTC(year, month,     1) - KST_OFFSET_MS).toISOString()
+        // account_code 를 같이 가져온다 — 거래처 필터를 걸었을 때 다시 더하려면 필요하다.
+        // 행 수는 전과 같다(컬럼 하나가 늘 뿐).
         const [cDep, cOrd, cAdj, oDep, oOrd, oAdj, adjRows] = await Promise.all([
-          supabase.from('deposits').select('amount')
+          supabase.from('deposits').select('account_code, amount')
             .in('account_code', accountCodes).lt('created_at', monthEnd),
-          supabase.from('orders').select('total_amount')
+          supabase.from('orders').select('account_code, total_amount')
             .eq('store_id', storeId).neq('status', '취소').eq('is_deleted', false)
             .in('account_code', accountCodes).lt('ordered_at', monthEnd),
-          supabase.from('balance_adjustments').select('amount')
+          supabase.from('balance_adjustments').select('account_code, amount')
             .in('account_code', accountCodes).lt('created_at', monthEnd),
           // ── 전월 이월 — 같은 누적을 '그 달 1일 0시'까지만 ──
-          supabase.from('deposits').select('amount')
+          supabase.from('deposits').select('account_code, amount')
             .in('account_code', accountCodes).lt('created_at', monthStart),
-          supabase.from('orders').select('total_amount')
+          supabase.from('orders').select('account_code, total_amount')
             .eq('store_id', storeId).neq('status', '취소').eq('is_deleted', false)
             .in('account_code', accountCodes).lt('ordered_at', monthStart),
-          supabase.from('balance_adjustments').select('amount')
+          supabase.from('balance_adjustments').select('account_code, amount')
             .in('account_code', accountCodes).lt('created_at', monthStart),
           // ── 그 달 수기 조정 건별 ──
           supabase.from('balance_adjustments')
@@ -843,18 +855,25 @@ export default function Sales() {
             .order('created_at'),
         ])
         if (thisId !== fetchIdRef.current) return
-        const sum = (rows: { amount?: number | null; total_amount?: number | null }[] | null, key: 'amount' | 'total_amount') =>
-          (rows ?? []).reduce((acc, r) => acc + (r[key] ?? 0), 0)
-        setClosingBalance(
-          sum(cDep.data, 'amount') - sum(cOrd.data, 'total_amount') + sum(cAdj.data, 'amount'),
-        )
-        setOpeningBalance(
-          sum(oDep.data, 'amount') - sum(oOrd.data, 'total_amount') + sum(oAdj.data, 'amount'),
-        )
+        // 거래처별로 쌓는다: 충전 − 주문 + 수기조정
+        type LedgerRow = { account_code: string; amount?: number | null; total_amount?: number | null }
+        const ledger = (
+          dep: { data: LedgerRow[] | null },
+          ord: { data: LedgerRow[] | null },
+          adj: { data: LedgerRow[] | null },
+        ): Record<string, number> => {
+          const m: Record<string, number> = {}
+          for (const r of dep.data ?? []) m[r.account_code] = (m[r.account_code] ?? 0) + (r.amount ?? 0)
+          for (const r of ord.data ?? []) m[r.account_code] = (m[r.account_code] ?? 0) - (r.total_amount ?? 0)
+          for (const r of adj.data ?? []) m[r.account_code] = (m[r.account_code] ?? 0) + (r.amount ?? 0)
+          return m
+        }
+        setClosingByAccount(ledger(cDep as any, cOrd as any, cAdj as any))
+        setOpeningByAccount(ledger(oDep as any, oOrd as any, oAdj as any))
         setMonthAdjustments((adjRows.data ?? []) as MonthAdjustment[])
       } else {
-        setClosingBalance(0)
-        setOpeningBalance(0)
+        setClosingByAccount({})
+        setOpeningByAccount({})
         setMonthAdjustments([])
       }
     } catch {
@@ -877,7 +896,7 @@ export default function Sales() {
           .order('created_at', { ascending: false }),
         supabase.from('orders')
           .select('order_code, total_amount, ordered_at, orderer_name, order_items(menu_name, quantity)')
-          .eq('account_code', accountCode).neq('status', '취소')
+          .eq('account_code', accountCode).neq('status', '취소').eq('is_deleted', false)
           .order('ordered_at', { ascending: false }),
       ])
       if (depRes.error || ordRes.error) throw new Error()
@@ -1057,6 +1076,34 @@ export default function Sales() {
 
   // ── 파생 데이터 ───────────────────────────────────────────────────────────
   // 제외 필터 적용된 표시용 데이터
+  // 지금 화면이 보고 있는 거래처 집합.
+  // 두 필터를 **둘 다** 반영한다 — 충전·주문 카드가 그 둘을 다 따르기 때문이다.
+  //   · excludedAccounts : 드롭다운에서 체크 해제한 거래처
+  //   · filterAccount    : 캘린더에서 거래처 하나만 파고든 상태
+  // 하나라도 빠뜨리면 아래 '마감 잔액 풀이'가 더해도 답이 안 나오는 표가 된다.
+  const visibleAccountCodes = useMemo(() => {
+    const base = accounts
+      .map(a => a.account_code as string)
+      .filter(c => !excludedAccounts.has(c))
+    return new Set(filterAccount ? base.filter(c => c === filterAccount) : base)
+  }, [accounts, excludedAccounts, filterAccount])
+
+  /** 거래처별 원장 맵에서 **보이는 거래처만** 더한다 */
+  function sumVisible(byAccount: Record<string, number> | null): number | null {
+    if (byAccount == null) return null
+    let total = 0
+    for (const code of visibleAccountCodes) total += byAccount[code] ?? 0
+    return total
+  }
+  const closingBalance = useMemo(() => sumVisible(closingByAccount), [closingByAccount, visibleAccountCodes])
+  const openingBalance = useMemo(() => sumVisible(openingByAccount), [openingByAccount, visibleAccountCodes])
+
+  // 수기 조정도 같은 집합으로 — 금액(풀이의 한 줄)과 건별 목록이 같이 움직여야 한다
+  const visibleAdjustments = useMemo(
+    () => monthAdjustments.filter(a => visibleAccountCodes.has(a.account_code)),
+    [monthAdjustments, visibleAccountCodes],
+  )
+
   const visibleDeposits = useMemo(() =>
     excludedAccounts.size === 0 ? deposits : deposits.filter(d => !excludedAccounts.has(d.account_code)),
     [deposits, excludedAccounts]
@@ -1406,7 +1453,7 @@ export default function Sales() {
                 </div>
                 <div className="px-3 py-2.5">
                   {(() => {
-                    const adjSum = monthAdjustments.reduce((t, a) => t + a.amount, 0)
+                    const adjSum = visibleAdjustments.reduce((t, a) => t + a.amount, 0)
                     const rows: { label: string; value: number; sign: '+' | '-' | '' }[] = [
                       { label: '전월에서 넘어온 잔액', value: openingBalance,     sign: '' },
                       { label: `${MONTH_NAMES[month]} 충전`, value: monthTotalDeposit, sign: '+' },
@@ -1433,18 +1480,18 @@ export default function Sales() {
                         </div>
 
                         {/* 조정이 있었던 달만 — 금액만 보여주면 "누가 왜 고쳤나"가 남는다 */}
-                        {monthAdjustments.length > 0 && (
+                        {visibleAdjustments.length > 0 && (
                           <div className="mt-[10px] pt-[10px] border-t border-[#F2F2F2]">
                             <button
                               onClick={() => setAdjOpen(v => !v)}
                               className="pressable-row w-full flex items-center justify-between h-[28px] px-[8px] rounded-[7px] bg-[#F2F2F2] text-[11px] text-[#6A635E]"
                             >
-                              <span>수기 조정 {monthAdjustments.length}건 — 무엇을 고쳤는지 보기</span>
+                              <span>수기 조정 {visibleAdjustments.length}건 — 무엇을 고쳤는지 보기</span>
                               <span>{adjOpen ? '접기' : '펼치기'}</span>
                             </button>
                             {adjOpen && (
                               <div className="mt-[8px] rounded-[9px] border border-[#E8E4E2] overflow-hidden">
-                                {monthAdjustments.map((a, i) => {
+                                {visibleAdjustments.map((a, i) => {
                                   const name = accounts.find(x => x.account_code === a.account_code)?.account_name ?? '(삭제된 계정)'
                                   const at   = new Date(a.created_at)
                                   return (
