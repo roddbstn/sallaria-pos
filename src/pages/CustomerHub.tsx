@@ -138,14 +138,18 @@ interface DetailStats {
   windowLabels:      { thisMonth: string; lastMonth: string; threeMonths: string }
 }
 
-/** 월 한 칸 — 주문율과 재주문율을 같이 들고 다닌다(차트 두 개가 같은 배열을 쓴다) */
+/** 월 한 칸 — 차트 두 개가 같은 배열을 쓴다 */
 interface MonthPoint {
   /** '7월' */
   label:       string
-  /** 그 달에 한 번이라도 주문한 계정 ÷ 그때까지 만들어진 계정 */
-  orderRate:   number
-  /** 그 달 주문자 중 2회 이상 주문한 사람 비율. 주문자가 없으면 null */
-  repeatRate:  number | null
+  /**
+   * 그 달에 **처음** 주문한 사람 수.
+   * 기준은 orderer_first_order RPC 의 첫 주문 시각이라 6개월 창 밖의 이력도 반영된다
+   * (6개월치 주문만 보면 가장 오래된 달이 전부 '신규'로 찍힌다).
+   */
+  newOrderers: number
+  /** 그 달에 주문한 사람 수(중복 제외, 취소 제외) */
+  orderers:    number
 }
 
 interface RateBase {
@@ -154,13 +158,6 @@ interface RateBase {
   repeat: number
   total:  number
 }
-
-/**
- * 월별 비율 막대 — 주문율·재주문율이 같은 모양을 쓴다.
- *
- * 둘 다 0~100% 라 세로 축을 100 으로 고정한다. 최대값에 맞춰 늘리면 "35% 가 꽉 찬 막대"가
- * 돼서 좋아 보이는 착시가 생긴다. 비율 지표는 눈금이 고정이어야 달끼리 비교가 된다.
- */
 
 /** 주문 많은 손님 한 줄 — top_orderers() RPC 가 그대로 돌려주는 모양 */
 interface TopOrderer {
@@ -216,17 +213,34 @@ function cycleWords(d: number): string {
   return '한 달에 한 번 오시던 분'
 }
 
-function RateBars({ title, hint, data, color }: {
+/**
+ * 월별 **사람 수** 막대.
+ *
+ * 전엔 주문율·단골비율 두 비율을 0~100 고정 축에 그렸다. 비율은 달끼리 비교하려고
+ * 축을 고정한 건데, 실제 값이 30~45% 사이에만 모여서 막대가 전부 아래쪽에 깔렸고
+ * 40px 짜리 영역에서 10%p 차이가 4px 였다 — "올랐나 내렸나"가 눈으로 안 읽혔다.
+ * 게다가 '주문율'의 분모가 거래처 수라서, 보는 사람이 기대하는 '몇 명'과 달랐다.
+ *
+ * 그래서 비율을 버리고 **사람 수**를 그린다. 축은 그 6개월의 최대값에 맞춘다 —
+ * 개수는 상한이 없어서 고정할 축이 없고, 최대값 기준이면 달 간 차이가 그대로 보인다.
+ *
+ * 숫자는 막대 꼭대기가 아니라 **위에 한 줄로 고정**해 적는다. 꼭대기에 붙이면
+ * 막대 높이를 따라 글자가 오르내려서, 여섯 달을 훑을 때 눈이 계단을 밟는다.
+ */
+function CountBars({ title, hint, data, color, unit = '명' }: {
   title: string
   /** 제목 옆 'i' 에 붙는 설명. 고객 화면 표의 '추이' 안내와 같은 방식 */
   hint?: string
-  data:  { label: string; value: number | null }[]
+  data:  { label: string; value: number }[]
   color: string
+  unit?: string
 }) {
-  const H = 56
+  const H = 72
+  // 전부 0이어도 0으로 나누지 않게 하한 1
+  const max = Math.max(1, ...data.map(d => d.value))
   return (
     <div>
-      <div className="flex items-center gap-[5px] mb-[12px]">
+      <div className="flex items-center gap-[5px] mb-[8px]">
         <span className="text-[13px] font-normal text-[#6A635E]">{title}</span>
         {/* ⚠️ 브라우저 기본 title 속성을 쓰면 안 된다.
             똑같이 생긴 'i' 인데 **1~2초 기다려야** OS 툴팁이 뜨고 모양도 우리 것과
@@ -234,17 +248,24 @@ function RateBars({ title, hint, data, color }: {
             "왜 이건 말풍선이 안 나오냐"가 됐다. 같은 모양이면 같게 동작해야 한다. */}
         {hint && <InfoTip text={hint} label={`${title} 설명`} />}
       </div>
+      {/* 값 — 막대와 떼어 한 줄로 */}
+      <div className="flex gap-[8px] mb-[5px]">
+        {data.map(d => (
+          <span key={d.label} className={`flex-1 text-center text-[11px] tabular-nums ${
+            d.value === 0 ? 'text-[#ADADAD]' : 'text-[#2C261F] font-medium'
+          }`}>
+            {d.value}
+          </span>
+        ))}
+      </div>
       <div className="flex items-end gap-[8px]" style={{ height: H }}>
         {data.map(d => (
-          <div key={d.label} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-            {d.value !== null && (
-              <span className="text-[10px] text-[#6A635E] mb-[3px] tabular-nums">{d.value}%</span>
-            )}
+          <div key={d.label} className="flex-1 flex flex-col items-center justify-end h-full">
             <div
               className="w-full rounded-t-[3px]"
               style={{
-                height: d.value === null ? 2 : Math.max(2, (d.value / 100) * (H - 16)),
-                backgroundColor: d.value === null ? '#E5E5E5' : color,
+                height: d.value === 0 ? 2 : Math.max(3, (d.value / max) * H),
+                backgroundColor: d.value === 0 ? '#E5E5E5' : color,
               }}
             />
           </div>
@@ -256,6 +277,7 @@ function RateBars({ title, hint, data, color }: {
           <span key={d.label} className="flex-1 text-center text-[10px] text-[#6A635E]">{d.label}</span>
         ))}
       </div>
+      <div className="text-[10px] text-[#ADADAD] text-right mt-[2px]">단위: {unit}</div>
     </div>
   )
 }
@@ -440,15 +462,23 @@ function CustomerDetailPanel() {
         const rows = rowsByMonth.get(k) ?? []
         const ok   = rows.filter(r => r.status !== '취소')
 
-        // 그 달 말까지 존재하던 계정만 분모에 넣는다
-        const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString()
-        const base = accounts.filter(a => a.created_at < monthEnd).length
-        const ordered = new Set(ok.map(r => r.account_code)).size
+        const monthStart = d.toISOString()
+        const monthEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString()
+
+        // 그 달에 **처음** 주문한 사람 — 첫 주문 시각이 이 달 안에 들어오는 사람 수.
+        // 6개월치 주문만으로 세면 가장 오래된 달이 통째로 '신규'가 되므로
+        // 전체 이력을 아는 firstSeen(orderer_first_order RPC)을 쓴다.
+        let newOrderers = 0
+        for (const at of firstSeen.values()) {
+          if (at >= monthStart && at < monthEnd) newOrderers++
+        }
 
         monthly.push({
-          label:      `${d.getMonth() + 1}월`,
-          orderRate:  base > 0 ? Math.round((ordered / base) * 100) : 0,
-          repeatRate: regularRateOf(rows, firstSeen, d.toISOString()).rate,
+          label:    `${d.getMonth() + 1}월`,
+          newOrderers,
+          // 사람 기준(중복 제외). 거래처로 세면 한 과에서 열 명이 시킨 것과
+          // 한 명이 시킨 것이 똑같이 1이 된다.
+          orderers: new Set(ok.map(r => r.orderer_name).filter(Boolean)).size,
         })
       }
 
@@ -537,7 +567,7 @@ function CustomerDetailPanel() {
         ? '주문 없음 (최근 2주)'
         : `${stats.repeatBase.repeat}명/${stats.repeatBase.total}명 (최근 2주)`,
       // 정의는 네 칸 중 첫 칸에만 단다 — 같은 지표라 한 번이면 충분하다
-      info: '주문자 중 이전에도\n주문했던 손님 비율이에요',
+      info: '주문자 중 저번달에도\n주문했던 손님 비율이에요',
     },
     repeatCell('이번달 단골 비율',   stats.repeatThisMonth, stats.windowLabels.thisMonth),
     repeatCell('저번달 단골 비율',   stats.repeatLastMonth, stats.windowLabels.lastMonth),
@@ -614,16 +644,17 @@ function CustomerDetailPanel() {
           {/* 월별 추이 둘 — 같은 6개월 x축을 위아래로 겹쳐 읽는다.
               "주문율은 올랐는데 재주문율은 그대로"처럼 두 줄을 한 번에 비교하라고 나란히 둔다. */}
           <div className="flex-shrink-0 w-[300px] flex flex-col gap-[26px]">
-            <RateBars
-              title="월별 주문율 추이"
-              hint={'그 달에 한 번이라도 주문한 거래처 비율이에요\n분모는 그 달까지 등록된 거래처 수입니다'}
+            <CountBars
+              title="월별 신규 주문자"
+              hint={'그 달에 처음 주문한 손님 수예요\n한 번이라도 전에 주문한 적 있으면 신규가 아닙니다'}
               color="#6A635E"
-              data={stats.monthly.map(m => ({ label: m.label, value: m.orderRate }))}
+              data={stats.monthly.map(m => ({ label: m.label, value: m.newOrderers }))}
             />
-            <RateBars
-              title="월별 단골 비율"
+            <CountBars
+              title="월별 주문자 수"
+              hint={'그 달에 주문한 손님 수예요\n같은 분이 여러 번 시켜도 한 명으로 셉니다'}
               color="#C1B7AA"
-              data={stats.monthly.map(m => ({ label: m.label, value: m.repeatRate }))}
+              data={stats.monthly.map(m => ({ label: m.label, value: m.orderers }))}
             />
 
           </div>
