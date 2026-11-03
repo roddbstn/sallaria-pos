@@ -138,7 +138,7 @@ interface DetailStats {
   windowLabels:      { thisMonth: string; lastMonth: string; threeMonths: string }
 }
 
-/** 월 한 칸 — 차트 두 개가 같은 배열을 쓴다 */
+/** 월 한 칸 — 차트 셋이 같은 배열을 쓴다 */
 interface MonthPoint {
   /** '7월' */
   label:       string
@@ -148,8 +148,17 @@ interface MonthPoint {
    * (6개월치 주문만 보면 가장 오래된 달이 전부 '신규'로 찍힌다).
    */
   newOrderers: number
-  /** 그 달에 주문한 사람 수(중복 제외, 취소 제외) */
-  orderers:    number
+  /**
+   * 주문율(%) = 그 달에 주문한 사람 ÷ **그 달 말일까지 등록된 사람**.
+   * 분모가 '지금 등록된 사람'이면 최근에 늘어난 이용자 때문에 지난달들이
+   * 실제보다 낮게 찍힌다.
+   */
+  orderRate:   number
+  /** 주문율의 분자·분모 — 말풍선에 '51명 / 104명' 으로 적는다 */
+  orderBase:   { ordered: number; members: number }
+  /** 그 달 단골 비율(%). 그 달 주문자가 없으면 null */
+  repeatRate:  number | null
+  repeatBase:  { repeat: number; total: number }
 }
 
 interface RateBase {
@@ -214,33 +223,38 @@ function cycleWords(d: number): string {
 }
 
 /**
- * 월별 **사람 수** 막대.
+ * 월별 추이 막대 — 세 차트(신규 주문자 · 주문율 · 단골 비율)가 같은 모양을 쓴다.
  *
- * 전엔 주문율·단골비율 두 비율을 0~100 고정 축에 그렸다. 비율은 달끼리 비교하려고
- * 축을 고정한 건데, 실제 값이 30~45% 사이에만 모여서 막대가 전부 아래쪽에 깔렸고
- * 40px 짜리 영역에서 10%p 차이가 4px 였다 — "올랐나 내렸나"가 눈으로 안 읽혔다.
- * 게다가 '주문율'의 분모가 거래처 수라서, 보는 사람이 기대하는 '몇 명'과 달랐다.
+ * ── 축 ─────────────────────────────────────────────────────────────────────
+ * 'count' 는 상한이 없으니 그 6개월의 최대값에 맞춘다.
+ * 'rate' 는 100 을 기본 천장으로 두되 **넘으면 넘은 만큼 늘린다.**
+ *   주문율은 100%를 넘을 수 있다 — 분모는 등록된 사람 수인데, 주문자명은 자유
+ *   입력이라 등록 안 한 이름으로도 주문이 들어온다(침산점 6월 8명/6명 = 133%).
+ *   100 에서 잘라 버리면 그 달만 꽉 찬 막대가 돼서 "무슨 일이 있었다"가 지워진다.
+ *   천장이 100 을 넘어갈 때만 100% 자리에 점선을 그어 기준을 남긴다.
  *
- * 그래서 비율을 버리고 **사람 수**를 그린다. 축은 그 6개월의 최대값에 맞춘다 —
- * 개수는 상한이 없어서 고정할 축이 없고, 최대값 기준이면 달 간 차이가 그대로 보인다.
- *
- * 숫자는 막대 꼭대기가 아니라 **위에 한 줄로 고정**해 적는다. 꼭대기에 붙이면
- * 막대 높이를 따라 글자가 오르내려서, 여섯 달을 훑을 때 눈이 계단을 밟는다.
+ * ── 숫자 ───────────────────────────────────────────────────────────────────
+ * 막대 위에 상시로 적지 않는다. 여섯 달 × 세 차트면 숫자가 열여덟 개라
+ * 추이(올랐나 내렸나)를 보려고 온 눈을 숫자가 먼저 붙잡는다.
+ * 대신 막대에 올리면 말풍선으로 근거까지 같이 보여준다('51명 / 104명').
  */
-function CountBars({ title, hint, data, color, unit = '명' }: {
+function TrendBars({ title, hint, data, color, kind }: {
   title: string
   /** 제목 옆 'i' 에 붙는 설명. 고객 화면 표의 '추이' 안내와 같은 방식 */
   hint?: string
-  data:  { label: string; value: number }[]
+  /** value 가 null 이면 '잴 수 없었던 달'(그 달 주문자가 0명) — 회색 바닥선만 */
+  data:  { label: string; value: number | null; tip: string }[]
   color: string
-  unit?: string
+  kind:  'count' | 'rate'
 }) {
   const H = 72
-  // 전부 0이어도 0으로 나누지 않게 하한 1
-  const max = Math.max(1, ...data.map(d => d.value))
+  const peak = Math.max(0, ...data.map(d => d.value ?? 0))
+  const axis = kind === 'count' ? Math.max(1, peak) : Math.max(100, peak)
+  const showHundredLine = kind === 'rate' && axis > 100
+
   return (
     <div>
-      <div className="flex items-center gap-[5px] mb-[8px]">
+      <div className="flex items-center gap-[5px] mb-[10px]">
         <span className="text-[13px] font-normal text-[#6A635E]">{title}</span>
         {/* ⚠️ 브라우저 기본 title 속성을 쓰면 안 된다.
             똑같이 생긴 'i' 인데 **1~2초 기다려야** OS 툴팁이 뜨고 모양도 우리 것과
@@ -248,36 +262,44 @@ function CountBars({ title, hint, data, color, unit = '명' }: {
             "왜 이건 말풍선이 안 나오냐"가 됐다. 같은 모양이면 같게 동작해야 한다. */}
         {hint && <InfoTip text={hint} label={`${title} 설명`} />}
       </div>
-      {/* 값 — 막대와 떼어 한 줄로 */}
-      <div className="flex gap-[8px] mb-[5px]">
+
+      <div className="relative flex items-end gap-[8px]" style={{ height: H }}>
+        {showHundredLine && (
+          <div
+            className="absolute left-0 right-0 border-t border-dashed border-[#D9D9D9] pointer-events-none"
+            style={{ bottom: (100 / axis) * H }}
+          >
+            <span className="absolute right-0 -top-[12px] text-[9px] text-[#ADADAD]">100%</span>
+          </div>
+        )}
         {data.map(d => (
-          <span key={d.label} className={`flex-1 text-center text-[11px] tabular-nums ${
-            d.value === 0 ? 'text-[#ADADAD]' : 'text-[#2C261F] font-medium'
-          }`}>
-            {d.value}
-          </span>
-        ))}
-      </div>
-      <div className="flex items-end gap-[8px]" style={{ height: H }}>
-        {data.map(d => (
-          <div key={d.label} className="flex-1 flex flex-col items-center justify-end h-full">
+          <div key={d.label} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+            {/* 말풍선 — 막대에 올렸을 때만. pointer-events-none 이라 옆 막대를
+                가리지 않는다(막대 사이가 8px 밖에 안 된다) */}
+            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-[6px] z-20
+                            opacity-0 group-hover:opacity-100 transition-opacity duration-100">
+              <div className="rounded-[7px] bg-[#2C261F] px-[8px] py-[5px] text-[11px] text-white whitespace-nowrap
+                              shadow-[0_2px_8px_rgba(0,0,0,0.2)]">
+                {d.tip}
+              </div>
+            </div>
             <div
-              className="w-full rounded-t-[3px]"
+              className="w-full rounded-t-[3px] transition-opacity group-hover:opacity-80"
               style={{
-                height: d.value === 0 ? 2 : Math.max(3, (d.value / max) * H),
-                backgroundColor: d.value === 0 ? '#E5E5E5' : color,
+                height: d.value === null || d.value === 0 ? 2 : Math.max(3, (d.value / axis) * H),
+                backgroundColor: d.value === null || d.value === 0 ? '#E5E5E5' : color,
               }}
             />
           </div>
         ))}
       </div>
+
       <div className="h-px bg-canvas-line mt-[1px]" />
       <div className="flex gap-[8px] mt-[6px]">
         {data.map(d => (
           <span key={d.label} className="flex-1 text-center text-[10px] text-[#6A635E]">{d.label}</span>
         ))}
       </div>
-      <div className="text-[10px] text-[#ADADAD] text-right mt-[2px]">단위: {unit}</div>
     </div>
   )
 }
@@ -382,7 +404,8 @@ function CustomerDetailPanel() {
           supabase.from('orders').select('account_code, orderer_name, total_amount, status').in('account_code', codes).gte('ordered_at', mStart),
           supabase.from('deposits').select('amount').in('account_code', codes).gte('created_at', mStart),
           supabase.from('deposits').select('account_code, created_at').in('account_code', codes).order('created_at'),
-          supabase.from('account_members').select('account_code').in('account_code', codes),
+          // created_at 까지 — 월별 주문율의 분모가 '그 달 말일까지 등록된 사람'이다
+          supabase.from('account_members').select('account_code, created_at').in('account_code', codes),
           supabase.from('orders')
             .select('orderer_name, status')
             .in('account_code', codes)
@@ -473,12 +496,21 @@ function CustomerDetailPanel() {
           if (at >= monthStart && at < monthEnd) newOrderers++
         }
 
+        // 주문율 — 사람 기준. 거래처로 세면 한 과에서 열 명이 시킨 것과
+        // 한 명이 시킨 것이 똑같이 1이 된다.
+        const orderedPpl  = new Set(ok.map(r => r.orderer_name).filter(Boolean)).size
+        const membersThen = (members ?? []).filter(
+          (m: { created_at: string }) => m.created_at < monthEnd,
+        ).length
+        const reg = regularRateOf(rows, firstSeen, monthStart)
+
         monthly.push({
-          label:    `${d.getMonth() + 1}월`,
+          label:      `${d.getMonth() + 1}월`,
           newOrderers,
-          // 사람 기준(중복 제외). 거래처로 세면 한 과에서 열 명이 시킨 것과
-          // 한 명이 시킨 것이 똑같이 1이 된다.
-          orderers: new Set(ok.map(r => r.orderer_name).filter(Boolean)).size,
+          orderRate:  membersThen > 0 ? Math.round((orderedPpl / membersThen) * 100) : 0,
+          orderBase:  { ordered: orderedPpl, members: membersThen },
+          repeatRate: reg.rate,
+          repeatBase: { repeat: reg.repeat, total: reg.total },
         })
       }
 
@@ -644,17 +676,36 @@ function CustomerDetailPanel() {
           {/* 월별 추이 둘 — 같은 6개월 x축을 위아래로 겹쳐 읽는다.
               "주문율은 올랐는데 재주문율은 그대로"처럼 두 줄을 한 번에 비교하라고 나란히 둔다. */}
           <div className="flex-shrink-0 w-[300px] flex flex-col gap-[26px]">
-            <CountBars
+            <TrendBars
               title="월별 신규 주문자"
-              hint={'그 달에 처음 주문한 손님 수예요\n한 번이라도 전에 주문한 적 있으면 신규가 아닙니다'}
+              hint={'그 달에 처음 주문한 손님 수예요\n전에 한 번이라도 주문했으면 신규가 아닙니다'}
               color="#6A635E"
-              data={stats.monthly.map(m => ({ label: m.label, value: m.newOrderers }))}
+              kind="count"
+              data={stats.monthly.map(m => ({
+                label: m.label, value: m.newOrderers, tip: `${m.label} 신규 ${m.newOrderers}명`,
+              }))}
             />
-            <CountBars
-              title="월별 주문자 수"
-              hint={'그 달에 주문한 손님 수예요\n같은 분이 여러 번 시켜도 한 명으로 셉니다'}
+            <TrendBars
+              title="월별 주문율"
+              hint={'그 달 말일까지 등록된 손님 중\n그 달에 주문한 분의 비율이에요\n주문자명은 직접 입력이라 100%를 넘을 수 있어요'}
+              color="#8C8379"
+              kind="rate"
+              data={stats.monthly.map(m => ({
+                label: m.label, value: m.orderRate,
+                tip:   `${m.label} ${m.orderRate}% · ${m.orderBase.ordered}명 / ${m.orderBase.members}명`,
+              }))}
+            />
+            <TrendBars
+              title="월별 단골 비율"
+              hint={'그 달 주문자 중\n그 전에도 주문한 적 있는 분의 비율이에요'}
               color="#C1B7AA"
-              data={stats.monthly.map(m => ({ label: m.label, value: m.orderers }))}
+              kind="rate"
+              data={stats.monthly.map(m => ({
+                label: m.label, value: m.repeatRate,
+                tip:   m.repeatRate === null
+                  ? `${m.label} 주문 없음`
+                  : `${m.label} ${m.repeatRate}% · ${m.repeatBase.repeat}명 / ${m.repeatBase.total}명`,
+              }))}
             />
 
           </div>
