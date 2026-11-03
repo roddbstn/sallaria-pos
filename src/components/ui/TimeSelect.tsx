@@ -3,7 +3,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 // 오픈/마감 시각 선택 드롭다운. 운영시간 모달을 띄우지 않고 버튼 바로 아래에서 고른다.
 // 00:00부터 10분 간격 144개, 표기는 '오전 12:00' / '오후 01:30'.
 
-const STEP_MIN = 10
+// 5분 단위. 10분이면 '09:35 오픈' 같은 흔한 시각을 아예 고를 수가 없다.
+// 목록이 144 → 288개로 늘지만, 열 때 현재 값으로 스크롤을 맞춰 두므로
+// 손이 더 가지는 않는다(아래 useLayoutEffect).
+const STEP_MIN = 5
 
 /** 'HH:mm' → '오전 12:00' */
 export function formatKoreanTime(hhmm: string): string {

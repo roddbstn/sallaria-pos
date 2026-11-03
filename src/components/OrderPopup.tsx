@@ -47,6 +47,14 @@ function CopyButton({ text, variant = 'gray' }: { text: string; variant?: 'gray'
 interface Props {
   queue:      Order[]
   onClose:    () => void   // 현재(첫 번째) 주문 제거
+  /**
+   * 창 하나를 통째로 차지하는 모드.
+   *
+   * 메인 창 안에서는 뒤를 어둡게 깔아 "지금은 이것만 보라"를 만든다.
+   * 별도 알림 창에서는 그 어두운 막이 **창 전체를 덮는 회색 테두리**가 될 뿐이라
+   * 뺀다. 카드 배치는 그대로다.
+   */
+  bare?:      boolean
   onApprove?: () => void
   /** 낙관적 처리 뒤 백그라운드 작업이 실패했을 때 — 화면은 이미 넘어가 있으므로 토스트로 알린다 */
   onError?:   (msg: string) => void
@@ -72,7 +80,7 @@ const CARD_GAP = 20   // 대기 카드 사이 간격 — Figma엔 없는 우리 
 // 마지막 승인 소요시간 기억 (세션 내 유지)
 let lastPrepMins = 15
 
-export default function OrderPopup({ queue, onClose, onApprove, onError }: Props) {
+export default function OrderPopup({ queue, onClose, bare, onApprove, onError }: Props) {
   const { storeName } = useStore()
   const [stage,    setStage]    = useState<Stage>('summary')
   const [prepMins, setPrepMins] = useState(lastPrepMins)
@@ -231,7 +239,7 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
     // z-50 이었을 때는 그 둘이 블러 위로 올라와 호버·클릭이 됐다.
     // 레이어 순서: 50 화면 내부 오버레이 < 60 헤더 앵커 < 65 신규 주문 < 70 사용자가 연 모달
     // 바깥 클릭으로 닫지 않는다(의도) — 새 주문은 점주가 확인했다는 조작이 있어야 사라진다.
-    <div className="fixed inset-0 z-[65] bg-black/50 backdrop-blur-sm">
+    <div className={`fixed inset-0 z-[65] ${bare ? 'bg-[#EFECEA]' : 'bg-black/50 backdrop-blur-sm'}`}>
       {/* 슬라이드 스트립 — card1 중앙 고정, card2는 오른쪽 끝에 반만 노출 */}
       <div
         style={{

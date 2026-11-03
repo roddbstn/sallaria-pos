@@ -102,12 +102,107 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  loadRenderer(mainWindow)
+}
+
+/**
+ * 렌더러를 띄운다. hash 를 주면 같은 번들 안에서 **다른 화면**이 뜬다
+ * (src/main.tsx 가 location.hash 로 갈라진다).
+ * dev 는 Vite 서버 URL, prod 는 file:// — 두 경로를 한 곳에서만 쓴다.
+ */
+function loadRenderer(win: BrowserWindow, hash?: string): void {
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (is.dev && devUrl) {
+    win.loadURL(hash ? `${devUrl}#${hash}` : devUrl)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'), hash ? { hash } : undefined)
   }
 }
+
+// ── 주문 알림 팝업 창 ────────────────────────────────────────────────────────
+//
+// 왜 별도 창인가 — 점주 대부분은 메인 POS(오케이포스 등)를 띄워 놓고 쓴다.
+// 그 위에 선포스 창이 가려져 있으면 주문이 들어와도 **화면에 아무 일도 안 일어난다.**
+// 소리만으로는 피크타임 주방에서 묻힌다. 그래서 알림 팝업만 떼어 내
+// 항상 맨 앞에 서는 작은 창으로 띄운다.
+//
+// 이 창은 **화면만** 한다. 주문 큐는 메인 창이 계속 쥐고 있고, 팝업에서 누른
+// 접수/거부는 메인 창으로 되돌아가 거기서 처리된다. 큐를 두 군데서 들고 있으면
+// 어느 쪽이 진짜인지가 금방 갈린다.
+let popupWindow: BrowserWindow | null = null
+
+function createOrderPopupWindow(): void {
+  if (popupWindow && !popupWindow.isDestroyed()) {
+    popupWindow.showInactive()   // 이미 있으면 다시 만들지 않는다
+    popupWindow.setAlwaysOnTop(true, 'screen-saver')
+    return
+  }
+
+  popupWindow = new BrowserWindow({
+    width:  800,
+    height: 880,
+    // 카드 폭이 760 으로 고정이라 늘릴 이유가 없다. 줄이면 카드가 잘린다.
+    resizable:   false,
+    maximizable: false,
+    minimizable: true,
+    title:       '선포스 — 새 주문',
+    backgroundColor: '#FCFCFC',
+    // 'screen-saver' 는 일반 always-on-top 보다 위다. 전체화면으로 띄워 둔
+    // 다른 POS 프로그램 위에도 떠야 하므로 가장 높은 단계를 쓴다.
+    alwaysOnTop: true,
+    // 포커스를 뺏지 않는다 — 점주가 다른 프로그램에 타이핑 중일 수 있다.
+    // 창은 앞에 서되 키보드는 하던 곳에 남는다.
+    focusable: true,
+    show:      false,
+    webPreferences: {
+      preload:          join(__dirname, '../preload/preload.js'),
+      sandbox:          false,
+      contextIsolation: true,
+    },
+  })
+  popupWindow.setAlwaysOnTop(true, 'screen-saver')
+  // 맥에서 다른 데스크탑(스페이스)·전체화면 앱 위에도 따라붙게
+  popupWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  popupWindow.once('ready-to-show', () => {
+    // show() 가 아니라 showInactive() — 위 focusable 주석과 같은 이유다
+    popupWindow?.showInactive()
+  })
+  popupWindow.on('closed', () => {
+    popupWindow = null
+    // 창을 닫으면 메인 창 가운데 모달로 되돌아간다 (주문은 아직 처리 전이다)
+    mainWindow?.webContents.send('popup:closed')
+  })
+  popupWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  loadRenderer(popupWindow, 'order-popup')
+}
+
+function closeOrderPopupWindow(): void {
+  if (!popupWindow || popupWindow.isDestroyed()) return
+  const w = popupWindow
+  popupWindow = null          // 'closed' 핸들러가 메인 창에 알리지 않도록 먼저 끊는다
+  w.removeAllListeners('closed')
+  w.close()
+}
+
+ipcMain.handle('popup:open',  () => { createOrderPopupWindow() })
+ipcMain.handle('popup:close', () => { closeOrderPopupWindow() })
+
+/** 메인 창 → 팝업 창: 지금 큐와 매장 정보 */
+ipcMain.handle('popup:sync', (_e, payload: unknown) => {
+  if (popupWindow && !popupWindow.isDestroyed()) {
+    popupWindow.webContents.send('popup:data', payload)
+  }
+})
+
+/** 팝업 창 → 메인 창: 접수/거부/닫기 같은 사용자 조작 */
+ipcMain.handle('popup:action', (_e, payload: unknown) => {
+  mainWindow?.webContents.send('popup:action', payload)
+})
 
 // ── ESC/POS 시리얼 출력 ───────────────────────────────────────────────────────
 
@@ -932,6 +1027,8 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+app.on('before-quit', () => { closeOrderPopupWindow() })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

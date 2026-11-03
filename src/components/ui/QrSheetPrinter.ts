@@ -46,7 +46,8 @@ export async function printQrSheet(
   const f = fontSizesFor(geo.fontMM)
 
   const isReceipt = opts.paper === 'receipt'
-  const pageSize  = isReceipt ? '58mm auto' : 'A4'
+  // 8등분은 종이를 눕힌다 — 이유는 qr-order.ts 의 PAPER_OPTIONS 주석 참고
+  const pageSize  = isReceipt ? '58mm auto' : spec.landscape ? 'A4 landscape' : 'A4'
   // 칸 높이를 고정해야 "4등분"이 실제로 4등분이 된다. 내용에 따라 늘어나면 칸이 밀린다
   const cellH = isReceipt ? 'auto' : `${geo.cellH}mm`
 

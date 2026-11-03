@@ -3,7 +3,7 @@ import Working from '../components/ui/Working'
 import { HubSection } from '../components/hub/HubLayout'
 import { supabase, type DbAccount } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
-import { qrUrlFor, qrDataUrl, PAPER_OPTIONS, DEFAULT_QR_NOTICE, paperGeometry, fontSizesFor, mmToCm, CELL_GAP, type QrPaper } from '../lib/qr-order'
+import { qrUrlFor, qrDataUrl, PAPER_OPTIONS, DEFAULT_QR_NOTICE, paperGeometry, fontSizesFor, mmToCm, CELL_GAP, type QrPaper, paperSheetMM, A4_MARGIN } from '../lib/qr-order'
 import { printQrSheet } from '../components/ui/QrSheetPrinter'
 import { usePrinterConfig } from '../hooks/usePrinterConfig'
 import { paperChoice } from '../lib/printer-paper'
@@ -149,10 +149,12 @@ function PaperPreview({ paper, storeName, notice, pin, labels, totalLabels }: {
   const f    = fontSizesFor(geo.fontMM)
   const isReceipt = paper === 'receipt'
 
-  // 종이 실치수(mm)와 인쇄 여백 — QrSheetPrinter 의 @page margin 과 같은 값
-  const paperW = isReceipt ? rp.paperMM : 210
-  const margin = isReceipt ? (rp.paperMM - rp.printMM) / 2 : 10
-  const innerH = isReceipt ? geo.cellH : 277
+  // 종이 실치수(mm)와 인쇄 여백 — QrSheetPrinter 의 @page margin 과 같은 값.
+  // A4 치수는 paperSheetMM 에서 받는다. 눕힌 용지(8등분)는 210×297 이 아니다.
+  const sheet  = paperSheetMM(paper)
+  const paperW = isReceipt ? rp.paperMM : sheet.w
+  const margin = isReceipt ? (rp.paperMM - rp.printMM) / 2 : A4_MARGIN
+  const innerH = isReceipt ? geo.cellH : sheet.h - A4_MARGIN * 2
   const paperH = innerH + margin * 2
 
   // 상자 안에 들어가도록 — 가로·세로 둘 다 맞춘다
@@ -227,7 +229,9 @@ function PaperPreview({ paper, storeName, notice, pin, labels, totalLabels }: {
       </div>
 
       <div className="mt-[10px] text-[11px] font-normal text-[#787878] text-center">
-        {isReceipt ? `영수증 ${rp.label}` : 'A4 210 × 297mm'} · 한 장에 {geo.perPage}칸
+        {isReceipt
+          ? `영수증 ${rp.label}`
+          : `A4 ${sheet.w} × ${sheet.h}mm${spec.landscape ? ' (가로)' : ''}`} · 한 장에 {geo.perPage}칸
         {totalLabels > geo.perPage
           ? <span className="text-[#ADADAD]"> · 총 {totalLabels}장</span>
           : labels.length < geo.perPage && geo.perPage > 1 && (

@@ -34,9 +34,14 @@ export function qrDataUrl(url: string, size = 400): Promise<string> {
 
 export type QrPaper = 'a4-1' | 'a4-2' | 'a4-4' | 'a4-8' | 'receipt'
 
+/** A4 실치수(mm) */
+const A4_SHEET_W = 210
+const A4_SHEET_H = 297
+/** @page margin(mm) — QrSheetPrinter 의 값과 같아야 한다 */
+export const A4_MARGIN = 10
 /** A4 210×297mm, @page margin 10mm → 인쇄 가능 영역 */
-const A4_W = 190
-const A4_H = 277
+const A4_W = A4_SHEET_W - A4_MARGIN * 2
+const A4_H = A4_SHEET_H - A4_MARGIN * 2
 /** 칸 사이 간격(mm) — 자를 여유 */
 export const CELL_GAP = 8
 
@@ -114,6 +119,20 @@ export interface PaperSpec {
   note:  string
   cols:  number
   rows:  number
+  /** 종이를 90° 눕혀서 찍는다 */
+  landscape?: boolean
+}
+
+/**
+ * 그 용지가 실제로 찍히는 종이 크기(mm).
+ * 미리보기와 인쇄가 **같은 값**을 쓰도록 여기 한 곳에서만 정한다 —
+ * 전엔 미리보기가 210×297 을 박아 써서 가로 용지를 세로로 그릴 뻔했다.
+ */
+export function paperSheetMM(paper: QrPaper): { w: number; h: number } {
+  const spec = PAPER_OPTIONS.find(p => p.key === paper)
+  return spec?.landscape
+    ? { w: A4_SHEET_H, h: A4_SHEET_W }
+    : { w: A4_SHEET_W, h: A4_SHEET_H }
 }
 
 export const PAPER_OPTIONS: PaperSpec[] = [
@@ -121,7 +140,13 @@ export const PAPER_OPTIONS: PaperSpec[] = [
   { key: 'a4-1',    label: 'A4 1장',   note: '한 장에 하나씩 크게 뽑아 벽에 붙일 때 좋아요',           cols: 1, rows: 1 },
   { key: 'a4-2',    label: 'A4 2등분', note: '위아래로 둘씩 뽑아 반으로 잘라 두 곳에 붙일 때 좋아요',          cols: 1, rows: 2 },
   { key: 'a4-4',    label: 'A4 4등분', note: '한 장을 네 칸으로 뽑아 잘라서 나눠주기 좋아요', cols: 2, rows: 2 },
-  { key: 'a4-8',    label: 'A4 8등분', note: '한 장에 여덟 칸으로 뽑아 거래처가 많을 때 좋아요',            cols: 2, rows: 4 },
+  // 8등분만 **가로(landscape)** 다.
+  //
+  // 세로로 2×4 로 자르면 칸이 91×63mm — 옆으로 퍼진 모양이라, QR 위아래로
+  // 글자를 쌓는 이 양식과 맞지 않는다. 높이에 눌려 QR 이 34mm 까지 줄었다.
+  // 종이를 눕혀 4×2 로 자르면 칸이 63×91mm 로 **서 있는 명함 모양**이 되고,
+  // 같은 여덟 칸인데 QR 이 44mm 로 커진다(+30%). 자른 종이 모양도 손에 쥐기 낫다.
+  { key: 'a4-8',    label: 'A4 8등분', note: '종이를 눕혀 여덟 칸으로 뽑아요. 거래처가 많을 때 좋아요', cols: 4, rows: 2, landscape: true },
 ]
 
 export interface PaperGeometry {
@@ -171,8 +196,11 @@ export function paperGeometry(paper: QrPaper, receiptMM: number = DEFAULT_RECEIP
     return { cellW: w, cellH: qrMM + textHeightFor(qrMM), qrMM, fontMM: qrMM, perPage: 1 }
   }
   const spec = PAPER_OPTIONS.find(p => p.key === paper)!
-  const cellW = (A4_W - CELL_GAP * (spec.cols - 1)) / spec.cols
-  const cellH = (A4_H - CELL_GAP * (spec.rows - 1)) / spec.rows
+  // 눕힌 종이는 가로·세로가 바뀐다
+  const innerW = spec.landscape ? A4_H : A4_W
+  const innerH = spec.landscape ? A4_W : A4_H
+  const cellW = (innerW - CELL_GAP * (spec.cols - 1)) / spec.cols
+  const cellH = (innerH - CELL_GAP * (spec.rows - 1)) / spec.rows
   // 칸에 꽉 채운 크기를 먼저 구하고(= 글자 기준), QR 만 QR_SCALE 로 줄인다
   const fitted = fitQr(cellW, cellH)
   return {
