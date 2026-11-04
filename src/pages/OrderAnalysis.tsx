@@ -13,6 +13,7 @@ import {
   type TrendUnit, type TrendOrder,
 } from '../lib/order-trend'
 import { rootZoom } from '../lib/figma-scale'
+import { TrendBars } from '../components/ui/TrendBars'
 
 // ── 주문 리포트 ───────────────────────────────────────────────────────────────
 //
@@ -136,6 +137,18 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
    */
   const [trendUnit, setTrendUnit] = useState<TrendUnit>('month')
   const [trendAt,   setTrendAt]   = useState<TrendOrder[]>([])
+  /**
+   * 월별 주문율 — 그 달에 주문한 사람 ÷ **그 달 말일까지 등록된 사람**.
+   *
+   * 고객 현황에 있던 것을 여기로 옮겼다. 거기선 "누가 빠지고 있나"를 보는 자리인데
+   * 주문율은 그 달에 얼마나 돌았는지를 말하는 값이라 주문 쪽 이야기에 가깝다.
+   *
+   * 분모를 '지금 등록된 사람'으로 두면 최근 늘어난 이용자 때문에 지난달이 실제보다
+   * 낮게 찍히므로, 그 달 말일 기준으로 센다.
+   */
+  const [orderRates, setOrderRates] = useState<
+    { label: string; rate: number; ordered: number; members: number }[]
+  >([])
   const [trendLoading, setTrendLoading] = useState(true)
 
   // ── 창(window) 집계: 히트맵 · 메뉴 · 옵션 · 이용방법 ──
@@ -259,6 +272,51 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
         amount: (o.total_amount as number | null) ?? 0,
       })))
       setTrendLoading(false)
+
+      // ── 월별 주문율 ──
+      // 끝난 달 6개. 진행 중인 달을 끼우면 매달 1~3일에 한 자릿수 %가 찍혀
+      // "갑자기 망했나" 처럼 보인다.
+      const sixAgo = new Date()
+      sixAgo.setDate(1); sixAgo.setHours(0, 0, 0, 0)
+      sixAgo.setMonth(sixAgo.getMonth() - 6)
+
+      const [{ data: ordRows }, { data: memRows }] = await Promise.all([
+        supabase.from('orders')
+          .select('orderer_name, ordered_at, status')
+          .in('account_code', activeCodes)
+          .gte('ordered_at', sixAgo.toISOString()),
+        supabase.from('account_members')
+          .select('created_at')
+          .in('account_code', activeCodes),
+      ])
+      if (cancelled) return
+
+      const monthKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}`
+      const byMonth = new Map<string, Set<string>>()
+      for (const o of (ordRows ?? []) as { orderer_name: string | null; ordered_at: string; status: string }[]) {
+        if (o.status === '취소' || !o.orderer_name) continue
+        const k = monthKey(new Date(o.ordered_at))
+        let set = byMonth.get(k)
+        if (!set) { set = new Set(); byMonth.set(k, set) }
+        set.add(o.orderer_name)
+      }
+
+      const rates: { label: string; rate: number; ordered: number; members: number }[] = []
+      for (let back = 6; back >= 1; back--) {
+        const d       = new Date()
+        d.setDate(1); d.setMonth(d.getMonth() - back)
+        const mEnd    = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString()
+        const ordered = (byMonth.get(monthKey(d)) ?? new Set()).size
+        const members = (memRows ?? []).filter(
+          (m: { created_at: string }) => m.created_at < mEnd,
+        ).length
+        rates.push({
+          label:   `${d.getMonth() + 1}월`,
+          rate:    members > 0 ? Math.round((ordered / members) * 100) : 0,
+          ordered, members,
+        })
+      }
+      setOrderRates(rates)
     }
 
     load()
@@ -474,6 +532,34 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
         </div>
         )}
       </Section>
+
+      {/* 0-2. 월별 주문율 ───────────────────────────────────────────────
+          주문 추이가 "몇 건 들어왔나"라면 이건 "**몇 명이** 시켰나"다.
+          둘을 붙여 두는 이유: 건수가 늘었는데 주문율이 그대로면 같은 사람이
+          더 자주 시킨 것이고, 둘 다 늘었으면 사람이 늘어난 것이다.
+          그 차이에 따라 다음에 할 일이 다르다(메뉴를 늘릴지 사람을 늘릴지).
+
+          고객 현황에 있던 차트를 옮겨 왔다. 거기는 "누가 빠지고 있나"를 보는
+          자리라 드나듦 차트가 그 자리를 대신한다. */}
+      {orderRates.length > 0 && (
+        <Section title="월별 주문율">
+          <div className="bg-[#FCFCFC] rounded-[11px] px-[20px] py-[18px]">
+            <div className="max-w-[460px]">
+              <TrendBars
+                title="그 달에 주문한 손님 비율"
+                hint={'그 달 말일까지 등록된 손님 중\n그 달에 주문한 분의 비율이에요\n주문자명은 직접 입력이라 100%를 넘을 수 있어요'}
+                color="#8C8379"
+                kind="rate"
+                data={orderRates.map(r => ({
+                  label: r.label,
+                  value: r.rate,
+                  tip:   `${r.label} ${r.rate}% · ${r.ordered}명 / ${r.members}명`,
+                }))}
+              />
+            </div>
+          </div>
+        </Section>
+      )}
 
       {/* 기간 탭 — 여기부터 아래가 이 창의 영향을 받는다.
           추이 단위 탭과 **같은 모양·같은 오른쪽 끝**에 선다. 둘 다 "무엇을 기준으로

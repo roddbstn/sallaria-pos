@@ -10,6 +10,8 @@ import { DataTable, DataTableHead, DataTableRow, DataTableNotice, StatusTag } fr
 import AccountDetailModal, { type AccountDetailTarget } from '../components/customer/AccountDetailModal'
 import { makeTypeColorOf, typeBadgeStyle } from '../lib/account-type-color'
 import InfoTip from '../components/ui/InfoTip'
+import { TrendBars, FlowBars } from '../components/ui/TrendBars'
+import { buildCustomerFlow, type FlowMonth } from '../lib/customer-flow'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import CustomerProfileModal from '../components/customer/CustomerProfileModal'
 
@@ -122,8 +124,10 @@ interface DetailStats {
   repeatBase:        { repeat: number; total: number }
   typeRatio:         { label: string; count: number; color: string }[]
   topCustomers:      { name: string; orders: number; amount: number }[]   // (구) 거래처 단위 — 아래 topOrderers 로 대체됨
-  /** 최근 6개월 월별 추이 — 두 차트가 같은 x축을 쓴다 */
+  /** 최근 6개월 월별 추이 — 차트들이 같은 x축을 쓴다 */
   monthly:           MonthPoint[]
+  /** 월별 손님 드나듦(신규·유지·복귀·이탈) — 끝난 달 6개 */
+  flow:              FlowMonth[]
   /** 재주문자 비율을 창(window)만 바꿔 다시 잰 값들 */
   repeatThisMonth:   RateBase
   repeatLastMonth:   RateBase
@@ -148,14 +152,6 @@ interface MonthPoint {
    * (6개월치 주문만 보면 가장 오래된 달이 전부 '신규'로 찍힌다).
    */
   newOrderers: number
-  /**
-   * 주문율(%) = 그 달에 주문한 사람 ÷ **그 달 말일까지 등록된 사람**.
-   * 분모가 '지금 등록된 사람'이면 최근에 늘어난 이용자 때문에 지난달들이
-   * 실제보다 낮게 찍힌다.
-   */
-  orderRate:   number
-  /** 주문율의 분자·분모 — 말풍선에 '51명 / 104명' 으로 적는다 */
-  orderBase:   { ordered: number; members: number }
   /** 그 달 단골 비율(%). 그 달 주문자가 없으면 null */
   repeatRate:  number | null
   repeatBase:  { repeat: number; total: number }
@@ -220,88 +216,6 @@ function cycleWords(d: number): string {
   if (d < 9)   return '일주일에 한 번 오시던 분'
   if (d < 20)  return '보름에 한 번 오시던 분'
   return '한 달에 한 번 오시던 분'
-}
-
-/**
- * 월별 추이 막대 — 세 차트(신규 주문자 · 주문율 · 단골 비율)가 같은 모양을 쓴다.
- *
- * ── 축 ─────────────────────────────────────────────────────────────────────
- * 'count' 는 상한이 없으니 그 6개월의 최대값에 맞춘다.
- * 'rate' 는 100 을 기본 천장으로 두되 **넘으면 넘은 만큼 늘린다.**
- *   주문율은 100%를 넘을 수 있다 — 분모는 등록된 사람 수인데, 주문자명은 자유
- *   입력이라 등록 안 한 이름으로도 주문이 들어온다(침산점 6월 8명/6명 = 133%).
- *   100 에서 잘라 버리면 그 달만 꽉 찬 막대가 돼서 "무슨 일이 있었다"가 지워진다.
- *   천장이 100 을 넘어갈 때만 100% 자리에 점선을 그어 기준을 남긴다.
- *
- * ── 숫자 ───────────────────────────────────────────────────────────────────
- * 막대 위에 상시로 적지 않는다. 여섯 달 × 세 차트면 숫자가 열여덟 개라
- * 추이(올랐나 내렸나)를 보려고 온 눈을 숫자가 먼저 붙잡는다.
- * 대신 막대에 올리면 말풍선으로 근거까지 같이 보여준다('51명 / 104명').
- */
-function TrendBars({ title, hint, data, color, kind }: {
-  title: string
-  /** 제목 옆 'i' 에 붙는 설명. 고객 화면 표의 '추이' 안내와 같은 방식 */
-  hint?: string
-  /** value 가 null 이면 '잴 수 없었던 달'(그 달 주문자가 0명) — 회색 바닥선만 */
-  data:  { label: string; value: number | null; tip: string }[]
-  color: string
-  kind:  'count' | 'rate'
-}) {
-  const H = 72
-  const peak = Math.max(0, ...data.map(d => d.value ?? 0))
-  const axis = kind === 'count' ? Math.max(1, peak) : Math.max(100, peak)
-  const showHundredLine = kind === 'rate' && axis > 100
-
-  return (
-    <div>
-      <div className="flex items-center gap-[5px] mb-[10px]">
-        <span className="text-[13px] font-normal text-[#6A635E]">{title}</span>
-        {/* ⚠️ 브라우저 기본 title 속성을 쓰면 안 된다.
-            똑같이 생긴 'i' 인데 **1~2초 기다려야** OS 툴팁이 뜨고 모양도 우리 것과
-            다르다. 바로 옆 지표 칸의 i 는 InfoTip 이라 즉시 뜨는데 여기만 안 떠서
-            "왜 이건 말풍선이 안 나오냐"가 됐다. 같은 모양이면 같게 동작해야 한다. */}
-        {hint && <InfoTip text={hint} label={`${title} 설명`} />}
-      </div>
-
-      <div className="relative flex items-end gap-[8px]" style={{ height: H }}>
-        {showHundredLine && (
-          <div
-            className="absolute left-0 right-0 border-t border-dashed border-[#D9D9D9] pointer-events-none"
-            style={{ bottom: (100 / axis) * H }}
-          >
-            <span className="absolute right-0 -top-[12px] text-[9px] text-[#ADADAD]">100%</span>
-          </div>
-        )}
-        {data.map(d => (
-          <div key={d.label} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-            {/* 말풍선 — 막대에 올렸을 때만. pointer-events-none 이라 옆 막대를
-                가리지 않는다(막대 사이가 8px 밖에 안 된다) */}
-            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-[6px] z-20
-                            opacity-0 group-hover:opacity-100 transition-opacity duration-100">
-              <div className="rounded-[7px] bg-[#2C261F] px-[8px] py-[5px] text-[11px] text-white whitespace-nowrap
-                              shadow-[0_2px_8px_rgba(0,0,0,0.2)]">
-                {d.tip}
-              </div>
-            </div>
-            <div
-              className="w-full rounded-t-[3px] transition-opacity group-hover:opacity-80"
-              style={{
-                height: d.value === null || d.value === 0 ? 2 : Math.max(3, (d.value / axis) * H),
-                backgroundColor: d.value === null || d.value === 0 ? '#E5E5E5' : color,
-              }}
-            />
-          </div>
-        ))}
-      </div>
-
-      <div className="h-px bg-canvas-line mt-[1px]" />
-      <div className="flex gap-[8px] mt-[6px]">
-        {data.map(d => (
-          <span key={d.label} className="flex-1 text-center text-[10px] text-[#6A635E]">{d.label}</span>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 /** 재주문율 칸 — 비율 + "주문자 N명 중 M명" 근거를 같이 보여준다 */
@@ -377,7 +291,7 @@ function CustomerDetailPanel() {
         if (!cancelled) {
           setStats({
             monthOrderAmount: 0, monthDepositAmount: 0, accountCount: 0, newAccountCount: 0,
-            monthOrderCount: 0, depositCycleDays: null, memberCount: 0, monthOrderRate: 0,
+            monthOrderCount: 0, depositCycleDays: null, memberCount: 0, monthOrderRate: 0, flow: [],
             repeatRate: null, repeatBase: { repeat: 0, total: 0 },
             typeRatio: [], topCustomers: [], monthly: [],
             repeatThisMonth: EMPTY_RATE, repeatLastMonth: EMPTY_RATE, repeat3Months: EMPTY_RATE,
@@ -394,8 +308,10 @@ function CustomerDetailPanel() {
 
       // 월별 차트 2개와 '이번달/저번달/최근3개월' 재주문율은 전부 같은 원본에서 나온다 —
       // 창만 다르지 재료가 같아서, 쿼리를 창마다 쪼개면 같은 행을 네 번 받게 된다.
+      // 차트는 끝난 달 6개를 보여주는데, 가장 오래된 달의 **이탈**을 세려면
+      // 그 직전 달 주문자가 있어야 한다. 그래서 한 달 더 거슬러 올라가 7개월치.
       const sixMonthsAgo = new Date()
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5)
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 7)
       sixMonthsAgo.setDate(1)
       sixMonthsAgo.setHours(0, 0, 0, 0)
 
@@ -477,13 +393,15 @@ function CustomerDetailPanel() {
       }
 
       const monthly: MonthPoint[] = []
-      for (let back = 5; back >= 0; back--) {
+      // back = 6..1 — **끝난 달만.** 아래 드나듦 차트가 끝난 달만 그리므로
+      // 세 차트의 x축이 같아야 위아래로 겹쳐 읽을 수 있다.
+      // (진행 중인 달을 끼우면 매달 1~3일에 "이탈 45명" 같은 수가 찍히기도 한다)
+      for (let back = 6; back >= 1; back--) {
         const d = new Date()
         d.setDate(1)
         d.setMonth(d.getMonth() - back)
         const k    = monthKey(d)
         const rows = rowsByMonth.get(k) ?? []
-        const ok   = rows.filter(r => r.status !== '취소')
 
         const monthStart = d.toISOString()
         const monthEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString()
@@ -496,23 +414,23 @@ function CustomerDetailPanel() {
           if (at >= monthStart && at < monthEnd) newOrderers++
         }
 
-        // 주문율 — 사람 기준. 거래처로 세면 한 과에서 열 명이 시킨 것과
-        // 한 명이 시킨 것이 똑같이 1이 된다.
-        const orderedPpl  = new Set(ok.map(r => r.orderer_name).filter(Boolean)).size
-        const membersThen = (members ?? []).filter(
-          (m: { created_at: string }) => m.created_at < monthEnd,
-        ).length
         const reg = regularRateOf(rows, firstSeen, monthStart)
 
         monthly.push({
           label:      `${d.getMonth() + 1}월`,
           newOrderers,
-          orderRate:  membersThen > 0 ? Math.round((orderedPpl / membersThen) * 100) : 0,
-          orderBase:  { ordered: orderedPpl, members: membersThen },
           repeatRate: reg.rate,
           repeatBase: { repeat: reg.repeat, total: reg.total },
         })
       }
+
+      // 손님 드나듦 — 끝난 달 6개. 가장 오래된 달의 이탈을 세려면 그 직전 달
+      // 주문이 필요해서 쿼리를 7개월치로 잡아 뒀다(위 windowStart).
+      const flow = buildCustomerFlow(
+        halfRows.map(r => ({ ordererName: r.orderer_name, at: r.ordered_at, status: r.status })),
+        firstSeen,
+        { months: 6 },
+      )
 
       // ── 창만 바꿔 다시 잰 재주문율 ───────────────────────────────────────
       const now        = new Date()
@@ -540,6 +458,7 @@ function CustomerDetailPanel() {
         newAccountCount:    accounts.filter(a => a.created_at >= mStart).length,
         monthOrderCount:    valid.length,
         depositCycleDays,
+        flow,
         memberCount:        (members ?? []).length,
         monthOrderRate:     Math.round((orderedAccounts / accounts.length) * 100),
         repeatRate:         repeatTotal > 0 ? Math.round((repeatCount / repeatTotal) * 100) : null,
@@ -685,14 +604,15 @@ function CustomerDetailPanel() {
                 label: m.label, value: m.newOrderers, tip: `${m.label} 신규 ${m.newOrderers}명`,
               }))}
             />
-            <TrendBars
-              title="월별 주문율"
-              hint={'그 달 말일까지 등록된 손님 중\n그 달에 주문한 분의 비율이에요\n주문자명은 직접 입력이라 100%를 넘을 수 있어요'}
-              color="#8C8379"
-              kind="rate"
-              data={stats.monthly.map(m => ({
-                label: m.label, value: m.orderRate,
-                tip:   `${m.label} ${m.orderRate}% · ${m.orderBase.ordered}명 / ${m.orderBase.members}명`,
+            <FlowBars
+              title="월별 손님 드나듦"
+              hint={'그 달에 들어온 사람은 위로, 빠진 사람은 아래로 그려요\n신규=첫 주문 · 유지=지난달에도 옴 · 복귀=쉬었다 다시 옴\n이탈=지난달엔 왔는데 이번 달 안 온 사람'}
+              data={stats.flow.map(f => ({
+                label: f.label,
+                newcomers: f.newcomers, retained: f.retained,
+                resurrected: f.resurrected, churned: f.churned,
+                tip: `${f.label} 신규 ${f.newcomers} · 유지 ${f.retained} · 복귀 ${f.resurrected}`
+                   + (f.prevActive > 0 ? ` · 이탈 ${f.churned}/${f.prevActive}명` : ''),
               }))}
             />
             <TrendBars
