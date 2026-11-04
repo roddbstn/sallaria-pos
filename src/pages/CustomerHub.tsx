@@ -604,20 +604,21 @@ function CustomerDetailPanel() {
                 label: m.label, value: m.newOrderers, tip: `${m.label} 신규 ${m.newOrderers}명`,
               }))}
             />
+            {/* 범례가 네 칸이라 i 까지 붙이면 제목 줄이 먼저 복잡해진다.
+                뜻은 범례 네 단어(신규·유지·복귀·이탈)로 이미 서고,
+                자세한 수는 막대에 올리면 말풍선으로 나온다. */}
             <FlowBars
-              title="월별 손님 드나듦"
-              hint={'그 달에 들어온 사람은 위로, 빠진 사람은 아래로 그려요\n신규=첫 주문 · 유지=지난달에도 옴 · 복귀=쉬었다 다시 옴\n이탈=지난달엔 왔는데 이번 달 안 온 사람'}
+              title="월별 방문 추이"
               data={stats.flow.map(f => ({
                 label: f.label,
                 newcomers: f.newcomers, retained: f.retained,
                 resurrected: f.resurrected, churned: f.churned,
                 tip: `${f.label} 신규 ${f.newcomers} · 유지 ${f.retained} · 복귀 ${f.resurrected}`
-                   + (f.prevActive > 0 ? ` · 이탈 ${f.churned}/${f.prevActive}명` : ''),
+                   + ` · 이탈 ${f.churned}명`,
               }))}
             />
             <TrendBars
               title="월별 단골 비율"
-              hint={'그 달 주문자 중\n그 전에도 주문한 적 있는 분의 비율이에요'}
               color="#C1B7AA"
               kind="rate"
               data={stats.monthly.map(m => ({

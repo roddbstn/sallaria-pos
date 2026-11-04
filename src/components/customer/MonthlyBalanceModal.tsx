@@ -163,7 +163,7 @@ export default function MonthlyBalanceModal({ storeId, currentTotal, onClose }: 
               <div className="flex gap-[10px] mb-[16px]">
                 <div className="flex-1 bg-[#F2F2F2] rounded-[10px] px-[14px] py-[12px]">
                   <div className="text-[11px] font-normal text-[#787878] mb-[5px]">
-                    {picked ? '이 거래처 잔액' : '현재 잔액'}
+                    {picked ? '선결제 잔액' : '현재 잔액'}
                   </div>
                   <div className={`text-[20px] font-medium ${shownBalance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
                     {won(shownBalance)}
