@@ -146,12 +146,6 @@ interface DetailStats {
 interface MonthPoint {
   /** '7월' */
   label:       string
-  /**
-   * 그 달에 **처음** 주문한 사람 수.
-   * 기준은 orderer_first_order RPC 의 첫 주문 시각이라 6개월 창 밖의 이력도 반영된다
-   * (6개월치 주문만 보면 가장 오래된 달이 전부 '신규'로 찍힌다).
-   */
-  newOrderers: number
   /** 그 달 단골 비율(%). 그 달 주문자가 없으면 null */
   repeatRate:  number | null
   repeatBase:  { repeat: number; total: number }
@@ -404,21 +398,10 @@ function CustomerDetailPanel() {
         const rows = rowsByMonth.get(k) ?? []
 
         const monthStart = d.toISOString()
-        const monthEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString()
-
-        // 그 달에 **처음** 주문한 사람 — 첫 주문 시각이 이 달 안에 들어오는 사람 수.
-        // 6개월치 주문만으로 세면 가장 오래된 달이 통째로 '신규'가 되므로
-        // 전체 이력을 아는 firstSeen(orderer_first_order RPC)을 쓴다.
-        let newOrderers = 0
-        for (const at of firstSeen.values()) {
-          if (at >= monthStart && at < monthEnd) newOrderers++
-        }
-
         const reg = regularRateOf(rows, firstSeen, monthStart)
 
         monthly.push({
           label:      `${d.getMonth() + 1}월`,
-          newOrderers,
           repeatRate: reg.rate,
           repeatBase: { repeat: reg.repeat, total: reg.total },
         })
@@ -593,17 +576,13 @@ function CustomerDetailPanel() {
           </div>
 
           {/* 월별 추이 둘 — 같은 6개월 x축을 위아래로 겹쳐 읽는다.
-              "주문율은 올랐는데 재주문율은 그대로"처럼 두 줄을 한 번에 비교하라고 나란히 둔다. */}
+              "사람은 늘었는데 단골 비율은 그대로"처럼 두 줄을 한 번에 비교하라고 나란히 둔다.
+
+              '월별 신규 주문자' 막대가 하나 더 있었는데 뺐다(2026-11-04).
+              쌓은 막대는 **맨 아래 칸만** 달끼리 비교가 된다 — 바닥선이 공통이라서다.
+              신규가 바로 그 아래 칸이라, 따로 그린 차트가 스택에서 이미 가장 잘
+              읽히는 값을 한 번 더 그리고 있었다. 셋 중 가장 덜 필요한 것이었다. */}
           <div className="flex-shrink-0 w-[300px] flex flex-col gap-[26px]">
-            <TrendBars
-              title="월별 신규 주문자"
-              hint={'그 달에 처음 주문한 손님 수예요\n전에 한 번이라도 주문했으면 신규가 아닙니다'}
-              color="#6A635E"
-              kind="count"
-              data={stats.monthly.map(m => ({
-                label: m.label, value: m.newOrderers, tip: `${m.label} 신규 ${m.newOrderers}명`,
-              }))}
-            />
             {/* 범례가 네 칸이라 i 까지 붙이면 제목 줄이 먼저 복잡해진다.
                 뜻은 범례 네 단어(신규·유지·복귀·이탈)로 이미 서고,
                 자세한 수는 막대에 올리면 말풍선으로 나온다. */}
