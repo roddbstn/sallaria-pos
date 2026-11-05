@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker, session } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker, session, screen } from 'electron'
 import os from 'node:os'
 import fs from 'node:fs/promises'
 import { autoUpdater } from 'electron-updater'
@@ -75,14 +75,18 @@ let currentStoreId: string | null = null
 // ── 창 생성 ───────────────────────────────────────────────────────────────────
 
 function createWindow(): void {
+  // 모니터가 매장마다 다르다 — 침산점은 1024×768 이다.
+  // 전엔 1440×810 고정에 minWidth 1400 이라, 그 화면에서는 **창이 아예 안 들어갔다.**
+  // 이제 렌더러가 해상도에 맞춰 배율을 잡으므로(lib/viewport-scale.ts)
+  // 창은 화면이 허락하는 만큼만 열면 된다.
+  const work = screen.getPrimaryDisplay().workAreaSize
   mainWindow = new BrowserWindow({
-    // 화면 요소들은 이제 고정 실제 px(스케일 없음)라, 창을 너무 좁히면 고정폭 사이드 패널과
-    // 헤더/본문의 좌측 콘텐츠가 겹치거나 밀릴 공간이 없어진다. 최소 폭을 좁힐수록 위험하므로
-    // 기본 창 크기(1440)에 거의 근접한 값으로 최소폭을 넉넉히 잡는다(16:9 비율 유지).
-    width:          1440,
-    height:         810,
-    minWidth:       1400,
-    minHeight:      788,
+    width:          Math.min(1440, work.width),
+    height:         Math.min(810,  work.height),
+    // 하한은 '여기서 더 줄면 배율 하한(0.55)에 걸려 글자를 못 읽는다' 지점이다.
+    // 1024×768 모니터가 들어와야 하므로 그 아래로 잡는다.
+    minWidth:       900,
+    minHeight:      600,
     title:          '선포스',
     backgroundColor: '#ffffff',
     webPreferences: {
