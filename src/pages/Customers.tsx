@@ -28,6 +28,7 @@ import RevealText from '../components/ui/RevealText'
 import StatCard from '../components/StatCard'
 import { useQrPrint } from '../hooks/useQrPrint'
 import { DEFAULT_QR_NOTICE } from '../lib/qr-order'
+import { defaultQrSystemFor } from '../lib/qr-system'
 import LoadingTimer from '../components/ui/LoadingTimer'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import CustomerProfileModal from '../components/customer/CustomerProfileModal'
@@ -989,6 +990,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
         prepay_validity:   newForm.prepayValidity,
         is_active:         true,
         store_id:          storeId,
+        // DB 기본값은 'kakao' 라 그대로 두면 침산점에 넣은 새 거래처만
+        // sunpos-kakao 주소로 나간다 — 나머지 24곳은 PIN 웹인데.
+        // 이 매장이 지금 쓰는 방식을 따른다(lib/qr-system.ts).
+        qr_system:         defaultQrSystemFor(accounts),
         pin_code:          pinCols.pin_code,
         pin_encrypted:     pinCols.pin_encrypted,
         // 양수/음수 모두 초기값으로 직접 설정 (add_deposit은 양수 전용이라 직접 INSERT)
