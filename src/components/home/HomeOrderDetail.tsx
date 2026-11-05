@@ -1,6 +1,7 @@
 import { won, orderToPayload, parseNote } from '../../lib/ipc'
 import { maskName, maskPhone } from '../../lib/mask'
 import RevealText from '../ui/RevealText'
+import CopyButton from '../ui/CopyButton'
 import type { Order } from '../../lib/mock-data'
 
 // 홈 우측의 주문 상세.
@@ -170,10 +171,20 @@ export default function HomeOrderDetail({
               />
             </div>
           )}
+          {/* 배달 주소는 **복사**가 된다. 기사에게 넘기거나 배달앱에 붙여 넣을 때
+              눈으로 옮겨 적으면 숫자 하나가 틀어진다. 상세주소까지 한 번에 복사된다 —
+              따로 두면 두 번 눌러야 하고, 둘을 합쳐야 비로소 주소가 된다.
+              (주문 팝업의 배달 주소도 같은 버튼을 쓴다) */}
           {isDelivery && note.deliveryAddress && (
-            <div className="text-[14px] font-normal text-[#414141] mt-[6px] leading-relaxed">
-              {note.deliveryAddress}
-              {note.deliveryDetail && <span className="text-[#787878]"> {note.deliveryDetail}</span>}
+            <div className="flex items-start gap-[2px] mt-[6px]">
+              <div className="text-[14px] font-normal text-[#414141] leading-relaxed min-w-0">
+                {note.deliveryAddress}
+                {note.deliveryDetail && <span className="text-[#787878]"> {note.deliveryDetail}</span>}
+              </div>
+              <CopyButton
+                variant="black"
+                text={[note.deliveryAddress, note.deliveryDetail].filter(Boolean).join(' ')}
+              />
             </div>
           )}
         </div>

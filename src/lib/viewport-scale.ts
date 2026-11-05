@@ -20,21 +20,22 @@
 // 세로가 남는 건 문제가 아니다 — 화면마다 자기 스크롤 영역을 갖고 있어서
 // 남는 만큼 목록이 더 보인다. 가로가 남으면 오른쪽에 여백이 생긴다.
 //
-// ── 기준은 **창이 아니라 모니터**다 (2026-11-05) ───────────────────────────
-// 처음엔 창 크기(innerWidth)로 배율을 잡았다. 그러면 창을 줄일 때마다 글자와
-// 박스가 같이 작아진다 — 점주가 원한 건 그게 아니다. 창을 줄였을 때 바라는 건
-// "덜 보이는 것"이지 "작아지는 것"이 아니다.
+// ── 기준은 **창**이다 — 무엇을 포기할지의 문제다 (2026-11-05) ─────────────
+// 한 번 모니터 기준으로 바꿨다가 되돌렸다. 모니터 기준이면 창을 줄여도 글자가
+// 안 작아지지만, 대신 **오른쪽이 잘려서 안 보인다.** 그게 더 나쁘다 —
+// POS 에서 안 보이는 버튼은 없는 버튼이다.
 //
-// 그래서 배율은 **모니터(screen.avail*)** 로 한 번 정한다:
-//   · 1024×768 모니터에서 최대화  → 0.761 로 화면에 꽉 맞는다
-//   · 1920×1080 모니터에서 창을 1008 로 줄임
-//       → 배율은 1.427 그대로. 글자 크기가 안 변하고 오른쪽이 잘려 가로 스크롤된다
-// 같은 '좁은 뷰포트'라도 **모니터가 좁은 것**과 **창을 줄인 것**은 바라는 게 다르다.
-// 둘을 가르는 정보가 screen 크기다.
+// 레이아웃이 고정 px 라서 선택지는 둘뿐이고 동시에는 안 된다:
+//   (a) 창에 맞춰 축소  → 다 보인다. 대신 글자도 같이 작아진다.  ← 이쪽
+//   (b) 크기 유지       → 글자가 그대로다. 대신 잘려서 스크롤해야 한다.
+// 간격만 줄여서 버티는 세 번째 길은 없다. 실측하면 화면 루트의 가로 여백이
+// 양쪽 합쳐 26~28px 뿐이다(Customers 14 · Menus 13 · Orders 8).
+// 폭을 먹는 건 여백이 아니라 고정폭 사이드패널 400px 과 표 칼럼이라,
+// 70% 로 줄이는 데 필요한 404px 중 7% 밖에 못 만든다.
 //
-// 간격만 줄여서 버티는 방법도 생각했지만 그만한 여백이 없다 — 실측하면 화면 루트의
-// 가로 여백이 양쪽 합쳐 26~28px 이다(Customers 14 · Menus 13 · Orders 8).
-// 폭을 먹는 건 여백이 아니라 고정폭 사이드패널 400px 과 표 칼럼이다.
+// 대신 **창 최소 크기(1008×567)를 설계비와 같은 16:9 로** 잡아 뒀다.
+// 그래서 허용된 범위 안에서는 배율이 0.749 아래로 안 내려가고,
+// 가로·세로가 동시에 딱 맞아 **잘리는 구간 자체가 없다.**
 
 /**
  * 설계 폭(CSS px). 1440 ÷ 1.07 ≈ 1346 — 전에 index.css 주석이 '설계 폭'이라
@@ -62,18 +63,6 @@ export function fitZoom(availW: number, availH: number): number {
 }
 
 /**
- * 창 테두리 몫(타이틀바 등). 모니터 작업영역 전부를 쓸 수 있는 게 아니라
- * 최대화해도 이만큼은 창이 먹는다. 빼지 않으면 최대화했을 때 배율이 살짝 커져
- * 세로가 조금 넘친다.
- */
-const WINDOW_CHROME_H = 40
-
-/** 모니터 작업영역으로 배율을 정한다 — 창 크기는 보지 않는다 */
-export function screenFitZoom(availW: number, availH: number): number {
-  return fitZoom(availW, availH - WINDOW_CHROME_H)
-}
-
-/**
  * #root 에 배율을 입힌다.
  *
  * width/height 를 같이 주는 이유: zoom 은 **그린 뒤에** 확대하는 것이라,
@@ -82,26 +71,16 @@ export function screenFitZoom(availW: number, availH: number): number {
  */
 export function applyViewportScale(root: HTMLElement = document.getElementById('root')!): number {
   if (!root) return 1
-  const z = screenFitZoom(window.screen.availWidth, window.screen.availHeight)
+  const z = fitZoom(window.innerWidth, window.innerHeight)
   root.style.zoom = String(z)
-
-  // 폭은 **설계 폭 아래로 내려가지 않는다.** 창을 줄이면 #root 가 같이 줄어드는 게
-  // 아니라 그대로 있고 오른쪽이 창 밖으로 나간다 → body 의 overflow-x 가 받는다.
-  // 이게 "글자는 그대로, 덜 보일 뿐" 을 만드는 한 줄이다.
-  root.style.width = `max(calc(100vw / ${z}), ${DESIGN_W}px)`
-
-  // 세로는 창에 맞춘다. 화면마다 자기 스크롤 영역이 있어서, 짧아지면
-  // 그 영역이 짧아질 뿐 내용이 닿지 않는 곳으로 가지 않는다.
-  // 여기도 설계 높이로 고정하면 body 가 overflow-y: hidden 이라 아래가 영영 가려진다.
+  // ⚠️ max(..., DESIGN_W) 를 걸면 안 된다. 창보다 넓게 버티면서 오른쪽이 잘린다.
+  //    창에 맞춰 내려와야 **다 보인다.**
+  root.style.width  = `calc(100vw / ${z})`
   root.style.height = `calc(100vh / ${z})`
   return z
 }
 
-/**
- * 다시 맞춘다. 창 크기 자체로는 배율이 안 바뀌지만, **창을 다른 모니터로 옮기면**
- * screen 이 달라지므로 resize 를 신호로 쓴다.
- * 반환값을 부르면 감시를 끊는다.
- */
+/** 창 크기가 바뀔 때마다 다시 맞춘다. 반환값을 부르면 감시를 끊는다. */
 export function watchViewportScale(): () => void {
   applyViewportScale()
   let raf: number | null = null

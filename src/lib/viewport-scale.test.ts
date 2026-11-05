@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fitZoom, screenFitZoom, DESIGN_W, DESIGN_H } from './viewport-scale'
+import { fitZoom, DESIGN_W, DESIGN_H } from './viewport-scale'
 
 describe('fitZoom — 해상도별 배율', () => {
   it('1440×810 은 전에 박아 두던 1.07 과 같다', () => {
@@ -45,20 +45,12 @@ describe('fitZoom — 해상도별 배율', () => {
     expect(fitZoom(0, 0)).toBe(1)
   })
 
-  it('배율은 모니터가 정한다 — 창을 줄여도 안 변한다', () => {
-    // 1920×1080 모니터. 창을 1440 으로 줄이든 1008 로 줄이든 같은 값이어야 한다.
-    const onBigMonitor = screenFitZoom(1920, 1080)
-    expect(screenFitZoom(1920, 1080)).toBe(onBigMonitor)
-    // 창 크기는 인자로 들어가지도 않는다 — 들어갈 자리가 없다는 게 보장이다
-    expect(onBigMonitor).toBeGreaterThan(1)
-  })
-
-  it('작업영역에서 창 테두리 몫을 뺀다 — 최대화했을 때 세로가 안 넘치게', () => {
-    expect(screenFitZoom(1920, 1080)).toBeLessThan(fitZoom(1920, 1080))
-  })
-
-  it('1024×768 모니터는 가로가 기준이라 테두리 몫과 무관하다', () => {
-    // 세로가 아니라 가로에서 걸리므로 두 값이 같다
-    expect(screenFitZoom(1024, 768)).toBeCloseTo(fitZoom(1024, 768), 5)
+  it('허용된 최소 창(기본의 70%)에서도 가로·세로가 동시에 딱 맞는다', () => {
+    // 1008×567 은 1440×810 의 70% 이고 설계비(16:9)와 같다.
+    // 그래서 이 범위 안에서는 **잘리는 구간이 없다.**
+    const z = fitZoom(1008, 567)
+    expect(1008 / z).toBeCloseTo(DESIGN_W, 0)
+    expect(567 / z).toBeCloseTo(DESIGN_H, 0)
+    expect(z).toBeGreaterThan(0.55)   // 하한에 안 걸린다
   })
 })
