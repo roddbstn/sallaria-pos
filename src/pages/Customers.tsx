@@ -2328,7 +2328,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false) }}>
           <div
             className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
-            style={{ width: 1040 }}
+            /* 1단계는 금액 키패드 + 입력 3개가 2열로 서서 1040 이 필요하다.
+               2단계는 확인용 요약 카드 한 장뿐이라 같은 폭을 쓰면 글자가
+               좌우로 멀찍이 떨어져 한 줄을 읽는 데 눈이 가로로 크게 움직인다. */
+            style={{ width: chargeConfirm ? 520 : 1040 }}
             onClick={e => e.stopPropagation()}
           >
             {!chargeConfirm ? (
@@ -2412,25 +2415,25 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
                 <div className="bg-[#FCFCFC] flex items-center justify-end gap-[9px] px-[46px] py-[15px] flex-shrink-0">
                   <button onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false) }}
-                    className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
+                    className="h-[50px] px-[32px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all">
                     취소
                   </button>
                   <button
                     onClick={() => setChargeConfirm(true)}
                     disabled={!chargeAmt || parseInt(chargeAmt) <= 0}
-                    className="px-[21px] py-[10px] rounded-[9px] bg-ink text-white text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40">
+                    className="h-[50px] px-[32px] rounded-[13px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:brightness-95 transition-all disabled:opacity-40">
                     다음
                   </button>
                 </div>
               </>
             ) : (
               <>
-                <div className="flex-shrink-0 px-[62px] pt-[39px] pb-[15px]">
-                  <h2 className="text-[26px] font-semibold text-ink">충전 내용 확인</h2>
-                  <p className="text-[12px] text-[#6A635E] mt-[5px]">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</p>
+                <div className="flex-shrink-0 px-[30px] pt-[32px] pb-[14px]">
+                  <h2 className="text-[22px] font-semibold text-ink">충전 내용 확인</h2>
+                  <p className="text-[12px] text-[#6A635E] mt-[5px] break-keep">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</p>
                 </div>
 
-                <div className="overflow-y-auto flex-1 px-[62px] pb-[26px]">
+                <div className="overflow-y-auto flex-1 px-[30px] pb-[22px]">
                   <div className="bg-[#F2F2F2] rounded-[13px] p-[18px] space-y-[10px]">
                     <div className="flex justify-between items-center">
                       <span className="text-[12px] text-[#6A635E]">고객</span>
@@ -2465,15 +2468,20 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   )}
                 </div>
 
-                <div className="bg-[#FCFCFC] flex items-center justify-end gap-[9px] px-[46px] py-[15px] flex-shrink-0">
+                {/* CTA — 다른 모달(메뉴 삭제 확인·거래처 비활성 확인)과 같은 모양.
+                    전엔 여기만 px-21/py-10 · rounded-9 · 12px 세미볼드라, 같은 자리에서
+                    같은 일을 하는 버튼이 유독 작고 다르게 보였다.
+                    좁은 모달이라 둘을 같은 폭으로 늘린다 — '충전 확정'만 크면
+                    확인하기 전에 누르라는 말처럼 읽힌다. */}
+                <div className="bg-[#FCFCFC] flex items-center gap-[8px] px-[30px] pt-[4px] pb-[26px] flex-shrink-0">
                   <button onClick={() => { setChargeConfirm(false); setChargeError('') }}
-                    className="px-[21px] py-[10px] rounded-[9px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
+                    className="flex-1 h-[50px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all">
                     취소
                   </button>
                   <button
                     onClick={handleCharge}
                     disabled={chargeLoading}
-                    className="px-[21px] py-[10px] rounded-[9px] bg-ink text-white text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40">
+                    className="flex-1 h-[50px] rounded-[13px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:brightness-95 transition-all disabled:opacity-40">
                     {chargeLoading ? <Working label="처리 중" /> : '충전 확정'}
                   </button>
                 </div>
