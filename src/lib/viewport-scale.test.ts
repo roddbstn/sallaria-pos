@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fitZoom, DESIGN_W, DESIGN_H } from './viewport-scale'
+import { fitZoom, screenFitZoom, DESIGN_W, DESIGN_H } from './viewport-scale'
 
 describe('fitZoom — 해상도별 배율', () => {
   it('1440×810 은 전에 박아 두던 1.07 과 같다', () => {
@@ -43,5 +43,22 @@ describe('fitZoom — 해상도별 배율', () => {
 
   it('크기를 아직 모를 때는 1', () => {
     expect(fitZoom(0, 0)).toBe(1)
+  })
+
+  it('배율은 모니터가 정한다 — 창을 줄여도 안 변한다', () => {
+    // 1920×1080 모니터. 창을 1440 으로 줄이든 1008 로 줄이든 같은 값이어야 한다.
+    const onBigMonitor = screenFitZoom(1920, 1080)
+    expect(screenFitZoom(1920, 1080)).toBe(onBigMonitor)
+    // 창 크기는 인자로 들어가지도 않는다 — 들어갈 자리가 없다는 게 보장이다
+    expect(onBigMonitor).toBeGreaterThan(1)
+  })
+
+  it('작업영역에서 창 테두리 몫을 뺀다 — 최대화했을 때 세로가 안 넘치게', () => {
+    expect(screenFitZoom(1920, 1080)).toBeLessThan(fitZoom(1920, 1080))
+  })
+
+  it('1024×768 모니터는 가로가 기준이라 테두리 몫과 무관하다', () => {
+    // 세로가 아니라 가로에서 걸리므로 두 값이 같다
+    expect(screenFitZoom(1024, 768)).toBeCloseTo(fitZoom(1024, 768), 5)
   })
 })

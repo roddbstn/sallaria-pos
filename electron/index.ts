@@ -83,10 +83,12 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width:          Math.min(1440, work.width),
     height:         Math.min(810,  work.height),
-    // 하한은 '여기서 더 줄면 배율 하한(0.55)에 걸려 글자를 못 읽는다' 지점이다.
-    // 1024×768 모니터가 들어와야 하므로 그 아래로 잡는다.
-    minWidth:       900,
-    minHeight:      600,
+    // 하한은 기본 크기(1440×810)의 70%.
+    // 여기까지 줄여도 **글자와 박스는 그대로**이고 보이는 범위만 좁아진다 —
+    // 배율을 창이 아니라 모니터로 잡기 때문이다(lib/viewport-scale.ts).
+    // 모자란 폭은 가로 스크롤이 받는다.
+    minWidth:       1008,
+    minHeight:      567,
     title:          '선포스',
     backgroundColor: '#ffffff',
     webPreferences: {
