@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker, session, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, powerSaveBlocker, session, screen, Menu } from 'electron'
 import os from 'node:os'
 import fs from 'node:fs/promises'
 import { autoUpdater } from 'electron-updater'
@@ -1007,8 +1007,74 @@ function attachKakaoReferer() {
   )
 }
 
+/**
+ * 앱 메뉴 — 프로덕션에서는 **개발자도구를 빼고** 직접 짠다.
+ *
+ * ── 왜 ─────────────────────────────────────────────────────────────────────
+ * 메뉴를 안 만들면 Electron 기본 메뉴가 붙고, 거기엔 View > Toggle Developer Tools
+ * 와 Force Reload 가 **항상** 들어 있다. 점주가 실수로 누르면 콘솔이 열리고
+ * "뭔가 고장 났다"가 된다. 업계도 그렇게 안 한다 —
+ * 토스포스의 창 메뉴는 Reload · 전체화면 · Kiosk 모드 · 초기화 뿐이고,
+ * 페이히어 셀러도 View 에서 개발자도구가 안 열린다.
+ *
+ * 편집(잘라내기·붙여넣기)은 남긴다. macOS 에서 이 역할들을 빼면
+ * ⌘C/⌘V 가 **입력칸에서 아예 안 먹는다** — 메뉴 항목이 그 단축키의 주인이라서다.
+ *
+ * 개발 중(is.dev)에는 기본 메뉴를 그대로 둔다. 개발자도구가 필요하다.
+ * (단축키 쪽은 @electron-toolkit 의 watchWindowShortcuts 가 이미 프로덕션에서
+ *  F12·⌘⌥I 를 막고 있다. 메뉴만 열려 있던 것이다.)
+ */
+function applyAppMenu(): void {
+  if (is.dev) return   // 기본 메뉴 유지 — 개발자도구 포함
+
+  const isMac = process.platform === 'darwin'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const template: any[] = [
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about',    label: '선포스 정보' },
+        { type:  'separator' },
+        { role: 'services', label: '서비스' },
+        { type:  'separator' },
+        { role: 'hide',        label: '선포스 가리기' },
+        { role: 'hideOthers',  label: '다른 항목 가리기' },
+        { role: 'unhide',      label: '모두 보기' },
+        { type:  'separator' },
+        { role: 'quit', label: '선포스 종료' },
+      ],
+    }] : []),
+    {
+      label: '편집',
+      submenu: [
+        { role: 'undo',  label: '실행 취소' },
+        { role: 'redo',  label: '다시 실행' },
+        { type:  'separator' },
+        { role: 'cut',   label: '잘라내기' },
+        { role: 'copy',  label: '복사' },
+        { role: 'paste', label: '붙여넣기' },
+        { role: 'selectAll', label: '전체 선택' },
+      ],
+    },
+    {
+      label: '창',
+      submenu: [
+        // reload 는 남긴다 — 화면이 멈췄을 때 점주가 쓸 수 있는 유일한 복구 수단이다.
+        // forceReload(캐시 무시)는 뺀다. 느려지기만 하고 점주가 구분할 수 없다.
+        { role: 'reload',         label: '새로고침' },
+        { role: 'togglefullscreen', label: '전체 화면' },
+        { type: 'separator' },
+        { role: 'minimize', label: '최소화' },
+        { role: 'close',    label: '닫기' },
+      ],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('kr.sallaria.pos')
+  applyAppMenu()
   attachKakaoReferer()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
 
