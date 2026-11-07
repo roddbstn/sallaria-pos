@@ -49,7 +49,7 @@ export function readyClock(minutes: number, from: Date = new Date()): string {
 //
 // accepted_at 이 없는 주문(아직 안 받은 신규)은 셀 기준 자체가 없으므로 'pending'.
 
-export type RemainTone = 'pending' | 'calm' | 'soon' | 'now' | 'over' | 'cancelled'
+export type RemainTone = 'pending' | 'calm' | 'soon' | 'now' | 'over' | 'cancelled' | 'ready'
 
 export interface Remaining {
   tone:  RemainTone
@@ -128,6 +128,17 @@ export function remainingTime(
  *
  * 잴 시간이 없는 게 아니라 **잴 이유가 없다.** 상태를 그대로 적는다.
  */
+/**
+ * '준비 알림'을 보낸 주문.
+ *
+ * 알림을 보낸 뒤에도 남은 시간이 계속 줄어들면서 찍히고 있었다. 이미 다 만들어
+ * 놓고 손님을 부른 상태인데 '3분 남음'이라고 적혀 있으면, 목록을 훑는 점주가
+ * 아직 조리 중인 주문으로 읽는다. 셀 시간이 끝났으니 상태를 적는다.
+ */
+export function readyTime(): Remaining {
+  return { tone: 'ready', value: null, minutes: null, label: '준비됨', unit: '', heading: '' }
+}
+
 export function cancelledTime(): Remaining {
   return { tone: 'cancelled', value: null, minutes: null, label: '취소', unit: '', heading: '' }
 }
@@ -169,6 +180,8 @@ export function remainStyle(tone: RemainTone): { color: string; background?: str
     // 취소는 빨강이 아니라 회색이다. 빨강은 '늦었다'(over)에 쓰는 색이라,
     // 취소까지 빨갛게 두면 목록에서 급한 건과 끝난 건이 같은 신호를 낸다.
     case 'cancelled': return { color: '#ADADAD' }
+    // 준비됨은 초록 — '끝났다'는 신호다. 회색(취소)과도, 주황(급함)과도 구분된다
+    case 'ready': return { color: '#017333' }
     default:     return { color: '#6A635E' }
   }
 }

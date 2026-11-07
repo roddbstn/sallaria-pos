@@ -12,7 +12,7 @@
 
 import QRCode from 'qrcode'
 import iconv from 'iconv-lite'
-import type { ReceiptSettings, OrderPayload } from './printer'
+import type { ReceiptSettings, OrderPayload, OrderItem } from './printer'
 import { maskName, maskPhone } from './mask'
 import type { ReceiptTextSize } from './printer'
 
@@ -149,8 +149,21 @@ function wrapName(name: string, maxW: number): string[] {
   let cur = '', curW = 0
   for (const ch of name) {
     const cw = ch.charCodeAt(0) > 0x7F ? 2 : 1
-    if (curW + cw > maxW) { lines.push(cur); cur = ch; curW = cw }
-    else { cur += ch; curW += cw }
+    if (curW + cw > maxW) {
+      // 띄어쓰기가 있으면 **거기서** 끊는다.
+      // 칸 수만 보고 끊으면 '수비드 통삼겹 단백질 도시 / 락' 처럼 낱자 한 글자가
+      // 다음 줄로 떨어진다. 주방에서 그 줄은 메뉴가 하나 더 있는 것처럼 보인다.
+      const sp = cur.lastIndexOf(' ')
+      if (sp > 0 && pw(cur.slice(sp + 1)) + cw <= maxW) {
+        lines.push(cur.slice(0, sp))
+        cur = cur.slice(sp + 1)
+        curW = pw(cur)
+      } else {
+        lines.push(cur)
+        cur = ''; curW = 0
+      }
+    }
+    cur += ch; curW += cw
   }
   if (cur) lines.push(cur)
   return lines
@@ -180,6 +193,44 @@ const QTY_W   = 4
 const PRICE_W = 10
 const COL_SEP = 2        // 수량↔가격 사이 공백
 
+/**
+ * '라벨 : 값' 한 줄의 라벨 칼럼 폭(칸).
+ *
+ * 11 인 이유: 이 영수증에서 가장 긴 라벨이 '주문전 잔액'(11칸)이다. 전엔 라벨마다
+ * 공백을 손으로 박아 뒀는데('주문자   : '), 라벨을 하나 고치면 그 줄만 콜론이
+ * 밀려 나갔다. 폭을 상수로 두면 그럴 일이 없다.
+ * ⚠️ src/lib/receipt-layout.ts 의 LABEL_W 와 같은 값이어야 한다 (미리보기가 같은 공식을 쓴다).
+ */
+const LABEL_W = 11
+
+/** '라벨 : 값' 한 줄 */
+function field(label: string, value: string): string {
+  return padL(label, LABEL_W) + ' : ' + value
+}
+
+/**
+ * 금액 줄의 짧은 라벨 — '크게'(2배)일 때만 쓴다.
+ *
+ * 2배 글자는 한 칸이 두 칸을 먹으니 한 줄이 21칸뿐이다. 기본 라벨을 그대로 쓰면
+ * '메뉴 소계 : 21,400원'(22칸) · '주문전 잔액 : 711,800원'(23칸)이 **종이를 넘어**
+ * 프린터가 조용히 줄을 접는다. 금액 한 줄이 두 줄로 쪼개져 영수증이 읽기 나빠진다.
+ * ⚠️ src/lib/receipt-layout.ts 의 AMOUNT_SHORT 와 같은 표여야 한다.
+ */
+const AMOUNT_SHORT: Record<string, string> = {
+  '메뉴 소계':   '소계',
+  '배달료':     '배달료',
+  '합  계':     '합계',
+  '주문전 잔액': '주문전',
+  '주문후 잔액': '주문후',
+}
+const AMOUNT_LABEL_W = 6
+
+/** 금액 한 줄. x2 면 짧은 라벨로 바꿔 21칸 안에 넣는다 */
+function amountField(label: string, value: string, x2: boolean): string {
+  if (!x2) return field(label, value)
+  return padL(AMOUNT_SHORT[label] ?? label, AMOUNT_LABEL_W) + ' : ' + value
+}
+
 function layout(lineChars = DEFAULT_LINE_CHARS) {
   const W = Math.max(24, Math.min(64, Math.floor(lineChars)))
   return {
@@ -198,15 +249,51 @@ function layout(lineChars = DEFAULT_LINE_CHARS) {
  *                 '예상도착시간'을 찍는다. 재출력처럼 그 값이 없을 땐 생략한다 —
  *                 지어낸 시각을 찍느니 안 찍는 게 낫다.
  */
+/**
+ * 메뉴명 한 품목 — 설정이 '크게'면 이름을 **자기 줄에 2배(GS ! 0x11)** 로 찍는다.
+ *
+ * 감열 프린터는 글자를 정수 배수로만 키운다(1배 · 2배 · 3배). "조금만 더 크게"가
+ * 없다. 그래서 2배를 쓰는데, 2배 글자는 한 칸이 아니라 두 칸을 먹으므로 이름을
+ * 표 안에 두면 수량·가격 칼럼이 밀려 나간다. 이름을 자기 줄로 빼고 수량·가격을
+ * 다음 줄 같은 칼럼 위치로 내리면, 머리글(메뉴명 수량 가격)이 그대로 유효하다.
+ *
+ * ⚠️ 이 설정은 2026-11-07 까지 **인쇄에 아무 효과가 없었다.** 화면엔 '메뉴 크기'
+ *    토글이 있는데 escpos 쪽은 menuSize 를 읽지도 않고 늘 SIZE_1X 로 찍고 있었다
+ *    ("칼럼이 깨진다"는 이유였다). 토글을 살리려면 칼럼을 안 깨는 배치가 필요했고,
+ *    그게 이 함수다. 미리보기(src/components/ui/ReceiptPreview.tsx)도 같은 배치다.
+ */
+function itemNameLines(item: OrderItem, L: ReturnType<typeof layout>, big: boolean): Buffer[] {
+  const out: Buffer[] = []
+  const tail = padR(String(item.quantity), QTY_W) + ' '.repeat(COL_SEP) + padR(formatWon(item.subtotal), PRICE_W)
+
+  if (big) {
+    for (const line of wrapName(item.menu_name, Math.floor(L.W / 2))) {
+      out.push(CMD.SIZE_2X, CMD.BOLD_ON, enc(line), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
+    }
+    out.push(CMD.SIZE_1X, CMD.BOLD_ON, enc(' '.repeat(L.nameW) + tail), CMD.BOLD_OFF, nl())
+    return out
+  }
+
+  const lines = wrapName(item.menu_name, L.nameW)
+  for (let i = 0; i < lines.length; i++) {
+    const isLast = i === lines.length - 1
+    out.push(CMD.SIZE_1X, CMD.BOLD_ON)
+    out.push(enc(padL(lines[i], L.nameW) + (isLast ? tail : ' '.repeat(QTY_W + COL_SEP + PRICE_W))))
+    out.push(CMD.BOLD_OFF, nl())
+  }
+  return out
+}
+
 export function buildKitchenReceiptEscPos(order: OrderPayload, settings: ReceiptSettings, lineChars?: number, prepMins?: number): Buffer {
   const L = layout(lineChars)
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
-  // 메뉴명 줄은 글자 수로 칼럼을 맞추므로 크기를 바꾸지 않는다(sizeCmd 주석 참고).
-  // 독립된 줄인 옵션·금액만 설정 크기를 따른다.
+  // 메뉴명 크기 — '크게'면 itemNameLines() 가 이름을 자기 줄에 2배로 찍는다
+  const bigName = settings.menuSize === 'large'
   const optCmd = sizeCmd(settings.optionSize)
   // '크게'(2x2)면 한 줄에 들어가는 글자가 절반이다 — 그 폭으로 자른다
   const optW   = lineWidthFor(settings.optionSize, L.W)
+  const bigAmt = settings.amountSize === 'large'
   const amtCmd = sizeCmd(settings.amountSize)
 
   p(CMD.INIT)
@@ -220,18 +307,18 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
 
   // 블록1: 주문번호 / 주문일시
   p(CMD.SIZE_1X)
-  p(enc('주문번호 : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
-  p(enc('주문일시 : ' + formatDate(order.ordered_at)), nl())
+  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
+  p(enc(field('주문일시', formatDate(order.ordered_at))), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
   p(CMD.SIZE_1X)
-  p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
-  p(enc('주문자   : ' + maskName(order.orderer_name)), nl())
-  p(enc('전화번호 : ' + (order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
+  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
+  p(enc(field('주문자', maskName(order.orderer_name))), nl())
+  p(enc(field('전화번호', order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
-    p(enc('거래처   : ' + order.account_name), nl())
+    p(enc(field('선결제계정', order.account_name)), nl())
   }
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
@@ -239,17 +326,17 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   // 블록3: 배달 정보 (배달일 때만)
   if (order.delivery_address) {
     p(CMD.SIZE_1X)
-    for (const line of wrapName('배달주소 : ' + order.delivery_address, L.W)) p(enc(line), nl())
+    for (const line of wrapName(field('배달주소', order.delivery_address), L.W)) p(enc(line), nl())
     if (order.delivery_detail) {
-      for (const line of wrapName('배달상세 : ' + order.delivery_detail, L.W)) p(enc(line), nl())
+      for (const line of wrapName(field('배달상세', order.delivery_detail), L.W)) p(enc(line), nl())
     }
-    p(enc('가게요청 : ' + (order.note || '없음')), nl())
-    p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())
+    p(enc(field('가게요청', order.note || '없음')), nl())
+    p(enc(field('배달요청', order.delivery_note || '없음')), nl())
     p(CMD.SIZE_1X)
     p(L.hr(), nl())
   } else {
     p(CMD.SIZE_1X)
-    p(enc('가게요청 : ' + (order.note || '없음')), nl())
+    p(enc(field('가게요청', order.note || '없음')), nl())
     p(CMD.SIZE_1X)
     p(L.hr(), nl())
   }
@@ -277,16 +364,7 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
 
   // 메뉴 목록
   for (const item of order.items) {
-    const qtyStr   = String(item.quantity)
-    const priceStr = formatWon(item.subtotal)
-    const nameLines = wrapName(item.menu_name, L.nameW)
-    for (let i = 0; i < nameLines.length; i++) {
-      const isLast = i === nameLines.length - 1
-      p(CMD.SIZE_1X, CMD.BOLD_ON)
-      if (isLast) p(enc(padL(nameLines[i], L.nameW) + padR(qtyStr, QTY_W) + ' '.repeat(COL_SEP) + padR(priceStr, PRICE_W)))
-      else        p(enc(padL(nameLines[i], L.nameW) + ' '.repeat(QTY_W + COL_SEP + PRICE_W)))
-      p(CMD.BOLD_OFF, nl())
-    }
+    p(...itemNameLines(item, L, bigName))
     for (const opt of item.options) {
       const optLabel = opt.extra_price > 0
         ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
@@ -299,19 +377,19 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
 
   // 금액 요약
   p(amtCmd)
-  p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
-  if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
+  p(enc(amountField('메뉴 소계', formatWon(order.menu_subtotal), bigAmt)), nl())
+  if (order.delivery_fee > 0) p(enc(amountField('배달료', formatWon(order.delivery_fee), bigAmt)), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
-  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
+  p(amtCmd, CMD.BOLD_ON, enc(amountField('합  계', formatWon(order.total_amount), bigAmt)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(L.hr(), nl())
 
   // 잔액 — 설정에서 끌 수 있다(기본 켬)
   if (settings.showBalance !== false) {
     p(amtCmd)
-    p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
-    p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
-    if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
+    p(enc(amountField('주문전 잔액', formatWon(order.balance_before), bigAmt)), nl())
+    p(CMD.BOLD_ON, enc(amountField('주문후 잔액', formatWon(order.balance_after), bigAmt)), CMD.BOLD_OFF, nl())
+    if (order.balance_after < 0) p(CMD.SIZE_1X, enc('※ 잔액 부족 - 다음 충전 시 정산'), amtCmd, nl())
     p(CMD.SIZE_1X)
   }
 
@@ -332,9 +410,11 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   const L = layout(lineChars)
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
+  const bigName = settings.customerMenuSize === 'large'
   const optCmd = sizeCmd(settings.customerOptionSize)
   // '크게'(2x2)면 한 줄에 들어가는 글자가 절반이다 — 그 폭으로 자른다
   const optW   = lineWidthFor(settings.customerOptionSize, L.W)
+  const bigAmt = settings.amountSize === 'large'
   const amtCmd = sizeCmd(settings.amountSize)
 
   p(CMD.INIT)
@@ -348,18 +428,18 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
 
   // 블록1: 주문번호 / 주문일시
   p(CMD.SIZE_1X)
-  p(enc('주문번호 : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
-  p(enc('주문일시 : ' + formatDate(order.ordered_at)), nl())
+  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
+  p(enc(field('주문일시', formatDate(order.ordered_at))), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
   p(CMD.SIZE_1X)
-  p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
-  p(enc('주문자   : ' + maskName(order.orderer_name)), nl())
-  p(enc('전화번호 : ' + (order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
+  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
+  p(enc(field('주문자', maskName(order.orderer_name))), nl())
+  p(enc(field('전화번호', order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
-    p(enc('거래처   : ' + order.account_name), nl())
+    p(enc(field('선결제계정', order.account_name)), nl())
   }
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
@@ -367,17 +447,17 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   // 블록3: 배달 정보 + 요청사항
   if (order.delivery_address) {
     p(CMD.SIZE_1X)
-    for (const line of wrapName('배달주소 : ' + order.delivery_address, L.W)) p(enc(line), nl())
+    for (const line of wrapName(field('배달주소', order.delivery_address), L.W)) p(enc(line), nl())
     if (order.delivery_detail) {
-      for (const line of wrapName('배달상세 : ' + order.delivery_detail, L.W)) p(enc(line), nl())
+      for (const line of wrapName(field('배달상세', order.delivery_detail), L.W)) p(enc(line), nl())
     }
-    p(enc('가게요청 : ' + (order.note || '없음')), nl())
-    p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())
+    p(enc(field('가게요청', order.note || '없음')), nl())
+    p(enc(field('배달요청', order.delivery_note || '없음')), nl())
     p(CMD.SIZE_1X)
     p(L.hr(), nl())
   } else {
     p(CMD.SIZE_1X)
-    p(enc('가게요청 : ' + (order.note || '없음')), nl())
+    p(enc(field('가게요청', order.note || '없음')), nl())
     p(CMD.SIZE_1X)
     p(L.hr(), nl())
   }
@@ -390,16 +470,7 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
 
   // 메뉴 목록
   for (const item of order.items) {
-    const qtyStr   = String(item.quantity)
-    const priceStr = formatWon(item.subtotal)
-    const nameLines = wrapName(item.menu_name, L.nameW)
-    for (let i = 0; i < nameLines.length; i++) {
-      const isLast = i === nameLines.length - 1
-      p(CMD.SIZE_1X, CMD.BOLD_ON)
-      if (isLast) p(enc(padL(nameLines[i], L.nameW) + padR(qtyStr, QTY_W) + ' '.repeat(COL_SEP) + padR(priceStr, PRICE_W)))
-      else        p(enc(padL(nameLines[i], L.nameW) + ' '.repeat(QTY_W + COL_SEP + PRICE_W)))
-      p(CMD.BOLD_OFF, nl())
-    }
+    p(...itemNameLines(item, L, bigName))
     for (const opt of item.options) {
       const optLabel = opt.extra_price > 0
         ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
@@ -412,19 +483,19 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
 
   // 금액 요약
   p(amtCmd)
-  p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
-  if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
+  p(enc(amountField('메뉴 소계', formatWon(order.menu_subtotal), bigAmt)), nl())
+  if (order.delivery_fee > 0) p(enc(amountField('배달료', formatWon(order.delivery_fee), bigAmt)), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
-  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
+  p(amtCmd, CMD.BOLD_ON, enc(amountField('합  계', formatWon(order.total_amount), bigAmt)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(L.hr(), nl())
 
   // 잔액 — 설정에서 끌 수 있다(기본 켬)
   if (settings.showBalance !== false) {
     p(amtCmd)
-    p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
-    p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
-    if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
+    p(enc(amountField('주문전 잔액', formatWon(order.balance_before), bigAmt)), nl())
+    p(CMD.BOLD_ON, enc(amountField('주문후 잔액', formatWon(order.balance_after), bigAmt)), CMD.BOLD_OFF, nl())
+    if (order.balance_after < 0) p(CMD.SIZE_1X, enc('※ 잔액 부족 - 다음 충전 시 정산'), amtCmd, nl())
     p(CMD.SIZE_1X)
   }
 

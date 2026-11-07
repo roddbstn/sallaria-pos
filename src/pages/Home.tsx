@@ -304,6 +304,7 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
               key={o.code}
               order={o}
               now={now}
+              notified={notified.has(o.code)}
               selected={selected?.code === o.code}
               onClick={() => setPicked(o.code)}
             />

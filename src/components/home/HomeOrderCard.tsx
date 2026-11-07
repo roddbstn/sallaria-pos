@@ -1,5 +1,5 @@
 import { won } from '../../lib/ipc'
-import { cancelledTime, remainingTime, elapsedTime, remainStyle } from '../../lib/pickup-time'
+import { cancelledTime, readyTime, remainingTime, elapsedTime, remainStyle } from '../../lib/pickup-time'
 import type { Order } from '../../lib/mock-data'
 
 // 홈 좌측 목록의 주문 카드 한 장.
@@ -18,12 +18,14 @@ const METHOD_SHORT: Record<string, string> = {
   '포장': '포장', '배달': '배달', '매장 식사': '매장',
 }
 
-export default function HomeOrderCard({ order, selected, onClick, now }: {
+export default function HomeOrderCard({ order, selected, onClick, now, notified }: {
   order:    Order
   selected: boolean
   onClick:  () => void
   /** 바깥에서 한 타이머로 내려준다 — 카드마다 타이머를 두면 N개가 따로 돈다 */
   now:      Date
+  /** '준비 알림'을 보낸 주문인가 — 보냈으면 시간 대신 '준비됨' */
+  notified: boolean
 }) {
   // 끝난 주문은 '남은 시간'이 아니라 **'소요 시간'**을 보여준다 —
   // 접수하고 몇 분 만에 '준비 완료'를 눌렀는지.
@@ -34,7 +36,11 @@ export default function HomeOrderCard({ order, selected, onClick, now }: {
     ? cancelledTime()
     : order.status === '완료'
       ? elapsedTime(order.acceptedAt, order.completedAt)
-      : remainingTime(order.acceptedAt, order.prepMins, now)
+      // 손님을 이미 부른 주문은 시간을 세지 않는다 — 다 만들어 놨는데
+      // '3분 남음'이라고 적혀 있으면 아직 조리 중으로 읽힌다
+      : notified
+        ? readyTime()
+        : remainingTime(order.acceptedAt, order.prepMins, now)
   const style  = remainStyle(remain.tone)
   const qty    = order.items.reduce((s, it) => s + it.qty, 0)
   const method = METHOD_SHORT[order.method] ?? order.method

@@ -85,9 +85,11 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width:          Math.min(1024, work.width),
     height:         Math.min(768,  work.height),
-    // 하한도 4:3. 여기서 더 줄이면 배율이 0.65 아래로 내려가 글자를 못 읽는다.
-    minWidth:       800,
-    minHeight:      600,
+    // 하한 = 기준 해상도 그대로. 800×600 까지 열어 뒀더니 배율이 0.78 로 떨어져
+    // 글자가 작아졌다 — 기준이 1024×768 인데 그 아래로 줄일 이유가 없다.
+    // 이렇게 두면 **어떤 크기에서도 배율이 1.0 밑으로 안 내려간다.**
+    minWidth:       1024,
+    minHeight:      768,
     // 창을 끌어도 4:3 을 유지한다. 레이아웃이 그 비율에 맞춰져 있어서,
     // 가로로만 늘리면 아래쪽에 쓰지 않는 빈 띠가 남는다.
     // (⚠️ macOS 는 setAspectRatio 가 콘텐츠 영역 기준이라 타이틀바만큼 차이가 난다)
