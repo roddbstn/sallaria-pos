@@ -52,18 +52,35 @@ function sizeCmd(size: ReceiptTextSize | undefined): Buffer {
   return size === 'large' ? CMD.SIZE_2X : CMD.SIZE_1X
 }
 
-/**
- * 지금부터 n분 뒤 시각 — '오후 5:20'.
- *
- * 기준이 '지금'인 이유: 이 종이는 **접수하는 그 순간** 나온다. 주문 시각부터
- * 재면 한참 방치됐다 접수한 주문에서 이미 지난 시각이 찍힌다.
- */
-function clockAfter(minutes: number, from: Date = new Date()): string {
-  const at   = new Date(from.getTime() + minutes * 60_000)
+/** '오후 5:20' */
+function clockLabel(at: Date): string {
   const h24  = at.getHours()
   const ampm = h24 < 12 ? '오전' : '오후'
   const h12  = h24 % 12 === 0 ? 12 : h24 % 12
   return `${ampm} ${h12}:${String(at.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * 주방 영수증의 '예상도착시간' 두 줄.
+ *
+ * ── 기준점이 왜 accepted_at 인가 ──────────────────────────────────────────
+ * '지금 + 15분'으로 재면 **재출력할 때마다 시각이 뒤로 밀린다.** 30분 뒤에
+ * 다시 뽑으면 같은 주문인데 종이마다 다른 시각이 찍힌다.
+ * 접수 시각 + 소요시간은 한 번 정해지면 안 변한다 — 손님에게 말한 시각과도 같다.
+ * accepted_at 이 아직 없으면(접수하는 바로 그 순간) '지금'을 쓴다. 같은 값이다.
+ *
+ * ── 남은 시간은 지금 기준으로 다시 센다 ──────────────────────────────────
+ * '(15분 뒤)' 를 그대로 찍으면 재출력 종이에서 거짓말이 된다. 이미 지난
+ * 주문이면 그 괄호를 아예 안 찍는다 — 틀린 수를 적느니 안 적는 게 낫다.
+ */
+function etaLines(prepMins: number, acceptedAt?: string | null): { clock: string; relative: string | null } {
+  const base = acceptedAt ? new Date(acceptedAt) : new Date()
+  const at   = new Date(base.getTime() + prepMins * 60_000)
+  const left = Math.ceil((at.getTime() - Date.now()) / 60_000)
+  return {
+    clock:    clockLabel(at),
+    relative: left > 0 ? `(${left}분 뒤)` : null,
+  }
 }
 
 /** 그 크기로 찍을 때 한 줄에 들어가는 글자 수 */
@@ -240,12 +257,15 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   // 예상도착시간 — 메뉴 바로 위, 이 종이에서 **가장 큰 글자**.
   // 주방이 조리 순서를 정하는 건 이 한 줄이다(주문번호·주문자는 나중에 찾을 때 쓴다).
   // '(15분 뒤)' 를 같이 적는 이유: 시각만 보면 지금 몇 시인지 머리로 빼야 한다.
-  if (prepMins != null && prepMins > 0) {
+  // 접수 때는 인자로 받고(그 순간 DB 에 아직 안 쓰였다), 재출력 때는 주문에서 읽는다
+  const eta = prepMins ?? order.prep_minutes ?? null
+  if (eta != null && eta > 0) {
+    const { clock, relative } = etaLines(eta, order.accepted_at)
     p(CMD.SIZE_2X, CMD.BOLD_ON)
     p(enc('예상도착시간'), nl())
-    p(enc(clockAfter(prepMins)), nl())
+    p(enc(clock), nl())
     p(CMD.BOLD_OFF, CMD.SIZE_1X)
-    p(enc(`(${prepMins}분 뒤)`), nl())
+    if (relative) p(enc(relative), nl())
     p(L.hr(), nl())
   }
 

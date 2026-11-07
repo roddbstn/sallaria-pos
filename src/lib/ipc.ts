@@ -83,6 +83,9 @@ export function orderToPayload(o: Order, storeName?: string) {
     orderer_phone:    o.phone ?? null,
     method:           o.method,
     ordered_at:       o.createdAt,
+    // 주방 영수증의 '예상도착시간' — 재출력에서도 같은 시각이 찍히도록 둘 다 보낸다
+    prep_minutes:     o.prepMins ?? null,
+    accepted_at:      o.acceptedAt ?? null,
     items: o.items.map(item => ({
       menu_name:   item.name,
       quantity:    item.qty,

@@ -169,6 +169,10 @@ export interface OrderPayload {
   delivery_address?: string | null   // 배달주소
   delivery_detail?:  string | null   // 배달상세주소
   delivery_note?:    string | null   // 배달요청사항
+  /** 접수하면서 정한 소요시간(분). 주방 영수증의 '예상도착시간' 재료 */
+  prep_minutes?:     number | null
+  /** 접수 시각. 예상도착시간의 **기준점**이다 — 재출력해도 시각이 안 밀리게 */
+  accepted_at?:      string | null
 }
 
 // ── 유틸 ──────────────────────────────────────────────────────────────────────
