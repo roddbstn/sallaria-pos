@@ -51,15 +51,17 @@ export default function HomeOrderDetail({
   /**
    * 취소 사유.
    *
-   * note 를 그대로 쓰면 **손님이 쓴 '수저·포크 O' 가 취소 사유로 둔갑한다** —
-   * cancel_order 가 사유를 note 에 덮어쓰는데, 사유 없이 취소한 주문은
-   * 손님 요청사항이 그대로 남아 있기 때문이다. 고정 목록에 있는 말일 때만 사유로 본다
-   * (lib/cancel-reason.ts).
-   * 0079 마이그레이션이 적용되면 `order.cancelReason` 한 줄로 바뀐다.
+   * 1순위는 orders.cancel_reason (0079). 사유 전용 칸이라 추측할 게 없다.
+   *
+   * 2순위는 note 추측. 0079 전에는 cancel_order 가 사유를 note 에 **덮어썼다.**
+   * 그래서 옛 취소 건의 note 는 사유이기도 하고 손님 요청사항이기도 하다.
+   * 그냥 쓰면 **손님이 쓴 '수저·포크 O' 가 취소 사유로 둔갑하므로**, 고정 목록에
+   * 있는 말일 때만 사유로 본다(lib/cancel-reason.ts).
+   * 0079 백필이 그중 글자가 똑같은 건만 옮겼고, 나머지는 영구히 모른다.
    */
-  const cancelReason = isCancelled && isKnownCancelReason(note.customerNote)
-    ? (note.customerNote as string)
-    : ''
+  const cancelReason = !isCancelled ? ''
+    : order.cancelReason
+      || (isKnownCancelReason(note.customerNote) ? (note.customerNote as string) : '')
   /** 이미 끝난 주문 — 완료·취소. 더 할 수 있는 게 없다(영수증 재출력만 남는다) */
   const isSettled  = order.status === '완료' || isCancelled
 
@@ -97,13 +99,11 @@ export default function HomeOrderDetail({
             손님이 쓴 요청사항 자리에 앉아서, 누가 쓴 말인지가 섞인다.
             둘은 성격이 다른 정보라 자리도 따로 가져야 한다.
 
-            ⚠️ 지금은 사유를 note 에서 읽는다 — cancel_order 가 note 를 사유로
-               **덮어쓰기** 때문이다(note = coalesce(p_note, note)).
-               그래서 취소된 주문은 아래 요청사항 박스가 비어 보인다. 손님이 쓴 말이
-               지워졌기 때문이지 안 쓴 게 아니다. 배달 주소까지 같이 지워진다
-               (취소된 배달 4건 중 3건에서 [배달주소]가 사라져 있었다).
-               supabase/migrations/0079_order_cancel_reason.sql 이 그걸 고친다.
-               적용되면 아래 cancelReason 한 줄만 바꾸면 된다. */}
+            ⚠️ 0079 **이전에** 취소된 주문은 사유가 note 를 덮어써서, 손님이 쓴 말과
+               배달 주소가 지워져 있다(취소된 배달 4건 중 3건에서 [배달주소]가
+               사라져 있었다). 그래서 옛 건은 아래 요청사항 박스가 비어 보이고,
+               사유도 '기록되지 않았어요'로 남는 게 있다 — 복구할 방법이 없다.
+               앞으로 취소되는 건은 cancel_reason 에 따로 들어간다. */}
         {isCancelled && (
           <div className="mb-[12px] rounded-[10px] bg-[#FFEFEF] px-[14px] py-[12px]">
             <div className="text-[15px] font-normal text-[#C92A2A] mb-[4px]">주문 취소 사유</div>

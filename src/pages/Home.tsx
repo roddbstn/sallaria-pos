@@ -25,6 +25,21 @@ import BottomToast from '../components/BottomToast'
 
 const TICK_MS = 10_000   // 분 단위 표시라 1초 갱신은 리렌더 낭비다
 
+/** PostgREST 가 '그 컬럼 없다'고 할 때의 코드 */
+const UNDEFINED_COLUMN = '42703'
+
+/**
+ * 0079(orders.cancel_reason · cancelled_at)를 조회에 넣을지.
+ *
+ * 선포스는 **설치형**이라 앱 버전과 DB 스키마가 어긋난 채로 돌 수 있다. 자동
+ * 업데이트가 아직 안 되는 상태라(CLAUDE.md) 구버전 앱이 한참 남고, 반대로
+ * 새 앱이 마이그레이션 전 DB를 볼 수도 있다. 없는 컬럼을 그냥 요청하면 조회가
+ * **통째로** 실패해서, 취소 사유 한 줄 때문에 홈 화면이 빈다. 그래서 한 번
+ * 시도해 보고 없다고 하면 그 뒤로는 안 넣는다. 세션당 한 번만 판단한다.
+ */
+let cancelCols = `
+    cancel_reason, cancelled_at,`
+
 export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
   const { storeId, storeName } = useStore()
 
@@ -50,12 +65,12 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     window.setTimeout(() => setToast(''), 3000)
   }
 
-  const SELECT = `
+  const SELECT = () => `
     order_code, order_number, account_code, orderer_name, orderer_phone,
     ordered_at, menu_subtotal, delivery_fee, total_amount, balance_before, balance_after,
     method, status, note, is_deleted, requested_pickup_minutes, prep_minutes, accepted_at, completed_at,
     updated_at,
-    delivery_departed_at,
+    delivery_departed_at,${cancelCols}
     accounts ( account_name, account_type ),
     order_items ( menu_name, quantity, unit_price, subtotal,
       order_item_options ( option_name, extra_price ) )
@@ -67,18 +82,27 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     const kst = new Date(Date.now() + 9 * 3600_000)
     const dayStart = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 3600_000).toISOString()
 
-    const [a, d] = await Promise.all([
+    const fetchBoth = () => Promise.all([
       // 진행 중은 날짜와 무관하다 — 어제 받아서 아직 안 끝난 주문도 떠 있어야 한다
-      supabase.from('orders').select(SELECT)
+      supabase.from('orders').select(SELECT())
         .eq('store_id', storeId).eq('is_deleted', false)
         .in('status', ['주문완료', '조리중'])
         .order('ordered_at'),
-      supabase.from('orders').select(SELECT)
+      supabase.from('orders').select(SELECT())
         .eq('store_id', storeId).eq('is_deleted', false)
         .in('status', ['완료', '취소'])
         .gte('ordered_at', dayStart)
         .order('ordered_at', { ascending: false }),
     ])
+
+    let [a, d] = await fetchBoth()
+    // 0079 가 아직 안 올라간 DB면 컬럼이 없다고 답한다 — 그 둘만 떼고 한 번 다시.
+    // (아래 cancelCols 주석 참고. 떼고 나면 사유는 note 추측으로 떨어진다.)
+    if (cancelCols && [a.error, d.error].some(e => e?.code === UNDEFINED_COLUMN)) {
+      cancelCols = ''
+      console.warn('[Home] orders.cancel_reason 이 없다 — 0079 마이그레이션 전이다. 취소 사유는 note 추측으로 간다')
+      ;[a, d] = await fetchBoth()
+    }
 
     setActive((a.data ?? []).map(mapOrderRow))
     setDone((d.data ?? []).map(mapOrderRow))

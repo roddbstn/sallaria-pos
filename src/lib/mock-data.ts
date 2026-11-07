@@ -41,14 +41,21 @@ export interface Order {
   /** '준비 완료'를 누른 시각. 완료 카드의 '소요 시간'은 이 시각 − acceptedAt 이다 */
   completedAt?:  string
   /**
-   * 취소한 시각.
+   * 취소한 시각. orders.cancelled_at (0079).
    *
-   * ⚠️ 전용 컬럼이 없어서 **orders.updated_at** 을 쓴다. cancel_order 가 취소할 때
-   *    updated_at 을 갱신하므로 취소 주문에서는 사실상 취소 시각이다.
-   *    다른 상태에서는 '마지막으로 뭔가 바뀐 시각'이라 뜻이 없다 —
-   *    그래서 status === '취소' 일 때만 읽는다.
+   * 그 컬럼이 없던 동안은 **orders.updated_at** 으로 갈음했다 — cancel_order 가
+   * 취소할 때 updated_at 을 갱신하므로 취소 주문에서는 사실상 취소 시각이다.
+   * 아직 그 폴백이 남아 있다(mappers.ts).
    */
   cancelledAt?:  string
+  /**
+   * 점주가 고른 취소 사유. orders.cancel_reason (0079).
+   *
+   * 그전까지는 사유가 orders.note 에 **덮어써졌다.** 그래서 비어 있으면
+   * lib/cancel-reason.ts 로 note 가 사유인지 추측해 봐야 한다 —
+   * 백필로 못 가려낸 옛 취소 건이 남아 있다.
+   */
+  cancelReason?: string
   /**
    * 고객이 주문할 때 고른 예상 수령시간 (주문시각 기준 분). 0 = 지금, undefined = 미선택.
    * 점주가 승인 화면에서 정하는 prepMins 와는 다른 값이다 —

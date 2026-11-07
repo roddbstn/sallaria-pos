@@ -41,8 +41,10 @@ set cancel_reason = note,
     cancelled_at  = updated_at
 where status = '취소'
   and cancel_reason is null
-  and note in ('재료 소진', '마감시간 초과', '주문 폭주', '매장 사정', '기타',
-               '주문 폭주로 조리 불가', '재료가 떨어졌어요', '마감 시간이에요');
+  -- src/lib/cancel-reason.ts 의 KNOWN_REASONS 와 같은 목록이어야 한다.
+  -- (지금 데이터로는 아래 셋이 0행이지만, 목록이 갈라져 있으면 나중에 틀린다)
+  and note in ('재료 소진', '영업 종료', '주문 폭주로 조리 불가', '손님 요청으로 취소',
+               '중복 주문', '마감시간 초과', '주문 폭주', '매장 사정', '기타');
 
 -- 사유를 못 가려낸 취소분도 **시각만은** 채운다. updated_at 은 취소할 때 갱신되므로
 -- 취소 주문에 한해서는 사실상 취소 시각이다(그 뒤로 바뀐 게 없다면).
