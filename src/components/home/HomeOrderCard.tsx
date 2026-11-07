@@ -72,10 +72,10 @@ export default function HomeOrderCard({ order, selected, onClick, now }: {
             {method}
           </span>
         </div>
-        <div className="text-[18px] font-medium text-[#2C261F] tabular-nums">
+        <div className="text-[20px] font-medium text-[#2C261F] tabular-nums">
           {qty}개 · {won(order.total)}
         </div>
-        <div className="text-[15px] font-normal text-[#787878] truncate mt-[2px]">
+        <div className="text-[18px] font-normal text-[#787878] truncate mt-[2px]">
           {order.accountName}
         </div>
       </div>

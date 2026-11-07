@@ -107,7 +107,7 @@ function Section({ title, right, children }: {
 /** 집계를 사람 말로 — 이 화면이 엑셀과 갈리는 지점 */
 function Insight({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-[10px] rounded-[9px] bg-[#F2F2F2] px-[13px] py-[10px] text-[13px] font-normal text-[#1E1E1E] leading-relaxed">
+    <div className="mt-[10px] rounded-[9px] bg-[#F2F2F2] px-[13px] py-[10px] text-[15px] font-normal text-[#1E1E1E] leading-relaxed">
       {children}
     </div>
   )
@@ -455,7 +455,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
           <LoadingBlock py={40} />
         ) : trendAt.length === 0 ? (
           <div className="bg-[#FCFCFC] rounded-[11px] py-[40px] text-center">
-            <div className="text-[13px] font-normal text-[#787878]">아직 추이를 그릴 주문이 없어요</div>
+            <div className="text-[15px] font-normal text-[#787878]">아직 추이를 그릴 주문이 없어요</div>
           </div>
         ) : (
         <div className="flex items-stretch gap-[12px]">
@@ -472,16 +472,16 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
               const { current } = trendSummary
               return (
                 <>
-                  <div className="text-[12px] font-normal text-[#787878]">
+                  <div className="text-[14px] font-normal text-[#787878]">
                     {UNIT_CURR_LABEL[trendUnit]} 주문
                   </div>
                   <div className="text-[18px] font-semibold text-[#1E1E1E] mt-[6px] leading-snug">
                     {current?.count ?? 0}건
-                    <span className="text-[11px] font-normal text-[#ADADAD] ml-[4px]">진행 중</span>
+                    <span className="text-[13px] font-normal text-[#ADADAD] ml-[4px]">진행 중</span>
                   </div>
                   {/* 건수만 보면 "건수는 줄었는데 매출은 늘었다"를 놓친다 —
                       주문 화면 오른쪽이 주문수량과 주문액을 나란히 두는 것과 같은 이유 */}
-                  <div className="text-[13px] font-medium text-[#1E1E1E] tabular-nums mt-[2px]">
+                  <div className="text-[15px] font-medium text-[#1E1E1E] tabular-nums mt-[2px]">
                     {won(current?.amount ?? 0)}
                   </div>
 
@@ -497,7 +497,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                   <div className="mt-[12px] leading-relaxed">
                     {pace ? (
                       <>
-                        <div className="text-[12px] font-normal text-[#787878]">
+                        <div className="text-[14px] font-normal text-[#787878]">
                           {UNIT_PREV_LABEL[trendUnit]} 이맘때보다
                         </div>
                         {pace.pct !== undefined ? (
@@ -515,12 +515,12 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                           </div>
                         )}
                         {/* %만 두면 근거가 없어 믿기 어렵다. 분모를 작게 붙인다 */}
-                        <div className="text-[11px] font-normal text-[#ADADAD] mt-[2px] tabular-nums">
+                        <div className="text-[13px] font-normal text-[#ADADAD] mt-[2px] tabular-nums">
                           {pace.range} {pace.previous}건
                         </div>
                       </>
                     ) : (
-                      <div className="text-[12px] font-normal text-[#787878]">
+                      <div className="text-[14px] font-normal text-[#787878]">
                         비교할 지난 기록이 아직 없어요
                       </div>
                     )}
@@ -581,8 +581,8 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
         <>
           {rows.length === 0 ? (
             <div className="bg-[#FCFCFC] rounded-[11px] py-[48px] mb-[30px] text-center">
-              <div className="text-[13px] font-normal text-[#787878]">{days === 0 ? '아직 주문이 없어요' : `최근 ${days}일 주문이 없어요`}</div>
-              {days !== 0 && <div className="text-[11px] font-normal text-[#ADADAD] mt-[4px]">기간을 늘리면 지난 주문을 볼 수 있어요</div>}
+              <div className="text-[15px] font-normal text-[#787878]">{days === 0 ? '아직 주문이 없어요' : `최근 ${days}일 주문이 없어요`}</div>
+              {days !== 0 && <div className="text-[13px] font-normal text-[#ADADAD] mt-[4px]">기간을 늘리면 지난 주문을 볼 수 있어요</div>}
             </div>
           ) : (
             <>
@@ -608,7 +608,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                     ))}
                     {DOW.map((d, di) => (
                       <Fragment key={di}>
-                        <div className="text-[11px] font-normal text-[#787878] flex items-center">{d}</div>
+                        <div className="text-[13px] font-normal text-[#787878] flex items-center">{d}</div>
                         {HOURS.map(h => {
                           const key   = `${di}-${h}`
                           const cell  = grid.get(key)
@@ -638,11 +638,11 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                 </div>
                 {peak && peakDow != null && peakHour != null && (
                   <div className="w-[190px] flex-shrink-0 bg-[#FCFCFC] rounded-[11px] px-[16px] py-[14px] flex flex-col justify-center">
-                    <div className="text-[12px] font-normal text-[#787878]">가장 바쁜 때</div>
+                    <div className="text-[14px] font-normal text-[#787878]">가장 바쁜 때</div>
                     <div className="text-[18px] font-semibold text-[#1E1E1E] mt-[6px] leading-snug">
                       {DOW[peakDow]}요일 {peakHour}시
                     </div>
-                    <div className="text-[12px] font-normal text-[#ADADAD] mt-[3px]">주문 {peakCount}건</div>
+                    <div className="text-[14px] font-normal text-[#ADADAD] mt-[3px]">주문 {peakCount}건</div>
                   </div>
                 )}
                 </div>
@@ -657,10 +657,10 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                       className="fixed z-[75] pointer-events-none bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[10px] py-[8px] -translate-x-1/2"
                       style={{ left: hover.x / rootZoom(), bottom: (window.innerHeight - hover.y) / rootZoom() + 6 }}
                     >
-                      <div className="text-[12px] font-semibold text-ink text-center leading-[1.3] whitespace-nowrap">
+                      <div className="text-[14px] font-semibold text-ink text-center leading-[1.3] whitespace-nowrap">
                         {DOW[di]}요일 {h}시
                       </div>
-                      <div className="text-[11px] font-normal text-[#787878] text-center mt-[2px] whitespace-nowrap">
+                      <div className="text-[13px] font-normal text-[#787878] text-center mt-[2px] whitespace-nowrap">
                         {!c || c.n === 0 ? '주문 없음' : (
                           <>{c.n}건 · {c.dates.slice(0, 4).join(', ')}{c.dates.length > 4 ? ` 외 ${c.dates.length - 4}일` : ''}</>
                         )}
@@ -678,12 +678,12 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                   return (
                     <div className="mt-[12px]">
                       <div className="flex items-center gap-[8px] mb-[8px]">
-                        <span className="text-[13px] font-medium text-[#1E1E1E]">
+                        <span className="text-[15px] font-medium text-[#1E1E1E]">
                           {DOW[di]}요일 {h}시에 들어온 주문 {c.n}건
                         </span>
                         <button
                           onClick={() => setPicked(null)}
-                          className="text-[12px] font-normal text-[#6A635E] hover:underline"
+                          className="text-[14px] font-normal text-[#6A635E] hover:underline"
                         >
                           닫기
                         </button>
@@ -695,13 +695,13 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                             className="flex-shrink-0 w-[196px] rounded-[11px] bg-[#FCFCFC] border border-[#E8E4E2] px-[13px] py-[11px]"
                           >
                             <div className="flex items-baseline justify-between mb-[5px]">
-                              <span className="text-[12px] font-medium text-[#1E1E1E] tabular-nums">{o.date} {o.time}</span>
-                              <span className="text-[11px] font-normal text-[#787878]">{o.method}</span>
+                              <span className="text-[14px] font-medium text-[#1E1E1E] tabular-nums">{o.date} {o.time}</span>
+                              <span className="text-[13px] font-normal text-[#787878]">{o.method}</span>
                             </div>
-                            <div className="text-[12px] font-normal text-[#414141] leading-snug line-clamp-2 min-h-[32px]">
+                            <div className="text-[14px] font-normal text-[#414141] leading-snug line-clamp-2 min-h-[32px]">
                               {o.items || '메뉴 정보 없음'}
                             </div>
-                            <div className="text-[13px] font-medium text-[#1E1E1E] mt-[6px] tabular-nums">{won(o.amount)}</div>
+                            <div className="text-[15px] font-medium text-[#1E1E1E] mt-[6px] tabular-nums">{won(o.amount)}</div>
                           </div>
                         ))}
                       </div>
@@ -719,10 +719,10 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                   <div className="bg-[#FCFCFC] rounded-[11px] p-[13px] flex flex-col gap-[9px]">
                     {menus.map((m, i) => (
                       <div key={m.name} className="flex items-center gap-[10px]">
-                        <span className="w-[14px] text-[11px] font-normal text-[#ADADAD]">{i + 1}</span>
-                        <span className="flex-1 min-w-0 truncate text-[13px] font-normal text-[#1E1E1E]">{m.name}</span>
-                        <span className="text-[12px] font-normal text-[#787878] flex-shrink-0">{m.qty}개</span>
-                        <span className="w-[78px] text-right text-[12px] font-normal text-[#1E1E1E]">{won(m.amount)}</span>
+                        <span className="w-[14px] text-[13px] font-normal text-[#ADADAD]">{i + 1}</span>
+                        <span className="flex-1 min-w-0 truncate text-[15px] font-normal text-[#1E1E1E]">{m.name}</span>
+                        <span className="text-[14px] font-normal text-[#787878] flex-shrink-0">{m.qty}개</span>
+                        <span className="w-[78px] text-right text-[14px] font-normal text-[#1E1E1E]">{won(m.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -731,12 +731,12 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                   <div className="text-[15px] font-semibold text-[#2C261F] mb-[10px]">많이 고른 옵션</div>
                   <div className="bg-[#FCFCFC] rounded-[11px] p-[13px] flex flex-col gap-[9px]">
                     {opts.length === 0 ? (
-                      <div className="py-[14px] text-center text-[12px] font-normal text-[#ADADAD]">선택된 옵션이 없어요</div>
+                      <div className="py-[14px] text-center text-[14px] font-normal text-[#ADADAD]">선택된 옵션이 없어요</div>
                     ) : opts.map((o, i) => (
                       <div key={o.name} className="flex items-center gap-[10px]">
-                        <span className="w-[14px] text-[11px] font-normal text-[#ADADAD]">{i + 1}</span>
-                        <span className="flex-1 min-w-0 truncate text-[13px] font-normal text-[#1E1E1E]">{o.name}</span>
-                        <span className="text-[12px] font-normal text-[#787878] flex-shrink-0">{o.qty}회</span>
+                        <span className="w-[14px] text-[13px] font-normal text-[#ADADAD]">{i + 1}</span>
+                        <span className="flex-1 min-w-0 truncate text-[15px] font-normal text-[#1E1E1E]">{o.name}</span>
+                        <span className="text-[14px] font-normal text-[#787878] flex-shrink-0">{o.qty}회</span>
                       </div>
                     ))}
                   </div>
@@ -753,16 +753,16 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                     const pct = rows.length ? Math.round((n / rows.length) * 100) : 0
                     return (
                       <div key={m} className="flex-1 bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
-                        <div className="text-[12px] font-medium text-[#2C261F] mb-[6px]">{DB_METHOD_MAP[m] ?? m}</div>
+                        <div className="text-[14px] font-medium text-[#2C261F] mb-[6px]">{DB_METHOD_MAP[m] ?? m}</div>
                         <div className="text-[20px] font-medium text-[#2C261F]">{pct}%</div>
-                        <div className="text-[11px] font-normal text-[#787878] mt-[3px]">{n}건</div>
+                        <div className="text-[13px] font-normal text-[#787878] mt-[3px]">{n}건</div>
                       </div>
                     )
                   })}
                   <div className="flex-1 bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
-                    <div className="text-[12px] font-medium text-[#2C261F] mb-[6px]">배달료 합계</div>
+                    <div className="text-[14px] font-medium text-[#2C261F] mb-[6px]">배달료 합계</div>
                     <div className="text-[20px] font-medium text-[#2C261F]">{won(deliveryTotal)}</div>
-                    <div className="text-[11px] font-normal text-[#787878] mt-[3px]">주문액에 포함된 금액</div>
+                    <div className="text-[13px] font-normal text-[#787878] mt-[3px]">주문액에 포함된 금액</div>
                   </div>
                 </div>
               </Section>
@@ -774,7 +774,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
           <Section
             title="계정별 주문 주기"
             right={
-              <span className="text-[12px] font-normal text-[#787878]">
+              <span className="text-[14px] font-normal text-[#787878]">
                 {cycles.length}곳
                 {dormant.length > 0 && (
                   <span className="text-[#ADADAD]"> · {CYCLE_DAYS}일 주문 없는 {dormant.length}곳은 제외</span>
@@ -783,12 +783,12 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
             }
           >
             {cycles.length === 0 ? (
-              <div className="bg-[#FCFCFC] rounded-[11px] py-[40px] text-center text-[13px] font-normal text-[#ADADAD]">
+              <div className="bg-[#FCFCFC] rounded-[11px] py-[40px] text-center text-[15px] font-normal text-[#ADADAD]">
                 주문 기록이 있는 계정이 없어요
               </div>
             ) : (
               <div className="rounded-[11px] overflow-hidden">
-                <div className="flex items-center bg-[#D7D2CE] border-b border-[#C1B7AA] px-[15px] h-[36px] text-[12px] font-normal text-[#6A635E]">
+                <div className="flex items-center bg-[#D7D2CE] border-b border-[#C1B7AA] px-[15px] h-[36px] text-[14px] font-normal text-[#6A635E]">
                   <span className="flex-1">계정</span>
                   <span className="w-[70px] text-right">주문</span>
                   <span className="w-[90px] text-right">평균 간격</span>
@@ -805,7 +805,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                   return (
                     <div
                       key={c.account}
-                      className={`flex items-center bg-[#FCFCFC] px-[15px] h-[40px] text-[13px] font-normal ${
+                      className={`flex items-center bg-[#FCFCFC] px-[15px] h-[40px] text-[15px] font-normal ${
                         i === arr.length - 1 ? '' : 'border-b border-[#E5E5E5]'
                       }`}
                     >
@@ -841,7 +841,7 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
                   {onOpenSms && (
                     <button
                       onClick={() => onOpenSms('idle_account')}
-                      className="flex-shrink-0 h-[30px] px-[13px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 transition-opacity"
+                      className="flex-shrink-0 h-[30px] px-[13px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 transition-opacity"
                     >
                       문자 보내기
                     </button>

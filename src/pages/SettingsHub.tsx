@@ -83,7 +83,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
     <div className="flex items-center justify-between gap-[16px] py-[11px]">
       <div className="min-w-0">
         <div className="text-[14px] font-normal text-[#1E1E1E]">{label}</div>
-        {hint && <div className="text-[11px] font-normal text-[#ADADAD] mt-[3px]">{hint}</div>}
+        {hint && <div className="text-[13px] font-normal text-[#ADADAD] mt-[3px]">{hint}</div>}
       </div>
       <div className="flex-shrink-0 flex items-center gap-[9px]">{children}</div>
     </div>
@@ -93,7 +93,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-[34px]">
-      <div className="text-[12px] font-normal text-[#6A635E] mb-[6px]">{title}</div>
+      <div className="text-[14px] font-normal text-[#6A635E] mb-[6px]">{title}</div>
       <div className="rounded-[11px] border border-[#E8E4E2] bg-[#FCFCFC] px-[20px] py-[4px] divide-y divide-[#F2F2F2]">
         {children}
       </div>
@@ -146,7 +146,7 @@ function SegButtons<T extends string>({ value, options, onChange }: {
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`h-[30px] px-[11px] rounded-[8px] text-[12px] transition-colors ${
+          className={`h-[30px] px-[11px] rounded-[8px] text-[14px] transition-colors ${
             value === o.v ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
           }`}
         >
@@ -167,7 +167,7 @@ function SmallButton({ onClick, children, disabled, tone = 'plain' }: {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`h-[30px] px-[12px] rounded-[8px] text-[12px] font-medium disabled:opacity-40 transition-opacity ${
+      className={`h-[30px] px-[12px] rounded-[8px] text-[14px] font-medium disabled:opacity-40 transition-opacity ${
         tone === 'dark' ? 'bg-[#2C261F] text-[#F9F9F9] hover:opacity-90' : 'bg-[#F2F2F2] text-[#1E1E1E] hover:bg-[#E8E4E2]'
       }`}
     >
@@ -416,7 +416,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
         <span className={`w-[8px] h-[8px] rounded-full flex-shrink-0 ${
           unknown ? 'bg-[#ADADAD]' : connected ? 'bg-[#00DD67]' : 'bg-[#C92A2A]'
         }`} />
-        <span className={`text-[13px] ${
+        <span className={`text-[15px] ${
           unknown ? 'text-[#787878]' : connected ? 'text-[#017333]' : 'text-[#C92A2A]'
         }`}>
           {/* 연결 대상 이름은 시리얼이면 포트, USB 면 OS 프린터 이름이다.
@@ -437,7 +437,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
         {/* 개수는 아래 목록과 **같은 기준**으로 센다. 맥 기본 포트(debug-console 등)는
             프린터가 아니라서 목록에서 빼는데, 전엔 개수에는 포함돼 개발 중에 늘
             "찾은 프린터 3개"로 보였다. 뺀 게 있으면 뺐다고 적는다. */}
-        <span className="text-[12px] font-normal text-[#6A635E]">
+        <span className="text-[14px] font-normal text-[#6A635E]">
           {scanned
             ? (() => {
                 const sys = ports.filter(x => isSystemPort(x.path)).length
@@ -453,7 +453,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
           <div className="bg-[#FCFCFC] px-[20px] py-[26px]">
             {/* 바탕 없이 회색 글자만 두니 "빈 영역"처럼 보여서 안내가 눈에 안 들어왔다.
                 한 단계 어두운 바탕을 깔아 '지금 이게 상태다'로 읽히게 한다. */}
-            <div className="rounded-[10px] bg-[#E8E4E2] px-[16px] py-[18px] text-center text-[13px] font-normal text-[#6A635E]">
+            <div className="rounded-[10px] bg-[#E8E4E2] px-[16px] py-[18px] text-center text-[15px] font-normal text-[#6A635E]">
               연결된 프린터를 못 찾았어요
             </div>
 
@@ -469,7 +469,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                     꺼진 기기가 몇 개인지는 여기서 빨갛게 세지 않는다. 바로 아래
                     목록의 각 줄에 '연결 안 됨' 배지로 이미 적혀 있고, 머리줄에서까지
                     빨간 글씨로 말하면 같은 말을 두 번 하면서 경고처럼만 읽힌다. */}
-                <div className="text-[12px] font-medium text-[#6A635E] mb-[8px]">
+                <div className="text-[14px] font-medium text-[#6A635E] mb-[8px]">
                   등록된 프린터 {osPrinters.length}개
                 </div>
                 <div className="rounded-[10px] border border-[#E8E4E2] overflow-hidden">
@@ -491,17 +491,17 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                           {on && !op.offline && <span className="w-[7px] h-[7px] rounded-full bg-[#6A635E]" />}
                         </span>
                         <span className="min-w-0 ml-[11px] flex-1">
-                          <span className={`block text-[13px] truncate ${op.offline ? 'text-[#ADADAD]' : 'text-[#1E1E1E]'}`}>
+                          <span className={`block text-[15px] truncate ${op.offline ? 'text-[#ADADAD]' : 'text-[#1E1E1E]'}`}>
                             {op.displayName}
                           </span>
-                          <span className="block text-[11px] text-[#787878] truncate">
+                          <span className="block text-[13px] text-[#787878] truncate">
                             {op.offline
                               ? '케이블이 빠졌거나 전원이 꺼져 있어요'
                               : (op.deviceUri || '이 컴퓨터에 등록된 프린터예요')}
                           </span>
                         </span>
                         {op.offline && (
-                          <span className="flex-shrink-0 ml-[10px] text-[11px] font-medium text-[#C92A2A] px-[8px] py-[3px] rounded-[6px] bg-[#FFEFEF]">
+                          <span className="flex-shrink-0 ml-[10px] text-[13px] font-medium text-[#C92A2A] px-[8px] py-[3px] rounded-[6px] bg-[#FFEFEF]">
                             연결 안 됨
                           </span>
                         )}
@@ -528,10 +528,10 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                 {on && <span className="w-[7px] h-[7px] rounded-full bg-[#6A635E]" />}
               </span>
               <span className="min-w-0 ml-[11px]">
-                <span className="block text-[13px] text-[#1E1E1E] truncate">{guessModel(p)}</span>
-                <span className="block text-[11px] text-[#787878] truncate">{connectionHint(p.path)}</span>
+                <span className="block text-[15px] text-[#1E1E1E] truncate">{guessModel(p)}</span>
+                <span className="block text-[13px] text-[#787878] truncate">{connectionHint(p.path)}</span>
               </span>
-              <span className="text-[11px] text-[#ADADAD] ml-auto pl-[11px] flex-shrink-0">{p.path}</span>
+              <span className="text-[13px] text-[#ADADAD] ml-auto pl-[11px] flex-shrink-0">{p.path}</span>
             </button>
           )
         })}
@@ -544,13 +544,13 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
           여기서 골라 두면 대화상자 없이 바로 나간다. 비워 두면 예전 그대로다. */}
       <div className="mt-[26px]">
         <div className="flex items-center justify-between mb-[8px]">
-          <span className="text-[12px] font-medium text-[#6A635E]">
+          <span className="text-[14px] font-medium text-[#6A635E]">
             일반 프린터 (QR 종이·A4)
           </span>
           {cfg.docPrinter && (
             <button
               onClick={() => patch({ docPrinter: '' })}
-              className="text-[12px] font-normal text-[#6A635E] hover:text-ink transition-colors"
+              className="text-[14px] font-normal text-[#6A635E] hover:text-ink transition-colors"
             >
               해제
             </button>
@@ -558,7 +558,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
         </div>
 
         {osPrinters.length === 0 ? (
-          <div className="rounded-[10px] bg-[#F2F2F2] px-[16px] py-[14px] text-[12px] font-normal text-[#787878]">
+          <div className="rounded-[10px] bg-[#F2F2F2] px-[16px] py-[14px] text-[14px] font-normal text-[#787878]">
             이 컴퓨터에 등록된 프린터가 없어요. 안 골라도 괜찮아요 — 그때는 인쇄 창이 떠요.
           </div>
         ) : (
@@ -580,17 +580,17 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                     {on && !op.offline && <span className="w-[7px] h-[7px] rounded-full bg-[#6A635E]" />}
                   </span>
                   <span className="min-w-0 ml-[11px] flex-1">
-                    <span className={`block text-[13px] truncate ${op.offline ? 'text-[#ADADAD]' : 'text-[#1E1E1E]'}`}>
+                    <span className={`block text-[15px] truncate ${op.offline ? 'text-[#ADADAD]' : 'text-[#1E1E1E]'}`}>
                       {op.displayName}
                     </span>
-                    <span className="block text-[11px] text-[#787878] truncate">
+                    <span className="block text-[13px] text-[#787878] truncate">
                       {op.offline ? '케이블이 빠졌거나 전원이 꺼져 있어요' : 'QR 종이를 여기로 보내요'}
                     </span>
                   </span>
                   {/* 영수증 프린터로도 같은 기기를 골라 둔 경우 — 감열지에 A4 를 보내면
                       종이만 버린다. 막지는 않되(쓰는 방식이 매장마다 다르다) 알려준다. */}
                   {on && cfg.osPrinter === op.name && (
-                    <span className="flex-shrink-0 ml-[10px] text-[11px] font-medium text-[#B35C00] px-[8px] py-[3px] rounded-[6px] bg-[#FFF4E8]">
+                    <span className="flex-shrink-0 ml-[10px] text-[13px] font-medium text-[#B35C00] px-[8px] py-[3px] rounded-[6px] bg-[#FFF4E8]">
                       영수증과 같은 기기
                     </span>
                   )}
@@ -599,7 +599,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
             })}
           </div>
         )}
-        <div className="text-[11px] font-normal text-[#ADADAD] mt-[6px] leading-relaxed">
+        <div className="text-[13px] font-normal text-[#ADADAD] mt-[6px] leading-relaxed">
           안 고르면 QR 종이를 뽑을 때 인쇄 창이 떠요.
         </div>
       </div>
@@ -626,7 +626,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                 onChange={e => patch({ host: e.target.value.trim() })}
                 placeholder="192.168.0.50"
                 inputMode="decimal"
-                className="w-[132px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[13px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
+                className="w-[132px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[15px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
               />
             </Row>
             <Row label="포트" hint={`비우면 ${DEFAULT_TCP_PORT} 를 써요 (영수증 프린터 표준)`}>
@@ -638,7 +638,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                 }}
                 placeholder={String(DEFAULT_TCP_PORT)}
                 inputMode="numeric"
-                className="w-[78px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[13px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
+                className="w-[78px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[15px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
               />
             </Row>
           </>
@@ -647,7 +647,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
             <select
               value={cfg.baudRate ?? 9600}
               onChange={e => patch({ baudRate: Number(e.target.value) })}
-              className="h-[32px] px-[9px] rounded-[8px] bg-[#F2F2F2] text-[13px] tabular-nums text-[#1E1E1E] outline-none"
+              className="h-[32px] px-[9px] rounded-[8px] bg-[#F2F2F2] text-[15px] tabular-nums text-[#1E1E1E] outline-none"
             >
               {BAUD_RATES.map(b => <option key={b} value={b}>{b.toLocaleString('ko-KR')} bps</option>)}
             </select>
@@ -656,15 +656,15 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
       </Group>
 
       {configProblem(cfg) && (
-        <div className="rounded-[11px] bg-[#FFEFEF] px-[20px] py-[13px] mb-[34px] text-[12px] text-[#C92A2A]">
+        <div className="rounded-[11px] bg-[#FFEFEF] px-[20px] py-[13px] mb-[34px] text-[14px] text-[#C92A2A]">
           {configProblem(cfg)}
         </div>
       )}
 
       {/* 문제를 겪는 사람이 설정을 더 만지기 전에 먼저 보이도록 출력 문서 위에 둔다 */}
       <div className="rounded-[11px] bg-[#F2F2F2] px-[20px] py-[16px] mb-[34px]">
-        <div className="text-[12px] font-medium text-[#414141] mb-[7px]">연결이 안 될 때</div>
-        <ul className="text-[11px] font-normal text-[#787878] leading-[1.9] list-disc pl-[15px]">
+        <div className="text-[14px] font-medium text-[#414141] mb-[7px]">연결이 안 될 때</div>
+        <ul className="text-[13px] font-normal text-[#787878] leading-[1.9] list-disc pl-[15px]">
           <li>프린터 전원과 선이 꽂혀 있는지 확인해 주세요</li>
           <li>다른 프로그램(기존 POS)이 프린터를 쓰고 있으면 잡히지 않아요</li>
           <li>그래도 안 되면 아래에서 지금 상태를 확인하고 문의해 주세요</li>
@@ -689,7 +689,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
 
       {/* 어떤 문서가 어떻게 찍히는지 — 매수를 정하기 전에 모양부터 보여준다 */}
       <div className="mb-[34px]">
-        <div className="text-[12px] font-normal text-[#6A635E] mb-[6px]">출력 미리보기</div>
+        <div className="text-[14px] font-normal text-[#6A635E] mb-[6px]">출력 미리보기</div>
         <ReceiptPreview />
       </div>
 
@@ -744,6 +744,14 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
     <div>
       <HubSection title="영수증 · 증빙" />
 
+      {/* 설정과 미리보기를 **좌우로** 놓는다.
+          전엔 설정 아래에 미리보기가 있어서, 글자 크기를 바꾸고 결과를 보려면
+          스크롤을 내렸다가 다시 올려야 했다. 바꾸는 손과 보는 눈이 떨어져 있었다.
+          대신 양쪽 폭을 줄인다 — 58mm 미리보기는 220px 면 충분하고,
+          설정 줄도 라벨+컨트롤이라 넓을 이유가 없다. */}
+      <div className="flex items-start gap-[28px]">
+        <div className="flex-1 min-w-0 max-w-[560px]">
+
       <Group title="영수증 양식">
         <PaperWidthRow />
         <Row label="메뉴명 글자 크기">
@@ -761,8 +769,8 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
             주방 주문서에만 적용한다. 고객 영수증에서 항목별 금액을 빼면
             "얼마짜리를 샀는지"가 사라진다. */}
         <Row
-          label="메뉴 이름 오른쪽 가격 표시"
-          hint="끄면 가격 칸이 빠지고 메뉴명이 넓어져요 (주방 주문서에만 적용)"
+          label="메뉴 이름 우측 가격 표시"
+          hint="끄면 가격 칸이 빠지고 메뉴명이 넓어져요"
         >
           <Toggle on={cfg.showItemPrice} onChange={v => patch({ showItemPrice: v })} />
         </Row>
@@ -782,29 +790,34 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
               }}
               rows={2}
               placeholder={'감사합니다\n또 오세요'}
-              className="w-[220px] px-[11px] py-[7px] rounded-[9px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E] resize-none leading-[1.4]"
+              className="w-[220px] px-[11px] py-[7px] rounded-[9px] border border-[#ADADAD] text-[15px] text-[#1E1E1E] outline-none focus:border-[#6A635E] resize-none leading-[1.4]"
             />
-            <span className="text-[11px] font-normal text-[#ADADAD] tabular-nums">
+            <span className="text-[13px] font-normal text-[#ADADAD] tabular-nums">
               {footer.replace(/\n/g, '').length} / {FOOTER_MAX}자
             </span>
           </div>
         </Row>
       </Group>
 
-      {/* 위에서 바꾼 글자 크기·하단 문구·잔액 표시가 그대로 반영된다 */}
-      <div className="mb-[34px]">
-        <div className="text-[12px] font-normal text-[#6A635E] mb-[6px]">미리보기</div>
-        <ReceiptPreview config={cfg} initialKind="customer" />
+        </div>
+
+        {/* 위에서 바꾼 글자 크기·하단 문구·잔액 표시가 그대로 반영된다 */}
+        <div className="flex-shrink-0 w-[260px]">
+          <div className="text-[15px] font-normal text-[#6A635E] mb-[6px]">미리보기</div>
+          <ReceiptPreview config={cfg} initialKind="customer" />
+        </div>
       </div>
+
+      <div className="mb-[34px]" />
 
       {/* 선결제 증빙 — 카카오를 빼고 PDF → 문자 */}
       <div className="mb-[12px]">
-        <div className="text-[12px] font-normal text-[#6A635E] mb-[6px]">선결제 증빙</div>
+        <div className="text-[14px] font-normal text-[#6A635E] mb-[6px]">선결제 증빙</div>
         <div className="rounded-[11px] border border-[#E8E4E2] bg-[#FCFCFC] px-[20px] py-[18px]">
           <div className="flex items-center justify-between gap-[16px]">
             <div className="min-w-0">
               <div className="text-[14px] font-normal text-[#1E1E1E]">선결제 영수증을 문자로 보내요</div>
-              <div className="text-[11px] font-normal text-[#ADADAD] mt-[3px]">
+              <div className="text-[13px] font-normal text-[#ADADAD] mt-[3px]">
                 거래처 담당자에게 PDF 링크를 문자로 보냅니다. 링크는 90일간 열람할 수 있어요
               </div>
             </div>
@@ -816,19 +829,19 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
       </div>
 
       <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden">
-        <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[36px] text-[11px] font-normal text-[#6A635E]">
+        <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[36px] text-[13px] font-normal text-[#6A635E]">
           <span className="w-[100px]">보낸 날짜</span>
           <span className="flex-1 min-w-0">거래처</span>
           <span className="w-[100px] text-right">금액</span>
           <span className="w-[120px] text-right">받는 번호</span>
           <span className="w-[70px] text-right">상태</span>
         </div>
-        <div className="bg-[#FCFCFC] py-[34px] text-center text-[12px] font-normal text-[#ADADAD]">
+        <div className="bg-[#FCFCFC] py-[34px] text-center text-[14px] font-normal text-[#ADADAD]">
           아직 보낸 증빙이 없어요
         </div>
       </div>
 
-      <div className="mt-[12px] text-[11px] font-normal text-[#ADADAD]">
+      <div className="mt-[12px] text-[13px] font-normal text-[#ADADAD]">
         문자 본문에는 금액과 거래처명을 넣지 않아요. 문자는 평문으로 남고 잘못 보내면 회수가 안 되니, 내용은 링크 안에만 둡니다.
       </div>
     </div>
@@ -979,7 +992,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
             className="w-[120px] h-[4px] cursor-pointer volume-slider"
             style={{ background: `linear-gradient(to right, #6A635E 0%, #6A635E ${volume}%, #E5E7EB ${volume}%, #E5E7EB 100%)` }}
           />
-          <span className="text-[12px] text-[#787878] w-[26px] text-right">{volume}</span>
+          <span className="text-[14px] text-[#787878] w-[26px] text-right">{volume}</span>
           <SmallButton onClick={previewAlarm}>{previewing ? '멈추기' : '미리 듣기'}</SmallButton>
         </Row>
         <Row
@@ -1042,13 +1055,13 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
           <SmallButton onClick={buildReport}>내용 보기</SmallButton>
         </Row>
         <Row label="앱 버전">
-          <span className="text-[13px] text-[#1E1E1E] tabular-nums">{appVersion}</span>
+          <span className="text-[15px] text-[#1E1E1E] tabular-nums">{appVersion}</span>
           <SmallButton onClick={checkUpdate} disabled={checking}>
             {checking ? <Working label="확인 중" /> : '업데이트 확인'}
           </SmallButton>
         </Row>
         {updateMsg && (
-          <div className="pl-[2px] pb-[10px] text-[12px] font-normal text-[#6A635E]">{updateMsg}</div>
+          <div className="pl-[2px] pb-[10px] text-[14px] font-normal text-[#6A635E]">{updateMsg}</div>
         )}
         <Row label="로그 폴더 열기" hint="문제가 생긴 시각의 기록이 들어 있어요">
           <SmallButton onClick={openLogs}>열기</SmallButton>

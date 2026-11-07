@@ -80,14 +80,14 @@ function InfoDot({ lines }: { lines: [string, string] }) {
       onMouseEnter={() => setOn(true)}
       onMouseLeave={() => setOn(false)}
     >
-      <span className="w-[18px] h-[18px] rounded-full bg-[#D7D2CE] text-[#6A635E] text-[12px] font-semibold flex items-center justify-center cursor-help select-none">
+      <span className="w-[18px] h-[18px] rounded-full bg-[#D7D2CE] text-[#6A635E] text-[14px] font-semibold flex items-center justify-center cursor-help select-none">
         i
       </span>
       {on && (
         // 두 줄 고정 — 줄바꿈을 글자 수에 맡기면 창 폭에 따라 들쭉날쭉해진다.
         // 기준 말풍선처럼 폭을 고정하고 <br/> 로 직접 끊는다.
         <span className="absolute left-1/2 -translate-x-1/2 bottom-[26px] z-20 w-[150px] rounded-[10px] bg-[#FCFCFC] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[8px] py-[8px] pointer-events-none">
-          <span className="block text-[12px] font-semibold text-ink text-center leading-[1.35]">
+          <span className="block text-[14px] font-semibold text-ink text-center leading-[1.35]">
             {lines[0]}<br />{lines[1]}
           </span>
         </span>
@@ -353,7 +353,7 @@ function StoreSettingsPanel({
     const enabled = h?.enabled ?? false
     return (
       <div className="flex items-center gap-[24px] w-full">
-        <span className="text-[13px] leading-[16px] font-medium text-[#414141] w-[14px] flex-shrink-0">{DAY_LABELS[day]}</span>
+        <span className="text-[15px] leading-[16px] font-medium text-[#414141] w-[14px] flex-shrink-0">{DAY_LABELS[day]}</span>
         {enabled ? (
           <span className="flex-1 min-w-0 flex items-center gap-[6px]">
             <TimeSelect value={h.open}  placeholder="오픈 시간" onChange={v => onSetDayTime(day, 'open', v)} />
@@ -458,7 +458,7 @@ function StoreSettingsPanel({
                 </button>
               </div>
             )}
-            <div className="text-[13px] font-normal text-[#ADADAD] mt-[8px]">
+            <div className="text-[15px] font-normal text-[#ADADAD] mt-[8px]">
               손님에게 나가는 번호예요. 영수증과 QR 안내지에 찍힙니다.
             </div>
           </div>
@@ -528,7 +528,7 @@ function StoreSettingsPanel({
                   type="text" value={delivery.draftAddress} readOnly placeholder="주소 검색을 눌러주세요"
                   className="flex-1 min-w-0 h-[42px] border border-[#D9D9D9] rounded-[9px] px-[21px] text-[14px] text-[#1E1E1E] bg-[#F9F9F9]"
                 />
-                <button onClick={delivery.openAddressSearch} className="h-[42px] px-[14px] bg-[#F2F2F2] text-[#1E1E1E] rounded-[9px] text-[13px] font-medium hover:bg-[#E8E4E2] transition-colors flex-shrink-0">
+                <button onClick={delivery.openAddressSearch} className="h-[42px] px-[14px] bg-[#F2F2F2] text-[#1E1E1E] rounded-[9px] text-[15px] font-medium hover:bg-[#E8E4E2] transition-colors flex-shrink-0">
                   주소 검색
                 </button>
               </div>
@@ -539,14 +539,14 @@ function StoreSettingsPanel({
               />
               <div className="flex justify-end gap-[9px]">
                 {delivery.roadAddress && (
-                  <button onClick={() => setEditingLocation(false)} className="h-[32px] px-[14px] bg-[#F2F2F2] text-[#787878] rounded-[9px] text-[13px] font-medium hover:bg-[#E8E4E2] transition-colors">
+                  <button onClick={() => setEditingLocation(false)} className="h-[32px] px-[14px] bg-[#F2F2F2] text-[#787878] rounded-[9px] text-[15px] font-medium hover:bg-[#E8E4E2] transition-colors">
                     취소
                   </button>
                 )}
                 <button
                   onClick={handleSaveLocation}
                   disabled={delivery.savingLocation || !delivery.draftAddress.trim()}
-                  className="h-[32px] px-[16px] bg-[#6A635E] text-[#FCFCFC] rounded-[9px] text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-colors"
+                  className="h-[32px] px-[16px] bg-[#6A635E] text-[#FCFCFC] rounded-[9px] text-[15px] font-medium hover:opacity-90 disabled:opacity-50 transition-colors"
                 >
                   {delivery.savingLocation ? <Working label="저장 중" /> : '저장'}
                 </button>
@@ -847,7 +847,7 @@ function RepresentativePanel({
         <div>
           <div className="flex items-baseline gap-[10px] mb-[25px]">
             <span className="text-[15px] font-medium leading-[18px] text-[#414141]">요금제</span>
-            {planPeriod && <span className="text-[12px] font-normal text-[#ADADAD]">{planPeriod}</span>}
+            {planPeriod && <span className="text-[14px] font-normal text-[#ADADAD]">{planPeriod}</span>}
           </div>
           <div className="flex items-center gap-[12px]">
             <span className="text-[17px] font-medium leading-[21px] text-[#1E1E1E]">{PLAN_NAMES[plan]}</span>
@@ -900,7 +900,7 @@ function RepresentativePanel({
           >
             <div className="px-[28px] pt-[28px] pb-[22px]">
               <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[6px]">로그아웃 하시겠어요?</div>
-              <div className="text-[13px] font-normal text-[#787878] leading-relaxed">
+              <div className="text-[15px] font-normal text-[#787878] leading-relaxed">
                 다시 사용하려면 비밀번호로 로그인해야 해요.
               </div>
             </div>

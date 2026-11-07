@@ -526,7 +526,7 @@ function CustomerDetailPanel() {
             </div>
             <div className="flex items-center gap-[10px]">
               {stats.typeRatio.map(t => (
-                <span key={t.label} className="flex items-center gap-[4px] text-[11px] font-normal text-[#6A635E] whitespace-nowrap">
+                <span key={t.label} className="flex items-center gap-[4px] text-[13px] font-normal text-[#6A635E] whitespace-nowrap">
                   <span className="w-[7px] h-[7px] rounded-full" style={{ backgroundColor: t.color }} />
                   {t.label} {Math.round((t.count / typeTotal) * 100)}%
                 </span>
@@ -553,7 +553,7 @@ function CustomerDetailPanel() {
           >
             {cells.map(stat => (
               <div key={stat.label} className="min-w-0">
-                <div className="flex items-center gap-[4px] text-[13px] font-normal text-[#6A635E] mb-[10px] min-w-0">
+                <div className="flex items-center gap-[4px] text-[15px] font-normal text-[#6A635E] mb-[10px] min-w-0">
                   {/* i 는 '단골' 바로 뒤에 붙인다 — 라벨 끝(…비율)에 달면 무엇의 설명인지 흐려진다 */}
                   {/* 라벨은 잘리면 … 로. min-w-0 이 없으면 flex 자식이 안 줄어들어
                       truncate 가 먹지 않고 글자가 세로로 쌓인다.
@@ -569,7 +569,7 @@ function CustomerDetailPanel() {
                     칸을 넘친 숫자가 옆 칸 글자 위로 그대로 지나갔다 */}
                 <div className="text-[22px] font-medium text-[#1E1E1E] truncate" title={stat.value}>{stat.value}</div>
                 {stat.sub && (
-                  <div className="text-[11px] font-normal text-[#ADADAD] mt-[4px] leading-snug truncate" title={stat.sub}>{stat.sub}</div>
+                  <div className="text-[13px] font-normal text-[#ADADAD] mt-[4px] leading-snug truncate" title={stat.sub}>{stat.sub}</div>
                 )}
               </div>
             ))}
@@ -624,7 +624,7 @@ function CustomerDetailPanel() {
           <HubPlaceholder note="아직 주문이 없어요" />
         ) : (
           <div className="rounded-[13px] overflow-hidden border border-[#E8E4E2]">
-            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[11px] font-medium text-[#787878]">
+            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[13px] font-medium text-[#787878]">
               <span className="w-[26px]" />
               <span className="w-[96px]">주문자</span>
               {/* 거래처는 고정폭으로 줄였다 — 과 이름은 길어봐야 한 줄이라 flex-1 로
@@ -649,24 +649,24 @@ function CustomerDetailPanel() {
                   onClick={() => setProfileOf({ name: c.orderer_name, code: c.account_code, account: c.account_name })}
                   className={`pressable-row flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}
                 >
-                  <span className="w-[26px] text-[12px] font-medium text-[#6A635E]">{i + 1}</span>
-                  <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
-                  <span className="w-[132px] min-w-0 text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
-                  <span className="w-[58px] text-right text-[12px] font-normal text-[#787878] tabular-nums">{c.orders}건</span>
-                  <span className="w-[96px] text-right text-[13px] font-medium text-[#1E1E1E] tabular-nums">{won(c.amount)}</span>
+                  <span className="w-[26px] text-[14px] font-medium text-[#6A635E]">{i + 1}</span>
+                  <span className="w-[96px] text-[15px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
+                  <span className="w-[132px] min-w-0 text-[14px] font-normal text-[#787878] truncate">{c.account_name}</span>
+                  <span className="w-[58px] text-right text-[14px] font-normal text-[#787878] tabular-nums">{c.orders}건</span>
+                  <span className="w-[96px] text-right text-[15px] font-medium text-[#1E1E1E] tabular-nums">{won(c.amount)}</span>
                   {/* 퍼센트만으로는 '100%'가 19건 중 19건인지 2건 중 2건인지 모른다.
                       분자·분모를 같이 보여줘야 그 비중을 믿을지 말지 판단이 선다. */}
-                  <span className={`w-[112px] text-right text-[12px] tabular-nums ${heavy ? 'text-danger font-medium' : 'text-[#787878] font-normal'}`}>
+                  <span className={`w-[112px] text-right text-[14px] tabular-nums ${heavy ? 'text-danger font-medium' : 'text-[#787878] font-normal'}`}>
                     {c.share_pct === null ? EMPTY : (
                       <>{c.share_pct}%<span className="text-[#ADADAD] font-normal"> ({c.orders}/{c.account_orders})</span></>
                     )}
                   </span>
-                  <span className="flex-1 pl-[34px] min-w-0 text-[12px] font-normal text-[#787878] truncate">
+                  <span className="flex-1 pl-[34px] min-w-0 text-[14px] font-normal text-[#787878] truncate">
                     {c.top_menu
                       ? <>{c.top_menu}<span className="text-[#ADADAD]"> {c.top_menu_count}회</span></>
                       : EMPTY}
                   </span>
-                  <span className="w-[84px] text-right text-[12px] font-normal">
+                  <span className="w-[84px] text-right text-[14px] font-normal">
                     {late
                       ? <span className="text-danger font-medium">⚠ 뜸한 손님</span>
                       : <span className="text-[#ADADAD]">정상</span>}
@@ -677,7 +677,7 @@ function CustomerDetailPanel() {
           </div>
         )}
         {topOrderers.some(c => (c.share_pct ?? 0) >= 45 && c.account_members > 1) && (
-          <p className="mt-[8px] text-[11px] font-normal text-[#ADADAD]">
+          <p className="mt-[8px] text-[13px] font-normal text-[#ADADAD]">
             계정 내 주문비중이 빨간 분은 그 거래처 주문의 절반 가까이를 혼자 맡고 있어요. 이 분이 빠지면 그 거래처 주문이 크게 줄어요.
           </p>
         )}
@@ -695,7 +695,7 @@ function CustomerDetailPanel() {
           <div className="rounded-[13px] overflow-hidden border border-[#E8E4E2]">
             {/* 위 표와 같은 머리 줄. 전엔 없어서 '12.2' 같은 숫자가 무슨 값인지
                 행을 눌러보기 전엔 알 수 없었다. */}
-            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[11px] font-medium text-[#787878]">
+            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[13px] font-medium text-[#787878]">
               <span className="w-[96px]">주문자</span>
               <span className="w-[130px]">거래처</span>
               <span className="flex-1 min-w-0">평소 주기</span>
@@ -710,32 +710,32 @@ function CustomerDetailPanel() {
                 onClick={() => setProfileOf({ name: c.orderer_name, code: c.account_code, account: c.account_name })}
                 className="pressable-row flex items-center px-[20px] h-[46px] bg-[#FCFCFC] hover:bg-[#F9F9F9] cursor-pointer border-t border-[#F2F2F2]"
               >
-                <span className="w-[96px] text-[13px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
-                <span className="w-[130px] text-[12px] font-normal text-[#787878] truncate">{c.account_name}</span>
-                <span className="flex-1 min-w-0 text-[12px] font-normal text-[#6A635E] truncate">
+                <span className="w-[96px] text-[15px] font-medium text-[#1E1E1E] truncate">{c.orderer_name}</span>
+                <span className="w-[130px] text-[14px] font-normal text-[#787878] truncate">{c.account_name}</span>
+                <span className="flex-1 min-w-0 text-[14px] font-normal text-[#6A635E] truncate">
                   {cycleWords(c.cycle_days)}
                 </span>
                 {/* 안 온 기간·건수만으로는 '얼마짜리 손님이 빠졌는지'가 안 보인다 —
                     4건 2만원과 4건 40만원은 같은 줄로 읽힐 이유가 없다. */}
-                <span className="w-[96px] text-right text-[13px] font-medium text-[#1E1E1E] tabular-nums">
+                <span className="w-[96px] text-right text-[15px] font-medium text-[#1E1E1E] tabular-nums">
                   {won(c.total_amount)}
                 </span>
                 {/* 첫 주문 ~ 마지막 주문. '안 온 기간'만으로는 그 사람이 **언제**
                     오던 사람인지 알 수 없다 — 지난달까지 오던 사람과 여름에만
                     오다 만 사람이 같은 '+100일째'로 보였다. */}
-                <span className="w-[152px] pl-[18px] text-[12px] font-normal text-[#787878] tabular-nums truncate">
+                <span className="w-[152px] pl-[18px] text-[14px] font-normal text-[#787878] tabular-nums truncate">
                   {orderSpan(c.first_ordered_at, c.last_ordered_at)}
                 </span>
-                <span className="w-[72px] text-right text-[12px] font-normal text-[#787878] tabular-nums">
+                <span className="w-[72px] text-right text-[14px] font-normal text-[#787878] tabular-nums">
                   {c.orders}건
                 </span>
-                <span className="w-[90px] text-right text-[13px] font-medium text-danger tabular-nums">
+                <span className="w-[90px] text-right text-[15px] font-medium text-danger tabular-nums">
                   +{c.days_since}일째
                 </span>
               </div>
             ))}
           </div>
-          <p className="mt-[8px] text-[11px] font-normal text-[#ADADAD]">
+          <p className="mt-[8px] text-[13px] font-normal text-[#ADADAD]">
             평소 주기보다 3배 넘게 안 오신 분들이에요 · 오래 안 오신 순{lapsed.length > 8 && ` · 전체 ${lapsed.length}명 중 8명`}
           </p>
         </div>
@@ -812,7 +812,7 @@ function daysSince(iso: string | null): number | null {
 function SummaryCard({ label, value, warn = false }: { label: string; value: string; warn?: boolean }) {
   return (
     <div className="flex-1 bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
-      <div className="text-[12px] font-medium text-[#2C261F] mb-[6px]">{label}</div>
+      <div className="text-[14px] font-medium text-[#2C261F] mb-[6px]">{label}</div>
       <div className={`text-[20px] font-medium ${warn ? 'text-danger' : 'text-[#2C261F]'}`}>{value}</div>
     </div>
   )
@@ -971,7 +971,7 @@ function AccountsPanel() {
       {loading ? (
         <LoadingBlock py={56} />
       ) : rows.length === 0 ? (
-        <div className="py-[56px] text-center text-[13px] font-normal text-[#ADADAD]">등록된 거래처가 없어요</div>
+        <div className="py-[56px] text-center text-[15px] font-normal text-[#ADADAD]">등록된 거래처가 없어요</div>
       ) : (
         <>
           <div className="flex gap-[10px] mb-[20px]">
@@ -982,7 +982,7 @@ function AccountsPanel() {
             <div className="flex-1 bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px] relative">
               <button
                 onClick={() => setIdleOpen(v => !v)}
-                className="flex items-center gap-[5px] text-[12px] font-medium text-[#2C261F] mb-[6px] hover:opacity-70 transition-opacity"
+                className="flex items-center gap-[5px] text-[14px] font-medium text-[#2C261F] mb-[6px] hover:opacity-70 transition-opacity"
               >
                 {IDLE_LABEL[idleDaysOpt]} 이상 미주문
                 <svg width="9" height="6" viewBox="0 0 16 10" fill="none"><path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -996,7 +996,7 @@ function AccountsPanel() {
                       <button
                         key={d}
                         onClick={() => { setIdleDaysOpt(d); setIdleOpen(false) }}
-                        className={`w-full text-left px-[13px] py-[7px] text-[13px] hover:bg-[#F2F2F2] ${
+                        className={`w-full text-left px-[13px] py-[7px] text-[15px] hover:bg-[#F2F2F2] ${
                           idleDaysOpt === d ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'
                         }`}
                       >
@@ -1020,14 +1020,14 @@ function AccountsPanel() {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="거래처·관리자 검색"
-                className="field-soft h-[32px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#D9D9D9] text-[13px] text-[#1E1E1E] outline-none"
+                className="field-soft h-[32px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#D9D9D9] text-[15px] text-[#1E1E1E] outline-none"
               />
             </div>
             {FILTERS.map(f => (
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={`h-[32px] px-[12px] rounded-[9px] text-[13px] font-normal transition-colors ${
+                className={`h-[32px] px-[12px] rounded-[9px] text-[15px] font-normal transition-colors ${
                   filter === f.key ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                 }`}
               >
@@ -1037,7 +1037,7 @@ function AccountsPanel() {
             <div className="relative ml-auto">
               <button
                 onClick={() => setSortOpen(v => !v)}
-                className="h-[32px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[13px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
+                className="h-[32px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[15px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
               >
                 {SORTS.find(s => s.key === sort)?.label}
                 <svg width="10" height="6" viewBox="0 0 16 10" fill="none"><path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -1050,7 +1050,7 @@ function AccountsPanel() {
                       <button
                         key={s.key}
                         onClick={() => { setSort(s.key); setSortOpen(false) }}
-                        className={`w-full text-left px-[13px] py-[7px] text-[13px] hover:bg-[#F2F2F2] ${sort === s.key ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'}`}
+                        className={`w-full text-left px-[13px] py-[7px] text-[15px] hover:bg-[#F2F2F2] ${sort === s.key ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'}`}
                       >
                         {s.label}
                       </button>
@@ -1096,26 +1096,26 @@ function AccountsPanel() {
                     })}
                     className="pressable-soft flex-1 min-w-0 text-left flex items-center gap-[7px] hover:underline underline-offset-2 decoration-[#D7D7D7]"
                   >
-                    <span className="text-[13px] text-[#1E1E1E] truncate">{r.name}</span>
+                    <span className="text-[15px] text-[#1E1E1E] truncate">{r.name}</span>
                     <span
-                      className="flex-shrink-0 px-[6px] h-[18px] leading-[18px] rounded-[5px] text-[11px] font-medium"
+                      className="flex-shrink-0 px-[6px] h-[18px] leading-[18px] rounded-[5px] text-[13px] font-medium"
                       style={typeBadgeStyle(typeColorOf(r.type))}
                     >
                       {r.type}
                     </span>
                   </button>
-                  <span className="w-[150px] flex items-center gap-[5px] text-[12px] text-[#787878]">
+                  <span className="w-[150px] flex items-center gap-[5px] text-[14px] text-[#787878]">
                     <span className="truncate">{r.manager ? maskName(r.manager) : '—'}</span>
                     {r.adminPending && <StatusTag label="등록대기" />}
                   </span>
-                  <span className="w-[90px] text-right text-[12px] text-[#787878]">{r.memberCount}명</span>
-                  <span className="w-[110px] text-right text-[12px] text-[#1E1E1E]">
+                  <span className="w-[90px] text-right text-[14px] text-[#787878]">{r.memberCount}명</span>
+                  <span className="w-[110px] text-right text-[14px] text-[#1E1E1E]">
                     {r.monthOrders > 0 ? `${r.monthOrders}건 · ${won(r.monthAmount)}` : '—'}
                   </span>
-                  <span className={`w-[120px] text-right text-[12px] ${dep != null && dep > 30 ? 'text-[#ADADAD]' : 'text-[#787878]'}`}>
+                  <span className={`w-[120px] text-right text-[14px] ${dep != null && dep > 30 ? 'text-[#ADADAD]' : 'text-[#787878]'}`}>
                     {dep == null ? '없음' : dep === 0 ? '오늘' : `${dep}일 전`}
                   </span>
-                  <span className={`w-[120px] text-right text-[13px] ${neg ? 'text-danger font-medium' : 'text-[#1E1E1E]'}`}>
+                  <span className={`w-[120px] text-right text-[15px] ${neg ? 'text-danger font-medium' : 'text-[#1E1E1E]'}`}>
                     {won(r.balance)}
                   </span>
                 </DataTableRow>
@@ -1125,14 +1125,14 @@ function AccountsPanel() {
 
           {/* 일괄 작업 — 이 화면의 존재 이유. 개별 처리는 고객 화면에서 이미 된다 */}
           <div className="mt-[14px] flex items-center gap-[10px]">
-            <span className="text-[12px] font-normal text-[#787878]">
+            <span className="text-[14px] font-normal text-[#787878]">
               {checked.size > 0 ? `${checked.size}곳 선택됨` : '여러 곳을 골라 한 번에 처리할 수 있어요'}
             </span>
             <div className="ml-auto flex gap-[8px]">
               <button
                 disabled={checked.size === 0}
                 onClick={() => exportBalanceCsv(visible.filter(r => checked.has(r.code)))}
-                className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[13px] font-normal hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
+                className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[15px] font-normal hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
               >
                 잔액 현황 내보내기
               </button>

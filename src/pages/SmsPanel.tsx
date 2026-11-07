@@ -226,7 +226,7 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
       ) : (
         <>
           {/* 어떤 상황인가 — 이게 대상을 정한다 */}
-          <div className="mb-[8px] text-[12px] font-medium text-[#2C261F]">상황 선택</div>
+          <div className="mb-[8px] text-[14px] font-medium text-[#2C261F]">상황 선택</div>
           <div className="flex gap-[8px] mb-[8px]">
             {SMS_TEMPLATES.map(t => {
               const count = targets.filter(x => matches(x, t.kind)).length
@@ -234,7 +234,7 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                 <button
                   key={t.kind}
                   onClick={() => pickKind(t.kind)}
-                  className={`h-[32px] px-[12px] rounded-[9px] text-[13px] font-normal transition-colors ${
+                  className={`h-[32px] px-[12px] rounded-[9px] text-[15px] font-normal transition-colors ${
                     kind === t.kind ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                   }`}
                 >
@@ -243,39 +243,39 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
               )
             })}
           </div>
-          <div className="mb-[22px] text-[11px] font-normal text-[#ADADAD]">{template.why}</div>
+          <div className="mb-[22px] text-[13px] font-normal text-[#ADADAD]">{template.why}</div>
 
           <div className="flex gap-[36px]">
             {/* 좌: 문구 */}
             <div className="flex-1 min-w-0">
-              <div className="text-[12px] font-medium text-[#2C261F] mb-[8px]">보낼 문구</div>
+              <div className="text-[14px] font-medium text-[#2C261F] mb-[8px]">보낼 문구</div>
               <textarea
                 value={draft}
                 onChange={e => setDraft(e.target.value.slice(0, 300))}
                 rows={4}
-                className="field-soft w-full rounded-[9px] border border-[#D9D9D9] px-[13px] py-[11px] text-[13px] text-[#1E1E1E] outline-none resize-none leading-relaxed"
+                className="field-soft w-full rounded-[9px] border border-[#D9D9D9] px-[13px] py-[11px] text-[15px] text-[#1E1E1E] outline-none resize-none leading-relaxed"
               />
-              <div className="mt-[6px] text-[11px] font-normal text-[#ADADAD]">
+              <div className="mt-[6px] text-[13px] font-normal text-[#ADADAD]">
                 {'{매장} {거래처} {잔액}'} 은 보낼 때 실제 값으로 바뀝니다
               </div>
 
-              <div className="mt-[14px] text-[12px] font-medium text-[#2C261F] mb-[8px]">미리보기</div>
-              <div className="rounded-[9px] bg-[#F2F2F2] px-[13px] py-[11px] text-[13px] text-[#1E1E1E] leading-relaxed whitespace-pre-wrap">
+              <div className="mt-[14px] text-[14px] font-medium text-[#2C261F] mb-[8px]">미리보기</div>
+              <div className="rounded-[9px] bg-[#F2F2F2] px-[13px] py-[11px] text-[15px] text-[#1E1E1E] leading-relaxed whitespace-pre-wrap">
                 {preview}
               </div>
-              <div className={`mt-[6px] text-[11px] font-normal ${isLms ? 'text-danger' : 'text-[#ADADAD]'}`}>
+              <div className={`mt-[6px] text-[13px] font-normal ${isLms ? 'text-danger' : 'text-[#ADADAD]'}`}>
                 {bytes}바이트 · {isLms ? 'LMS (단가가 올라가요)' : 'SMS'}
               </div>
             </div>
 
             {/* 우: 받는 사람 */}
             <div className="flex-shrink-0" style={{ width: 300 }}>
-              <div className="text-[12px] font-medium text-[#2C261F] mb-[8px]">
+              <div className="text-[14px] font-medium text-[#2C261F] mb-[8px]">
                 받는 사람 ({sendable.length}명)
               </div>
               <div className="rounded-[9px] bg-[#F2F2F2] p-[10px] max-h-[260px] overflow-y-auto flex flex-col gap-[6px]">
                 {matched.length === 0 ? (
-                  <div className="py-[26px] text-center text-[12px] font-normal text-[#ADADAD]">
+                  <div className="py-[26px] text-center text-[14px] font-normal text-[#ADADAD]">
                     해당하는 거래처가 없어요
                   </div>
                 ) : matched.map(t => {
@@ -292,8 +292,8 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                         onChange={() => toggleExclude(t.code)}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] text-[#1E1E1E] truncate">{t.name}</div>
-                        <div className="text-[11px] text-[#787878]">
+                        <div className="text-[14px] text-[#1E1E1E] truncate">{t.name}</div>
+                        <div className="text-[13px] text-[#787878]">
                           {t.manager ? maskName(t.manager) : '관리자 없음'}
                           {t.phone ? ` · ${maskPhone(t.phone)}` : ' · 연락처 없음'}
                         </div>
@@ -303,7 +303,7 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                 })}
               </div>
               {noPhone.length > 0 && (
-                <div className="mt-[7px] text-[11px] font-normal text-danger">
+                <div className="mt-[7px] text-[13px] font-normal text-danger">
                   {noPhone.length}곳은 연락처가 없어 보낼 수 없어요. 고객 현황에서 등록해 주세요
                 </div>
               )}
@@ -316,16 +316,16 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                 {sending ? <Working label="보내는 중" /> : `${sendable.length}명에게 보내기`}
               </button>
               {result && (
-                <div className="mt-[8px] text-[12px] font-normal text-[#017333] text-center">{result}</div>
+                <div className="mt-[8px] text-[14px] font-normal text-[#017333] text-center">{result}</div>
               )}
             </div>
           </div>
 
           {/* 발송 이력 — 문자는 되돌릴 수 없으니 뭘 언제 보냈는지가 남아야 한다 */}
           <div className="mt-[30px]">
-            <div className="text-[12px] font-medium text-[#2C261F] mb-[8px]">최근 발송</div>
+            <div className="text-[14px] font-medium text-[#2C261F] mb-[8px]">최근 발송</div>
             {logs.length === 0 ? (
-              <div className="py-[20px] text-center text-[12px] font-normal text-[#ADADAD]">보낸 문자가 없어요</div>
+              <div className="py-[20px] text-center text-[14px] font-normal text-[#ADADAD]">보낸 문자가 없어요</div>
             ) : (
               <div className="flex flex-col gap-[6px]">
                 {logs.map(l => {
@@ -333,12 +333,12 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                   const d = new Date(l.created_at)
                   return (
                     <div key={l.id} className="flex items-center gap-[10px] bg-[#F2F2F2] rounded-[8px] px-[13px] py-[9px]">
-                      <span className="text-[11px] text-[#787878] flex-shrink-0 w-[92px]">
+                      <span className="text-[13px] text-[#787878] flex-shrink-0 w-[92px]">
                         {`${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`}
                       </span>
-                      <span className="text-[12px] text-[#1E1E1E] flex-shrink-0 w-[110px]">{t?.label ?? l.kind}</span>
-                      <span className="text-[11px] text-[#787878] flex-1 min-w-0 truncate">{l.body}</span>
-                      <span className={`text-[11px] flex-shrink-0 ${l.failed_count > 0 ? 'text-danger' : 'text-[#787878]'}`}>
+                      <span className="text-[14px] text-[#1E1E1E] flex-shrink-0 w-[110px]">{t?.label ?? l.kind}</span>
+                      <span className="text-[13px] text-[#787878] flex-1 min-w-0 truncate">{l.body}</span>
+                      <span className={`text-[13px] flex-shrink-0 ${l.failed_count > 0 ? 'text-danger' : 'text-[#787878]'}`}>
                         {l.sent_count}명{l.failed_count > 0 ? ` · 실패 ${l.failed_count}` : ''}
                       </span>
                     </div>
@@ -357,10 +357,10 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
             <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[8px]">
               {sendable.length}명에게 문자를 보낼까요?
             </div>
-            <div className="text-[13px] font-normal text-[#787878] leading-relaxed mb-[16px]">
+            <div className="text-[15px] font-normal text-[#787878] leading-relaxed mb-[16px]">
               {template.label} · 건당 요금이 발생하고 취소할 수 없어요.
             </div>
-            <div className="rounded-[9px] bg-[#F2F2F2] px-[13px] py-[11px] text-[12px] text-[#1E1E1E] leading-relaxed whitespace-pre-wrap mb-[20px]">
+            <div className="rounded-[9px] bg-[#F2F2F2] px-[13px] py-[11px] text-[14px] text-[#1E1E1E] leading-relaxed whitespace-pre-wrap mb-[20px]">
               {preview}
             </div>
             <div className="flex justify-end gap-[8px]">

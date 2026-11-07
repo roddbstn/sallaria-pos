@@ -24,7 +24,9 @@ export interface ReceiptPreviewConfig {
    * 끄면 가격 칸이 통째로 빠지고 **그만큼 메뉴명이 넓어진다.** 메뉴명을 '크게'로
    * 두면 '수비드 통삼겹 단백질 도시락' 같은 이름이 쉽게 줄바꿈되는데,
    * 58mm 종이에서 가격 칸이 가져가던 폭이 꽤 크다. 금액은 어차피 아래
-   * '메뉴 소계 / 합계'에 다시 나오므로 주방용으로는 없어도 된다.
+   * '메뉴 소계 / 합계'에 다시 나온다.
+   * **주방 주문서와 고객 영수증 모두**에 적용된다 — 양식은 한 벌이라야
+   * 점주가 "어느 쪽에 적용되는 건가"를 안 따진다.
    */
   showItemPrice: boolean
   footerText:  string
@@ -130,9 +132,9 @@ function KitchenReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <div style={{ fontSize: 11 }}>주문일시 : {SAMPLE.orderedAt}</div>
       <Line />
       <div style={{ fontSize: 11 }}>이용방법 : <b>{SAMPLE.method}</b></div>
-      <div style={{ fontSize: 11 }}>주문자&nbsp;&nbsp; : {SAMPLE.orderer}</div>
-      <div style={{ fontSize: 11 }}>전화번호 : {SAMPLE.phone}</div>
-      <div style={{ fontSize: 11 }}>거래처&nbsp;&nbsp; : {SAMPLE.account}</div>
+      <div style={{ fontSize: 11 }}>주문자&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : {SAMPLE.orderer}</div>
+      <div style={{ fontSize: 11 }}>전화번호&nbsp;&nbsp; : {SAMPLE.phone}</div>
+      <div style={{ fontSize: 11 }}>선결제계정 : {SAMPLE.account}</div>
       <Line />
       <div style={{ fontSize: 11 }}>배달주소 : {SAMPLE.address}</div>
       <div style={{ fontSize: 11 }}>배달상세 : {SAMPLE.addressSub}</div>
@@ -218,6 +220,7 @@ function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
   const menuPx = PX[cfg.menuSize]
   const optPx  = PX[cfg.optionSize]
   const amtPx  = PX[cfg.amountSize]
+  const showPrice = cfg.showItemPrice
   return (
     <Paper>
       <div className="text-center font-bold" style={{ fontSize: 12 }}>[고객용]</div>
@@ -227,9 +230,11 @@ function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <div style={{ fontSize: 11 }}>주문일시 : {SAMPLE.orderedAt}</div>
       <Line />
       <div style={{ fontSize: 11 }}>이용방법 : <b>{SAMPLE.method}</b></div>
-      <div style={{ fontSize: 11 }}>주문자&nbsp;&nbsp; : {SAMPLE.orderer}</div>
-      <div style={{ fontSize: 11 }}>거래처&nbsp;&nbsp; : {SAMPLE.account}</div>
-      <div style={{ fontSize: 11 }}>전화번호 : {SAMPLE.phone}</div>
+      {/* 전화번호가 선결제 계정보다 **위**다 — 주방 주문서와 같은 순서.
+          둘이 다르면 같은 주문의 두 장을 겹쳐 볼 때 눈이 한 번 더 움직인다. */}
+      <div style={{ fontSize: 11 }}>주문자&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : {SAMPLE.orderer}</div>
+      <div style={{ fontSize: 11 }}>전화번호&nbsp;&nbsp; : {SAMPLE.phone}</div>
+      <div style={{ fontSize: 11 }}>선결제계정 : {SAMPLE.account}</div>
       <Line />
       {/* 배달이면 주소·배달요청까지, 아니면 가게요청만 — escpos 와 같은 분기 */}
       <div style={{ fontSize: 11 }}>배달주소 : {SAMPLE.address}</div>
@@ -247,23 +252,34 @@ function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       </div>
       <Line />
 
-      {/* 고객용은 **가격을 끄지 않는다.** 영수증에서 항목별 금액이 빠지면
-          "얼마짜리를 샀는지"가 사라진다. showItemPrice 는 주방 주문서 전용이다
-          (거기선 금액이 조리에 아무 쓸모가 없고, 그 칸이 메뉴명 줄바꿈을 만든다). */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', rowGap: 2, columnGap: 10 }}>
+      {/* 가격을 끄면 칸이 통째로 빠져 메뉴명이 그만큼 넓어진다(줄바꿈 방지).
+          주방 주문서와 **같은 설정을 따른다** — 영수증 양식은 한 벌이라야
+          점주가 "어느 쪽에 적용되는 건가"를 안 따진다.
+          금액은 어차피 아래 메뉴 소계·합계에 그대로 남는다. */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: showPrice ? '1fr auto auto' : '1fr auto',
+        rowGap: 2, columnGap: 10,
+      }}>
         <span className="font-bold" style={{ fontSize: menuPx }}>메뉴명</span>
         <span className="font-bold text-right" style={{ fontSize: menuPx }}>수량</span>
-        <span className="font-bold text-right" style={{ fontSize: menuPx }}>가격</span>
+        {showPrice && <span className="font-bold text-right" style={{ fontSize: menuPx }}>가격</span>}
         <div style={{ gridColumn: '1/-1' }}><div className="border-t border-dotted border-[#ADADAD] my-[2px]" /></div>
         {SAMPLE.items.map((it, i) => (
           <Fragment key={i}>
             <span className="font-bold" style={{ fontSize: menuPx }}>{it.name}</span>
             <span className="font-bold text-right" style={{ fontSize: menuPx }}>{it.qty}</span>
-            <span className="font-bold text-right whitespace-nowrap" style={{ fontSize: menuPx }}>{it.amount}</span>
+            {showPrice && (
+              <span className="font-bold text-right whitespace-nowrap" style={{ fontSize: menuPx }}>{it.amount}</span>
+            )}
             {it.opts.map((o, oi) => (
               <Fragment key={oi}>
-                <div style={{ gridColumn: '1/3', paddingLeft: 8, fontSize: optPx, color: '#333' }}>&gt; {o.t}</div>
-                <div className="text-right whitespace-nowrap" style={{ fontSize: optPx }}>{o.plus ?? ''}</div>
+                <div style={{ gridColumn: showPrice ? '1/3' : '1/-1', paddingLeft: 8, fontSize: optPx, color: '#333' }}>
+                  &gt; {o.t}{!showPrice && o.plus ? ` ${o.plus}` : ''}
+                </div>
+                {showPrice && (
+                  <div className="text-right whitespace-nowrap" style={{ fontSize: optPx }}>{o.plus ?? ''}</div>
+                )}
               </Fragment>
             ))}
           </Fragment>

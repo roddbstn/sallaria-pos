@@ -51,7 +51,7 @@ const METHOD_COLOR: Record<string, string> = {
 function Badge({ label, color }: { label: string; color: string }) {
   return (
     <span
-      className="inline-block px-[8px] py-[3px] rounded-[6px] text-[12px] font-medium whitespace-nowrap align-middle"
+      className="inline-block px-[8px] py-[3px] rounded-[6px] text-[14px] font-medium whitespace-nowrap align-middle"
       style={{ color, backgroundColor: `${color}1F` }}
     >
       {label}
@@ -109,7 +109,7 @@ function FilterSelect({ value, onChange, allLabel, options }: {
     <div className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className={`pressable-tab h-[30px] pl-[11px] pr-[8px] rounded-[9px] text-[12px] font-normal flex items-center gap-[5px] ${
+        className={`pressable-tab h-[30px] pl-[11px] pr-[8px] rounded-[9px] text-[14px] font-normal flex items-center gap-[5px] ${
           active ? 'bg-[#6A635E] text-[#FCFCFC] font-medium hover:brightness-110' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
         }`}
       >
@@ -126,7 +126,7 @@ function FilterSelect({ value, onChange, allLabel, options }: {
               <button
                 key={opt}
                 onClick={() => { onChange(opt); setOpen(false) }}
-                className={`w-full px-[12px] h-[32px] text-left text-[12px] transition-colors ${
+                className={`w-full px-[12px] h-[32px] text-left text-[14px] transition-colors ${
                   opt === value ? 'bg-[#F2F2F2] text-[#2C261F] font-medium' : 'text-[#414141] font-normal hover:bg-[#F2F2F2]'
                 }`}
               >
@@ -155,11 +155,11 @@ const CARD_SURFACE = 'bg-[#FCFCFC] shadow-[0_2px_10px_rgba(44,38,31,0.08)]'
 function StatCard({ label, value, sub, wide }: { label: string; value: string; sub?: string; wide?: boolean }) {
   return (
     <div className={`${wide ? 'flex-[2]' : 'flex-[1]'} ${CARD_SURFACE} rounded-[12px] px-[16px] py-[17px]`}>
-      <div className="text-[12px] font-normal text-[#787878] mb-[8px]">{label}</div>
+      <div className="text-[14px] font-normal text-[#787878] mb-[8px]">{label}</div>
       {/* 이 칼럼의 주인공. 17 → 20 → 25px 으로 두 번 올렸다.
           옆 표 본문이 13px 이라 20px 도 "요약"으로 안 읽혔다. 굵기도 medium → semibold. */}
       <div className="text-[25px] font-semibold text-[#2C261F] leading-tight whitespace-nowrap">{value}</div>
-      {sub && <div className="text-[11px] font-normal text-[#ADADAD] mt-[3px]">{sub}</div>}
+      {sub && <div className="text-[13px] font-normal text-[#ADADAD] mt-[3px]">{sub}</div>}
     </div>
   )
 }
@@ -211,7 +211,7 @@ function StatBox({ title, right, children }: {
   return (
     <div className={`${CARD_SURFACE} rounded-[12px] px-[16px] py-[15px]`}>
       <div className="flex items-center justify-between gap-[8px] mb-[12px]">
-        <span className="text-[12px] font-normal text-[#787878]">{title}</span>
+        <span className="text-[14px] font-normal text-[#787878]">{title}</span>
         {right}
       </div>
       {children}
@@ -267,7 +267,7 @@ function dayCount(start: string | null, end: string | null): number {
 
 function Row({ label, value, mono, bold }: { label: string; value: string; mono?: boolean; bold?: boolean }) {
   return (
-    <div className="flex justify-between items-baseline text-[13px] gap-3">
+    <div className="flex justify-between items-baseline text-[15px] gap-3">
       <span className="text-[#787878] flex-shrink-0">{label}</span>
       <span className={`max-w-[55%] text-right break-words ${mono ? 'font-mono tabular-nums' : ''} ${bold ? 'font-medium text-[#1E1E1E]' : 'text-[#1E1E1E]'}`}>{value}</span>
     </div>
@@ -591,7 +591,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
         {/* 주문유형 — 도넛 + 범례 */}
         <StatBox title="주문 유형">
           {methodTotal === 0 ? (
-            <div className="py-[18px] text-center text-[12px] text-[#ADADAD]">이 기간에 주문이 없어요</div>
+            <div className="py-[18px] text-center text-[14px] text-[#ADADAD]">이 기간에 주문이 없어요</div>
           ) : (
             <div className="flex items-center justify-between gap-[10px]">
               <div className="flex flex-col gap-[8px] min-w-0">
@@ -604,7 +604,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     onMouseLeave={() => setChartTooltip(null)}
                   >
                     <span className="w-[11px] h-[11px] rounded-full flex-shrink-0" style={{ backgroundColor: METHOD_COLOR[m] }} />
-                    <span className="text-[12px] text-[#2C261F] whitespace-nowrap">
+                    <span className="text-[14px] text-[#2C261F] whitespace-nowrap">
                       {METHOD_SHORT[m]} ({Math.round(((methodCounts[m] ?? 0) / methodTotal) * 100)}%, {methodCounts[m] ?? 0}건)
                     </span>
                   </div>
@@ -628,7 +628,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
         {/* 가장 많이 팔린 상품 — 메뉴/옵션 토글 + 상위 3 + 전체 분포 도넛 */}
         <StatBox title="가장 많이 팔린 메뉴">
           {bestList.length === 0 ? (
-            <div className="py-[18px] text-center text-[12px] text-[#ADADAD]">이 기간에 판매가 없어요</div>
+            <div className="py-[18px] text-center text-[14px] text-[#ADADAD]">이 기간에 판매가 없어요</div>
           ) : (
             <div className="flex items-center justify-between gap-[10px]">
               <div className="flex flex-col gap-[10px] min-w-0 flex-1">
@@ -640,10 +640,10 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     onMouseMove={trackTooltip}
                     onMouseLeave={() => setChartTooltip(null)}
                   >
-                    <span className={`flex-shrink-0 w-[17px] h-[17px] rounded-full flex items-center justify-center text-[11px] font-bold ${
+                    <span className={`flex-shrink-0 w-[17px] h-[17px] rounded-full flex items-center justify-center text-[13px] font-bold ${
                       i === 0 ? 'bg-[#E8E4E2] text-[#8C8379]' : 'bg-[#E5E5E5] text-[#ADADAD]'
                     }`}>{i + 1}</span>
-                    <span className={`text-[12px] font-medium truncate ${i === 0 ? 'text-[#2C261F]' : 'text-[#6A635E]'}`}>
+                    <span className={`text-[14px] font-medium truncate ${i === 0 ? 'text-[#2C261F]' : 'text-[#6A635E]'}`}>
                       {b2.label} ({b2.count})
                     </span>
                   </div>
@@ -671,7 +671,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
         {/* 고객 유형별 주문액 — 막대 */}
         <StatBox title="고객 유형별 주문액">
           {accountBars.every(b2 => b2.amount === 0) ? (
-            <div className="py-[18px] text-center text-[12px] text-[#ADADAD]">이 기간에 주문이 없어요</div>
+            <div className="py-[18px] text-center text-[14px] text-[#ADADAD]">이 기간에 주문이 없어요</div>
           ) : (
             <>
               <div className="flex items-end justify-center gap-[22px]" style={{ height: 51 }}>
@@ -697,7 +697,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               <div className="h-px bg-canvas-line mt-[1px] mx-auto" style={{ width: 140 }} />
               <div className="flex justify-center gap-[22px] mt-[7px]">
                 {accountBars.map(b2 => (
-                  <span key={b2.label} className="text-[12px] text-ink text-center" style={{ width: 20 }}>{b2.label}</span>
+                  <span key={b2.label} className="text-[14px] text-ink text-center" style={{ width: 20 }}>{b2.label}</span>
                 ))}
               </div>
             </>
@@ -715,7 +715,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
         <div className="flex-shrink-0 flex items-center gap-[6px]">
           {(['주문내역', '메뉴별매출', '거래처별매출'] as const).map(t => (
             <button key={t} onClick={() => handleTabChange(t)}
-              className={`pressable-tab h-[30px] px-[13px] rounded-[9px] text-[12px] font-normal
+              className={`pressable-tab h-[30px] px-[13px] rounded-[9px] text-[14px] font-normal
                 ${tab === t ? 'bg-[#2C261F] text-[#FCFCFC] font-medium hover:brightness-125' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'}`}>
               {t === '주문내역' ? '주문 내역' : t === '메뉴별매출' ? '메뉴별 주문액' : '거래처별 주문액'}
             </button>
@@ -764,8 +764,8 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 <div className="absolute right-0 top-full mt-[5px] w-[280px] bg-[#FCFCFC] rounded-[11px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] border border-[#E5E5E5] z-30 overflow-hidden">
                   <div className="px-3 py-2.5 border-b border-[#E5E5E5]">
                     <div className="flex items-center justify-between mb-[8px]">
-                      <span className="text-[13px] font-medium text-[#1E1E1E]">거래처 필터</span>
-                      <span className="text-[11px] font-normal text-[#ADADAD]">
+                      <span className="text-[15px] font-medium text-[#1E1E1E]">거래처 필터</span>
+                      <span className="text-[13px] font-normal text-[#ADADAD]">
                         {filterRows.length - excludedAccounts.size}/{filterRows.length}곳
                       </span>
                     </div>
@@ -774,14 +774,14 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                       <button
                         onClick={() => setExcludedAccounts(new Set())}
                         disabled={excludedAccounts.size === 0}
-                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[11px] font-normal transition-colors hover:bg-[#E8E4E2] disabled:opacity-40 disabled:hover:bg-[#F2F2F2]"
+                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[13px] font-normal transition-colors hover:bg-[#E8E4E2] disabled:opacity-40 disabled:hover:bg-[#F2F2F2]"
                       >
                         전체 선택
                       </button>
                       <button
                         onClick={() => setExcludedAccounts(new Set(filterRows.map(a => a.name)))}
                         disabled={excludedAccounts.size === filterRows.length}
-                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[11px] font-normal transition-colors hover:bg-[#E8E4E2] disabled:opacity-40 disabled:hover:bg-[#F2F2F2]"
+                        className="pressable-tab flex-1 h-[28px] rounded-[8px] bg-[#F2F2F2] text-[#787878] text-[13px] font-normal transition-colors hover:bg-[#E8E4E2] disabled:opacity-40 disabled:hover:bg-[#F2F2F2]"
                       >
                         전체 해제
                       </button>
@@ -789,7 +789,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                   </div>
                   <div className="max-h-[420px] overflow-y-auto">
                     {filterRows.length === 0 ? (
-                      <div className="px-4 py-5 text-center text-[12px] font-normal text-[#ADADAD]">이 기간에 주문이 없어요</div>
+                      <div className="px-4 py-5 text-center text-[14px] font-normal text-[#ADADAD]">이 기간에 주문이 없어요</div>
                     ) : filterRows.map(acc => (
                       <label key={acc.name} className="flex items-center gap-2.5 px-3 py-2 hover:bg-[#F2F2F2] cursor-pointer">
                         <input
@@ -805,17 +805,17 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                           }}
                           className="w-4 h-4 flex-shrink-0"
                         />
-                        <span className="flex-1 text-[12px] text-ink truncate">{acc.name}</span>
+                        <span className="flex-1 text-[14px] text-ink truncate">{acc.name}</span>
                         {/* 0건은 '이 기간에 주문이 없다'는 뜻이지 '매출 0원'이 아니다.
                             숫자만 두면 실적이 0 인 거래처로 읽힌다. */}
                         {acc.count === 0 ? (
-                          <span className="flex-shrink-0 text-[11px] font-normal text-[#ADADAD] whitespace-nowrap">
+                          <span className="flex-shrink-0 text-[13px] font-normal text-[#ADADAD] whitespace-nowrap">
                             해당 기간 미주문
                           </span>
                         ) : (
                           <div className="text-right flex-shrink-0">
-                            <div className="text-[11px] font-normal text-[#ADADAD]">{acc.count}건</div>
-                            <div className="text-[11px] font-medium text-[#1E1E1E]">{won(acc.total)}</div>
+                            <div className="text-[13px] font-normal text-[#ADADAD]">{acc.count}건</div>
+                            <div className="text-[13px] font-medium text-[#1E1E1E]">{won(acc.total)}</div>
                           </div>
                         )}
                       </label>
@@ -824,7 +824,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                   <div className="border-t border-[#E5E5E5] px-3 py-2 bg-[#F9F9F9]">
                     <button
                       onClick={() => setShowAccountFilter(false)}
-                      className="w-full h-[32px] rounded-[9px] bg-[#2C261F] text-[#FCFCFC] text-[12px] font-medium hover:opacity-90 transition-opacity"
+                      className="w-full h-[32px] rounded-[9px] bg-[#2C261F] text-[#FCFCFC] text-[14px] font-medium hover:opacity-90 transition-opacity"
                     >
                       닫기
                     </button>
@@ -847,7 +847,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 <button
                   key={p.label}
                   onClick={() => { const [a, b] = p.range(); handleRangeChange(a, b, p.label) }}
-                  className={`pressable-tab h-[30px] px-[11px] rounded-[9px] text-[12px] font-normal ${
+                  className={`pressable-tab h-[30px] px-[11px] rounded-[9px] text-[14px] font-normal ${
                     periodLabel === p.label ? 'bg-[#6A635E] text-[#FCFCFC] font-medium hover:brightness-110' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                   }`}
                 >
@@ -856,7 +856,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               ))}
               <button
                 onClick={() => setPeriodOpen(true)}
-                className={`pressable-tab h-[30px] px-[11px] rounded-[9px] text-[12px] font-normal ${
+                className={`pressable-tab h-[30px] px-[11px] rounded-[9px] text-[14px] font-normal ${
                   periodLabel === '직접 선택' ? 'bg-[#6A635E] text-[#FCFCFC] font-medium hover:brightness-110' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                 }`}
               >
@@ -864,7 +864,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               </button>
 
               {/* 지금 보고 있는 기간을 글자로 — 칩만 보면 "지난 7일"이 며칠부터인지 모른다 */}
-              <span className="text-[11px] font-normal text-[#ADADAD] tabular-nums">
+              <span className="text-[13px] font-normal text-[#ADADAD] tabular-nums">
                 {startDate
                   ? (endDate && endDate !== startDate ? `${startDate} ~ ${endDate}` : startDate)
                   : '기간 미선택'}
@@ -890,7 +890,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder="거래처 · 주문자 · 메뉴 검색"
-                  className="w-[220px] h-[30px] pl-[30px] pr-[10px] rounded-[9px] border border-[#D9D9D9] bg-[#FCFCFC] text-[12px] text-[#1E1E1E] outline-none focus:border-[#6A635E] transition-colors"
+                  className="w-[220px] h-[30px] pl-[30px] pr-[10px] rounded-[9px] border border-[#D9D9D9] bg-[#FCFCFC] text-[14px] text-[#1E1E1E] outline-none focus:border-[#6A635E] transition-colors"
                 />
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="absolute left-[10px] top-1/2 -translate-y-1/2 pointer-events-none">
                   <circle cx="7" cy="7" r="4.5" stroke="#ADADAD" strokeWidth="1.5" />
@@ -933,7 +933,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     last={i === arr.length - 1}
                     onClick={() => { setSelected(order); setDeleteConfirmCode(null) }}
                   >
-                    <span className="w-[124px] text-[13px] text-[#787878] tabular-nums">{formatDate(order.createdAt)}</span>
+                    <span className="w-[124px] text-[15px] text-[#787878] tabular-nums">{formatDate(order.createdAt)}</span>
                     {/* 주문번호는 전화 응대에서 가장 먼저 대조하는 값이라 회색 11px 로 묻어두면 안 된다 */}
                     <span className="w-[88px] text-[15px] font-normal text-[#1E1E1E] tabular-nums truncate">
                       #{order.orderNumber ?? order.code.slice(0, 6)}
@@ -944,7 +944,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                         <span className="text-[#787878] font-normal ml-[5px]">· {order.orderer}</span>
                       </span>
                       {/* 메뉴 요약 — 금액만 읽어 주면 거래처가 납득하지 못한다 */}
-                      <span className="block text-[12px] font-normal text-[#ADADAD] truncate">
+                      <span className="block text-[14px] font-normal text-[#ADADAD] truncate">
                         {itemsSummary(order.items)}
                       </span>
                     </span>
@@ -959,7 +959,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     }`}>
                       {won(order.total)}
                     </span>
-                    <span className={`w-[100px] text-right text-[13px] font-normal tabular-nums ${
+                    <span className={`w-[100px] text-right text-[15px] font-normal tabular-nums ${
                       order.balanceAfter == null ? 'text-[#ADADAD]'
                       : order.balanceAfter < 0 ? 'text-[#3374FF]' : 'text-[#787878]'
                     }`}>
@@ -982,7 +982,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-[#E5E5E5] last:[&>button]:border-b-0">
               {menuSales.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-gray-text text-[12px]">
+                <div className="h-full flex items-center justify-center text-gray-text text-[14px]">
                   해당 기간에 주문액 데이터가 없습니다
                 </div>
               ) : (
@@ -994,9 +994,9 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                       {idx === 0 && <span className="flex-shrink-0">🏆</span>}
                       <span className="truncate">{ms.name}</span>
                     </span>
-                    <span className="text-right text-[13px] text-gray-text">{ms.qty}개</span>
+                    <span className="text-right text-[15px] text-gray-text">{ms.qty}개</span>
                     <span className="text-right font-medium text-[#1E1E1E] tabular-nums">{won(ms.total)}</span>
-                    <span className="text-right text-[13px] text-gray-text">{won(Math.round(ms.total / ms.qty / 10) * 10)}</span>
+                    <span className="text-right text-[15px] text-gray-text">{won(Math.round(ms.total / ms.qty / 10) * 10)}</span>
                   </button>
                 ))
               )}
@@ -1013,7 +1013,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-[#E5E5E5] last:[&>button]:border-b-0">
               {accountSales.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-gray-text text-[12px]">
+                <div className="h-full flex items-center justify-center text-gray-text text-[14px]">
                   해당 기간에 주문액 데이터가 없습니다
                 </div>
               ) : (
@@ -1025,8 +1025,8 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                       {idx === 0 && <span className="flex-shrink-0">🏆</span>}
                       <span className="truncate">{as.name}</span>
                     </span>
-                    <span className="text-right text-[13px] text-gray-text">{as.count}건</span>
-                    <span className="text-right text-[13px] text-gray-text">{as.ordererCount}명</span>
+                    <span className="text-right text-[15px] text-gray-text">{as.count}건</span>
+                    <span className="text-right text-[15px] text-gray-text">{as.ordererCount}명</span>
                     <span className="text-right font-medium text-[#1E1E1E] tabular-nums">{won(as.total)}</span>
                   </button>
                 ))
@@ -1040,7 +1040,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
           fixed + 마우스 좌표라 박스 밖으로 넘칠 수 있어 화면 오른쪽 절반이면 왼쪽으로 편다. */}
       {chartTooltip && (
         <div
-          className="fixed z-50 pointer-events-none bg-[#FCFCFC] border border-[#E5E5E5] rounded-[11px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-3 py-2.5 text-[11px] min-w-[160px] max-w-[260px]"
+          className="fixed z-50 pointer-events-none bg-[#FCFCFC] border border-[#E5E5E5] rounded-[11px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-3 py-2.5 text-[13px] min-w-[160px] max-w-[260px]"
           style={chartTooltip.x > window.innerWidth / 2
             ? { right: window.innerWidth - chartTooltip.x + 12, top: chartTooltip.y - 8 }
             : { left: chartTooltip.x + 12, top: chartTooltip.y - 8 }}
@@ -1102,7 +1102,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 <Row label="거래처"    value={selected.accountName} />
                 <Row label="주문자"    value={selected.orderer} />
                 {selected.phone && (
-                  <div className="flex justify-between items-baseline text-[13px] gap-3">
+                  <div className="flex justify-between items-baseline text-[15px] gap-3">
                     <span className="text-[#787878] flex-shrink-0">연락처</span>
                     <span className="flex items-center text-[#1E1E1E]">
                       {selected.phone}
@@ -1119,7 +1119,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                       {customerNote && <Row label="가게 요청사항" value={customerNote} />}
                       {deliveryAddress && (
                         <>
-                          <div className="flex justify-between items-baseline text-[13px] gap-3">
+                          <div className="flex justify-between items-baseline text-[15px] gap-3">
                             <span className="text-[#787878] flex-shrink-0">배달 주소</span>
                             <span className="flex items-center text-[#1E1E1E] text-right max-w-[60%]">
                               <span className="truncate">{deliveryAddress}</span>
@@ -1127,7 +1127,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                             </span>
                           </div>
                           {deliveryDetail && (
-                            <div className="flex justify-between items-baseline text-[13px] gap-3">
+                            <div className="flex justify-between items-baseline text-[15px] gap-3">
                               <span className="text-[#787878] flex-shrink-0">배달 상세</span>
                               <span className="flex items-center text-[#1E1E1E]">
                                 <span className="truncate">{deliveryDetail}</span>
@@ -1136,7 +1136,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                             </div>
                           )}
                           {deliveryNote && (
-                            <div className="flex justify-between items-baseline text-[13px] gap-3">
+                            <div className="flex justify-between items-baseline text-[15px] gap-3">
                               <span className="text-[#787878] flex-shrink-0">배달 요청사항</span>
                               <span className="flex items-center text-[#1E1E1E] text-right max-w-[60%]">
                                 <span className="truncate">{deliveryNote}</span>
@@ -1153,29 +1153,29 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               </div>
 
               {/* 주문 내용 — 다른 모달의 목록과 같은 테두리 카드(CategoryEditModal 메뉴 목록과 동일) */}
-              <div className="text-[12px] font-medium text-[#2C261F] mb-[7px]">주문 내용</div>
+              <div className="text-[14px] font-medium text-[#2C261F] mb-[7px]">주문 내용</div>
               <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden">
                 {selected.items.map((item, i) => (
                   <div key={i} className={`px-[13px] py-[10px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
-                    <div className="flex justify-between gap-[10px] text-[13px] text-[#1E1E1E]">
+                    <div className="flex justify-between gap-[10px] text-[15px] text-[#1E1E1E]">
                       <span className="min-w-0">{item.name} × {item.qty}</span>
                       <span className="flex-shrink-0 tabular-nums">{won(item.price * item.qty)}</span>
                     </div>
                     {item.options.length > 0 && (
-                      <div className="text-[11px] font-normal text-[#787878] mt-[3px] leading-relaxed">
+                      <div className="text-[13px] font-normal text-[#787878] mt-[3px] leading-relaxed">
                         {item.options.map(o => `· ${o}`).join('  ')}
                       </div>
                     )}
                   </div>
                 ))}
                 <div className="flex justify-between px-[13px] py-[10px] border-t border-[#E8E4E2] bg-[#F9F9F9]">
-                  <span className="text-[13px] font-medium text-[#2C261F]">합계</span>
+                  <span className="text-[15px] font-medium text-[#2C261F]">합계</span>
                   <span className="text-[14px] font-medium text-[#1E1E1E] tabular-nums">{won(selected.total)}</span>
                 </div>
               </div>
 
               {reprintMsg && (
-                <div className={`mt-[12px] text-[12px] font-normal ${reprintMsg.ok ? 'text-[#2C261F]' : 'text-danger'}`}>
+                <div className={`mt-[12px] text-[14px] font-normal ${reprintMsg.ok ? 'text-[#2C261F]' : 'text-danger'}`}>
                   {reprintMsg.text}
                 </div>
               )}
@@ -1184,11 +1184,11 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
             {/* 푸터 — 약한 행동(삭제) 왼쪽, 주 행동(재출력) 오른쪽 */}
             <div className="flex-shrink-0 modal-footer px-[28px] py-[14px] flex items-center justify-between">
               {selected.isDeleted ? (
-                <span className="text-[12px] text-[#ADADAD]">삭제된 주문이에요</span>
+                <span className="text-[14px] text-[#ADADAD]">삭제된 주문이에요</span>
               ) : (
                 <button
                   onClick={() => setDeleteConfirmCode(selected.code)}
-                  className="h-[30px] px-[11px] rounded-[8px] text-[#C92A2A] text-[12px] hover:bg-[#FFEFEF] transition-colors"
+                  className="h-[30px] px-[11px] rounded-[8px] text-[#C92A2A] text-[14px] hover:bg-[#FFEFEF] transition-colors"
                 >
                   삭제
                 </button>
@@ -1196,14 +1196,14 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
               <div className="flex items-center gap-[9px]">
                 <button
                   onClick={() => setSelected(null)}
-                  className="h-[38px] px-[16px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[13px] font-medium hover:bg-[#E8E4E2] transition-colors"
+                  className="h-[38px] px-[16px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[15px] font-medium hover:bg-[#E8E4E2] transition-colors"
                 >
                   닫기
                 </button>
                 {selected.isDeleted ? (
                   <button
                     onClick={() => handleRestoreOrder(selected.code)}
-                    className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 transition-opacity"
+                    className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 transition-opacity"
                   >
                     주문 복구
                   </button>
@@ -1220,7 +1220,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                       )
                       setTimeout(() => setReprintMsg(null), 3000)
                     }}
-                    className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[13px] font-medium hover:opacity-90 transition-opacity"
+                    className="h-[38px] px-[20px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 transition-opacity"
                   >
                     영수증 재출력
                   </button>
@@ -1257,27 +1257,27 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="text-[15px] font-semibold text-[#1E1E1E]">{selectedAccountName}</div>
-                    <div className="text-[11px] text-gray-text mt-0.5">총 {as.count}건 · {won(as.total)}</div>
+                    <div className="text-[13px] text-gray-text mt-0.5">총 {as.count}건 · {won(as.total)}</div>
                   </div>
                   <button onClick={() => setSelectedAccountName(null)}
                     className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
                 </div>
                 <div className="border-t border-gray-border mb-3" />
-                <div className="text-[12px] font-medium text-[#2C261F] mb-2.5">주문 내역 ({relatedOrders.length}건)</div>
+                <div className="text-[14px] font-medium text-[#2C261F] mb-2.5">주문 내역 ({relatedOrders.length}건)</div>
                 <div className="space-y-2.5">
                   {relatedOrders.map(order => (
                     <div key={order.code} className="bg-[#F2F2F2] rounded-[10px] p-3">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-text">{formatDate(order.createdAt)}</span>
+                        <span className="text-[13px] text-gray-text">{formatDate(order.createdAt)}</span>
                         <div className="flex items-center gap-1.5">
                           <Badge label={order.method} color={METHOD_COLOR[order.method] ?? '#ADADAD'} />
-                          <span className="text-[11px] font-medium text-[#1E1E1E]">{won(order.total)}</span>
+                          <span className="text-[13px] font-medium text-[#1E1E1E]">{won(order.total)}</span>
                         </div>
                       </div>
-                      <div className="text-[11px] text-gray-text mb-1">{order.orderer}</div>
+                      <div className="text-[13px] text-gray-text mb-1">{order.orderer}</div>
                       <div className="space-y-0.5">
                         {order.items.map((item, i) => (
-                          <div key={i} className="flex justify-between text-[11px]">
+                          <div key={i} className="flex justify-between text-[13px]">
                             <span className="text-ink">{item.name} × {item.qty}</span>
                             <span className="text-gray-text">{won(item.price * item.qty)}</span>
                           </div>
@@ -1309,14 +1309,14 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="text-[15px] font-semibold text-[#1E1E1E]">{selectedMenuName}</div>
-                    <div className="text-[11px] text-gray-text mt-0.5">총 {ms.qty}개 · {won(ms.total)}</div>
+                    <div className="text-[13px] text-gray-text mt-0.5">총 {ms.qty}개 · {won(ms.total)}</div>
                   </div>
                   <button onClick={() => setSelectedMenuName(null)}
                     className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-bg text-gray-text hover:text-ink transition-colors">✕</button>
                 </div>
               </div>
               <div className="px-6 pb-6 pt-4 flex-1 min-h-0 overflow-y-auto">
-                <div className="text-[12px] font-medium text-[#2C261F] mb-2.5">주문 내역 ({relatedOrders.length}건)</div>
+                <div className="text-[14px] font-medium text-[#2C261F] mb-2.5">주문 내역 ({relatedOrders.length}건)</div>
                 <div className="space-y-2.5">
                   {relatedOrders.map(order => {
                     const thisItem  = order.items.find(i => i.name === selectedMenuName)!
@@ -1324,28 +1324,28 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     return (
                       <div key={order.code} className="bg-[#F2F2F2] rounded-[10px] p-3">
                         <div className="flex items-center justify-between mb-1.5">
-                          <div className="text-[11px] font-normal text-[#787878]">{formatDate(order.createdAt)}</div>
+                          <div className="text-[13px] font-normal text-[#787878]">{formatDate(order.createdAt)}</div>
                           <Badge label={order.method} color={METHOD_COLOR[order.method] ?? '#ADADAD'} />
                         </div>
-                        <div className="text-[11px] font-semibold text-ink mb-1.5">
+                        <div className="text-[13px] font-semibold text-ink mb-1.5">
                           {order.accountName}<span className="text-gray-text font-normal"> · {order.orderer}</span>
                         </div>
                         <div className="bg-[#FCFCFC] rounded-[9px] px-3 py-1.5 mb-1.5 border border-[#E5E5E5]">
-                          <div className="flex justify-between text-[11px] font-medium text-[#1E1E1E]">
+                          <div className="flex justify-between text-[13px] font-medium text-[#1E1E1E]">
                             <span>{selectedMenuName} × {thisItem.qty}</span>
                             <span>{won(thisItem.price * thisItem.qty)}</span>
                           </div>
                           {thisItem.options.length > 0 && (
-                            <div className="text-[11px] text-gray-text mt-0.5">{thisItem.options.map(o => `▶ ${o}`).join('  ')}</div>
+                            <div className="text-[13px] text-gray-text mt-0.5">{thisItem.options.map(o => `▶ ${o}`).join('  ')}</div>
                           )}
                         </div>
                         {otherItems.map((item, i) => (
-                          <div key={i} className="flex justify-between text-[11px] text-gray-text px-1 py-0.5">
+                          <div key={i} className="flex justify-between text-[13px] text-gray-text px-1 py-0.5">
                             <span>{item.name} × {item.qty}</span>
                             <span>{won(item.price * item.qty)}</span>
                           </div>
                         ))}
-                        <div className="flex justify-between text-[11px] font-medium text-[#1E1E1E] mt-1.5 pt-1.5 border-t border-[#E5E5E5]">
+                        <div className="flex justify-between text-[13px] font-medium text-[#1E1E1E] mt-1.5 pt-1.5 border-t border-[#E5E5E5]">
                           <span>주문 합계</span><span>{won(order.total)}</span>
                         </div>
                       </div>
