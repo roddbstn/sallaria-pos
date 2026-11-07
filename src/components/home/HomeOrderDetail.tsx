@@ -171,20 +171,28 @@ export default function HomeOrderDetail({
               />
             </div>
           )}
-          {/* 배달 주소는 **복사**가 된다. 기사에게 넘기거나 배달앱에 붙여 넣을 때
-              눈으로 옮겨 적으면 숫자 하나가 틀어진다. 상세주소까지 한 번에 복사된다 —
-              따로 두면 두 번 눌러야 하고, 둘을 합쳐야 비로소 주소가 된다.
+          {/* 배달 주소는 **복사**가 된다 — 눈으로 옮겨 적으면 숫자 하나가 틀어진다.
+              도로명과 상세주소를 **줄과 버튼까지 나눠** 둔다. 붙여 넣는 곳이
+              보통 둘로 갈려 있어서다(배달앱·내비는 도로명만 받고 상세주소는
+              따로 적는 칸이 있다). 한 덩어리로 복사하면 거기서 사람이 손으로
+              잘라내야 한다.
               (주문 팝업의 배달 주소도 같은 버튼을 쓴다) */}
           {isDelivery && note.deliveryAddress && (
-            <div className="flex items-start gap-[2px] mt-[6px]">
-              <div className="text-[14px] font-normal text-[#414141] leading-relaxed min-w-0">
-                {note.deliveryAddress}
-                {note.deliveryDetail && <span className="text-[#787878]"> {note.deliveryDetail}</span>}
+            <div className="mt-[6px] flex flex-col gap-[2px]">
+              <div className="flex items-start gap-[2px]">
+                <span className="text-[14px] font-normal text-[#414141] leading-relaxed min-w-0">
+                  {note.deliveryAddress}
+                </span>
+                <CopyButton variant="black" text={note.deliveryAddress} />
               </div>
-              <CopyButton
-                variant="black"
-                text={[note.deliveryAddress, note.deliveryDetail].filter(Boolean).join(' ')}
-              />
+              {note.deliveryDetail && (
+                <div className="flex items-start gap-[2px]">
+                  <span className="text-[14px] font-normal text-[#787878] leading-relaxed min-w-0">
+                    {note.deliveryDetail}
+                  </span>
+                  <CopyButton variant="black" text={note.deliveryDetail} />
+                </div>
+              )}
             </div>
           )}
         </div>
