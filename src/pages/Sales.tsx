@@ -6,13 +6,12 @@ import { won } from '../lib/ipc'
 import { useStore } from '../lib/store-context'
 import { StatusTag } from '../components/ui/DataTable'
 import MonthlyBalanceModal from '../components/customer/MonthlyBalanceModal'
-import { useHeaderSlot } from '../lib/header-slot'
 import { PLAN_LIMITS } from '../lib/plans'
 import type { PlanTier } from '../lib/plans'
 import InfoTip from '../components/ui/InfoTip'
 import { signColor } from '../lib/sign-color'
 
-/** 날짜 상세 패널 폭 — 헤더의 거래처 필터가 이만큼 비켜서야 안 겹친다 */
+/** 날짜 상세 패널 폭 */
 const DAY_PANEL_W = 260
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
@@ -735,7 +734,6 @@ export default function Sales() {
   const [balanceModalOpen,   setBalanceModalOpen]   = useState(false)
   const filterDropdownRef = useRef<HTMLDivElement>(null)
 
-  const { setHeaderRight } = useHeaderSlot()
 
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
   const fetchIdRef     = useRef(0)
@@ -964,22 +962,17 @@ export default function Sales() {
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
 
-  // 거래처 표시 필터 → 공유 헤더 슬롯에 주입
-  useEffect(() => {
-    if (accounts.length === 0) {
-      setHeaderRight(null)
-      return
-    }
-    setHeaderRight(
-      // 날짜 패널(260px)이 열리면 그만큼 **왼쪽으로 비켜선다.**
-      // 패널은 본문 안에 있고 이 버튼은 그 위 헤더에 있어서, 가만 두면 버튼이
-      // 패널 머리 위에 겹쳐 앉는다 — 패널의 날짜·합계를 가리고, 버튼이
-      // 패널에 속한 것처럼 읽힌다.
-      <div
-        className="relative flex-shrink-0 transition-[margin] duration-200"
-        style={{ marginRight: selectedDay !== null ? DAY_PANEL_W + 12 : 0 }}
-        ref={filterDropdownRef}
-      >
+  /**
+   * 거래처 표시 필터.
+   *
+   * 공유 헤더 슬롯(setHeaderRight)에 꽂아 두던 것을 **화면 안으로 들여왔다.**
+   * 헤더는 본문 위에 따로 떠 있는 줄이라, 본문 오른쪽에 날짜 패널이 열리면
+   * 버튼이 그 머리 위에 겹쳐 앉았다. 자리를 비키게 여백을 주는 식으로
+   * 맞춰 봤지만, 애초에 **이 화면에만 있는 조작**을 공용 헤더에 둔 게 어긋난 것이다.
+   * 월 네비게이터와 같은 줄에 두면 패널이 열리든 말든 본문과 같이 움직인다.
+   */
+  const accountFilterNode = accounts.length === 0 ? null : (
+      <div className="relative flex-shrink-0" ref={filterDropdownRef}>
         <button
           onClick={() => setFilterDropdownOpen(v => !v)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[16px] font-semibold transition-colors ${
@@ -1061,9 +1054,8 @@ export default function Sales() {
           </div>
         )}
       </div>
-    )
-    return () => setHeaderRight(null)
-  }, [accounts, excludedAccounts, filterDropdownOpen, selectedDay])
+  )
+
 
   // 제외된 거래처가 상세 패널에 열려 있으면 자동 닫기
   useEffect(() => {
@@ -1294,7 +1286,7 @@ export default function Sales() {
           {/* ── 좌측 메인 ── */}
           <div className="flex-1 overflow-y-auto px-8 py-5 space-y-4 min-w-0">
 
-            {/* ── 월 네비게이터 (카드 바로 위, 좌측정렬) ── */}
+            {/* ── 월 네비게이터 + 거래처 필터 (카드 바로 위) ── */}
             <div className="flex items-center gap-2">
               <button
                 onClick={prevMonth}
@@ -1306,6 +1298,8 @@ export default function Sales() {
                 disabled={isCurrentMonth}
                 className="w-[28px] h-[28px] rounded-[8px] bg-[#FCFCFC] hover:bg-[#F2F2F2] border border-[#D9D9D9] flex items-center justify-center text-[17px] text-[#787878] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >›</button>
+              {/* 필터는 이 줄 오른쪽 끝 — 본문 안이라 날짜 패널이 열려도 안 겹친다 */}
+              <div className="ml-auto">{accountFilterNode}</div>
             </div>
 
             {/* ── 요약 카드 ── */}
