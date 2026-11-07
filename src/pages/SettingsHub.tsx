@@ -437,11 +437,15 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
         {/* 개수는 아래 목록과 **같은 기준**으로 센다. 맥 기본 포트(debug-console 등)는
             프린터가 아니라서 목록에서 빼는데, 전엔 개수에는 포함돼 개발 중에 늘
             "찾은 프린터 3개"로 보였다. 뺀 게 있으면 뺐다고 적는다. */}
+        {/* 이 숫자는 **시리얼(COM) 포트만** 센다. USB 로 꽂아 OS 가 프린터로 등록한
+            기기는 아래 따로 뜬다. 전엔 그냥 '찾은 프린터 0개' 라고만 적어서,
+            USB 프린터가 멀쩡히 연결돼 있는데도 하나도 없는 것처럼 읽혔다. */}
         <span className="text-[14px] font-normal text-[#6A635E]">
           {scanned
             ? (() => {
-                const sys = ports.filter(x => isSystemPort(x.path)).length
-                return `찾은 프린터 ${ports.length - sys}개${sys > 0 ? ` (시스템 포트 ${sys}개 제외)` : ''}`
+                const sys  = ports.filter(x => isSystemPort(x.path)).length
+                const real = ports.length - sys
+                return `시리얼(COM) 연결 ${real}개${sys > 0 ? ` (시스템 포트 ${sys}개 제외)` : ''}`
               })()
             : <Working label="프린터를 찾는 중" />}
         </span>
@@ -453,9 +457,21 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
           <div className="bg-[#FCFCFC] px-[20px] py-[26px]">
             {/* 바탕 없이 회색 글자만 두니 "빈 영역"처럼 보여서 안내가 눈에 안 들어왔다.
                 한 단계 어두운 바탕을 깔아 '지금 이게 상태다'로 읽히게 한다. */}
-            <div className="rounded-[10px] bg-[#E8E4E2] px-[16px] py-[18px] text-center text-[15px] font-normal text-[#6A635E]">
-              연결된 프린터를 못 찾았어요
-            </div>
+            {/* ⚠️ 여기서 '못 찾았어요' 는 **시리얼 포트** 얘기다.
+                USB 프린터가 아래에 떠 있는데 이 문장이 그 위에 있으면 서로
+                반대되는 말을 하게 된다 — 실제로 "등록된 프린터 1개" 바로 위에
+                "연결된 프린터를 못 찾았어요"가 떠 있었다.
+                그래서 USB 쪽이 하나라도 있으면 이 자리는 **안내**로 바꾼다. */}
+            {osPrinters.length > 0 ? (
+              <div className="rounded-[10px] bg-[#F2F2F2] px-[16px] py-[14px] text-[15px] font-normal text-[#6A635E] leading-relaxed">
+                시리얼(COM) 선으로 연결된 프린터는 없어요.<br />
+                USB 로 꽂은 프린터는 아래에서 고르면 돼요.
+              </div>
+            ) : (
+              <div className="rounded-[10px] bg-[#E8E4E2] px-[16px] py-[18px] text-center text-[15px] font-normal text-[#6A635E]">
+                연결된 프린터를 못 찾았어요
+              </div>
+            )}
 
             {/* USB 로 꽂아 OS 가 '프린터'로 등록한 경우 — **고를 수 있게** 보여준다.
                 영수증 프린터를 USB 로 꽂으면 시리얼 포트가 아니라 '프린터'로 등록되는
@@ -469,8 +485,14 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                     꺼진 기기가 몇 개인지는 여기서 빨갛게 세지 않는다. 바로 아래
                     목록의 각 줄에 '연결 안 됨' 배지로 이미 적혀 있고, 머리줄에서까지
                     빨간 글씨로 말하면 같은 말을 두 번 하면서 경고처럼만 읽힌다. */}
-                <div className="text-[14px] font-medium text-[#6A635E] mb-[8px]">
-                  등록된 프린터 {osPrinters.length}개
+                <div className="text-[15px] font-medium text-[#2C261F] mb-[2px]">
+                  USB 로 연결된 프린터 {osPrinters.length}개
+                </div>
+                {/* 왜 '연결된' 이 아니라 설명이 필요한가: USB 프린터를 뽑아도
+                    CUPS·스풀러의 큐는 남아서 목록에 계속 보인다. 꺼진 기기는
+                    아래 각 줄에 '연결 안 됨' 배지로 적힌다. */}
+                <div className="text-[13px] font-normal text-[#787878] mb-[8px]">
+                  영수증을 뽑을 프린터를 고르세요
                 </div>
                 <div className="rounded-[10px] border border-[#E8E4E2] overflow-hidden">
                   {osPrinters.map((op, i) => {
