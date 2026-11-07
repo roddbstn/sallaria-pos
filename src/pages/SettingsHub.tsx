@@ -755,6 +755,17 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
         <Row label="금액 글자 크기">
           <SegButtons value={amountSize} options={SIZE_OPTS} onChange={v => patch({ amountSize: v })} />
         </Row>
+        {/* 끄면 가격 칸이 통째로 빠지고 그만큼 메뉴명이 넓어진다 — 메뉴명을 '크게'로
+            두면 '수비드 통삼겹 단백질 도시락' 같은 이름이 쉽게 줄바꿈되는데,
+            58mm 종이에서 가격 칸이 가져가던 폭이 꽤 크다.
+            주방 주문서에만 적용한다. 고객 영수증에서 항목별 금액을 빼면
+            "얼마짜리를 샀는지"가 사라진다. */}
+        <Row
+          label="메뉴 이름 오른쪽 가격 표시"
+          hint="끄면 가격 칸이 빠지고 메뉴명이 넓어져요 (주방 주문서에만 적용)"
+        >
+          <Toggle on={cfg.showItemPrice} onChange={v => patch({ showItemPrice: v })} />
+        </Row>
         {/* input 이 아니라 textarea 다 — 전에는 한 줄짜리 input 이라
             **줄바꿈을 아예 입력할 수 없었다.** 인쇄 쪽(escpos)은 처음부터
             \n 으로 쪼개 가운데정렬로 찍고 있었는데 입력에서 막혀 있었다.

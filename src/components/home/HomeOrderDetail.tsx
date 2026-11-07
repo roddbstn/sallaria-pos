@@ -179,14 +179,14 @@ export default function HomeOrderDetail({
               (주문 팝업의 배달 주소도 같은 버튼을 쓴다) */}
           {isDelivery && note.deliveryAddress && (
             <div className="mt-[6px] flex flex-col gap-[2px]">
-              <div className="flex items-start gap-[2px]">
+              <div className="flex items-center gap-[2px]">
                 <span className="text-[14px] font-normal text-[#414141] leading-relaxed min-w-0">
                   {note.deliveryAddress}
                 </span>
                 <CopyButton variant="black" text={note.deliveryAddress} />
               </div>
               {note.deliveryDetail && (
-                <div className="flex items-start gap-[2px]">
+                <div className="flex items-center gap-[2px]">
                   <span className="text-[14px] font-normal text-[#787878] leading-relaxed min-w-0">
                     {note.deliveryDetail}
                   </span>

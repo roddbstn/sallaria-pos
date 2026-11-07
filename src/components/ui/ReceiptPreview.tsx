@@ -18,20 +18,43 @@ export interface ReceiptPreviewConfig {
   menuSize:    TextSize
   optionSize:  TextSize
   amountSize:  TextSize
+  /**
+   * 메뉴 이름 오른쪽에 가격을 찍을지.
+   *
+   * 끄면 가격 칸이 통째로 빠지고 **그만큼 메뉴명이 넓어진다.** 메뉴명을 '크게'로
+   * 두면 '수비드 통삼겹 단백질 도시락' 같은 이름이 쉽게 줄바꿈되는데,
+   * 58mm 종이에서 가격 칸이 가져가던 폭이 꽤 크다. 금액은 어차피 아래
+   * '메뉴 소계 / 합계'에 다시 나오므로 주방용으로는 없어도 된다.
+   */
+  showItemPrice: boolean
   footerText:  string
   showBalance: boolean
 }
 
 export const DEFAULT_RECEIPT_CONFIG: ReceiptPreviewConfig = {
   menuSize: 'normal', optionSize: 'normal', amountSize: 'normal',
+  showItemPrice: true,
   // 빈 값이면 영수증 아래가 휑하게 끝난다. 매장이 고쳐 쓰라고 초안을 깔아둔다
   // (설정 > 영수증·증빙에서 지우거나 바꿀 수 있다).
   footerText: '감사합니다', showBalance: true,
 }
 
-// 58mm 용지에 ESC/POS 기본 폰트로 찍히는 크기를 화면 px로 옮긴 값
-// 실제 인쇄는 높이 배수다(보통 2배, 크게 3배). 미리보기도 그 비율로 둔다 — 12 : 18
-const PX: Record<TextSize, number> = { normal: 12, large: 18 }
+// 58mm 용지에 ESC/POS 기본 폰트로 찍히는 크기를 화면 px로 옮긴 값.
+// 실제 인쇄는 높이 배수다(보통 2배, 크게 3배). 미리보기도 그 비율로 둔다.
+//
+// 2026-11-07 — '보통'을 12 → 14 로 올렸다. 실제로 뽑아 보니 메뉴명이 주방에서
+// 멀리서 안 읽혔다. 영수증은 손에 들고 보는 종이가 아니라 **조리대에 붙여 놓고
+// 흘깃 보는 종이**라, 기본이 작으면 점주가 매번 '크게'로 바꿔야 한다.
+const PX: Record<TextSize, number> = { normal: 14, large: 18 }
+
+/**
+ * 예상 도착 시간 — 메뉴 바로 위에 **가장 크게** 들어간다.
+ *
+ * 영수증에서 주방이 제일 먼저 봐야 하는 건 "몇 시까지"다. 주문번호·주문자는
+ * 나중에 찾을 때 쓰는 값이고, 조리 순서를 정하는 건 이 한 줄이다.
+ * 그래서 메뉴명보다 한 단계 더 크게 둔다.
+ */
+const ETA_PX = 20
 
 const TABS: { kind: ReceiptKind; label: string }[] = [
   { kind: 'kitchen',  label: '주방 주문서' },
@@ -66,6 +89,9 @@ const SAMPLE = {
   address:    '대구 북구 옥산로 65',
   addressSub: '별관 3층',
   storeNote:  '수저·포크 O',
+  // 실제로는 승인 시각 + 소요시간으로 계산한다(lib/pickup-time.ts 의 readyClock 과 같은 기준)
+  etaClock:   '오후 5:20',
+  etaRelative: '15분 뒤',
   deliveryNote: '문 앞에 두고 노크해주세요.',
   items: [
     { name: '닭가슴살 단백질 도시락', qty: 1, amount: '8,400원',
@@ -94,6 +120,7 @@ function KitchenReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
   const menuPx = PX[cfg.menuSize]
   const optPx  = PX[cfg.optionSize]
   const amtPx  = PX[cfg.amountSize]
+  const showPrice = cfg.showItemPrice
   return (
     <Paper>
       <div className="text-center font-bold" style={{ fontSize: 12 }}>[주방용]</div>
@@ -113,21 +140,44 @@ function KitchenReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <div style={{ fontSize: 11 }}>배달요청 : {SAMPLE.deliveryNote}</div>
       <Line />
 
-      {/* 메뉴 표 — 실제는 grid-template-columns: 1fr auto auto */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', rowGap: 2, columnGap: 10 }}>
+      {/* 예상 도착 시간 — 메뉴 바로 위, 이 종이에서 가장 큰 글자.
+          주방이 조리 순서를 정하는 건 이 한 줄이다(주문번호·주문자는 나중에 찾을 때 쓴다).
+          '(15분 뒤)' 를 같이 적는 이유: 시각만 보면 지금 몇 시인지 머리로 빼야 한다. */}
+      <div className="font-bold" style={{ fontSize: ETA_PX, lineHeight: 1.25 }}>
+        예상도착시간
+      </div>
+      <div className="font-bold" style={{ fontSize: ETA_PX, lineHeight: 1.25 }}>
+        {SAMPLE.etaClock} <span style={{ fontSize: Math.round(ETA_PX * 0.8) }}>({SAMPLE.etaRelative})</span>
+      </div>
+      <Line />
+
+      {/* 메뉴 표 — 실제는 grid-template-columns: 1fr auto auto.
+          가격을 끄면 칸이 통째로 빠져 메뉴명이 그만큼 넓어진다(줄바꿈 방지).
+          이때 수량은 오른쪽 끝으로 간다. */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: showPrice ? '1fr auto auto' : '1fr auto',
+        rowGap: 2, columnGap: 10,
+      }}>
         <span className="font-bold" style={{ fontSize: menuPx }}>메뉴명</span>
         <span className="font-bold text-right" style={{ fontSize: menuPx }}>수량</span>
-        <span className="font-bold text-right" style={{ fontSize: menuPx }}>가격</span>
+        {showPrice && <span className="font-bold text-right" style={{ fontSize: menuPx }}>가격</span>}
         <div style={{ gridColumn: '1/-1' }}><div className="border-t border-dotted border-[#ADADAD] my-[2px]" /></div>
         {SAMPLE.items.map((it, i) => (
           <Fragment key={i}>
             <span className="font-bold" style={{ fontSize: menuPx }}>{it.name}</span>
             <span className="font-bold text-right" style={{ fontSize: menuPx }}>{it.qty}</span>
-            <span className="font-bold text-right whitespace-nowrap" style={{ fontSize: menuPx }}>{it.amount}</span>
+            {showPrice && (
+              <span className="font-bold text-right whitespace-nowrap" style={{ fontSize: menuPx }}>{it.amount}</span>
+            )}
             {it.opts.map((o, oi) => (
               <Fragment key={oi}>
-                <div style={{ gridColumn: '1/3', paddingLeft: 8, fontSize: optPx, color: '#333' }}>&gt; {o.t}</div>
-                <div className="text-right whitespace-nowrap" style={{ fontSize: optPx }}>{o.plus ?? ''}</div>
+                <div style={{ gridColumn: showPrice ? '1/3' : '1/-1', paddingLeft: 8, fontSize: optPx, color: '#333' }}>
+                  &gt; {o.t}{!showPrice && o.plus ? ` ${o.plus}` : ''}
+                </div>
+                {showPrice && (
+                  <div className="text-right whitespace-nowrap" style={{ fontSize: optPx }}>{o.plus ?? ''}</div>
+                )}
               </Fragment>
             ))}
           </Fragment>
@@ -187,6 +237,19 @@ function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <div style={{ fontSize: 11 }}>배달요청 : {SAMPLE.deliveryNote}</div>
       <Line />
 
+      {/* 예상 도착 시간 — 고객용에도 넣는다. 손님이 이 종이에서 가장 궁금한 건
+          "언제 오면 되나"다. 가격은 아래 합계에 있고, 번호는 부를 때 쓴다. */}
+      <div className="font-bold" style={{ fontSize: ETA_PX, lineHeight: 1.25 }}>
+        예상도착시간
+      </div>
+      <div className="font-bold" style={{ fontSize: ETA_PX, lineHeight: 1.25 }}>
+        {SAMPLE.etaClock} <span style={{ fontSize: Math.round(ETA_PX * 0.8) }}>({SAMPLE.etaRelative})</span>
+      </div>
+      <Line />
+
+      {/* 고객용은 **가격을 끄지 않는다.** 영수증에서 항목별 금액이 빠지면
+          "얼마짜리를 샀는지"가 사라진다. showItemPrice 는 주방 주문서 전용이다
+          (거기선 금액이 조리에 아무 쓸모가 없고, 그 칸이 메뉴명 줄바꿈을 만든다). */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', rowGap: 2, columnGap: 10 }}>
         <span className="font-bold" style={{ fontSize: menuPx }}>메뉴명</span>
         <span className="font-bold text-right" style={{ fontSize: menuPx }}>수량</span>
