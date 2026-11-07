@@ -790,10 +790,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
             58mm 종이에서 가격 칸이 가져가던 폭이 꽤 크다.
             주방 주문서에만 적용한다. 고객 영수증에서 항목별 금액을 빼면
             "얼마짜리를 샀는지"가 사라진다. */}
-        <Row
-          label="메뉴 이름 우측 가격 표시"
-          hint="끄면 가격 칸이 빠지고 메뉴명이 넓어져요"
-        >
+        <Row label="메뉴 이름 우측 가격 표시">
           <Toggle on={cfg.showItemPrice} onChange={v => patch({ showItemPrice: v })} />
         </Row>
         {/* input 이 아니라 textarea 다 — 전에는 한 줄짜리 input 이라
@@ -801,7 +798,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
             \n 으로 쪼개 가운데정렬로 찍고 있었는데 입력에서 막혀 있었다.
             20자는 줄바꿈을 뺀 글자 수로 센다 — 줄을 나눴다고 쓸 수 있는 글자가
             줄어들면 "두 줄로 쓰려니 글자가 모자라다"가 된다. */}
-        <Row label="하단 문구" hint="줄바꿈하면 영수증에도 그대로 줄이 나뉘고, 가운데로 찍혀요">
+        <Row label="하단 문구">
           <div className="flex flex-col items-end gap-[4px]">
             <textarea
               value={footer}

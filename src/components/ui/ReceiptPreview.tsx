@@ -108,6 +108,27 @@ const SAMPLE = {
   balanceAfter:  '686,900원',
 }
 
+/**
+ * '라벨 : 값' 한 줄.
+ *
+ * 전엔 라벨 뒤에 &nbsp; 를 손으로 채워 콜론을 맞췄다. 그런데 이 미리보기는
+ * 한글 고정폭 글꼴(D2Coding)이라 **한글 한 글자와 nbsp 한 개의 폭이 다르다** —
+ * 한글은 nbsp 두 개쯤 된다. 그래서 '주문자' 처럼 짧은 라벨에 nbsp 를 많이 넣으면
+ * 콜론이 맞기는커녕 그 줄만 유독 벌어진다. 실제로 '주문자' 뒤가 그랬다.
+ *
+ * 폭을 글자 수가 아니라 **길이(em)** 로 잡으면 글꼴이 뭐든 한 줄로 선다.
+ * 가장 긴 라벨이 '선결제계정'(5자)이라 5em 이면 충분하다.
+ */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, display: 'flex' }}>
+      <span style={{ width: '5em', flexShrink: 0 }}>{label}</span>
+      <span style={{ flexShrink: 0, paddingRight: '0.4em' }}>:</span>
+      <span style={{ minWidth: 0 }}>{children}</span>
+    </div>
+  )
+}
+
 /** 점선 구분선 — 실제 영수증의 border-top:1px dashed */
 function Row({ label, value, bold = false, size = 11 }: { label: string; value: string; bold?: boolean; size?: number }) {
   return (
@@ -128,18 +149,18 @@ function KitchenReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <div className="text-center font-bold" style={{ fontSize: 12 }}>[주방용]</div>
       <div className="text-center" style={{ fontSize: 11 }}>{SAMPLE.storeName} - 선결제 영수증</div>
       <Line />
-      <div style={{ fontSize: 11 }}>주문번호 : <b>{SAMPLE.orderNumber}</b></div>
-      <div style={{ fontSize: 11 }}>주문일시 : {SAMPLE.orderedAt}</div>
+      <Field label="주문번호"><b>{SAMPLE.orderNumber}</b></Field>
+      <Field label="주문일시">{SAMPLE.orderedAt}</Field>
       <Line />
-      <div style={{ fontSize: 11 }}>이용방법 : <b>{SAMPLE.method}</b></div>
-      <div style={{ fontSize: 11 }}>주문자&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : {SAMPLE.orderer}</div>
-      <div style={{ fontSize: 11 }}>전화번호&nbsp;&nbsp; : {SAMPLE.phone}</div>
-      <div style={{ fontSize: 11 }}>선결제계정 : {SAMPLE.account}</div>
+      <Field label="이용방법"><b>{SAMPLE.method}</b></Field>
+      <Field label="주문자">{SAMPLE.orderer}</Field>
+      <Field label="전화번호">{SAMPLE.phone}</Field>
+      <Field label="선결제계정">{SAMPLE.account}</Field>
       <Line />
-      <div style={{ fontSize: 11 }}>배달주소 : {SAMPLE.address}</div>
-      <div style={{ fontSize: 11 }}>배달상세 : {SAMPLE.addressSub}</div>
-      <div style={{ fontSize: 11 }}>가게요청 : {SAMPLE.storeNote}</div>
-      <div style={{ fontSize: 11 }}>배달요청 : {SAMPLE.deliveryNote}</div>
+      <Field label="배달주소">{SAMPLE.address}</Field>
+      <Field label="배달상세">{SAMPLE.addressSub}</Field>
+      <Field label="가게요청">{SAMPLE.storeNote}</Field>
+      <Field label="배달요청">{SAMPLE.deliveryNote}</Field>
       <Line />
 
       {/* 예상 도착 시간 — 메뉴 바로 위, 이 종이에서 가장 큰 글자.
@@ -226,20 +247,20 @@ function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <div className="text-center font-bold" style={{ fontSize: 12 }}>[고객용]</div>
       <div className="text-center" style={{ fontSize: 11 }}>{SAMPLE.storeName} - 선결제 영수증</div>
       <Line />
-      <div style={{ fontSize: 11 }}>주문번호 : <b>{SAMPLE.orderNumber}</b></div>
-      <div style={{ fontSize: 11 }}>주문일시 : {SAMPLE.orderedAt}</div>
+      <Field label="주문번호"><b>{SAMPLE.orderNumber}</b></Field>
+      <Field label="주문일시">{SAMPLE.orderedAt}</Field>
       <Line />
-      <div style={{ fontSize: 11 }}>이용방법 : <b>{SAMPLE.method}</b></div>
+      <Field label="이용방법"><b>{SAMPLE.method}</b></Field>
       {/* 전화번호가 선결제 계정보다 **위**다 — 주방 주문서와 같은 순서.
           둘이 다르면 같은 주문의 두 장을 겹쳐 볼 때 눈이 한 번 더 움직인다. */}
-      <div style={{ fontSize: 11 }}>주문자&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : {SAMPLE.orderer}</div>
-      <div style={{ fontSize: 11 }}>전화번호&nbsp;&nbsp; : {SAMPLE.phone}</div>
-      <div style={{ fontSize: 11 }}>선결제계정 : {SAMPLE.account}</div>
+      <Field label="주문자">{SAMPLE.orderer}</Field>
+      <Field label="전화번호">{SAMPLE.phone}</Field>
+      <Field label="선결제계정">{SAMPLE.account}</Field>
       <Line />
       {/* 배달이면 주소·배달요청까지, 아니면 가게요청만 — escpos 와 같은 분기 */}
-      <div style={{ fontSize: 11 }}>배달주소 : {SAMPLE.address}</div>
-      <div style={{ fontSize: 11 }}>가게요청 : {SAMPLE.storeNote}</div>
-      <div style={{ fontSize: 11 }}>배달요청 : {SAMPLE.deliveryNote}</div>
+      <Field label="배달주소">{SAMPLE.address}</Field>
+      <Field label="가게요청">{SAMPLE.storeNote}</Field>
+      <Field label="배달요청">{SAMPLE.deliveryNote}</Field>
       <Line />
 
       {/* 예상 도착 시간 — 고객용에도 넣는다. 손님이 이 종이에서 가장 궁금한 건
