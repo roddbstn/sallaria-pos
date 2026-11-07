@@ -56,7 +56,7 @@ function SummaryCard({ items }: { items: { label: string; value: string; warn?: 
     <div className="bg-[#F2F2F2] rounded-[16px] px-[30px] py-[22px] flex items-center gap-[46px] mb-[26px]">
       {items.map(it => (
         <div key={it.label}>
-          <div className="text-[15px] font-normal text-[#6A635E] mb-[7px]">{it.label}</div>
+          <div className="text-[17px] font-normal text-[#6A635E] mb-[7px]">{it.label}</div>
           <div className={`text-[20px] font-medium ${it.warn && it.value !== '0' ? 'text-[#C92A2A]' : 'text-[#1E1E1E]'}`}>
             {it.value}
           </div>
@@ -70,7 +70,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   return (
     <button
       onClick={onClick}
-      className={`h-[32px] px-[13px] rounded-[9px] text-[15px] whitespace-nowrap transition-colors ${
+      className={`h-[32px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
         active ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
       }`}
     >
@@ -90,7 +90,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-[32px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#ADADAD] text-[15px] text-[#1E1E1E] outline-none focus:border-[#6A635E]"
+        className="h-[32px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#ADADAD] text-[17px] text-[#1E1E1E] outline-none focus:border-[#6A635E]"
       />
     </div>
   )
@@ -100,7 +100,7 @@ function PrimaryAction({ onClick, children }: { onClick: () => void; children: R
   return (
     <button
       onClick={onClick}
-      className="h-[32px] px-[14px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 transition-opacity"
+      className="h-[32px] px-[14px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[17px] font-medium hover:opacity-90 transition-opacity"
     >
       {children}
     </button>
@@ -112,7 +112,7 @@ function Loading() {
 }
 
 function Empty({ note }: { note: string }) {
-  return <div className="py-[56px] text-center text-[15px] font-normal text-[#ADADAD]">{note}</div>
+  return <div className="py-[56px] text-center text-[17px] font-normal text-[#ADADAD]">{note}</div>
 }
 
 // ── 공유 데이터 훅 ─────────────────────────────────────────────────────────
@@ -443,7 +443,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
               <>
                 <button
                   onClick={() => setReorder(false)}
-                  className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[15px] hover:bg-[#E8E4E2] transition-colors"
+                  className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[17px] hover:bg-[#E8E4E2] transition-colors"
                 >
                   취소
                 </button>
@@ -454,7 +454,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 <button
                   onClick={startReorder}
                   disabled={(data?.categories.length ?? 0) < 2}
-                  className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[15px] hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
+                  className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
                 >
                   순서 편집
                 </button>
@@ -477,7 +477,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
           {/* ── 카테고리 탭 ── 순서 편집 중엔 같은 줄이 드래그 가능한 칩 목록으로 바뀐다 */}
           {reorder ? (
             <div className="mb-[16px]">
-              <div className="text-[14px] font-normal text-[#6A635E] mb-[8px]">
+              <div className="text-[16px] font-normal text-[#6A635E] mb-[8px]">
                 칩을 끌어서 순서를 바꿔주세요. QR오더 고객 화면의 카테고리 순서도 같이 바뀝니다
               </div>
               <div className="flex flex-wrap items-center gap-[7px]">
@@ -488,7 +488,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                     onDragStart={() => setDragIdx(i)}
                     onDragOver={e => { e.preventDefault(); if (dragIdx !== null) moveCat(dragIdx, i), setDragIdx(i) }}
                     onDragEnd={() => setDragIdx(null)}
-                    className={`h-[32px] px-[12px] rounded-[9px] border border-dashed flex items-center gap-[7px] cursor-grab active:cursor-grabbing text-[15px] transition-colors ${
+                    className={`h-[32px] px-[12px] rounded-[9px] border border-dashed flex items-center gap-[7px] cursor-grab active:cursor-grabbing text-[17px] transition-colors ${
                       dragIdx === i ? 'border-[#6A635E] bg-[#E8E4E2] text-[#2C261F]' : 'border-[#ADADAD] bg-[#FCFCFC] text-[#414141]'
                     }`}
                   >
@@ -509,7 +509,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 <button
                   key={t.key}
                   onClick={() => setCatTab(t.key)}
-                  className={`h-[32px] px-[13px] rounded-[9px] text-[15px] whitespace-nowrap transition-colors ${
+                  className={`h-[32px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
                     catTab === t.key ? 'bg-[#2C261F] text-[#F9F9F9]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                   }`}
                 >
@@ -533,7 +533,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
             <div className="relative">
               <button
                 onClick={() => setSortOpen(v => !v)}
-                className="h-[32px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[15px] flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
+                className="h-[32px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
               >
                 {SORT_LABEL[sortBy]}
                 <svg width="9" height="9" viewBox="0 0 16 16" fill="none" className={sortOpen ? 'rotate-180' : ''}>
@@ -548,7 +548,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                       <button
                         key={k}
                         onClick={() => { setSortBy(k); setSortOpen(false) }}
-                        className={`w-full h-[32px] px-[12px] text-left text-[15px] transition-colors ${
+                        className={`w-full h-[32px] px-[12px] text-left text-[17px] transition-colors ${
                           k === sortBy ? 'bg-[#F2F2F2] text-[#2C261F] font-medium' : 'text-[#414141] hover:bg-[#F2F2F2]'
                         }`}
                       >
@@ -562,7 +562,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
           </div>
 
           <div className="rounded-[11px] overflow-hidden border border-[#E8E4E2]">
-            <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[40px] text-[14px] font-normal text-[#6A635E]">
+            <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[40px] text-[16px] font-normal text-[#6A635E]">
               {/* 카테고리를 메뉴명 **앞**으로 옮기고 넓혔다(120 → 150).
                   뒤에 두면 메뉴명이 flex-1 로 남는 폭을 다 먹어서, 정작 '북구청
                   행정지원과' 같은 긴 카테고리가 잘렸다. 분류를 먼저 보고 그 안에서
@@ -592,7 +592,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                         <button
                           key={d}
                           onClick={() => { setSoldDays(d); setSoldOpen(false) }}
-                          className={`w-full text-left px-[13px] py-[7px] text-[14px] hover:bg-[#F2F2F2] transition-colors ${
+                          className={`w-full text-left px-[13px] py-[7px] text-[16px] hover:bg-[#F2F2F2] transition-colors ${
                             soldDays === d ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'
                           }`}
                         >
@@ -615,14 +615,14 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 }`}
               >
                 {catTab === 'all' && (
-                  <span className="w-[150px] pr-[10px] text-[14px] text-[#787878] truncate" title={r.category}>{r.category}</span>
+                  <span className="w-[150px] pr-[10px] text-[16px] text-[#787878] truncate" title={r.category}>{r.category}</span>
                 )}
-                <span className="flex-1 min-w-0 text-[15px] text-[#1E1E1E] truncate" title={r.menu.name}>{r.menu.name}</span>
-                <span className="w-[90px] text-right text-[15px] text-[#1E1E1E]">{won(r.menu.base_price)}</span>
-                <span className={`w-[80px] text-right text-[14px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
+                <span className="flex-1 min-w-0 text-[17px] text-[#1E1E1E] truncate" title={r.menu.name}>{r.menu.name}</span>
+                <span className="w-[90px] text-right text-[17px] text-[#1E1E1E]">{won(r.menu.base_price)}</span>
+                <span className={`w-[80px] text-right text-[16px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
                   {r.groupCount === 0 ? '없음' : `${r.groupCount}그룹`}
                 </span>
-                <span className="w-[132px] text-right text-[15px] text-[#1E1E1E]">{r.sold}개</span>
+                <span className="w-[132px] text-right text-[17px] text-[#1E1E1E]">{r.sold}개</span>
                 <span className="w-[70px] text-right">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] ${
                     r.menu.is_sold_out ? 'bg-[#FFEFEF] text-[#C92A2A]' : 'bg-[#E6F4EC] text-[#017333]'
@@ -799,7 +799,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                 <button
                   key={k}
                   onClick={() => { setKind(k); setQ('') }}
-                  className={`h-[32px] px-[13px] rounded-[10px] text-[15px] font-medium transition-colors ${
+                  className={`h-[32px] px-[13px] rounded-[10px] text-[17px] font-medium transition-colors ${
                     kind === k
                       ? 'bg-[#FCFCFC] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-ink'
                       : 'text-[#BDB4A7] hover:text-ink'
@@ -837,7 +837,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                     <button
                       key={g.id}
                       onClick={() => setSelected(g.id)}
-                      className={`h-[32px] px-[13px] rounded-[9px] text-[15px] whitespace-nowrap transition-colors ${
+                      className={`h-[32px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
                         on ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                       }`}
                     >
@@ -852,7 +852,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
               {group && (
                 <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden bg-[#FCFCFC]">
                   <div className="flex items-center px-[20px] h-[52px] border-b border-[#F2F2F2]">
-                    <span className="text-[14px] font-medium text-[#1E1E1E] truncate">{group.name}</span>
+                    <span className="text-[16px] font-medium text-[#1E1E1E] truncate">{group.name}</span>
                     {/* 전엔 '한 개만 · 필수 · 0~3개' 를 11px 회색 한 줄로 흘렸다. 셋 다 성격이
                         다른 값인데 가운뎃점으로 이어붙이니 어디서 끊어 읽을지가 안 보였다.
                         '몇 개까지'와 '필수/선택' 두 배지로 쪼갠다. */}
@@ -871,7 +871,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                     <div className="ml-auto">
                       <button
                         onClick={() => setEditing(group)}
-                        className="h-[30px] px-[12px] rounded-[8px] bg-[#F2F2F2] text-[#1E1E1E] text-[14px] hover:bg-[#E8E4E2] transition-colors"
+                        className="h-[30px] px-[12px] rounded-[8px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] hover:bg-[#E8E4E2] transition-colors"
                       >
                         수정
                       </button>
@@ -918,10 +918,10 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                       const sold = data.soldByOption[item.id] ?? 0
                       const base = isPriceGroup(group) && item.extra_price === 0 && idx === 0
                       return (
-                        <div key={item.id} className="flex items-center px-[20px] h-[38px] text-[14px] border-t border-[#F9F9F9]">
+                        <div key={item.id} className="flex items-center px-[20px] h-[38px] text-[16px] border-t border-[#F9F9F9]">
                           <span className="flex-1 min-w-0 text-[#414141] truncate">
                             {item.name}
-                            {base && <span className="ml-[6px] text-[10px] text-[#ADADAD]">기본</span>}
+                            {base && <span className="ml-[6px] text-[12px] text-[#ADADAD]">기본</span>}
                           </span>
                           <span className="w-[90px] text-right text-[#1E1E1E]">
                             {item.extra_price > 0 ? `+${won(item.extra_price)}`
@@ -1104,7 +1104,7 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
       {loading || !data ? <Loading /> : (
         <>
           <div className="rounded-[11px] overflow-hidden border border-[#E8E4E2]">
-            <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[40px] text-[14px] font-normal text-[#6A635E]">
+            <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[40px] text-[16px] font-normal text-[#6A635E]">
               <span className="w-[46px]">순서</span>
               <span className="flex-1 min-w-0">카테고리</span>
               <span className="w-[90px] text-right">메뉴</span>
@@ -1138,7 +1138,7 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                   i > 0 ? 'border-t border-[#F2F2F2]' : ''
                 } ${dragId === c.id ? 'opacity-40' : ''} ${saving ? 'pointer-events-none' : ''}`}
               >
-                <span className="w-[46px] flex items-center gap-[7px] text-[14px] text-[#ADADAD]">
+                <span className="w-[46px] flex items-center gap-[7px] text-[16px] text-[#ADADAD]">
                   {/* 드래그 핸들 — 여기를 누르고 있는 동안만 행이 끌린다(armed).
                       순서 변경은 QR오더 노출 순서에 그대로 반영된다. */}
                   <svg
@@ -1154,9 +1154,9 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                   </svg>
                   {i + 1}
                 </span>
-                <span className="flex-1 min-w-0 text-[15px] text-[#1E1E1E] truncate">{c.name}</span>
-                <span className="w-[90px] text-right text-[15px] text-[#1E1E1E]">{stats[c.id]?.menus ?? 0}개</span>
-                <span className="w-[100px] text-right text-[15px] text-[#1E1E1E]">{stats[c.id]?.sold ?? 0}개</span>
+                <span className="flex-1 min-w-0 text-[17px] text-[#1E1E1E] truncate">{c.name}</span>
+                <span className="w-[90px] text-right text-[17px] text-[#1E1E1E]">{stats[c.id]?.menus ?? 0}개</span>
+                <span className="w-[100px] text-right text-[17px] text-[#1E1E1E]">{stats[c.id]?.sold ?? 0}개</span>
                 <span className="w-[80px] text-right">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] ${
                     c.is_active ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-[#F2F2F2] text-[#787878]'
@@ -1173,10 +1173,10 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
               그 덕에 여기서도 실제로 셀 수 있다(전엔 카테고리 기준 조회라 아예 안 잡혔다).
               순서변경 대상이 아니므로 점선 테두리로 진짜 카테고리와 구분해 둔다. */}
           <div className="mt-[11px] flex items-center px-[20px] h-[44px] rounded-[11px] border border-dashed border-[#D9D2C8] bg-[#FCFCFC]">
-            <span className="w-[46px] text-[14px] text-[#ADADAD]">—</span>
-            <span className="flex-1 min-w-0 text-[15px] text-[#787878]">미분류</span>
-            <span className="w-[90px] text-right text-[15px] text-[#787878]">{stats['__none__']?.menus ?? 0}개</span>
-            <span className="w-[100px] text-right text-[15px] text-[#787878]">{stats['__none__']?.sold ?? 0}개</span>
+            <span className="w-[46px] text-[16px] text-[#ADADAD]">—</span>
+            <span className="flex-1 min-w-0 text-[17px] text-[#787878]">미분류</span>
+            <span className="w-[90px] text-right text-[17px] text-[#787878]">{stats['__none__']?.menus ?? 0}개</span>
+            <span className="w-[100px] text-right text-[17px] text-[#787878]">{stats['__none__']?.sold ?? 0}개</span>
             <span className="w-[80px] text-right">
               <span className="inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] bg-[#F2F2F2] text-[#787878]">
                 QR 미노출

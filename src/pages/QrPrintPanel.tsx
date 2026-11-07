@@ -73,7 +73,7 @@ function ReceiptPreview({ storeName, accountName, manager, phone, qrImg, storePh
       <div className="bg-white mx-auto shadow-[0_1px_6px_rgba(0,0,0,0.14)] py-[16px] flex flex-col gap-[9px]"
            /* 좌우 여백은 상수로 — QR 크기 계산과 같은 값을 써야 비율이 맞는다 */
            style={{ width: RECEIPT_PREVIEW_W, paddingLeft: RECEIPT_PREVIEW_PAD, paddingRight: RECEIPT_PREVIEW_PAD, fontFamily: "'Courier New', monospace" }}>
-        <div className="text-center text-[14px] font-bold text-[#1E1E1E] leading-snug break-all">
+        <div className="text-center text-[16px] font-bold text-[#1E1E1E] leading-snug break-all">
           [{accountName} 선결제 QR오더]
         </div>
         {hr}
@@ -401,12 +401,12 @@ export default function QrPrintPanel() {
       {loading ? (
         <LoadingBlock py={56} />
       ) : accounts.length === 0 ? (
-        <div className="py-[56px] text-center text-[15px] font-normal text-[#ADADAD]">등록된 거래처가 없어요</div>
+        <div className="py-[56px] text-center text-[17px] font-normal text-[#ADADAD]">등록된 거래처가 없어요</div>
       ) : (
         <div className="flex gap-[36px]">
           {/* ── 좌: 미리보기 — 고른 용지가 실제로 어떻게 찍히는지 ── */}
           <div className="flex-shrink-0" style={{ width: 260 }}>
-            <div className="text-[15px] font-normal text-[#6A635E] mb-[12px]">미리보기</div>
+            <div className="text-[17px] font-normal text-[#6A635E] mb-[12px]">미리보기</div>
             <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[16px]">
               {/* 장 넘김 — 박스 안 우상단. 전엔 '첫 장만 보여드려요'로 끝내서
                   둘째 장부터 무엇이 찍히는지 확인할 방법이 없었다.
@@ -477,7 +477,7 @@ export default function QrPrintPanel() {
             <button
               onClick={handlePrint}
               disabled={totalLabels === 0 || printing}
-              className="pressable w-full h-[52px] mt-[12px] rounded-[11px] bg-[#2C261F] text-[#F9F9F9] text-[15px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+              className="pressable w-full h-[52px] mt-[12px] rounded-[11px] bg-[#2C261F] text-[#F9F9F9] text-[17px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
             >
               {printing ? <Working label="출력 중" /> : `${totalLabels}장 인쇄하기`}
             </button>
@@ -485,18 +485,18 @@ export default function QrPrintPanel() {
 
           {/* ── 우: 발급 설정 ── */}
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-normal text-[#6A635E] mb-[12px]">발급 설정</div>
+            <div className="text-[17px] font-normal text-[#6A635E] mb-[12px]">발급 설정</div>
 
             {/* 용지 */}
             <div className="mb-[20px]">
-              <div className="text-[14px] font-medium text-[#2C261F] mb-[8px]">용지</div>
+              <div className="text-[16px] font-medium text-[#2C261F] mb-[8px]">용지</div>
               <div className="flex gap-[8px]">
                 {PAPER_OPTIONS.map(o => (
                   <button
                     key={o.key}
                     onClick={() => setPaper(o.key)}
                     title={o.note}
-                    className={`h-[32px] px-[12px] rounded-[9px] text-[15px] font-normal transition-colors ${
+                    className={`h-[32px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
                       paper === o.key ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                     }`}
                   >
@@ -512,7 +512,7 @@ export default function QrPrintPanel() {
               <div className="mt-[8px] rounded-[9px] bg-[#F2F2F2] px-[13px] py-[10px] flex items-center gap-[14px]">
                 <div>
                   <div className="text-[13px] font-normal text-[#787878] mb-[3px]">QR 실제 크기</div>
-                  <div className="text-[15px] font-medium text-[#1E1E1E]">
+                  <div className="text-[17px] font-medium text-[#1E1E1E]">
                     {mmToCm(geo.qrMM)} × {mmToCm(geo.qrMM)}
                   </div>
                 </div>
@@ -523,7 +523,7 @@ export default function QrPrintPanel() {
                 {paper === 'receipt' ? (
                   <div>
                     <div className="text-[13px] font-normal text-[#787878] mb-[3px]">영수증</div>
-                    <div className="text-[15px] font-medium text-[#1E1E1E]">
+                    <div className="text-[17px] font-medium text-[#1E1E1E]">
                       {totalLabels > 0 ? `${totalLabels}장` : '—'}
                     </div>
                   </div>
@@ -531,12 +531,12 @@ export default function QrPrintPanel() {
                   <>
                     <div>
                       <div className="text-[13px] font-normal text-[#787878] mb-[3px]">한 장에</div>
-                      <div className="text-[15px] font-medium text-[#1E1E1E]">{geo.perPage}곳</div>
+                      <div className="text-[17px] font-medium text-[#1E1E1E]">{geo.perPage}곳</div>
                     </div>
                     <div className="w-px h-[28px] bg-[#D9D9D9]" />
                     <div>
                       <div className="text-[13px] font-normal text-[#787878] mb-[3px]">용지 수</div>
-                      <div className="text-[15px] font-medium text-[#1E1E1E]">
+                      <div className="text-[17px] font-medium text-[#1E1E1E]">
                         {totalLabels > 0 ? `${pageCount}장` : '—'}
                       </div>
                     </div>
@@ -555,7 +555,7 @@ export default function QrPrintPanel() {
             {/* 안내 문구 — QR 바로 아래 한 줄로 찍힌다 */}
             <div className="mb-[20px]">
               <div className="flex items-baseline justify-between mb-[8px]">
-                <span className="text-[14px] font-medium text-[#2C261F]">안내 문구</span>
+                <span className="text-[16px] font-medium text-[#2C261F]">안내 문구</span>
                 {/* 한계를 치기 전에 보여준다 — 다 치고 나서 잘리면 뭐가 없어졌는지 모른다 */}
                 <span className={`text-[13px] tabular-nums ${notice.length >= NOTICE_MAX ? 'text-[#C92A2A]' : 'text-[#ADADAD]'}`}>
                   {notice.length}/{NOTICE_MAX}
@@ -565,7 +565,7 @@ export default function QrPrintPanel() {
                 value={notice}
                 onChange={e => setNotice(e.target.value.slice(0, NOTICE_MAX))}
                 placeholder={DEFAULT_QR_NOTICE}
-                className="field-soft w-full h-[40px] px-[13px] rounded-[9px] border border-[#D9D9D9] text-[15px] text-[#1E1E1E] outline-none"
+                className="field-soft w-full h-[40px] px-[13px] rounded-[9px] border border-[#D9D9D9] text-[17px] text-[#1E1E1E] outline-none"
               />
               <div className="text-[13px] font-normal text-[#ADADAD] mt-[6px] leading-relaxed">
                 QR 바로 아래에 한 줄로 찍혀요.
@@ -575,12 +575,12 @@ export default function QrPrintPanel() {
             {/* 대상 거래처 */}
             <div className="mb-[16px]">
               <div className="flex items-center justify-between mb-[8px]">
-                <span className="text-[14px] font-medium text-[#2C261F]">
+                <span className="text-[16px] font-medium text-[#2C261F]">
                   출력 대상: {counts.size}곳 · {totalLabels}장
                 </span>
                 <button
                   onClick={() => setCounts(allPicked ? new Map() : new Map(accounts.map(a => [a.account_code, 1])))}
-                  className="text-[14px] font-normal text-[#6A635E] hover:text-ink transition-colors"
+                  className="text-[16px] font-normal text-[#6A635E] hover:text-ink transition-colors"
                 >
                   {allPicked ? '전체 해제' : '전체 선택'}
                 </button>
@@ -594,7 +594,7 @@ export default function QrPrintPanel() {
                   return (
                     <div
                       key={a.account_code}
-                      className={`h-[30px] rounded-[8px] text-[14px] font-normal flex items-center transition-colors ${
+                      className={`h-[30px] rounded-[8px] text-[16px] font-normal flex items-center transition-colors ${
                         on ? 'bg-[#6A635E] text-[#FCFCFC] pr-[4px]' : 'bg-[#FCFCFC] text-[#787878] hover:bg-[#E8E4E2]'
                       }`}
                     >

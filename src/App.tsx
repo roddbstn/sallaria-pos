@@ -150,7 +150,7 @@ function Ticker({
             className="flex items-center justify-center h-full flex-shrink-0"
             style={{ width: ITEM_W }}
           >
-            <span className={i === 0 ? 'text-[13px] font-bold text-ink' : 'text-[10px] text-gray-300'}>
+            <span className={i === 0 ? 'text-[15px] font-bold text-ink' : 'text-[12px] text-gray-300'}>
               {format(v)}
             </span>
           </div>
@@ -212,7 +212,7 @@ function DayRow({
     <div className="py-2 space-y-1.5">
       {/* 영업 시간 행 */}
       <div className="flex items-center gap-2">
-        <span className="w-5 text-[13px] font-bold text-ink flex-shrink-0">{label}</span>
+        <span className="w-5 text-[15px] font-bold text-ink flex-shrink-0">{label}</span>
         <button
           onClick={() => setHoursDraft(prev => ({ ...prev, [dayKey]: { ...day, enabled: !day.enabled } }))}
           className={`relative w-9 h-5 rounded-full flex-shrink-0 transition-colors duration-200 ${day.enabled ? 'bg-[#00DD67]' : 'bg-gray-200'}`}
@@ -225,24 +225,24 @@ function DayRow({
               const { h, m } = field === 'open' ? openT : closeT
               return (
                 <div key={field} className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-text w-5 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
+                  <span className="text-[12px] text-gray-text w-5 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
                   <HourTicker value={h} onChange={newH => setTime(field, newH, m)} />
-                  <span className="text-gray-text text-[11px]">시</span>
+                  <span className="text-gray-text text-[13px]">시</span>
                   <MinuteTicker value={m} onChange={min => setTime(field, h, min)} />
-                  <span className="text-gray-text text-[11px]">분</span>
+                  <span className="text-gray-text text-[13px]">분</span>
                 </div>
               )
             })}
           </div>
         ) : (
-          <span className="text-[12px] text-gray-text">운영 안 함</span>
+          <span className="text-[14px] text-gray-text">운영 안 함</span>
         )}
       </div>
 
       {/* 브레이크타임 (영업일만) */}
       {day.enabled && (
         <div className="flex items-start gap-2 pl-7">
-          <span className="text-[11px] font-semibold text-gray-text w-[58px] pt-1.5 flex-shrink-0">브레이크</span>
+          <span className="text-[13px] font-semibold text-gray-text w-[58px] pt-1.5 flex-shrink-0">브레이크</span>
           <button
             onClick={() => setBreakDraft(prev => ({ ...prev, [dayKey]: { ...brk, enabled: !brk.enabled } }))}
             className={`relative w-9 h-5 rounded-full flex-shrink-0 mt-1 transition-colors duration-200 ${brk.enabled ? 'bg-orange-400' : 'bg-gray-200'}`}
@@ -255,17 +255,17 @@ function DayRow({
                 const { h, m } = field === 'start' ? brkStartT : brkEndT
                 return (
                   <div key={field} className="flex items-center gap-1">
-                    <span className="text-[10px] text-gray-text w-5 flex-shrink-0">{field === 'start' ? '시작' : '종료'}</span>
+                    <span className="text-[12px] text-gray-text w-5 flex-shrink-0">{field === 'start' ? '시작' : '종료'}</span>
                     <HourTicker value={h} onChange={newH => setBreakField(field, newH, m)} />
-                    <span className="text-gray-text text-[11px]">시</span>
+                    <span className="text-gray-text text-[13px]">시</span>
                     <MinuteTicker value={m} onChange={min => setBreakField(field, h, min)} />
-                    <span className="text-gray-text text-[11px]">분</span>
+                    <span className="text-gray-text text-[13px]">분</span>
                   </div>
                 )
               })}
             </div>
           ) : (
-            <span className="text-[12px] text-gray-text pt-1">없음</span>
+            <span className="text-[14px] text-gray-text pt-1">없음</span>
           )}
         </div>
       )}
@@ -1007,7 +1007,7 @@ export default function App() {
       <div className="flex h-full w-full items-center justify-center bg-gray-bg">
         <div className="flex flex-col items-center gap-3">
           <LoadingTimer size={40} />
-          <span className="text-[13px] text-gray-text">불러오는 중</span>
+          <span className="text-[15px] text-gray-text">불러오는 중</span>
         </div>
       </div>
     )
@@ -1052,7 +1052,7 @@ export default function App() {
         <div className="flex h-full w-full items-center justify-center bg-gray-bg">
           <div className="flex flex-col items-center gap-3">
             <LoadingTimer size={40} />
-            <span className="text-[13px] text-gray-text">불러오는 중</span>
+            <span className="text-[15px] text-gray-text">불러오는 중</span>
           </div>
         </div>
       )
@@ -1262,7 +1262,7 @@ export default function App() {
                   if (el && id === tab) measureUnderline()
                 }}
                 onClick={() => goTo(id)}
-                className={`pressable-tab absolute top-[15px] px-[10px] py-[6px] rounded-[8px] text-[21px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
+                className={`pressable-tab absolute top-[15px] px-[10px] py-[6px] rounded-[8px] text-[24px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
                   tab === id ? 'text-ink font-semibold' : 'text-[#787878] font-medium hover:text-ink'
                 }`}
                 style={{ left: 114 + i * 108 - 10 }}
@@ -1309,7 +1309,7 @@ export default function App() {
                 title="인터넷이 잠깐 끊겨 로그인 갱신을 다시 시도하고 있어요. 주문 접수는 계속됩니다."
               >
                 <span className="w-[6px] h-[6px] rounded-full bg-[#FF8418]" />
-                <span className="text-[12px] font-medium text-[#B35C00] whitespace-nowrap">연결 확인 중</span>
+                <span className="text-[14px] font-medium text-[#B35C00] whitespace-nowrap">연결 확인 중</span>
               </div>
             ) : wsStatus === 'disconnected' && (
               <div
@@ -1318,13 +1318,13 @@ export default function App() {
                 title="실시간 연결이 끊겼어요. 주문은 30초마다 다시 확인해 가져옵니다."
               >
                 <span className="w-[6px] h-[6px] rounded-full bg-[#FF676F]" />
-                <span className="text-[12px] font-medium text-[#C92A2A] whitespace-nowrap">연결 끊김</span>
+                <span className="text-[14px] font-medium text-[#C92A2A] whitespace-nowrap">연결 끊김</span>
               </div>
             )}
 
             {/* 날짜/시간 — 오른쪽 가장자리에서 140px 떨어진 지점에 중앙정렬(translate-x-1/2 + right) */}
             <div
-              className="absolute translate-x-1/2 flex flex-col items-center leading-[normal] text-[#6A635E] font-semibold text-[13px] whitespace-nowrap"
+              className="absolute translate-x-1/2 flex flex-col items-center leading-[normal] text-[#6A635E] font-semibold text-[15px] whitespace-nowrap"
               style={{ right: 140, top: 12 }}
             >
               <span>{formatKstDate(now)}</span>
@@ -1342,7 +1342,7 @@ export default function App() {
             >
               {/* 텍스트 — Figma node 496:660, knob 반대편에 위치(ON=왼쪽/OFF=오른쪽 미러) */}
               <span
-                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-[13px] font-semibold text-[#FCFCFC] whitespace-nowrap transition-all duration-200`}
+                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-[15px] font-semibold text-[#FCFCFC] whitespace-nowrap transition-all duration-200`}
                 style={{ left: isOpen ? 17 : 42 }}
               >
                 {isOpen ? 'ON' : 'OFF'}
@@ -1469,7 +1469,7 @@ export default function App() {
                   const w = window as unknown as { api?: { updaterInstall?: Function } }
                   w.api?.updaterInstall?.()
                 }}
-                className="bg-green text-white text-[13px] font-bold px-[12px] py-[5px] rounded-[8px] hover:opacity-80 transition-opacity"
+                className="bg-green text-white text-[15px] font-bold px-[12px] py-[5px] rounded-[8px] hover:opacity-80 transition-opacity"
               >
                 지금 재시작
               </button>
@@ -1490,31 +1490,31 @@ export default function App() {
             <div className="modal-in bg-white rounded-2xl shadow-xl w-[480px] px-9 py-9 flex flex-col gap-4">
               <div>
                 <div className="text-[17px] font-semibold text-ink">조기마감</div>
-                <div className="text-[12px] text-gray-text mt-0.5">오늘 지정한 시간부터 자동으로 영업이 종료됩니다</div>
+                <div className="text-[14px] text-gray-text mt-0.5">오늘 지정한 시간부터 자동으로 영업이 종료됩니다</div>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[13px] text-gray-text flex-shrink-0">마감 시간</span>
+                <span className="text-[15px] text-gray-text flex-shrink-0">마감 시간</span>
                 <HourTicker
                   value={parseInt(closureTime.split(':')[0])}
                   onChange={h => setClosureTime(`${String(h).padStart(2,'0')}:${closureTime.split(':')[1]}`)}
                 />
-                <span className="text-gray-text text-[11px]">시</span>
+                <span className="text-gray-text text-[13px]">시</span>
                 <MinuteTicker
                   value={closureTime.split(':')[1]}
                   onChange={m => setClosureTime(`${closureTime.split(':')[0]}:${m}`)}
                 />
-                <span className="text-gray-text text-[11px]">분</span>
+                <span className="text-gray-text text-[13px]">분</span>
               </div>
 
               <div className="flex gap-2">
                 <button
                   onClick={() => setClosureOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[15px] hover:bg-gray-200 transition-colors"
                 >취소</button>
                 <button
                   onClick={() => { setClosureType('early'); confirmClosure() }}
-                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
+                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[15px] hover:opacity-90 transition-opacity"
                 >조기마감 확정</button>
               </div>
             </div>
@@ -1528,7 +1528,7 @@ export default function App() {
               {/* 헤더 */}
               <div className="px-8 pt-7 pb-0 flex-shrink-0">
                 <div className="text-[17px] font-semibold text-ink">휴가 예약</div>
-                <div className="text-[12px] text-gray-text mt-0.5">날짜를 선택하고 하루 휴점 또는 단축 운영을 설정하세요</div>
+                <div className="text-[14px] text-gray-text mt-0.5">날짜를 선택하고 하루 휴점 또는 단축 운영을 설정하세요</div>
               </div>
 
               <div className="flex flex-1 overflow-hidden min-h-0">
@@ -1549,7 +1549,7 @@ export default function App() {
                   {/* 요일 헤더 */}
                   <div className="grid grid-cols-7 mb-1">
                     {['일','월','화','수','목','금','토'].map((d, i) => (
-                      <div key={d} className={`text-center text-[11px] font-bold py-1 ${i === 0 ? 'text-danger' : i === 6 ? 'text-blue-500' : 'text-gray-text'}`}>{d}</div>
+                      <div key={d} className={`text-center text-[13px] font-bold py-1 ${i === 0 ? 'text-danger' : i === 6 ? 'text-blue-500' : 'text-gray-text'}`}>{d}</div>
                     ))}
                   </div>
                   {/* 날짜 그리드 */}
@@ -1571,7 +1571,7 @@ export default function App() {
                           key={d}
                           disabled={isPast}
                           onClick={() => toggleVacDate(dateStr)}
-                          className={`aspect-square flex items-center justify-center text-[13px] font-semibold rounded-full transition-colors
+                          className={`aspect-square flex items-center justify-center text-[15px] font-semibold rounded-full transition-colors
                             ${isPast ? 'opacity-30 cursor-not-allowed' : ''}
                             ${isSelected ? 'bg-[#00DD67] text-[#1A1A1A]' : isPast ? '' : 'hover:bg-gray-100'}
                             ${!isSelected && dow === 0 ? 'text-danger' : ''}
@@ -1589,7 +1589,7 @@ export default function App() {
                   {Object.keys(vacDraft).length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center">
                       <div className="text-[32px] mb-2">📅</div>
-                      <div className="text-[13px] text-gray-text">왼쪽 캘린더에서 휴가 날짜를 선택하세요</div>
+                      <div className="text-[15px] text-gray-text">왼쪽 캘린더에서 휴가 날짜를 선택하세요</div>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -1599,10 +1599,10 @@ export default function App() {
                         return (
                           <div key={dateStr} className="border border-gray-border rounded-xl p-3 space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-[13px] font-bold text-ink">{mo}월 {d}일 ({dow})</span>
+                              <span className="text-[15px] font-bold text-ink">{mo}월 {d}일 ({dow})</span>
                               <button
                                 onClick={() => toggleVacDate(dateStr)}
-                                className="text-gray-text hover:text-danger text-[13px]"
+                                className="text-gray-text hover:text-danger text-[15px]"
                               >✕</button>
                             </div>
                             {/* 타입 선택 */}
@@ -1614,7 +1614,7 @@ export default function App() {
                                 <button
                                   key={value}
                                   onClick={() => setVacDraft(prev => ({ ...prev, [dateStr]: { ...cfg, type: value } }))}
-                                  className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors
+                                  className={`px-3 py-1.5 rounded-lg text-[14px] font-semibold transition-colors
                                     ${cfg.type === value
                                       ? 'bg-green-soft text-ink'
                                       : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}
@@ -1630,7 +1630,7 @@ export default function App() {
                                   const h = parseInt(hStr)
                                   return (
                                     <div key={field} className="flex items-center gap-1.5">
-                                      <span className="text-[10px] text-gray-text w-6 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
+                                      <span className="text-[12px] text-gray-text w-6 flex-shrink-0">{field === 'open' ? '시작' : '종료'}</span>
                                       <HourTicker
                                         value={h}
                                         onChange={newH => setVacDraft(prev => ({
@@ -1638,7 +1638,7 @@ export default function App() {
                                           [dateStr]: { ...cfg, [field === 'open' ? 'openTime' : 'closeTime']: `${String(newH).padStart(2,'0')}:${mStr}` }
                                         }))}
                                       />
-                                      <span className="text-gray-text text-[11px]">시</span>
+                                      <span className="text-gray-text text-[13px]">시</span>
                                       <MinuteTicker
                                         value={mStr}
                                         onChange={min => setVacDraft(prev => ({
@@ -1646,7 +1646,7 @@ export default function App() {
                                           [dateStr]: { ...cfg, [field === 'open' ? 'openTime' : 'closeTime']: `${hStr}:${min}` }
                                         }))}
                                       />
-                                      <span className="text-gray-text text-[11px]">분</span>
+                                      <span className="text-gray-text text-[13px]">분</span>
                                     </div>
                                   )
                                 })}
@@ -1664,11 +1664,11 @@ export default function App() {
               <div className="bg-white px-6 py-4 flex-shrink-0 flex gap-2">
                 <button
                   onClick={() => setVacationOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[15px] hover:bg-gray-200 transition-colors"
                 >취소</button>
                 <button
                   onClick={handleSaveVacation}
-                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
+                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[15px] hover:opacity-90 transition-opacity"
                 >저장 ({Object.keys(vacDraft).length}일)</button>
               </div>
             </div>
@@ -1702,22 +1702,22 @@ export default function App() {
               <div className="px-8 pt-7 pb-0 flex items-center justify-between">
                 <div>
                   <div className="text-[17px] font-semibold text-ink">운영시간 설정</div>
-                  <div className="text-[12px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
+                  <div className="text-[14px] text-gray-text mt-0.5">요일별 운영 시간을 설정하세요</div>
                 </div>
                 <div className="flex items-center gap-2">
                   {closureActive && (
                     <button
                       onClick={cancelClosure}
-                      className="text-[12px] font-semibold text-danger border border-danger rounded-lg px-3 py-1.5 hover:bg-red-50 transition-colors"
+                      className="text-[14px] font-semibold text-danger border border-danger rounded-lg px-3 py-1.5 hover:bg-red-50 transition-colors"
                     >조기마감 취소</button>
                   )}
                   <button
                     onClick={() => { setClosureTime('18:00'); setClosureOpen(true) }}
-                    className="text-[12px] font-semibold text-ink bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
+                    className="text-[14px] font-semibold text-ink bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
                   >조기마감</button>
                   <button
                     onClick={openVacationModal}
-                    className="text-[12px] font-semibold text-ink bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
+                    className="text-[14px] font-semibold text-ink bg-gray-100 rounded-lg px-3 py-1.5 hover:bg-gray-200 transition-colors"
                   >휴가예약</button>
                 </div>
               </div>
@@ -1727,7 +1727,7 @@ export default function App() {
                 <div className="grid grid-cols-2 divide-x divide-gray-100">
                   {/* 왼쪽: 월~금 */}
                   <div className="px-5 py-2 divide-y divide-gray-100">
-                    <div className="pb-1 text-[11px] font-bold text-gray-text uppercase tracking-wide">평일</div>
+                    <div className="pb-1 text-[13px] font-bold text-gray-text uppercase tracking-wide">평일</div>
                     {[
                       { key: 'mon', label: '월' },
                       { key: 'tue', label: '화' },
@@ -1738,7 +1738,7 @@ export default function App() {
                   </div>
                   {/* 오른쪽: 토~일 */}
                   <div className="px-5 py-2 divide-y divide-gray-100">
-                    <div className="pb-1 text-[11px] font-bold text-gray-text uppercase tracking-wide">주말</div>
+                    <div className="pb-1 text-[13px] font-bold text-gray-text uppercase tracking-wide">주말</div>
                     {[
                       { key: 'sat', label: '토' },
                       { key: 'sun', label: '일' },
@@ -1746,22 +1746,22 @@ export default function App() {
                     {/* 예약된 휴가 미리보기 */}
                     {vacationDays.length > 0 && (
                       <div className="pt-3">
-                        <div className="text-[11px] font-bold text-gray-text uppercase tracking-wide mb-2">예약된 휴가</div>
+                        <div className="text-[13px] font-bold text-gray-text uppercase tracking-wide mb-2">예약된 휴가</div>
                         <div className="space-y-1.5">
                           {vacationDays.slice(0, 5).map(v => (
                             <div key={v.date} className="flex items-center justify-between gap-2">
-                              <span className="text-[12px] text-ink font-semibold">{v.date}</span>
-                              <span className="text-[11px] text-gray-text">
+                              <span className="text-[14px] text-ink font-semibold">{v.date}</span>
+                              <span className="text-[13px] text-gray-text">
                                 {v.type === 'holiday' ? '하루 휴점' : `${v.openTime}~${v.closeTime}`}
                               </span>
                               <button
                                 onClick={() => deleteVacationDay(v.date)}
-                                className="text-[11px] text-danger hover:opacity-70"
+                                className="text-[13px] text-danger hover:opacity-70"
                               >✕</button>
                             </div>
                           ))}
                           {vacationDays.length > 5 && (
-                            <div className="text-[11px] text-gray-text">외 {vacationDays.length - 5}건...</div>
+                            <div className="text-[13px] text-gray-text">외 {vacationDays.length - 5}건...</div>
                           )}
                         </div>
                       </div>
@@ -1773,11 +1773,11 @@ export default function App() {
               <div className="px-6 py-4 border-t border-gray-border flex gap-2">
                 <button
                   onClick={() => setHoursOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[15px] hover:bg-gray-200 transition-colors"
                 >취소</button>
                 <button
                   onClick={saveOperatingHours}
-                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[13px] hover:opacity-90 transition-opacity"
+                  className="flex-1 py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[15px] hover:opacity-90 transition-opacity"
                 >저장</button>
               </div>
             </div>
@@ -1816,7 +1816,7 @@ export default function App() {
             >
               <div className="px-[28px] pt-[28px] pb-[22px]">
                 <div className="text-[18px] font-semibold text-[#1E1E1E] mb-[6px]">정말 탈퇴하시겠어요?</div>
-                <div className="text-[13px] font-normal text-[#787878] leading-relaxed">
+                <div className="text-[15px] font-normal text-[#787878] leading-relaxed">
                   계정과 매장의 모든 데이터가 삭제되며 되돌릴 수 없어요.<br />
                   거래처 잔액과 지난 주문 기록도 함께 사라집니다.
                 </div>
@@ -1847,7 +1847,7 @@ export default function App() {
             <div className="modal-in bg-white rounded-2xl shadow-xl w-[460px] px-9 py-9 flex flex-col gap-4">
               <div>
                 <div className="text-[17px] font-semibold text-ink mb-1">새 비밀번호 설정</div>
-                <div className="text-[13px] text-gray-text">6자 이상의 새 비밀번호를 입력해주세요.</div>
+                <div className="text-[15px] text-gray-text">6자 이상의 새 비밀번호를 입력해주세요.</div>
               </div>
               <div className="flex flex-col gap-2">
                 <input
@@ -1855,7 +1855,7 @@ export default function App() {
                   placeholder="새 비밀번호"
                   value={newPw}
                   onChange={e => setNewPw(e.target.value)}
-                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#00DD67]"
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[15px] outline-none focus:border-[#00DD67]"
                 />
                 <input
                   type="password"
@@ -1863,11 +1863,11 @@ export default function App() {
                   value={newPwConfirm}
                   onChange={e => setNewPwConfirm(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSaveNewPassword()}
-                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#00DD67]"
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[15px] outline-none focus:border-[#00DD67]"
                 />
               </div>
               {newPwMsg && (
-                <div className={`px-3 py-2 rounded-lg text-[12px] font-semibold ${newPwMsg.ok ? 'bg-green-soft text-green' : 'bg-red-50 text-danger'}`}>
+                <div className={`px-3 py-2 rounded-lg text-[14px] font-semibold ${newPwMsg.ok ? 'bg-green-soft text-green' : 'bg-red-50 text-danger'}`}>
                   {newPwMsg.text}
                 </div>
               )}

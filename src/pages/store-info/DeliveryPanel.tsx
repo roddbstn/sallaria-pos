@@ -105,7 +105,7 @@ function TierDistanceSelect({ value, onChange }: {
         onClick={() => setOpen(v => !v)}
         className="w-full h-[42px] px-[14px] rounded-[9px] border border-[#D9D9D9] bg-white flex items-center justify-between hover:border-[#6A635E] transition-colors"
       >
-        <span className="text-[14px] leading-[17px] text-[#1E1E1E]">{value}m당</span>
+        <span className="text-[16px] leading-[17px] text-[#1E1E1E]">{value}m당</span>
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
              className={`flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
           <path d="M3.5 6L8 10.5L12.5 6" stroke="#787878" strokeWidth="1.8"
@@ -224,17 +224,17 @@ export default function DeliveryPanel({ storeId, storeName, showToast }: {
   // 같은 화면 안에서 같은 역할을 하는 칸이 서로 다른 테두리를 두르면
   // 그 차이가 뜻이 있는 줄 알게 된다. 없는 뜻이다.
   const FIELD =
-    'h-[42px] rounded-[9px] border border-[#D9D9D9] px-[14px] text-[14px] text-[#1E1E1E] '
+    'h-[42px] rounded-[9px] border border-[#D9D9D9] px-[14px] text-[16px] text-[#1E1E1E] '
     + 'outline-none focus:border-[#6A635E] transition-colors tabular-nums'
 
   if (loading) {
-    return <div className="text-[14px] text-[#ADADAD] py-[40px]">불러오는 중…</div>
+    return <div className="text-[16px] text-[#ADADAD] py-[40px]">불러오는 중…</div>
   }
 
   return (
     <div>
       <div className="text-[18px] font-semibold leading-[22px] text-[#1E1E1E] mb-[12px]">배달 정보</div>
-      <div className="text-[14px] font-normal text-[#787878] mb-[46px] leading-relaxed">
+      <div className="text-[16px] font-normal text-[#787878] mb-[46px] leading-relaxed">
         매장에서 배달지까지의 거리로 계산돼요.
       </div>
 
@@ -251,7 +251,7 @@ export default function DeliveryPanel({ storeId, storeName, showToast }: {
                   <button
                     key={m}
                     onClick={() => setTip({ ...tip, baseDistanceM: m })}
-                    className={`h-[38px] px-[16px] rounded-[9px] text-[14px] whitespace-nowrap transition-colors ${
+                    className={`h-[38px] px-[16px] rounded-[9px] text-[16px] whitespace-nowrap transition-colors ${
                       on
                         ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
                         : 'bg-[#F2F2F2] text-[#787878] font-normal hover:bg-[#E8E4E2]'
@@ -277,7 +277,7 @@ export default function DeliveryPanel({ storeId, storeName, showToast }: {
                 }}
                 className={`${FIELD} w-[128px]`}
               />
-              <span className="text-[14px] text-[#787878]">원</span>
+              <span className="text-[16px] text-[#787878]">원</span>
             </div>
           </div>
 
@@ -300,7 +300,7 @@ export default function DeliveryPanel({ storeId, storeName, showToast }: {
                     }}
                     className={`${FIELD} w-[104px] ${!feeInRange ? 'border-[#C92A2A]' : ''}`}
                   />
-                  <span className="text-[14px] text-[#787878]">원</span>
+                  <span className="text-[16px] text-[#787878]">원</span>
                 </div>
                 <Hint tone={feeInRange ? 'muted' : 'danger'}>
                   {TIER_FEE_MIN} ~ {won(TIER_FEE_MAX)}까지 입력 가능
@@ -322,7 +322,7 @@ export default function DeliveryPanel({ storeId, storeName, showToast }: {
             <button
               onClick={save}
               disabled={!dirty || !valid || saving}
-              className="h-[42px] px-[28px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[14px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
+              className="h-[42px] px-[28px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[16px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
             >
               {saving ? '저장 중…' : '저장'}
             </button>

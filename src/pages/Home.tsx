@@ -128,6 +128,52 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     return { count: ok.length, amount: ok.reduce((s, o) => s + o.total, 0) }
   }, [done])
 
+  /**
+   * '준비 알림'을 이미 보낸 주문.
+   *
+   * 세션 안에서만 산다 — 보냈는지 적어두는 컬럼이 없다. 새로고침하면 지워지고
+   * 버튼은 '준비 알림'으로 돌아간다. 그래도 괜찮다: 이 표시는 **못 누르게
+   * 막는 장치가 아니라** "방금 보냈다"를 알려주는 글자일 뿐이고,
+   * 알림은 몇 번을 보내도 손님 화면은 '준비 완료' 한 상태로 같다.
+   */
+  const [notified, setNotified] = useState<Set<string>>(new Set())
+
+  /**
+   * 준비 알림 — **상태를 바꾸지 않는다.**
+   *
+   * 전엔 '준비 완료' 한 버튼이 알림과 마감을 같이 했다. 그래서 손님에게 알리는
+   * 순간 주문이 목록에서 사라졌다 — 만들어 놨지만 아직 안 가져간 주문이
+   * 화면 어디에도 없었다. 선결제 픽업 매장에서 그 구간이 제일 긴데도.
+   * 이제 알림은 알림만 하고, 주문은 '처리 완료'를 누를 때까지 목록에 남는다.
+   *
+   * 여러 번 눌러도 된다 — 손님이 안 오면 다시 부를 수 있어야 한다.
+   */
+  async function handleNotify(order: Order) {
+    setBusy(true)
+    // 배달이면 '출발'로도 읽힌다 — 손님 화면의 배달 지도가 이 시각을 본다.
+    // 이미 찍혀 있으면 덮어쓰지 않는다(두 번째 알림이 출발 시각을 미루면 안 된다).
+    if (order.method === '배달' && !order.deliveryDepartedAt) {
+      await supabase.from('orders')
+        .update({ delivery_departed_at: new Date().toISOString() })
+        .eq('order_code', order.code)
+    }
+
+    const ch = supabase.channel(`orders:order_code=${order.code}`)
+    await new Promise<void>(resolve => {
+      ch.subscribe(st => {
+        if (st !== 'SUBSCRIBED') return
+        ch.send({ type: 'broadcast', event: 'ORDER_COMPLETED', payload: {} })
+          .finally(() => { supabase.removeChannel(ch); resolve() })
+      })
+      window.setTimeout(resolve, 3000)
+    })
+
+    setBusy(false)
+    setNotified(prev => new Set(prev).add(order.code))
+    flash(order.method === '배달' ? '손님에게 배달 출발을 알렸어요' : '손님에게 준비 완료를 알렸어요')
+    load()
+  }
+
   async function handleComplete(order: Order) {
     setBusy(true)
     const isDelivery = order.method === '배달'
@@ -269,6 +315,8 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
           {selected ? (
             <HomeOrderDetail
               order={selected}
+              onNotify={() => handleNotify(selected)}
+              notified={notified.has(selected.code)}
               onComplete={() => handleComplete(selected)}
               onCancel={() => setConfirmCancel(selected)}
               onReprint={() => handleReprint(selected)}

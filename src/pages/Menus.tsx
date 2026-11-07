@@ -1167,7 +1167,7 @@ export default function Menus() {
         const countOf = (catId: string) => menus.filter(m => m.categoryId === catId).length
         const selectedCat = categories.find(c => c.id === previewCatId) ?? null
         const itemsOfSelectedCat = selectedCat ? menus.filter(m => m.categoryId === selectedCat.id) : []
-        const catTextSizeClass = categoryTextSize === 'large' ? 'text-[17px]' : 'text-[14px]'
+        const catTextSizeClass = categoryTextSize === 'large' ? 'text-[17px]' : 'text-[16px]'
         const listForLeft = menuEditMode ? editOrder : categories
 
         // 개별메뉴 모드 — 카테고리별 제목 + 6열 카드 묶음, 모든 px는 Figma 원본 × FIGMA_SCALE
@@ -1225,7 +1225,7 @@ export default function Menus() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="메뉴이름, 카테고리 검색"
-                  className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[15px] text-ink placeholder:text-[#8C8379] bg-transparent"
+                  className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[17px] text-ink placeholder:text-[#8C8379] bg-transparent"
                 />
               </div>
 
@@ -1234,21 +1234,21 @@ export default function Menus() {
                 <div className="absolute flex items-center gap-[8px]" style={{ right: 17, top: -2, zIndex: 11 }}>
                   <button
                     onClick={toggleMenuViewMode}
-                    className="hover-chip flex items-center gap-[4px] text-[15px] text-[#6A635E] whitespace-nowrap hover:text-ink"
+                    className="hover-chip flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                   >
                     모드 변경
                     <img src={rotateIcon} alt="" width={13} height={13} />
                   </button>
                   <button
                     onClick={enterMenuEditMode}
-                    className="hover-chip flex items-center gap-[4px] text-[15px] text-[#6A635E] whitespace-nowrap hover:text-ink"
+                    className="hover-chip flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                   >
                     화면 편집 ✎
                   </button>
                   {menuViewMode === 'category' ? (
                     <button
                       onClick={() => setCategoryAddOpen(true)}
-                      className="hover-chip flex items-center gap-[4px] text-[15px] text-[#6A635E] whitespace-nowrap hover:text-ink"
+                      className="hover-chip flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                     >
                       카테고리 추가
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1256,7 +1256,7 @@ export default function Menus() {
                   ) : (
                     <button
                       onClick={openMenuFormAdd}
-                      className="hover-chip flex items-center gap-[4px] text-[15px] text-[#6A635E] whitespace-nowrap hover:text-ink"
+                      className="hover-chip flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                     >
                       메뉴 추가
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1279,7 +1279,7 @@ export default function Menus() {
                     <button
                       key={c.id}
                       onClick={() => { setPreviewCatId(c.id); setOptionPanelMenu(null) }}
-                      className={`pressable-tab h-[30px] px-[13px] rounded-[15px] text-[15px] whitespace-nowrap transition-colors ${
+                      className={`pressable-tab h-[30px] px-[13px] rounded-[15px] text-[17px] whitespace-nowrap transition-colors ${
                         previewCatId === c.id
                           ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
                           : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
@@ -1294,7 +1294,7 @@ export default function Menus() {
               {/* 카테고리 모드 — 일반 보기(고정 그리드) */}
               {menuViewMode === 'category' && !menuEditMode && (
                 listForLeft.length === 0 ? (
-                  <div className="absolute text-[15px] text-[#ADADAD]" style={{ left: 26, top: 71 + pillBandH }}>
+                  <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 + pillBandH }}>
                     아직 등록된 카테고리가 없습니다.
                   </div>
                 ) : listForLeft.map((cat, i) => {
@@ -1313,7 +1313,7 @@ export default function Menus() {
                         {cat.name}
                       </div>
                       {itemCountVisible && (
-                        <div className="absolute text-[15px] font-light text-ink" style={{ right: 10, bottom: 10 }}>{countOf(cat.id)}개</div>
+                        <div className="absolute text-[17px] font-light text-ink" style={{ right: 10, bottom: 10 }}>{countOf(cat.id)}개</div>
                       )}
                     </button>
                   )
@@ -1342,7 +1342,7 @@ export default function Menus() {
                     />
                   </div>
                   {editOrder.length === 0 ? (
-                    <div className="absolute text-[15px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
+                    <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
                       아직 등록된 카테고리가 없습니다.
                     </div>
                   ) : editOrder.map((cat, i) => {
@@ -1372,7 +1372,7 @@ export default function Menus() {
                           {cat.name}
                         </div>
                         {itemCountVisible && (
-                          <div className="absolute text-[15px] font-light text-ink" style={{ right: 10, bottom: 10 }}>{countOf(cat.id)}개</div>
+                          <div className="absolute text-[17px] font-light text-ink" style={{ right: 10, bottom: 10 }}>{countOf(cat.id)}개</div>
                         )}
                         <button
                           onClick={e => { e.stopPropagation(); setDeleteCatConfirm(cat) }}
@@ -1414,7 +1414,7 @@ export default function Menus() {
                    않는다. 다음 행은 그 행의 최대 높이만큼만 간격이 벌어지고 내려감. */}
               {menuViewMode === 'individual' && !menuEditMode && (
                 individualGroups.length === 0 ? (
-                  <div className="text-[15px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
+                  <div className="text-[17px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
                     아직 등록된 메뉴가 없습니다.
                   </div>
                 ) : (
@@ -1434,10 +1434,10 @@ export default function Menus() {
                               } ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
                               style={{ minHeight: 86 }}
                             >
-                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[15px]' : 'text-[15px]'}`} style={{ paddingRight: 58 }}>
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[17px]'}`} style={{ paddingRight: 58 }}>
                                 {menu.name}
                               </div>
-                              <div className="text-[14px] font-light text-ink mt-auto">{won(menu.price)}</div>
+                              <div className="text-[16px] font-light text-ink mt-auto">{won(menu.price)}</div>
                               {itemImageVisible && (menu.imageUrl ? (
                                 <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ right: 10, top: 10, width: 48, height: 48 }} />
                               ) : (
@@ -1459,7 +1459,7 @@ export default function Menus() {
                   .map(cat => ({ cat, items: editOrderMenus.filter(m => m.categoryId === cat.id) }))
                   .filter(g => g.items.length > 0)
                 return groups.length === 0 ? (
-                  <div className="text-[15px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
+                  <div className="text-[17px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
                     아직 등록된 메뉴가 없습니다.
                   </div>
                 ) : (
@@ -1502,10 +1502,10 @@ export default function Menus() {
                               }`}
                               style={{ minHeight: 86 }}
                             >
-                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[15px]' : 'text-[15px]'}`} style={{ paddingRight: 58 }}>
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[17px]'}`} style={{ paddingRight: 58 }}>
                                 {menu.name}
                               </div>
-                              <div className="text-[14px] font-light text-ink mt-auto">{won(menu.price)}</div>
+                              <div className="text-[16px] font-light text-ink mt-auto">{won(menu.price)}</div>
                               {itemImageVisible && (menu.imageUrl ? (
                                 <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px] pointer-events-none" style={{ right: 10, top: 10, width: 48, height: 48 }} />
                               ) : (
@@ -1551,14 +1551,14 @@ export default function Menus() {
                       />
                       <button
                         onClick={() => setRightTab('qr')}
-                        className={`absolute flex items-center justify-center rounded-[10px] text-[15px] font-medium transition-colors ${rightTab === 'qr' ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                        className={`absolute flex items-center justify-center rounded-[10px] text-[17px] font-medium transition-colors ${rightTab === 'qr' ? 'text-ink' : 'text-[#BDB4A7]'}`}
                         style={{ left: 3, top: 3, width: 78, height: 36 }}
                       >
                         미리보기
                       </button>
                       <button
                         onClick={() => setRightTab('items')}
-                        className={`absolute flex items-center justify-center rounded-[10px] text-[15px] font-medium transition-colors ${rightTab === 'items' ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                        className={`absolute flex items-center justify-center rounded-[10px] text-[17px] font-medium transition-colors ${rightTab === 'items' ? 'text-ink' : 'text-[#BDB4A7]'}`}
                         style={{ left: 84, top: 3, width: 78, height: 36 }}
                       >
                         {menuViewMode === 'individual' ? '옵션' : '개별 메뉴'}
@@ -1570,10 +1570,10 @@ export default function Menus() {
                     categories.length === 0 ? (
                       // 카테고리가 하나도 없으면 QR오더가 보여줄 메뉴 구조 자체가 없음 — Figma node 699:514
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-[29px] px-[26px] text-center">
-                        <div className="text-[15px] text-[#ADADAD]">카테고리에 메뉴를 지정해 주세요</div>
+                        <div className="text-[17px] text-[#ADADAD]">카테고리에 메뉴를 지정해 주세요</div>
                         <button
                           onClick={() => setCategoryAddOpen(true)}
-                          className="flex items-center gap-[8px] bg-[#E8E4E2] rounded-[16px] px-[24px] py-[16px] text-[15px] font-medium text-[#6A635E] hover:bg-[#dcd7d4] transition-colors"
+                          className="flex items-center gap-[8px] bg-[#E8E4E2] rounded-[16px] px-[24px] py-[16px] text-[17px] font-medium text-[#6A635E] hover:bg-[#dcd7d4] transition-colors"
                         >
                           + 카테고리 추가하기
                         </button>
@@ -1581,7 +1581,7 @@ export default function Menus() {
                     ) : !storeId ? (
                       // storeId 없이 /demo를 열면 salaria-prepaid가 "침산" 매장으로 폴백해버려서
                       // 엉뚱한 매장 메뉴가 뜬다 — 세션이 아직 없으면 아예 iframe을 띄우지 않는다
-                      <div className="absolute inset-0 flex items-center justify-center text-[15px] text-[#ADADAD]">
+                      <div className="absolute inset-0 flex items-center justify-center text-[17px] text-[#ADADAD]">
                         매장 정보를 불러오는 중…
                       </div>
                     ) : (
@@ -1623,13 +1623,13 @@ export default function Menus() {
                       <div className="absolute text-[21px] font-semibold text-ink" style={{ left: 26, top: 26 }}>옵션순서를 편집하세요</div>
 
                       <div className="absolute bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)]" style={{ left: 26, top: 81, width: 159, height: 86 }}>
-                        <div className="absolute text-[15px] font-semibold text-ink leading-snug" style={{ left: 10, top: 10, width: 89 }}>{optionPanelMenu.name}</div>
+                        <div className="absolute text-[17px] font-semibold text-ink leading-snug" style={{ left: 10, top: 10, width: 89 }}>{optionPanelMenu.name}</div>
                         {optionPanelMenu.imageUrl ? (
                           <img src={optionPanelMenu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
                         ) : (
                           <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ left: 104, top: 10, width: 48, height: 48 }} />
                         )}
-                        <div className="absolute text-[14px] font-light text-ink" style={{ left: 10, top: 66 }}>{won(optionPanelMenu.price)}</div>
+                        <div className="absolute text-[16px] font-light text-ink" style={{ left: 10, top: 66 }}>{won(optionPanelMenu.price)}</div>
                       </div>
 
                       {/* 태그 — 메뉴 박스 바로 오른쪽에 1행 3열.
@@ -1640,7 +1640,7 @@ export default function Menus() {
                         <MenuTagRow menu={optionPanelMenu} />
                       </div>
 
-                      <div className="absolute text-[15px] font-medium text-ink" style={{ left: 26, top: 192 }}>연결된 옵션</div>
+                      <div className="absolute text-[17px] font-medium text-ink" style={{ left: 26, top: 192 }}>연결된 옵션</div>
 
                       <div className="absolute overflow-y-auto" style={{ left: 26, top: GROUPS_START_TOP, right: 26, bottom: 84 }}>
                         {(() => {
@@ -1680,7 +1680,7 @@ export default function Menus() {
                                   </button>
                                   <div className="flex items-center gap-[10px]">
                                     <div className={`flex items-center justify-center px-[8px] py-[5px] rounded-[16px] ${g.isRequired ? 'bg-[#6A635E]' : 'bg-[#F2F2F2]'}`}>
-                                      <span className={`text-[14px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
+                                      <span className={`text-[16px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
                                     </div>
                                     <svg width="17" height="17" viewBox="0 0 27 27" fill="none"><circle cx="8" cy="6" r="2" fill="#ADADAD"/><circle cx="19" cy="6" r="2" fill="#ADADAD"/><circle cx="8" cy="13.5" r="2" fill="#ADADAD"/><circle cx="19" cy="13.5" r="2" fill="#ADADAD"/><circle cx="8" cy="21" r="2" fill="#ADADAD"/><circle cx="19" cy="21" r="2" fill="#ADADAD"/></svg>
                                   </div>
@@ -1702,9 +1702,9 @@ export default function Menus() {
                                         opacity: isDraggingThisItem ? 0.85 : 1,
                                       }}
                                     >
-                                      <span className="text-[15px] font-medium text-ink">{it.name}</span>
+                                      <span className="text-[17px] font-medium text-ink">{it.name}</span>
                                       <div className="flex items-center gap-[10px]">
-                                        <span className="text-[15px] font-medium text-ink">+{won(it.extra)}</span>
+                                        <span className="text-[17px] font-medium text-ink">+{won(it.extra)}</span>
                                         <svg width="13" height="13" viewBox="0 0 27 27" fill="none"><circle cx="8" cy="6" r="2" fill="#ADADAD"/><circle cx="19" cy="6" r="2" fill="#ADADAD"/><circle cx="8" cy="13.5" r="2" fill="#ADADAD"/><circle cx="19" cy="13.5" r="2" fill="#ADADAD"/><circle cx="8" cy="21" r="2" fill="#ADADAD"/><circle cx="19" cy="21" r="2" fill="#ADADAD"/></svg>
                                       </div>
                                     </div>
@@ -1760,7 +1760,7 @@ export default function Menus() {
                             className="w-full flex-shrink-0 rounded-[10px] bg-[#F2F2F2] flex items-center justify-center"
                             style={{ height: 180 }}
                           >
-                            <span className="text-[15px] font-normal text-[#C4C4C4]">사진 없음</span>
+                            <span className="text-[17px] font-normal text-[#C4C4C4]">사진 없음</span>
                           </div>
                         )}
 
@@ -1778,10 +1778,10 @@ export default function Menus() {
                           <MenuTagRow menu={optionPanelMenu} />
                         </div>
 
-                        <div className="flex-shrink-0 text-[15px] font-medium text-ink mt-[26px] mb-[10px]">연결된 옵션</div>
+                        <div className="flex-shrink-0 text-[17px] font-medium text-ink mt-[26px] mb-[10px]">연결된 옵션</div>
 
                       {optionPanelMenu.optionGroups.length === 0 ? (
-                        <div className="text-[14px] text-[#ADADAD]">연결된 옵션이 없습니다.</div>
+                        <div className="text-[16px] text-[#ADADAD]">연결된 옵션이 없습니다.</div>
                       ) : (
                         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
                           {/* 읽기 전용 목록은 **일반 흐름**이다(순서편집 모드와 다르다).
@@ -1807,13 +1807,13 @@ export default function Menus() {
                                   {/* 배지는 눌리지도 늘어나지도 않는다. 전엔 제목이 폭을 다 먹어
                                       '필/수' 로 줄바꿈되며 세로로 길어졌다. */}
                                   <div className={`flex-shrink-0 flex items-center justify-center px-[8px] py-[5px] rounded-[16px] whitespace-nowrap ${g.isRequired ? 'bg-[#6A635E]' : 'bg-[#F2F2F2]'}`}>
-                                    <span className={`text-[14px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
+                                    <span className={`text-[16px] font-semibold ${g.isRequired ? 'text-[#FCFCFC]' : 'text-[#787878]'}`}>{g.isRequired ? '필수' : '선택'}</span>
                                   </div>
                                 </button>
                                 {expanded && g.items.map(it => (
                                   <div key={it.id} className="flex items-center justify-between gap-[10px] w-full" style={{ minHeight: OPT_ITEM_ROW_H }}>
-                                    <span className="flex-1 min-w-0 text-[15px] font-medium text-ink leading-snug">{it.name}</span>
-                                    <span className="flex-shrink-0 text-[15px] font-medium text-ink">+{won(it.extra)}</span>
+                                    <span className="flex-1 min-w-0 text-[17px] font-medium text-ink leading-snug">{it.name}</span>
+                                    <span className="flex-shrink-0 text-[17px] font-medium text-ink">+{won(it.extra)}</span>
                                   </div>
                                 ))}
                               </div>
@@ -1842,18 +1842,18 @@ export default function Menus() {
                       </div>
                     </>
                   ) : menuViewMode === 'individual' ? (
-                    <div className="absolute text-[15px] text-[#ADADAD] -translate-x-1/2" style={{ left: 200, top: 105 }}>
+                    <div className="absolute text-[17px] text-[#ADADAD] -translate-x-1/2" style={{ left: 200, top: 105 }}>
                       메뉴를 선택해 주세요
                     </div>
                   ) : !selectedCat ? (
-                    <div className="absolute text-[15px] text-[#ADADAD] -translate-x-1/2" style={{ left: 200, top: 105 }}>
+                    <div className="absolute text-[17px] text-[#ADADAD] -translate-x-1/2" style={{ left: 200, top: 105 }}>
                       카테고리를 선택해 주세요
                     </div>
                   ) : (
                     <div className="absolute overflow-y-auto" style={{ left: 26, top: 105, right: 26, bottom: 26 }}>
                       <div className="text-[21px] font-semibold text-ink mb-[26px]">{selectedCat.name}</div>
                       {itemsOfSelectedCat.length === 0 ? (
-                        <div className="text-[14px] text-[#ADADAD] py-[13px]">이 카테고리에 메뉴가 없습니다.</div>
+                        <div className="text-[16px] text-[#ADADAD] py-[13px]">이 카테고리에 메뉴가 없습니다.</div>
                       ) : (
                         <div className="grid grid-cols-2 gap-x-[14px] gap-y-[26px]">
                           {itemsOfSelectedCat.map(menu => (
@@ -1863,9 +1863,9 @@ export default function Menus() {
                               ) : (
                                 <div className="rounded-[13px] bg-[#F2F2F2] w-full" style={{ aspectRatio: '1/1' }} />
                               )}
-                              <div className="text-[15px] font-medium text-ink mt-[8px] leading-snug">{menu.name}</div>
+                              <div className="text-[17px] font-medium text-ink mt-[8px] leading-snug">{menu.name}</div>
                               <div className="flex items-center justify-between mt-[6px]">
-                                <span className="text-[15px] font-medium text-ink">{won(menu.price)}</span>
+                                <span className="text-[17px] font-medium text-ink">{won(menu.price)}</span>
                                 <MenuTagBadges menu={menu} />
                               </div>
                             </button>
@@ -1888,7 +1888,7 @@ export default function Menus() {
                       padding={3}
                       className="rounded-[10px] h-[50px]"
                       thumbClassName="rounded-[10px]"
-                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                      optionClassName={active => `h-full text-[17px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
                     />
                   </div>
 
@@ -1901,7 +1901,7 @@ export default function Menus() {
                       padding={3}
                       className="rounded-[10px] h-[50px]"
                       thumbClassName="rounded-[10px]"
-                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                      optionClassName={active => `h-full text-[17px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
                     />
                   </div>
 
@@ -1936,7 +1936,7 @@ export default function Menus() {
                       padding={3}
                       className="rounded-[10px] h-[50px]"
                       thumbClassName="rounded-[10px]"
-                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                      optionClassName={active => `h-full text-[17px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
                     />
                   </div>
 
@@ -1950,7 +1950,7 @@ export default function Menus() {
                       padding={3}
                       className="rounded-[10px] h-[50px]"
                       thumbClassName="rounded-[10px]"
-                      optionClassName={active => `h-full text-[15px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
+                      optionClassName={active => `h-full text-[17px] font-medium flex items-center justify-center ${active ? 'text-ink' : 'text-[#BDB4A7]'}`}
                     />
                   </div>
 
@@ -2115,7 +2115,7 @@ export default function Menus() {
                     onReorderItem={(fromIdx, toIdx) => reorderStoreItem(activeGroup.id, fromIdx, toIdx)}
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-full text-gray-text text-[14px]">
+                  <div className="flex items-center justify-center h-full text-gray-text text-[16px]">
                     왼쪽에서 옵션 그룹을 선택하세요.
                   </div>
                 )}
@@ -2264,13 +2264,13 @@ export default function Menus() {
                                 {/* 정보 */}
                                 <div className="px-2 py-1.5">
                                   <div className="flex items-start justify-between gap-1 mb-0.5">
-                                    <span className="text-[10px] font-semibold text-ink leading-snug">{m.name}</span>
+                                    <span className="text-[12px] font-semibold text-ink leading-snug">{m.name}</span>
                                     <div className="flex flex-col gap-0.5 items-end flex-shrink-0">
                                       {m.soldOut  && <span className="text-[9px] font-bold text-white bg-gray-400 rounded px-1 py-0.5 leading-none">품절</span>}
                                       {!m.active  && <span className="text-[9px] font-bold text-gray-text bg-gray-200 rounded px-1 py-0.5 leading-none">숨김</span>}
                                     </div>
                                   </div>
-                                  <span className="text-[10px] font-bold text-gray-text">{won(m.price)}</span>
+                                  <span className="text-[12px] font-bold text-gray-text">{won(m.price)}</span>
                                 </div>
                               </div>
                             ))}
@@ -2327,7 +2327,7 @@ export default function Menus() {
 
               {/* 이름 */}
               <div className="px-8 pt-6 pb-5 flex-shrink-0">
-                <label className="text-[15px] font-semibold text-gray-text block mb-1.5">카테고리 이름</label>
+                <label className="text-[17px] font-semibold text-gray-text block mb-1.5">카테고리 이름</label>
                 <input
                   value={catEditNameDraft}
                   onChange={e => setCatEditNameDraft(e.target.value)}
@@ -2337,7 +2337,7 @@ export default function Menus() {
 
               {/* 메뉴 선택 */}
               <div className="px-8 pb-3 pt-2 flex-shrink-0 space-y-2">
-                <div className="text-[15px] font-semibold text-gray-text mb-1.5">메뉴 선택</div>
+                <div className="text-[17px] font-semibold text-gray-text mb-1.5">메뉴 선택</div>
                 <input
                   value={catEditSearch}
                   onChange={e => setCatEditSearch(e.target.value)}
@@ -2387,7 +2387,7 @@ export default function Menus() {
                             <div className="text-[13px] text-gray-text">{won(m.price)}</div>
                           </div>
                           {m.categoryId && m.categoryId !== catEditModalId && (
-                            <span className="text-[10px] text-gray-text bg-gray-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                            <span className="text-[12px] text-gray-text bg-gray-100 px-2 py-0.5 rounded-full flex-shrink-0">
                               {categories.find(c => c.id === m.categoryId)?.name ?? ''}
                             </span>
                           )}
@@ -2401,13 +2401,13 @@ export default function Menus() {
               {/* 푸터 */}
               <div className="bg-white flex gap-2 px-8 py-4 flex-shrink-0">
                 <button onClick={() => setCatEditModalId(null)}
-                  className="flex-1 py-3 bg-gray-100 text-ink rounded-lg text-[15px] font-semibold hover:bg-gray-200 transition-colors">
+                  className="flex-1 py-3 bg-gray-100 text-ink rounded-lg text-[17px] font-semibold hover:bg-gray-200 transition-colors">
                   취소
                 </button>
                 <button
                   onClick={() => saveCategoryEdit(catEditModalId, catEditNameDraft, catEditChecked)}
                   disabled={!catEditNameDraft.trim() || catEditSaving}
-                  className="flex-1 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[15px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-40"
+                  className="flex-1 py-3 bg-[#00DD67] text-[#1A1A1A] rounded-lg text-[17px] font-semibold hover:bg-[#00BB55] transition-colors disabled:opacity-40"
                 >
                   {catEditSaving ? <Working label="저장 중" /> : '저장'}
                 </button>
@@ -2523,7 +2523,7 @@ export default function Menus() {
             <div className="flex gap-0 px-8 mt-4 flex-shrink-0">
               {([{ v: 'bulk', l: '일괄' }, { v: 'detail', l: '상세' }] as const).map(({ v, l }) => (
                 <button key={v} onClick={() => { setAddModalTab(v); setAddError('') }}
-                  className={`px-4 py-2 text-[15px] font-bold border-b-2 transition-colors
+                  className={`px-4 py-2 text-[17px] font-bold border-b-2 transition-colors
                     ${addModalTab === v ? 'border-ink text-ink' : 'border-transparent text-gray-text hover:text-ink'}`}>
                   {l}
                 </button>
@@ -2546,7 +2546,7 @@ export default function Menus() {
                   <div className="relative flex-1 pt-2">
                     <select value={addCategoryId} onChange={e => setAddCategoryId(e.target.value)}
                       onFocus={() => setCatFocused(true)} onBlur={() => setCatFocused(false)}
-                      className="floating-input w-full bg-transparent border-b border-gray-border pb-1.5 pr-7 text-[15px] font-normal text-ink appearance-none focus:outline-none transition-colors"
+                      className="floating-input w-full bg-transparent border-b border-gray-border pb-1.5 pr-7 text-[17px] font-normal text-ink appearance-none focus:outline-none transition-colors"
                       style={{ borderColor: catFocused ? '#00DD67' : undefined }}>
                       <option value=""></option>
                       {sortedCategories().map(c => (
@@ -2667,7 +2667,7 @@ export default function Menus() {
                       ) : (
                         <div className="w-[96px] h-[96px] rounded-xl flex flex-col items-center justify-center gap-1.5 hover:bg-gray-100 transition-colors">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="stroke-gray-400" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                          <span className="text-[10px] text-gray-400 leading-tight text-center transition-colors">메뉴 사진</span>
+                          <span className="text-[12px] text-gray-400 leading-tight text-center transition-colors">메뉴 사진</span>
                         </div>
                       )}
                     </label>
@@ -2828,7 +2828,7 @@ export default function Menus() {
                   ? `메뉴 ${checked.size}개를 삭제할까요?`
                   : `'${selected?.name}'을(를) 삭제할까요?`}
               </div>
-              <div className="text-[15px] font-normal text-[#787878] leading-relaxed">
+              <div className="text-[17px] font-normal text-[#787878] leading-relaxed">
                 삭제하면 되돌릴 수 없어요. 지난 주문 기록의 메뉴 이름과 금액은
                 주문 시점 그대로 남습니다.
               </div>
@@ -2985,7 +2985,7 @@ function OptionGroupRow({
     >
       {/* 그룹명 + 상태 배지 */}
       <div className="flex items-center gap-1.5 min-w-0">
-        <span className={`font-semibold text-[15px] flex-1 truncate text-ink ${isSelected ? 'underline' : ''}`}>
+        <span className={`font-semibold text-[17px] flex-1 truncate text-ink ${isSelected ? 'underline' : ''}`}>
           {group.name}
         </span>
         {soldOutState === 'today' && (
@@ -3002,13 +3002,13 @@ function OptionGroupRow({
       </div>
       {/* 속성 배지 */}
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">
+        <span className="text-[12px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">
           {group.isRequired ? '필수' : '선택'}
         </span>
-        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">
+        <span className="text-[12px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">
           {selectLabel}
         </span>
-        <span className="text-[10px] text-gray-text ml-auto">
+        <span className="text-[12px] text-gray-text ml-auto">
           {group.items.length}개 항목
         </span>
       </div>
@@ -3104,17 +3104,17 @@ function OptionGroupPanel({
       <div className="border border-gray-border rounded-xl overflow-hidden">
         {/* 그룹 헤더 */}
         <div className="px-3 py-2.5 flex items-center justify-between bg-gray-50 border-b border-gray-border">
-          <span className="text-[15px] font-semibold text-ink">{group.name}</span>
+          <span className="text-[17px] font-semibold text-ink">{group.name}</span>
           <div className="flex items-center gap-1.5">
             {groupSoldOutState !== 'active' && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+              <span className="text-[12px] font-medium px-2 py-0.5 rounded-full"
                 style={groupSoldOutState === 'today'
                   ? { backgroundColor: '#FEF3C7', color: '#D97706' }
                   : { backgroundColor: '#FEE2E2', color: '#C92A2A' }}>
                 {groupSoldOutState === 'today' ? '오늘품절' : '품절'}
               </span>
             )}
-            {isHidden && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>}
+            {isHidden && <span className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>}
           </div>
         </div>
         {/* 항목 목록 */}
@@ -3122,18 +3122,18 @@ function OptionGroupPanel({
           {group.items.map((item: OptionItem) => {
             const itemState = getSoldOutState(item.soldOut, item.soldOutUntil ?? null)
             return (
-              <div key={item.id} className={`flex items-center gap-2 px-3 py-1.5 text-[14px] ${item.hidden ? 'opacity-50' : ''}`}>
+              <div key={item.id} className={`flex items-center gap-2 px-3 py-1.5 text-[16px] ${item.hidden ? 'opacity-50' : ''}`}>
                 <span className="flex-1 font-medium text-ink truncate">{item.name}</span>
                 {item.extra > 0 && <span className="text-[13px] text-gray-text">+{won(item.extra)}</span>}
                 {itemState !== 'active' && (
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
+                  <span className="text-[12px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
                     style={itemState === 'today'
                       ? { backgroundColor: '#FEF3C7', color: '#D97706' }
                       : { backgroundColor: '#FEE2E2', color: '#C92A2A' }}>
                     {itemState === 'today' ? '오늘품절' : '품절'}
                   </span>
                 )}
-                {item.hidden && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-text flex-shrink-0">숨김</span>}
+                {item.hidden && <span className="text-[12px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-text flex-shrink-0">숨김</span>}
               </div>
             )
           })}
@@ -3159,12 +3159,12 @@ function OptionGroupPanel({
             {/* 바디 */}
             <div className="px-5 py-[30px] flex flex-col gap-4">
               <div>
-                <label className="text-[15px] font-semibold text-gray-text block mb-1.5">그룹명</label>
+                <label className="text-[17px] font-semibold text-gray-text block mb-1.5">그룹명</label>
                 <input value={settingsName} onChange={e => setSettingsName(e.target.value)}
-                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[15px] focus:outline-none focus:border-ink transition-colors" />
+                  className="w-full border border-gray-border rounded-xl px-3 py-2.5 text-[17px] focus:outline-none focus:border-ink transition-colors" />
               </div>
               <div>
-                <label className="text-[15px] font-semibold text-gray-text block mb-1.5">필수 여부</label>
+                <label className="text-[17px] font-semibold text-gray-text block mb-1.5">필수 여부</label>
                 <SegmentedControl
                   options={[{ label: '필수', value: true }, { label: '선택', value: false }]}
                   value={group.isRequired}
@@ -3173,7 +3173,7 @@ function OptionGroupPanel({
                 />
               </div>
               <div>
-                <label className="text-[15px] font-semibold text-gray-text block mb-1.5">복수 여부</label>
+                <label className="text-[17px] font-semibold text-gray-text block mb-1.5">복수 여부</label>
                 <SegmentedControl
                   options={[{ label: '단일', value: false }, { label: '복수', value: true }]}
                   value={group.isMulti}
@@ -3201,17 +3201,17 @@ function OptionGroupPanel({
             <div className="bg-white flex gap-2.5 px-6 pt-5 pb-6">
               {!deleteGroupConfirm ? (
                 <button onClick={() => setDeleteGroupConfirm(true)}
-                  className="flex-1 py-2.5 rounded-xl bg-red-50 text-danger font-bold text-[15px] hover:bg-red-100 transition-colors focus:outline-none">
+                  className="flex-1 py-2.5 rounded-xl bg-red-50 text-danger font-bold text-[17px] hover:bg-red-100 transition-colors focus:outline-none">
                   삭제
                 </button>
               ) : (
                 <button onClick={() => { onDeleteGroup(); setSettingsOpen(false) }}
-                  className="flex-1 py-2.5 rounded-xl bg-danger text-white font-bold text-[15px] hover:bg-danger/90 transition-colors focus:outline-none">
+                  className="flex-1 py-2.5 rounded-xl bg-danger text-white font-bold text-[17px] hover:bg-danger/90 transition-colors focus:outline-none">
                   삭제 확정
                 </button>
               )}
               <button onClick={() => { if (settingsName.trim()) onUpdateGroup({ name: settingsName.trim() }); setSettingsOpen(false) }}
-                className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[15px] hover:bg-[#00BB55] transition-colors focus:outline-none">
+                className="flex-[2] py-2.5 rounded-xl bg-[#00DD67] text-[#1A1A1A] font-bold text-[17px] hover:bg-[#00BB55] transition-colors focus:outline-none">
                 저장
               </button>
             </div>
@@ -3223,8 +3223,8 @@ function OptionGroupPanel({
       {deleteItemConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteItemConfirm(null)}>
           <div className="modal-in bg-white rounded-2xl shadow-xl p-6 w-[300px]" onClick={e => e.stopPropagation()}>
-            <div className="text-[15px] font-semibold text-ink mb-1">옵션 삭제</div>
-            <div className="text-[14px] text-gray-text mb-5">
+            <div className="text-[17px] font-semibold text-ink mb-1">옵션 삭제</div>
+            <div className="text-[16px] text-gray-text mb-5">
               <span className="font-semibold text-ink">'{deleteItemConfirm.name}'</span>을(를) 삭제할까요?
             </div>
             <div className="flex gap-2">
@@ -3247,13 +3247,13 @@ function OptionGroupPanel({
 
           {readOnly && (
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+              <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${
                 groupSoldOutState === 'today'     ? 'bg-amber-100 text-amber-700' :
                 groupSoldOutState === 'permanent' ? 'bg-red-100 text-danger' :
                                                     'bg-gray-100 text-gray-text'}`}>
                 {groupSoldOutState === 'today' ? '오늘품절' : groupSoldOutState === 'permanent' ? '품절' : '판매중'}
               </span>
-              {isHidden && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>}
+              {isHidden && <span className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>}
             </div>
           )}
 
@@ -3305,7 +3305,7 @@ function OptionGroupPanel({
           <div className="flex flex-wrap gap-1.5 mt-2">
             {usedByMenus.map(m => (
               <span key={m.name} className="inline-flex items-center gap-1">
-                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${m.hidden ? 'text-gray-text bg-gray-100 opacity-35' : 'text-gray-text bg-gray-100'}`}>
+                <span className={`text-[12px] font-medium px-2 py-0.5 rounded-md ${m.hidden ? 'text-gray-text bg-gray-100 opacity-35' : 'text-gray-text bg-gray-100'}`}>
                   {m.name}{m.hidden ? ' (숨김)' : ''}
                 </span>
                 {m.soldOut && <span className="text-[9px] font-bold text-white bg-danger rounded px-1 leading-none">품절</span>}
@@ -3328,7 +3328,7 @@ function OptionGroupPanel({
               <div key={item.id} className="flex items-center gap-2 px-4 py-2.5 w-full rounded-lg" style={{ background: 'var(--gray-bg)' }}>
                 <input autoFocus value={editItemName} onChange={e => setEditItemName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') commitEditItem(); if (e.key === 'Escape') setEditingItemId(null) }}
-                  className="flex-1 min-w-0 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[14px] focus:outline-none"
+                  className="flex-1 min-w-0 border-0 border-b border-[#00DD67] bg-transparent px-0 py-1 text-[16px] focus:outline-none"
                 />
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <input type="text" value={editItemPrice}
@@ -3343,7 +3343,7 @@ function OptionGroupPanel({
                   <StepperButton direction="down" onStep={() => setEditItemPrice(String(Math.max(0, (parseInt(editItemPrice) || 0) - 500)))} />
                 </div>
                 <button onClick={commitEditItem}
-                  className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[10px] font-bold hover:bg-[#00BB55]">완료</button>
+                  className="flex-shrink-0 px-2.5 py-1 rounded-lg bg-[#00DD67] text-[#1A1A1A] text-[12px] font-bold hover:bg-[#00BB55]">완료</button>
               </div>
             ) : (
               <div
@@ -3360,7 +3360,7 @@ function OptionGroupPanel({
                   setDragOverItemIdx(null)
                 }) : undefined}
                 onDragEnd={!readOnly ? (() => { setDragItemIdx(null); setDragOverItemIdx(null) }) : undefined}
-                className={`flex items-center gap-2.5 text-[14px] group/row transition-colors
+                className={`flex items-center gap-2.5 text-[16px] group/row transition-colors
                   ${readOnly ? 'px-3 py-2 rounded-lg bg-gray-50 w-full' : 'px-3 py-2 rounded-lg border border-gray-border bg-white w-full'}
                   ${!readOnly && dragOverItemIdx === itemIdx && dragItemIdx !== itemIdx ? '!border-green !border-2' : ''}
                   ${!readOnly && dragItemIdx === itemIdx ? 'opacity-40' : ''}`}
@@ -3379,7 +3379,7 @@ function OptionGroupPanel({
                 <div className="flex items-center gap-1.5 min-w-0 flex-1" onClick={!readOnly ? () => startEditItem(item) : undefined}
                   style={!readOnly ? { cursor: 'pointer' } : undefined}>
                   <span className={`font-medium text-ink truncate ${!readOnly ? 'hover:text-green transition-colors' : ''} ${isMatch && sq ? 'text-green font-bold' : ''} ${isUnavailable ? 'opacity-40 line-through' : ''}`}>{item.name}</span>
-                  {item.isPopular && <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
+                  {item.isPopular && <span className="text-[12px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full flex-shrink-0">🔥</span>}
                   {item.extra > 0 && <span className="text-[13px] text-gray-text flex-shrink-0">+{won(item.extra)}</span>}
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -3391,14 +3391,14 @@ function OptionGroupPanel({
                       :                         { soldOut: true,  soldOutUntil: null             }
                     return readOnly ? (
                       itemState !== 'active' && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                        <span className="px-2 py-0.5 rounded-full text-[12px] font-medium"
                           style={itemState === 'today' ? { backgroundColor: '#FEF3C7', color: '#D97706' } : { backgroundColor: '#FEE2E2', color: '#C92A2A' }}>
                           {itemState === 'today' ? '오늘품절' : '품절'}
                         </span>
                       )
                     ) : (
                       <button onClick={() => onUpdateItem(item.id, nextUpdates)}
-                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border-0 transition-colors"
+                        className="px-2 py-0.5 rounded-full text-[12px] font-bold border-0 transition-colors"
                         style={
                           itemState === 'today'
                             ? { backgroundColor: '#FEF3C7', color: '#D97706' }
@@ -3414,14 +3414,14 @@ function OptionGroupPanel({
                     <>
                       <div className="w-px h-3 bg-gray-200 flex-shrink-0" />
                       <button onClick={() => onUpdateItem(item.id, { hidden: !item.hidden })}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border-0 transition-colors
+                        className={`px-2 py-0.5 rounded-full text-[12px] font-bold border-0 transition-colors
                           ${item.hidden ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'}`}>숨김</button>
                       <button onClick={() => setDeleteItemConfirm({ id: item.id, name: item.name })}
-                        className="w-6 h-6 flex items-center justify-center rounded-full text-[15px] text-gray-text hover:bg-red-100 hover:text-danger transition-colors opacity-0 group-hover/row:opacity-100">×</button>
+                        className="w-6 h-6 flex items-center justify-center rounded-full text-[17px] text-gray-text hover:bg-red-100 hover:text-danger transition-colors opacity-0 group-hover/row:opacity-100">×</button>
                     </>
                   )}
                   {readOnly && item.hidden && (
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>
+                    <span className="text-[12px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-text">숨김</span>
                   )}
                 </div>
               </div>
@@ -3434,19 +3434,19 @@ function OptionGroupPanel({
           <div className="flex items-center gap-2 px-4 py-2.5 border-t border-gray-border bg-green-soft/40">
             <input autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
-              placeholder="옵션명" className="flex-1 min-w-0 border border-green rounded-md px-2 py-1 text-[14px]"
+              placeholder="옵션명" className="flex-1 min-w-0 border border-green rounded-md px-2 py-1 text-[16px]"
             />
             <div className="flex items-center gap-1 flex-shrink-0">
               <span className="text-[13px] text-gray-text">+₩</span>
               <input type="number" min="0" step="500" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') confirmAddItem(); if (e.key === 'Escape') setShowAddItem(false) }}
-                className="w-16 border border-green rounded-md px-2 py-1 text-[14px]"
+                className="w-16 border border-green rounded-md px-2 py-1 text-[16px]"
               />
             </div>
             <button onClick={confirmAddItem} disabled={!newItemName.trim()}
               className="flex-shrink-0 text-[13px] font-bold text-white bg-green px-2.5 py-1 rounded-lg hover:bg-[#015c28] disabled:opacity-40">추가</button>
             <button onClick={() => { setShowAddItem(false); setNewItemName(''); setNewItemPrice('0') }}
-              className="flex-shrink-0 text-gray-text hover:text-ink text-[15px]">✗</button>
+              className="flex-shrink-0 text-gray-text hover:text-ink text-[17px]">✗</button>
           </div>
         ) : !readOnly ? (
           <div className="flex justify-end px-4 py-2.5 modal-footer">
@@ -3455,7 +3455,7 @@ function OptionGroupPanel({
         ) : null}
 
         {group.items.length === 0 && !showAddItem && (
-          <div className="text-center py-10 text-gray-text text-[14px]">
+          <div className="text-center py-10 text-gray-text text-[16px]">
             아직 항목이 없습니다. 아래에서 추가하세요.
           </div>
         )}

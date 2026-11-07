@@ -31,9 +31,13 @@ function isPriceOption(name: string): boolean {
 }
 
 export default function HomeOrderDetail({
-  order, onComplete, onCancel, onReprint, busy,
+  order, onNotify, notified, onComplete, onCancel, onReprint, busy,
 }: {
   order:      Order
+  /** 준비 알림 — 손님에게만 알린다. 주문은 목록에 남는다 */
+  onNotify:   () => void
+  /** 이 세션에서 이미 알림을 보냈나 */
+  notified:   boolean
   onComplete: () => void
   onCancel:   () => void
   onReprint:  () => void
@@ -244,29 +248,49 @@ export default function HomeOrderDetail({
         </div>
       </div>
 
-      {/* 액션 — 준비완료가 가장 크고 유일하게 색을 쓴다.
-          전엔 버튼에 mr-[24px] 를 더 줘서 오른쪽 끝이 28+24=52px 였는데, 위 메뉴표·고객정보는
-          모두 28px 선에서 끝난다. 세로로 내려오는 오른쪽 끝선이 버튼에서만 안쪽으로 꺾였다.
+      {/* 액션 — 세 개. 가장 오른쪽이 가장 크고 유일하게 색을 쓴다(주 동작 자리).
+          그 자리를 **준비 알림**이 가진다. 한 주문에서 가장 자주 누르고, 늦으면
+          손님이 헛걸음하는 버튼이기 때문이다.
 
-          **이미 끝난 주문에는 안 보인다.** 완료·취소된 건에 '준비 완료'와 '주문 취소'가
-          그대로 떠 있으면 아직 할 일이 남은 것처럼 읽히고, 피크타임에 잘못 누르면
-          끝난 주문을 다시 건드린다. 탭이 아니라 **주문 자체의 상태**로 판단한다 —
-          같은 주문을 어느 목록에서 열었든 결론은 같아야 한다. */}
+          전엔 '준비 완료' 하나가 알림과 마감을 같이 했다. 그래서 손님에게 알리는
+          순간 주문이 목록에서 사라졌다 — 만들어 놨지만 아직 안 가져간 주문이
+          화면 어디에도 없었다. 선결제 픽업 매장에서 그 구간이 제일 긴데도.
+          이제 셋으로 나눈다:
+            주문 거부 — 돈이 환원되고 손님에게 취소가 간다. 그래서 가장 작고 가장 왼쪽
+            처리 완료 — 목록에서 내린다. **알림 전에도 누를 수 있다** —
+                       알리기 전에 손님이 그냥 가져가는 일이 흔하다
+            준비 알림 — 손님에게만 알린다. 주문은 남는다. **여러 번 눌러도 된다** —
+                       손님이 안 오면 다시 불러야 한다
+
+          **이미 끝난 주문에는 안 보인다.** 완료·취소된 건에 버튼이 그대로 떠 있으면
+          아직 할 일이 남은 것처럼 읽히고, 피크타임에 잘못 누르면 끝난 주문을 다시
+          건드린다. 탭이 아니라 **주문 자체의 상태**로 판단한다. */}
       {!isSettled && (
         <div className="flex-shrink-0 px-[28px] py-[18px] flex gap-[12px]">
           <button
             onClick={onCancel}
             disabled={busy}
-            className="pressable w-[140px] h-[88px] rounded-[12px] border border-[#D9D9D9] bg-[#FCFCFC] text-[19px] font-medium text-[#414141] hover:bg-[#F2F2F2] disabled:opacity-40"
+            className="pressable w-[118px] h-[88px] rounded-[12px] border border-[#D9D9D9] bg-[#FCFCFC] text-[19px] font-medium text-[#414141] hover:bg-[#F2F2F2] disabled:opacity-40"
           >
-            주문 취소
+            주문 거부
           </button>
           <button
             onClick={onComplete}
             disabled={busy}
+            className="pressable w-[118px] h-[88px] rounded-[12px] border border-[#D9D9D9] bg-[#FCFCFC] text-[19px] font-medium text-[#414141] hover:bg-[#F2F2F2] disabled:opacity-40"
+          >
+            처리 완료
+          </button>
+          <button
+            onClick={onNotify}
+            disabled={busy}
             className="pressable flex-1 h-[88px] rounded-[12px] bg-[#E15D43] text-[#FCFCFC] text-[24px] font-semibold hover:opacity-90 disabled:opacity-40"
           >
-            {isDelivery ? '배달 출발' : '준비 완료'}
+            {/* 한 번 보낸 뒤에는 '다시 알리기' — 눌러도 되는 버튼이라는 걸 글자로 말한다.
+                막지는 않는다. 손님이 안 오면 다시 불러야 한다. */}
+            {notified
+              ? '다시 알리기'
+              : isDelivery ? '배달 출발 알림' : '준비 알림'}
           </button>
         </div>
       )}

@@ -180,12 +180,12 @@ const TABLE_SORTS: { key: TableSort; label: string }[] = [
   { key: 'orderFew',    label: '주문 적은순' },
 ]
 
-const CUST_INPUT_BASE = 'field-soft border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] text-ink outline-none focus:border-ink bg-transparent'
+const CUST_INPUT_BASE = 'field-soft border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[16px] text-ink outline-none focus:border-ink bg-transparent'
 const CUST_INPUT_CLS = `${CUST_INPUT_BASE} w-full`
 function CustFormField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mb-[22px]">
-      <div className="text-[14px] font-medium text-ink mb-[8px]">{label}</div>
+      <div className="text-[16px] font-medium text-ink mb-[8px]">{label}</div>
       {children}
     </div>
   )
@@ -1338,19 +1338,19 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="계정이름 또는 주문자 이름 검색"
-                className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[15px] text-ink placeholder:text-[#8C8379] bg-transparent"
+                className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[17px] text-ink placeholder:text-[#8C8379] bg-transparent"
               />
             </div>
             {/* 우상단 텍스트 버튼 — 메뉴·주문 화면의 텍스트 버튼과 같은 위치(top 3)로 맞춤 */}
             {typeEditMode ? (
               <div className="absolute flex items-center gap-[16px]" style={{ right: 26, top: 3 }}>
-                <button onClick={cancelTypeEdit} className="text-[15px] font-medium text-gray-text whitespace-nowrap hover:text-ink transition-colors">
+                <button onClick={cancelTypeEdit} className="text-[17px] font-medium text-gray-text whitespace-nowrap hover:text-ink transition-colors">
                   편집 취소
                 </button>
                 <button
                   onClick={confirmTypeEdit}
                   disabled={typeSaving}
-                  className="px-[15px] py-[7px] rounded-lg bg-[#2C261F] text-white text-[15px] font-semibold whitespace-nowrap disabled:opacity-50 transition-opacity"
+                  className="px-[15px] py-[7px] rounded-lg bg-[#2C261F] text-white text-[17px] font-semibold whitespace-nowrap disabled:opacity-50 transition-opacity"
                 >
                   {typeSaving ? (
                     // '저장 중' 글자를 빼고 점만 남긴다 — 버튼 폭이 '완료'에서 갑자기
@@ -1363,7 +1363,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             ) : (
               <button
                 onClick={startTypeEdit}
-                className="hover-chip absolute flex items-center gap-[4px] text-[15px] text-[#6A635E] whitespace-nowrap hover:text-ink"
+                className="hover-chip absolute flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                 style={{ right: 17, top: -2 }}
               >
                 화면 편집 ✎
@@ -1377,7 +1377,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             <div className={`flex items-center flex-wrap ${typeEditMode ? 'gap-[13px]' : 'gap-[4px]'}`}>
               <button
                 onClick={() => setTypeFilter('all')}
-                className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors ${
+                className={`px-[10px] py-[6px] rounded-[19px] text-[17px] font-medium whitespace-nowrap transition-colors ${
                   typeFilter === 'all' ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink hover:bg-[#E8E4E2]'
                 }`}
               >
@@ -1400,7 +1400,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       onChange={e => setTypeDraft(prev => prev.map((x, xi) => xi === i ? { ...x, name: e.target.value.slice(0, 7) } : x))}
                       onBlur={() => setEditingTypeIdx(null)}
                       onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingTypeIdx(null) }}
-                      className="px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium border border-ink outline-none"
+                      className="px-[10px] py-[6px] rounded-[19px] text-[17px] font-medium border border-ink outline-none"
                       style={{ width: Math.max(60, t.length * 14 + 20) }}
                     />
                     {canRemove && (
@@ -1419,7 +1419,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   <span key={i} className="relative inline-flex">
                     <button
                       onClick={() => typeEditMode ? setEditingTypeIdx(i) : setTypeFilter(t)}
-                      className={`px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium whitespace-nowrap transition-colors flex items-center gap-[6px] ${
+                      className={`px-[10px] py-[6px] rounded-[19px] text-[17px] font-medium whitespace-nowrap transition-colors flex items-center gap-[6px] ${
                         !typeEditMode && typeFilter === t ? 'bg-[#D7D2CE] text-ink' : 'text-ink/60 hover:text-ink hover:bg-[#E8E4E2]'
                       }`}
                     >
@@ -1445,7 +1445,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               {typeEditMode && typeDraft.length < 6 && (
                 <button
                   onClick={addTypeDraft}
-                  className="px-[10px] py-[6px] rounded-[19px] text-[15px] font-medium text-[#6A635E] whitespace-nowrap flex items-center gap-[4px] hover:text-ink hover:bg-[#E8E4E2] transition-colors"
+                  className="px-[10px] py-[6px] rounded-[19px] text-[17px] font-medium text-[#6A635E] whitespace-nowrap flex items-center gap-[4px] hover:text-ink hover:bg-[#E8E4E2] transition-colors"
                 >
                   유형 추가
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#6A635E" strokeWidth="2"/><path d="M12 7V17M7 12H17" stroke="#6A635E" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1459,7 +1459,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             <div className="flex items-center gap-[10px] flex-shrink-0">
               <button
                 onClick={() => setShowInactive(v => !v)}
-                className={`hover-chip text-[15px] font-medium whitespace-nowrap flex-shrink-0 ${showInactive ? 'text-danger' : 'text-[#6A635E] hover:text-ink'}`}
+                className={`hover-chip text-[17px] font-medium whitespace-nowrap flex-shrink-0 ${showInactive ? 'text-danger' : 'text-[#6A635E] hover:text-ink'}`}
               >
                 {showInactive ? '비활성 고객 보는 중' : '비활성 보기'}
               </button>
@@ -1468,7 +1468,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <div className="relative flex-shrink-0">
                 <button
                   onClick={() => setTableSortOpen(v => !v)}
-                  className="h-[30px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[15px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors whitespace-nowrap"
+                  className="h-[30px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors whitespace-nowrap"
                 >
                   {TABLE_SORTS.find(x => x.key === tableSort)?.label}
                   <svg
@@ -1487,7 +1487,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                         <button
                           key={x.key}
                           onClick={() => { setTableSort(x.key); setTableSortOpen(false) }}
-                          className={`w-full text-left px-[13px] py-[7px] text-[15px] hover:bg-[#F2F2F2] transition-colors ${
+                          className={`w-full text-left px-[13px] py-[7px] text-[17px] hover:bg-[#F2F2F2] transition-colors ${
                             tableSort === x.key ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'
                           }`}
                         >
@@ -1509,7 +1509,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             {/* overflow-hidden 을 빼야 머리글 sticky 가 산다(DataTable.tsx 주석 참고).
                 모서리는 rounded + 첫 행/마지막 행이 알아서 맞춰진다. */}
             <div className="bg-canvas-soft rounded-[13px]">
-              <div className="sticky top-0 z-10 bg-[#D7D2CE] border-y border-[#C1B7AA] flex items-center text-[#6A635E] text-[15px] font-medium rounded-t-[13px]" style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
+              <div className="sticky top-0 z-10 bg-[#D7D2CE] border-y border-[#C1B7AA] flex items-center text-[#6A635E] text-[17px] font-medium rounded-t-[13px]" style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
                 <span style={{ width: 51 }}>순번</span>
                 <span className="flex-1">계정 이름</span>
                 <span style={{ width: 80 }}>유형</span>
@@ -1534,12 +1534,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               {loading ? (
                 <div className="flex items-center justify-center" style={{ height: 193 }}><LoadingTimer size={36} /></div>
               ) : fetchError ? (
-                <div className="flex flex-col items-center justify-center gap-[8px] text-[#ADADAD] text-[15px]" style={{ height: 193 }}>
+                <div className="flex flex-col items-center justify-center gap-[8px] text-[#ADADAD] text-[17px]" style={{ height: 193 }}>
                   고객 목록을 불러오지 못했습니다
-                  <button onClick={() => setRetryCount(c => c + 1)} className="px-[13px] py-[6px] rounded-[6px] bg-ink text-white text-[10px] font-bold">다시 시도</button>
+                  <button onClick={() => setRetryCount(c => c + 1)} className="px-[13px] py-[6px] rounded-[6px] bg-ink text-white text-[12px] font-bold">다시 시도</button>
                 </div>
               ) : filtered.length === 0 ? (
-                <div className="flex items-center justify-center text-[#ADADAD] text-[15px]" style={{ height: 193 }}>
+                <div className="flex items-center justify-center text-[#ADADAD] text-[17px]" style={{ height: 193 }}>
                   {search ? '검색 결과가 없습니다' : showInactive ? '비활성 고객이 없습니다' : '등록된 고객이 없습니다'}
                 </div>
               ) : (
@@ -1581,7 +1581,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                           const c = typeColorOf(acc.account_type)
                           return (
                             <span
-                              className="inline-block px-[8px] py-[3px] rounded-[6px] text-[14px] font-medium whitespace-nowrap max-w-full truncate align-middle"
+                              className="inline-block px-[8px] py-[3px] rounded-[6px] text-[16px] font-medium whitespace-nowrap max-w-full truncate align-middle"
                               style={{ color: c, backgroundColor: `${c}1F` }}
                             >
                               {TYPE_LABEL[acc.account_type] ?? acc.account_type}
@@ -1616,7 +1616,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 bottom: (window.innerHeight - trendInfoTooltip.y) / rootZoom() + 6,
               }}
             >
-              <span className="block text-[14px] font-semibold text-ink text-center leading-[1.2]">지난달보다 늘어난<br />주문량이에요</span>
+              <span className="block text-[16px] font-semibold text-ink text-center leading-[1.2]">지난달보다 늘어난<br />주문량이에요</span>
             </div>
           )}
         </div>
@@ -1636,7 +1636,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             {onOpenDetail && (
               <button
                 onClick={onOpenDetail}
-                className="pressable-tab flex-shrink-0 h-[30px] px-[13px] rounded-[9px] text-[14px] font-normal bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2] transition-colors"
+                className="pressable-tab flex-shrink-0 h-[30px] px-[13px] rounded-[9px] text-[16px] font-normal bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2] transition-colors"
               >
                 자세히 보기
               </button>
@@ -1647,7 +1647,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             <div className="relative ml-auto flex-shrink-0">
               <button
                 onClick={() => setPanelFilterOpen(v => !v)}
-                className={`pressable-tab h-[30px] px-[13px] rounded-[9px] text-[14px] font-normal flex items-center gap-[5px] transition-colors ${
+                className={`pressable-tab h-[30px] px-[13px] rounded-[9px] text-[16px] font-normal flex items-center gap-[5px] transition-colors ${
                   panelFilter !== null
                     ? 'bg-[#6A635E] text-[#FCFCFC] hover:brightness-110'
                     : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
@@ -1672,18 +1672,18 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
           <div className="flex gap-[6px]">
             <StatCard className="bg-[#F2F2F2] rounded-[13px]" padding={13} gap={9} style={{ width: 196 }}>
-              <div className="text-[15px] font-medium text-[#2C261F] tracking-[-0.5px]">계정/이용자수</div>
+              <div className="text-[17px] font-medium text-[#2C261F] tracking-[-0.5px]">계정/이용자수</div>
               <div className="text-[21px] font-medium text-ink whitespace-nowrap">{pAccounts.length}팀/{pTotalMembers}명</div>
             </StatCard>
             <StatCard className="bg-[#F2F2F2] rounded-[13px] flex-1" padding={13} gap={9}>
-              <div className="text-[15px] font-medium text-[#2C261F] tracking-[-0.5px] whitespace-nowrap">최근 30일 주문율</div>
+              <div className="text-[17px] font-medium text-[#2C261F] tracking-[-0.5px] whitespace-nowrap">최근 30일 주문율</div>
               <div className="text-[18px] font-medium text-ink">{pActive30dPct}%</div>
             </StatCard>
           </div>
 
           {/* 선결제 추이 — 올해 월별 충전합계 바차트 */}
           <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13 }}>
-            <div className="text-[15px] font-semibold text-[#2C261F]">선결제 추이</div>
+            <div className="text-[17px] font-semibold text-[#2C261F]">선결제 추이</div>
             <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
               {pYearlyDeposits.map((amt, i) => (
                 <div
@@ -1734,7 +1734,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             })()}
             <div className="flex mt-[6px]" style={{ width: 323 }}>
               {Array.from({ length: 12 }, (_, i) => (
-                <div key={i} className="flex-1 text-center text-[10px] text-[#6A635E]">{i + 1}월</div>
+                <div key={i} className="flex-1 text-center text-[12px] text-[#6A635E]">{i + 1}월</div>
               ))}
             </div>
           </div>
@@ -1744,7 +1744,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               축(1~12월)과 막대 폭이 같아야 눈이 위아래로 바로 비교한다. */}
           <div className="relative bg-[#F2F2F2] rounded-[13px] mt-[13px]" style={{ padding: 13 }}>
             <div className="flex items-baseline justify-between">
-              <div className="text-[15px] font-semibold text-[#2C261F]">주문 추이</div>
+              <div className="text-[17px] font-semibold text-[#2C261F]">주문 추이</div>
               <div className={`text-[13px] ${NUM_MUTED}`}>올해 {pYearlyOrders.reduce((a, b) => a + b, 0)}건</div>
             </div>
             {/* 막대 호버 — 전엔 title 속성이었다. 브라우저 기본 툴팁은 1초쯤 기다려야 뜨고
@@ -1780,7 +1780,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               const monthTotal = monthRows.reduce((a, r) => a + r.total_amount, 0)
               return (
                 <div
-                  className="fixed z-50 pointer-events-none bg-white border border-gray-border rounded-[9px] shadow-lg px-[11px] py-[7px] text-[14px] whitespace-nowrap"
+                  className="fixed z-50 pointer-events-none bg-white border border-gray-border rounded-[9px] shadow-lg px-[11px] py-[7px] text-[16px] whitespace-nowrap"
                   style={orderBarTooltip.x > window.innerWidth / 2
                     ? { right: window.innerWidth - orderBarTooltip.x + 12, top: orderBarTooltip.y - 8 }
                     : { left: orderBarTooltip.x + 12, top: orderBarTooltip.y - 8 }}
@@ -1798,7 +1798,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 눈이 위 차트의 축까지 올라갔다 내려와야 한다. */}
             <div className="flex mt-[6px]" style={{ width: 323 }}>
               {Array.from({ length: 12 }, (_, i) => (
-                <div key={i} className="flex-1 text-center text-[10px] text-[#6A635E]">{i + 1}월</div>
+                <div key={i} className="flex-1 text-center text-[12px] text-[#6A635E]">{i + 1}월</div>
               ))}
             </div>
           </div>
@@ -1811,7 +1811,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             // 원그래프가 박스 아래로 삐져나왔다 — minHeight로 도넛이 들어갈 높이를 보장한다
             return (
               <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13, minHeight: 150 }}>
-                <div className="text-[15px] font-semibold text-[#2C261F]">계정유형</div>
+                <div className="text-[17px] font-semibold text-[#2C261F]">계정유형</div>
                 <div className="flex flex-col gap-[8px] mt-[19px]" style={{ width: 193 }}>
                   {typesSorted.filter(t => pTypeCounts[t]).map((t, i) => (
                     <div
@@ -1822,7 +1822,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       onMouseLeave={() => setDonutTooltip(null)}
                     >
                       <span className="w-[13px] h-[13px] rounded-full flex-shrink-0" style={{ backgroundColor: colorOf(i) }} />
-                      <span className="text-[14px] text-[#2C261F] tracking-[-0.46px] whitespace-nowrap">
+                      <span className="text-[16px] text-[#2C261F] tracking-[-0.46px] whitespace-nowrap">
                         {TYPE_LABEL[t] ?? t} ({Math.round((pTypeCounts[t] / pTypeTotal) * 100)}%, {pTypeCounts[t]}팀)
                       </span>
                     </div>
@@ -1875,7 +1875,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               랭킹이라고 부르기 어려웠다. '최근 N일'은 그 영향을 안 받는다. */}
           <div className="flex flex-col gap-[16px] mt-[14px]">
             <div className="flex items-center justify-between">
-              <span className="text-[15px] font-semibold text-[#2C261F] whitespace-nowrap">가장 많이 주문한 고객</span>
+              <span className="text-[17px] font-semibold text-[#2C261F] whitespace-nowrap">가장 많이 주문한 고객</span>
               <div className="relative flex-shrink-0">
                 <button
                   onClick={() => setRankOpen(v => !v)}
@@ -1896,7 +1896,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                         <button
                           key={d}
                           onClick={() => { setRankDays(d); setRankOpen(false) }}
-                          className={`w-full text-left px-[12px] py-[6px] text-[14px] hover:bg-[#F2F2F2] transition-colors ${
+                          className={`w-full text-left px-[12px] py-[6px] text-[16px] hover:bg-[#F2F2F2] transition-colors ${
                             rankDays === d ? 'text-[#1E1E1E] font-medium' : 'text-[#787878] font-normal'
                           }`}
                         >
@@ -1909,7 +1909,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               </div>
             </div>
             {pTopOrderers.length === 0 ? (
-              <div className="text-[10px] text-[#ADADAD] py-[13px]">이 기간에 주문한 고객이 없습니다.</div>
+              <div className="text-[12px] text-[#ADADAD] py-[13px]">이 기간에 주문한 고객이 없습니다.</div>
             ) : (
               <div className="space-y-[11px]">
                 {/* 사람 → 어느 선결제 계정 → 몇 건. 이름이 먼저다 —
@@ -1933,14 +1933,14 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       i === 0 ? 'bg-[#E8E4E2] text-[#8C8379]' : 'bg-[#F2F2F2] text-[#ADADAD]'
                     }`}>{i + 1}</span>
                     <span className="min-w-0 flex-1 flex flex-col">
-                      <span className={`text-[15px] truncate ${i === 0 ? 'text-[#2C261F] font-medium' : 'text-[#2C261F] font-normal'}`}>
+                      <span className={`text-[17px] truncate ${i === 0 ? 'text-[#2C261F] font-medium' : 'text-[#2C261F] font-normal'}`}>
                         {t.name}
                       </span>
                       <span className="text-[13px] font-normal text-[#ADADAD] truncate">{accNameOf(t.accountCode)}</span>
                     </span>
                     {/* 건수 위, 금액 아래 — 순위를 정하는 값이 건수라 그쪽을 먼저 읽게 둔다 */}
                     <span className="flex-shrink-0 flex flex-col items-end">
-                      <span className="text-[14px] font-normal text-[#6A635E] tabular-nums">{t.orders}건</span>
+                      <span className="text-[16px] font-normal text-[#6A635E] tabular-nums">{t.orders}건</span>
                       <span className="text-[13px] font-normal text-[#ADADAD] tabular-nums">{won(t.amount)}</span>
                     </span>
                   </button>
@@ -2024,7 +2024,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 <div className="flex gap-[6px] flex-wrap">
                   {customerTypes.map(t => (
                     <button key={t} onClick={() => setNewForm(f => ({ ...f, type: t }))}
-                      className={`px-[10px] py-[7px] rounded-[8px] text-[15px] font-semibold whitespace-nowrap transition-colors ${
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[17px] font-semibold whitespace-nowrap transition-colors ${
                         newForm.type === t ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
                       }`}>
                       {TYPE_LABEL[t] ?? t}
@@ -2037,7 +2037,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 <div className="flex gap-[6px]">
                   {PREPAY_VALIDITY_OPTIONS.map(v => (
                     <button key={v} onClick={() => setNewForm(f => ({ ...f, prepayValidity: v }))}
-                      className={`px-[10px] py-[7px] rounded-[8px] text-[15px] font-semibold whitespace-nowrap transition-colors ${
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[17px] font-semibold whitespace-nowrap transition-colors ${
                         newForm.prepayValidity === v ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
                       }`}>
                       {PREPAY_VALIDITY_LABEL[v]}
@@ -2056,23 +2056,23 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   onChange={e => { setNewForm(f => ({ ...f, phone: formatPhone(e.target.value) })); setAddDupAccount(null); setAddPhoneError('') }}
                   inputMode="numeric" placeholder="010-0000-0000" className={CUST_INPUT_CLS}
                 />
-                {addPhoneError && <p className="text-[14px] text-danger font-semibold mt-[8px]">{addPhoneError}</p>}
+                {addPhoneError && <p className="text-[16px] text-danger font-semibold mt-[8px]">{addPhoneError}</p>}
                 {addDupAccount && (
                   <div className="mt-[10px] px-[16px] py-[14px] rounded-[10px] bg-[#FFF4E8]">
-                    <p className="text-[15px] text-[#6A635E] leading-relaxed mb-[2px]">이 번호로 이미 등록된 계정이 있어요</p>
-                    <p className="text-[15px] font-semibold text-ink mb-[12px]">{addDupAccount.account_name}</p>
+                    <p className="text-[17px] text-[#6A635E] leading-relaxed mb-[2px]">이 번호로 이미 등록된 계정이 있어요</p>
+                    <p className="text-[17px] font-semibold text-ink mb-[12px]">{addDupAccount.account_name}</p>
                     <div className="flex gap-[8px]">
                       {/* 왼쪽이 권하는 쪽이다 — 같은 번호면 대개 같은 사람이고,
                           계정을 또 만들기보다 쓰던 곳에 충전하는 게 맞다. */}
                       <button
                         onClick={goChargeExistingAccount}
-                        className="flex-1 h-[42px] rounded-[10px] text-[14px] font-medium bg-[#2C261F] text-[#F9F9F9] hover:opacity-90 transition-opacity"
+                        className="flex-1 h-[42px] rounded-[10px] text-[16px] font-medium bg-[#2C261F] text-[#F9F9F9] hover:opacity-90 transition-opacity"
                       >
                         기존 계정에 충전하기
                       </button>
                       <button
                         onClick={() => { setAddDupAccount(null); handleAddAccount() }}
-                        className="flex-1 h-[42px] rounded-[10px] text-[14px] font-medium bg-[#FCFCFC] border border-[#D9D9D9] text-[#6A635E] hover:bg-[#F2F2F2] transition-colors"
+                        className="flex-1 h-[42px] rounded-[10px] text-[16px] font-medium bg-[#FCFCFC] border border-[#D9D9D9] text-[#6A635E] hover:bg-[#F2F2F2] transition-colors"
                       >
                         그래도 새로 만들기
                       </button>
@@ -2088,7 +2088,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   placeholder="ex) 자주쓰는 4자리번호"
                   className={CUST_INPUT_CLS + ' font-mono tracking-[4px]'}
                 />
-                {addPinError && <p className="text-[14px] text-danger font-semibold mt-[8px]">{addPinError}</p>}
+                {addPinError && <p className="text-[16px] text-danger font-semibold mt-[8px]">{addPinError}</p>}
               </CustFormField>
 
               <CustFormField label="선결제 금액">
@@ -2100,9 +2100,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       const cleaned = raw.startsWith('-') ? '-' + raw.slice(1).replace(/-/g, '') : raw.replace(/-/g, '')
                       setNewForm(f => ({ ...f, initialDeposit: cleaned }))
                     }}
-                    inputMode="numeric" placeholder="0" className="field-bare flex-1 outline-none text-[14px] text-ink"
+                    inputMode="numeric" placeholder="0" className="field-bare flex-1 outline-none text-[16px] text-ink"
                   />
-                  <span className="text-[14px] text-ink">원</span>
+                  <span className="text-[16px] text-ink">원</span>
                 </div>
                 {/* 양수일 때의 '잔액 N원'은 뺐다 — 방금 친 숫자를 바로 아래에서 한 번 더
                     읽어주는 것뿐이라 아무 말도 하지 않는다.
@@ -2111,7 +2111,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   const v = parseInt(newForm.initialDeposit.replace(/,/g, ''), 10)
                   if (!newForm.initialDeposit || isNaN(v) || v >= 0) return null
                   return (
-                    <p className="text-[15px] font-semibold mt-[8px] text-danger">
+                    <p className="text-[17px] font-semibold mt-[8px] text-danger">
                       미수금 -{won(Math.abs(v))}
                     </p>
                   )
@@ -2125,7 +2125,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             </div>
 
             <div className="bg-[#FCFCFC] flex items-center justify-end gap-[10px] px-[62px] py-[20px] flex-shrink-0">
-              <button onClick={() => { setAddOpen(false); setAddDupAccount(null) }} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-semibold hover:opacity-90 transition-opacity">
+              <button onClick={() => { setAddOpen(false); setAddDupAccount(null) }} className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[17px] font-semibold hover:opacity-90 transition-opacity">
                 닫기
               </button>
               <button
@@ -2139,7 +2139,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   parseInt(newForm.initialDeposit.replace(/,/g, ''), 10) === 0 ||
                   addSubmitting
                 }
-                className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[15px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[17px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {addSubmitting ? <Working label="등록 중" /> : '저장'}
               </button>
@@ -2178,7 +2178,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 <div className="flex gap-[6px] flex-wrap">
                   {customerTypes.map(t => (
                     <button key={t} onClick={() => setEditForm(f => ({ ...f, type: t }))}
-                      className={`px-[10px] py-[7px] rounded-[8px] text-[15px] font-semibold whitespace-nowrap transition-colors ${
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[17px] font-semibold whitespace-nowrap transition-colors ${
                         editForm.type === t ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
                       }`}>
                       {TYPE_LABEL[t] ?? t}
@@ -2191,7 +2191,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 <div className="flex gap-[6px]">
                   {PREPAY_VALIDITY_OPTIONS.map(v => (
                     <button key={v} onClick={() => setEditForm(f => ({ ...f, prepayValidity: v }))}
-                      className={`px-[10px] py-[7px] rounded-[8px] text-[15px] font-semibold whitespace-nowrap transition-colors ${
+                      className={`px-[10px] py-[7px] rounded-[8px] text-[17px] font-semibold whitespace-nowrap transition-colors ${
                         editForm.prepayValidity === v ? 'bg-[#D7D2CE] text-[#2C261F]' : 'bg-[#F2F2F2] text-[#787878]'
                       }`}>
                       {PREPAY_VALIDITY_LABEL[v]}
@@ -2225,20 +2225,20 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   onChange={v => { setEditForm(f => ({ ...f, pin: v })); setEditPinError('') }}
                   className={CUST_INPUT_CLS + ' font-mono tracking-[4px]'}
                 />
-                {editPinError && <p className="text-[14px] text-danger font-semibold mt-[6px]">{editPinError}</p>}
+                {editPinError && <p className="text-[16px] text-danger font-semibold mt-[6px]">{editPinError}</p>}
               </CustFormField>
 
               <CustFormField label="선결제 잔액">
-                <div className={`w-full border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[14px] font-semibold bg-[#F2F2F2] ${selected.current_balance < 0 ? 'text-[#3374FF]' : 'text-ink'}`}>
+                <div className={`w-full border border-[#D9D9D9] rounded-[10px] px-[14px] py-[11px] text-[16px] font-semibold bg-[#F2F2F2] ${selected.current_balance < 0 ? 'text-[#3374FF]' : 'text-ink'}`}>
                   {won(selected.current_balance)}
                 </div>
-                <p className="text-[14px] text-[#ADADAD] mt-[6px]">잔액은 여기서 못 바꿔요. 금액 충전으로 올리거나 문의해 주세요</p>
+                <p className="text-[16px] text-[#ADADAD] mt-[6px]">잔액은 여기서 못 바꿔요. 금액 충전으로 올리거나 문의해 주세요</p>
 
                 {/* 계정 비활성화 — Figma 491:2391(메뉴 상세 모달 '삭제')과 같은 속성.
                     되돌리기 어려운 동작이라 하단 CTA 줄이 아니라 본문 끝에 두고 한 번 더 묻는다. */}
                 {editDeactivateConfirm ? (
                   <div className="mt-[52px] flex items-center gap-[9px]">
-                    <span className="text-[15px] text-[#FF676F]">비활성화하면 복구 전까지 목록에서 안 보여요</span>
+                    <span className="text-[17px] text-[#FF676F]">비활성화하면 복구 전까지 목록에서 안 보여요</span>
                     <button
                       onClick={handleDeleteAccount}
                       className="h-[50px] px-[26px] rounded-[13px] bg-[#FF676F] text-white text-[16px] font-medium hover:brightness-95 transition-all"
@@ -2267,14 +2267,14 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <div className="flex items-center gap-[10px] ml-auto">
               <button
                 onClick={() => { setEditOpen(false); setEditPinError('') }}
-                className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[15px] font-semibold hover:opacity-90 transition-opacity"
+                className="px-[28px] py-[13px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[17px] font-semibold hover:opacity-90 transition-opacity"
               >
                 취소
               </button>
               <button
                 onClick={handleEditAccount}
                 disabled={!editForm.name.trim() || !editForm.manager.trim() || editForm.pin.length !== 4}
-                className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[15px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                className="px-[28px] py-[13px] rounded-[10px] bg-ink text-white text-[17px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 저장
               </button>
@@ -2343,7 +2343,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <>
                 <div className="flex-shrink-0 px-[46px] pt-[39px] pb-[15px]">
                   <h2 className="text-[26px] font-semibold text-ink">선결제 충전</h2>
-                  <p className="text-[15px] text-[#6A635E] mt-[5px]">{selected.account_name}</p>
+                  <p className="text-[17px] text-[#6A635E] mt-[5px]">{selected.account_name}</p>
                 </div>
 
                 {/* 2열 — 왼쪽은 '얼마'(금액+키패드), 오른쪽은 '어떻게·언제·메모'.
@@ -2370,7 +2370,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       <div className="flex flex-wrap gap-[6px]">
                         {(['신용카드','법인카드','계좌이체','무통장입금','현금','기타']).map(m => (
                           <button key={m} onClick={() => setChargeMethod(m)}
-                            className={`px-[13px] py-[8px] rounded-[10px] text-[15px] font-medium whitespace-nowrap transition-colors ${
+                            className={`px-[13px] py-[8px] rounded-[10px] text-[17px] font-medium whitespace-nowrap transition-colors ${
                               chargeMethod === m ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878]'
                             }`}>
                             {m}
@@ -2435,41 +2435,41 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <>
                 <div className="flex-shrink-0 px-[30px] pt-[32px] pb-[14px]">
                   <h2 className="text-[22px] font-semibold text-ink">충전 내용 확인</h2>
-                  <p className="text-[14px] text-[#6A635E] mt-[5px] break-keep">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</p>
+                  <p className="text-[16px] text-[#6A635E] mt-[5px] break-keep">등록 후 금액 수정은 불가합니다. 내용을 꼼꼼히 확인해주세요.</p>
                 </div>
 
                 <div className="overflow-y-auto flex-1 px-[30px] pb-[22px]">
                   <div className="bg-[#F2F2F2] rounded-[13px] p-[18px] space-y-[10px]">
                     <div className="flex justify-between items-center">
-                      <span className="text-[14px] text-[#6A635E]">고객</span>
-                      <span className="text-[15px] font-bold text-ink">{selected.account_name}</span>
+                      <span className="text-[16px] text-[#6A635E]">고객</span>
+                      <span className="text-[17px] font-bold text-ink">{selected.account_name}</span>
                     </div>
                     <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
-                      <span className="text-[14px] text-[#6A635E]">충전 금액</span>
+                      <span className="text-[16px] text-[#6A635E]">충전 금액</span>
                       <span className="text-[17px] font-extrabold text-ink">+{won(parseInt(chargeAmt))}</span>
                     </div>
                     <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
-                      <span className="text-[14px] text-[#6A635E]">결제수단</span>
-                      <span className="text-[14px] font-semibold text-ink">{chargeMethod}</span>
+                      <span className="text-[16px] text-[#6A635E]">결제수단</span>
+                      <span className="text-[16px] font-semibold text-ink">{chargeMethod}</span>
                     </div>
                     <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
-                      <span className="text-[14px] text-[#6A635E]">실제 선결제 일시</span>
-                      <span className="text-[14px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
+                      <span className="text-[16px] text-[#6A635E]">실제 선결제 일시</span>
+                      <span className="text-[16px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
                     </div>
                     {chargeMemo && (
                       <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
-                        <span className="text-[14px] text-[#6A635E]">비고</span>
-                        <span className="text-[14px] font-semibold text-ink">{chargeMemo}</span>
+                        <span className="text-[16px] text-[#6A635E]">비고</span>
+                        <span className="text-[16px] font-semibold text-ink">{chargeMemo}</span>
                       </div>
                     )}
                     <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
-                      <span className="text-[14px] text-[#6A635E]">충전 후 잔액</span>
-                      <span className="text-[15px] font-bold text-ink">{won(selected.current_balance + parseInt(chargeAmt))}</span>
+                      <span className="text-[16px] text-[#6A635E]">충전 후 잔액</span>
+                      <span className="text-[17px] font-bold text-ink">{won(selected.current_balance + parseInt(chargeAmt))}</span>
                     </div>
                   </div>
 
                   {chargeError && (
-                    <p className="text-[10px] text-danger font-semibold mt-[10px]">{chargeError}</p>
+                    <p className="text-[12px] text-danger font-semibold mt-[10px]">{chargeError}</p>
                   )}
                 </div>
 
@@ -2513,15 +2513,15 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <div className="flex-shrink-0 px-[41px] pt-[31px] pb-[15px]">
                 <div className="flex items-center justify-between">
                   <h2 className="text-[21px] font-medium text-ink">이용내역서</h2>
-                  <span className="text-[14px] text-[#6A635E]">{selected.account_name}</span>
+                  <span className="text-[16px] text-[#6A635E]">{selected.account_name}</span>
                 </div>
                 <div className="flex items-center justify-between mt-[13px]">
                   <div className="flex items-center gap-[5px]">
                     <button onClick={prevStmtMonth} disabled={stmtAllTime}
-                      className="px-[8px] py-[5px] text-[10px] font-bold rounded-lg border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">‹</button>
-                    <span className="text-[10px] font-semibold w-[64px] text-center">{stmtAllTime ? '전체 기간' : stmtMonth}</span>
+                      className="px-[8px] py-[5px] text-[12px] font-bold rounded-lg border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">‹</button>
+                    <span className="text-[12px] font-semibold w-[64px] text-center">{stmtAllTime ? '전체 기간' : stmtMonth}</span>
                     <button onClick={nextStmtMonth} disabled={stmtAllTime}
-                      className="px-[8px] py-[5px] text-[10px] font-bold rounded-lg border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">›</button>
+                      className="px-[8px] py-[5px] text-[12px] font-bold rounded-lg border border-gray-border text-gray-text disabled:opacity-30 hover:bg-gray-bg">›</button>
                     <button
                       onClick={() => setStmtAllTime(v => !v)}
                       className={`ml-[5px] text-[9px] font-bold px-[9px] py-[4px] rounded-full border transition-colors ${
@@ -2533,7 +2533,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   </div>
                   {/* 9px 굵은 글씨라 모달에서 거의 안 보였다. 이 모달에 들어온 목적이
                       '내역을 받아가는 것'인데 그 버튼이 가장 작았다. */}
-                  <button onClick={downloadCSV} className="pressable h-[36px] px-[16px] rounded-[9px] bg-[#2C261F] text-[#FCFCFC] text-[15px] font-medium hover:opacity-90 transition-opacity flex items-center gap-[6px]">
+                  <button onClick={downloadCSV} className="pressable h-[36px] px-[16px] rounded-[9px] bg-[#2C261F] text-[#FCFCFC] text-[17px] font-medium hover:opacity-90 transition-opacity flex items-center gap-[6px]">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
                       <path d="M8 2v8m0 0 3-3m-3 3L5 7M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
@@ -2546,14 +2546,14 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 {stmtLoading ? (
                   <LoadingBlock py={40} size={34} />
                 ) : (
-                  <table className="text-[14px] border-collapse w-full">
+                  <table className="text-[16px] border-collapse w-full">
                     <thead>
-                      <tr className="bg-gray-bg text-[10px] font-bold text-gray-text uppercase">
+                      <tr className="bg-gray-bg text-[12px] font-bold text-gray-text uppercase">
                         <th colSpan={3} className="text-left py-[8px] border border-gray-border px-[8px]">선결제내역</th>
                         <th colSpan={5} className="text-left py-[8px] border border-gray-border px-[8px]">사용내역</th>
                         <th rowSpan={2} className="text-left py-[8px] border border-gray-border px-[8px] whitespace-nowrap">잔액</th>
                       </tr>
-                      <tr className="bg-gray-bg text-[10px] font-semibold text-gray-text">
+                      <tr className="bg-gray-bg text-[12px] font-semibold text-gray-text">
                         <th className="py-[6px] px-[8px] border border-gray-border text-left whitespace-nowrap">일자</th>
                         <th className="py-[6px] px-[8px] border border-gray-border text-left whitespace-nowrap">금액</th>
                         <th className="py-[6px] px-[8px] border border-gray-border text-left">기타</th>
@@ -2566,7 +2566,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     </thead>
                     <tbody>
                       {rows.length === 0 ? (
-                        <tr><td colSpan={9} className="text-center py-[24px] text-gray-text text-[15px]">내역 없음</td></tr>
+                        <tr><td colSpan={9} className="text-center py-[24px] text-gray-text text-[17px]">내역 없음</td></tr>
                       ) : rows.map((row, idx) => {
                         if (row.type === 'adjustment') {
                           return (
@@ -2581,13 +2581,13 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                               <td className="py-[6px] px-[8px] border border-gray-border" />
                               <td className="py-[6px] px-[8px] border border-gray-border" />
                               <td className="py-[6px] px-[8px] border border-gray-border" />
-                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[10px] break-words">{row.reason || '—'}</td>
-                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[10px]">
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[12px] break-words">{row.reason || '—'}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[12px]">
                                 <span className="whitespace-nowrap">{won(row.balanceBefore)}</span>
                                 <span className="text-gray-text mx-[2px]">→</span>
                                 <span className="whitespace-nowrap">{won(row.balanceAfter)}</span>
                               </td>
-                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[10px]">{row.orderer ?? ''}</td>
+                              <td className="py-[6px] px-[8px] border border-gray-border text-gray-text text-[12px]">{row.orderer ?? ''}</td>
                               <td className="py-[6px] px-[8px] border border-gray-border text-right font-bold" style={{ color: row.balanceAfter < 0 ? 'var(--sign-down)' : 'inherit' }}>
                                 {won(row.balanceAfter)}
                               </td>
@@ -2640,7 +2640,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               </div>
 
               <div className="bg-[#FCFCFC] flex items-center justify-end px-[41px] py-[13px] flex-shrink-0">
-                <button onClick={() => setStatementOpen(false)} className="px-[18px] py-[9px] rounded-[8px] bg-[#E8E4E2] text-[#6A635E] text-[10px] font-semibold hover:opacity-90 transition-opacity">
+                <button onClick={() => setStatementOpen(false)} className="px-[18px] py-[9px] rounded-[8px] bg-[#E8E4E2] text-[#6A635E] text-[12px] font-semibold hover:opacity-90 transition-opacity">
                   닫기
                 </button>
               </div>
@@ -2658,26 +2658,26 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDowngradeModal(null)}>
             <div className="modal-in bg-white rounded-2xl p-8 w-[460px] shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="text-[18px] font-semibold text-ink mb-2">플랜 변경 안내</div>
-              <p className="text-[15px] text-gray-text leading-relaxed mb-5">
+              <p className="text-[17px] text-gray-text leading-relaxed mb-5">
                 활성 고객 수가 줄어서 <strong className="text-ink">{targetName} 플랜</strong>으로 변경할 수 있어요.<br />
                 다음 결제일 <strong className="text-ink">{dateStr}</strong>부터 적용되며, 그 전까지는 현재 플랜이 유지됩니다.
               </p>
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => scheduleDowngrade(targetPlan)}
-                  className="w-full py-3 rounded-xl bg-ink text-white font-bold text-[15px] hover:bg-ink/90 transition-colors"
+                  className="w-full py-3 rounded-xl bg-ink text-white font-bold text-[17px] hover:bg-ink/90 transition-colors"
                 >
                   {dateStr}부터 {targetName}으로 변경
                 </button>
                 <button
                   onClick={() => applyDowngradeNow(targetPlan)}
-                  className="w-full py-3 rounded-xl border border-gray-border text-ink font-semibold text-[15px] hover:bg-gray-bg transition-colors"
+                  className="w-full py-3 rounded-xl border border-gray-border text-ink font-semibold text-[17px] hover:bg-gray-bg transition-colors"
                 >
                   지금 즉시 변경
                 </button>
                 <button
                   onClick={() => setDowngradeModal(null)}
-                  className="w-full py-2.5 text-gray-text text-[14px] hover:text-ink transition-colors"
+                  className="w-full py-2.5 text-gray-text text-[16px] hover:text-ink transition-colors"
                 >
                   현재 플랜 유지
                 </button>
@@ -2762,13 +2762,13 @@ function CustomerDetailPanel({
             <span className="block text-[21px] font-medium text-ink leading-[1.3] break-keep line-clamp-2">{selected.account_name}</span>
           </div>
           <div className="flex-shrink-0 flex items-center gap-[6px] pl-[14px]">
-            <button onClick={onEdit} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">수정</button>
-            <button onClick={onOpenStatement} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">이용내역서</button>
-            <button onClick={onQr} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[10px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">QR보기</button>
+            <button onClick={onEdit} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[12px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">수정</button>
+            <button onClick={onOpenStatement} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[12px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">이용내역서</button>
+            <button onClick={onQr} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[12px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">QR보기</button>
           </div>
         </div>
 
-        <div className="flex items-center gap-[10px] text-[14px] font-medium text-[#414141]">
+        <div className="flex items-center gap-[10px] text-[16px] font-medium text-[#414141]">
           <span className="truncate">{selected.contact_person ? maskName(selected.contact_person) : '-'}</span>
           <span className="flex-shrink-0 w-[1px] h-[17px] bg-[#414141]" />
           {selected.contact_phone ? (
@@ -2779,7 +2779,7 @@ function CustomerDetailPanel({
                   onClick={() => setPhoneRevealed(v => !v)}
                   className="flex items-center gap-[4px] border border-[#D9D9D9] rounded-[6px] px-[6px] py-[3px] text-[#414141]"
                 >
-                  <span className="font-mono text-[10px]">{phoneRevealed ? phoneMid : '••••'}</span>
+                  <span className="font-mono text-[12px]">{phoneRevealed ? phoneMid : '••••'}</span>
                   <EyeIcon off={phoneRevealed} size={11} />
                 </button>
               )}
@@ -2804,11 +2804,11 @@ function CustomerDetailPanel({
           <div className="flex items-center justify-between">
             <span className="text-[13px] font-medium text-[#2C261F] tracking-[-0.03em]">선결제 잔액</span>
             {selected.current_balance < 0 ? (
-              <span className="px-[7px] py-[2px] rounded-[6px] text-[10px] font-medium bg-[#E8EEFF] text-[#3374FF]">
+              <span className="px-[7px] py-[2px] rounded-[6px] text-[12px] font-medium bg-[#E8EEFF] text-[#3374FF]">
                 다음 충전 때 정산
               </span>
             ) : selected.current_balance <= (selected.warning_threshold ?? 0) && (selected.warning_threshold ?? 0) > 0 ? (
-              <span className="px-[7px] py-[2px] rounded-[6px] text-[10px] font-medium bg-[#FFF4E8] text-[#B35C00]">
+              <span className="px-[7px] py-[2px] rounded-[6px] text-[12px] font-medium bg-[#FFF4E8] text-[#B35C00]">
                 충전이 필요해요
               </span>
             ) : null}
@@ -2825,13 +2825,13 @@ function CustomerDetailPanel({
         {/* 이번달 주문 / 이용자수 — 잔액 아래 한 단계 작게 */}
         <div className="flex gap-[4px]">
           <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={14} gap={6}>
-            <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">이번달 주문</div>
+            <div className="text-[12px] font-medium text-[#2C261F] tracking-[-0.03em]">이번달 주문</div>
             <div className="text-[17px] font-medium text-[#1E1E1E] tabular-nums whitespace-nowrap">
               {won(monthlyUsage[selected.account_code] ?? 0)}
             </div>
           </StatCard>
           <StatCard className="bg-[#F2F2F2] rounded-[10px] flex-1" padding={14} gap={6}>
-            <div className="text-[10px] font-medium text-[#2C261F] tracking-[-0.03em]">이용자수</div>
+            <div className="text-[12px] font-medium text-[#2C261F] tracking-[-0.03em]">이용자수</div>
             <div className="text-[17px] font-medium text-[#1E1E1E]">{memberCounts[selected.account_code] ?? 0}명</div>
           </StatCard>
         </div>
@@ -2844,13 +2844,13 @@ function CustomerDetailPanel({
           if (!validityText && !showInactive) return null
           return (
         <div className="flex items-center justify-between">
-          <span className={`text-[10px] ${isPrepayExpired(selected.prepay_validity, deposits[0]?.created_at) ? 'text-danger font-semibold' : 'text-[#6A635E]'}`}>
+          <span className={`text-[12px] ${isPrepayExpired(selected.prepay_validity, deposits[0]?.created_at) ? 'text-danger font-semibold' : 'text-[#6A635E]'}`}>
             {validityText}
           </span>
           {/* 계정 비활성화는 "계정정보 수정" 모달 하단으로 옮겼다 — 되돌리기 어려운 동작이
               목록 옆에 노출돼 있으면 잘못 누르기 쉽다. 여기엔 복구만 남긴다. */}
           {showInactive && (
-            <button onClick={onRestore} className="text-[10px] font-semibold text-green hover:underline">비활성 계정 복구</button>
+            <button onClick={onRestore} className="text-[12px] font-semibold text-green hover:underline">비활성 계정 복구</button>
           )}
         </div>
           )
@@ -2863,7 +2863,7 @@ function CustomerDetailPanel({
               key={t}
               ref={el => { tabRefs.current[t] = el }}
               onClick={() => setDetailTab(t)}
-              className={`text-[14px] font-medium pb-[5px] transition-colors ${detailTab === t ? 'text-ink' : 'text-[#ADADAD] hover:text-[#6A635E]'}`}
+              className={`text-[16px] font-medium pb-[5px] transition-colors ${detailTab === t ? 'text-ink' : 'text-[#ADADAD] hover:text-[#6A635E]'}`}
             >
               {label}
             </button>
@@ -2880,7 +2880,7 @@ function CustomerDetailPanel({
       <div className="flex-1 min-h-0 overflow-y-auto px-[26px] pt-[13px] pb-[26px]">
         {detailTab === 'orders' && (
           accountOrders.length === 0 ? (
-            <div className="text-[10px] text-[#ADADAD] py-[13px]">주문 이력이 없습니다.</div>
+            <div className="text-[12px] text-[#ADADAD] py-[13px]">주문 이력이 없습니다.</div>
           ) : (
             <div className="space-y-[8px]">
               {accountOrders.slice(0, 15).map(o => {
@@ -2892,7 +2892,7 @@ function CustomerDetailPanel({
                       <span className="text-[9px] text-[#787878]">{dateStr} · {o.method}</span>
                       <div className="flex items-center gap-[5px]">
                         <StatusTag status={o.status} />
-                        <span className="text-[10px] font-bold text-ink">{won(o.total)}</span>
+                        <span className="text-[12px] font-bold text-ink">{won(o.total)}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-[4px] text-[9px] text-[#787878] mb-[5px]">
@@ -2924,7 +2924,7 @@ function CustomerDetailPanel({
 
         {detailTab === 'charges' && (
           deposits.length === 0 ? (
-            <div className="text-[10px] text-[#ADADAD] py-[13px]">충전 이력이 없습니다.</div>
+            <div className="text-[12px] text-[#ADADAD] py-[13px]">충전 이력이 없습니다.</div>
           ) : (
             <div className="space-y-[8px]">
               {deposits.slice(0, 15).map(d => {
@@ -2937,11 +2937,11 @@ function CustomerDetailPanel({
                           '언제 넣었나'인데 9px 은 훑어서 읽히는 크기가 아니었다.
                           결제수단도 10 → 12 로 같이 올린다 — 날짜만 키우면 제목(결제수단)이
                           부제(날짜)보다 작아져 위아래가 뒤집혀 보인다. */}
-                      <div className="text-[14px] font-semibold text-ink">{d.payment_method}</div>
-                      <div className="text-[14px] text-[#787878] mt-[1px] tabular-nums">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
+                      <div className="text-[16px] font-semibold text-ink">{d.payment_method}</div>
+                      <div className="text-[16px] text-[#787878] mt-[1px] tabular-nums">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
                     </div>
                     <div className="text-right">
-                      <div className={`text-[14px] ${deltaClass(d.amount)}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
+                      <div className={`text-[16px] ${deltaClass(d.amount)}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
                       <div className={`text-[9px] text-[#6A635E] ${NUM}`}>잔액 {won(d.balance_after)}</div>
                     </div>
                   </div>
@@ -2953,7 +2953,7 @@ function CustomerDetailPanel({
 
         {detailTab === 'members' && (
           members.length === 0 ? (
-            <div className="text-[10px] text-[#ADADAD] py-[13px]">이용자 정보가 없습니다.</div>
+            <div className="text-[12px] text-[#ADADAD] py-[13px]">이용자 정보가 없습니다.</div>
           ) : (
             <div className="space-y-[8px]">
               {/* 구성원을 누르면 그 사람의 프로필(월별 흐름·늘 시키는 것·평일/주말 시간대)을 연다.
@@ -2983,7 +2983,7 @@ function CustomerDetailPanel({
                       )}
                       <RevealText
                         value={m.name} masked={maskName(m.name)} iconSize={11}
-                        className="text-[14px] font-semibold text-ink"
+                        className="text-[16px] font-semibold text-ink"
                       />
                     </span>
                     {m.phone && (
@@ -3022,7 +3022,7 @@ function StatusTag({ status }: { status: string }) {
     '주문완료': 'bg-blue-100 text-blue-600',
   }
   return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ml-2 ${styles[status] ?? 'bg-gray-100 text-gray-text'}`}>
+    <span className={`text-[12px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ml-2 ${styles[status] ?? 'bg-gray-100 text-gray-text'}`}>
       {status}
     </span>
   )
@@ -3083,18 +3083,18 @@ function AccountQrModal({ accountCode, accountName, qrSystem, storeId, onPrintRe
             셋 다 진하면 뭘 눌러야 할지 고르게 된다 — 이 모달에서 급한 건 출력이다. */}
         <div className="flex gap-2">
           <button onClick={saveImage} disabled={!qrDataUrl}
-            className="flex-1 py-[14px] rounded-xl font-bold text-[14px] whitespace-nowrap border border-gray-border bg-white text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
+            className="flex-1 py-[14px] rounded-xl font-bold text-[16px] whitespace-nowrap border border-gray-border bg-white text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
             이미지 저장
           </button>
           <button onClick={copy}
-            className={`flex-1 py-[14px] rounded-xl font-bold text-[14px] whitespace-nowrap border transition-colors
+            className={`flex-1 py-[14px] rounded-xl font-bold text-[16px] whitespace-nowrap border transition-colors
               ${copied
                 ? 'border-green-soft bg-green-soft text-green'
                 : 'border-gray-border bg-white text-ink hover:bg-gray-bg'}`}>
             {copied ? '✓ 복사됨' : '링크 복사'}
           </button>
           <button onClick={printReceipt} disabled={printing}
-            className="flex-[1.35] py-[14px] rounded-xl font-bold text-[14px] whitespace-nowrap bg-ink text-white hover:bg-ink/90 transition-colors disabled:opacity-40">
+            className="flex-[1.35] py-[14px] rounded-xl font-bold text-[16px] whitespace-nowrap bg-ink text-white hover:bg-ink/90 transition-colors disabled:opacity-40">
             {printing ? (
               // 점 세 개가 차례로 튄다 — 프린터가 몇 초 걸려서 '…' 만 두면 멈춘 줄 안다
               <>출력 중<span className="dot-bounce ml-[1px]"><span>.</span><span>.</span><span>.</span></span></>
@@ -3145,11 +3145,11 @@ function KioskQrModal({ storeId, onClose }: { storeId: string; onClose: () => vo
         )}
         <div className="flex gap-2">
           <button onClick={saveImage} disabled={!qrDataUrl}
-            className="flex-1 py-[14px] rounded-xl font-bold text-[15px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
+            className="flex-1 py-[14px] rounded-xl font-bold text-[17px] border border-gray-border text-ink hover:bg-gray-bg transition-colors disabled:opacity-40">
             이미지 저장
           </button>
           <button onClick={copy}
-            className={`flex-1 py-[14px] rounded-xl font-bold text-[15px] transition-colors
+            className={`flex-1 py-[14px] rounded-xl font-bold text-[17px] transition-colors
               ${copied ? 'bg-green-soft text-green' : 'bg-ink text-white hover:bg-ink/90'}`}>
             {copied ? '✓ 복사됨' : '링크 복사'}
           </button>

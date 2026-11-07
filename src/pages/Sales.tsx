@@ -238,7 +238,7 @@ function DailySalesLineChart({ depositByDay, orderByDay, totalDays, month, showD
 
   if (!hasData) {
     return (
-      <div className="flex items-center justify-center h-[120px] text-[14px] text-gray-text">
+      <div className="flex items-center justify-center h-[120px] text-[16px] text-gray-text">
         이번 달 데이터 없음
       </div>
     )
@@ -655,13 +655,13 @@ export function UpgradeGate() {
           </div>
           <div>
             <p className="text-[17px] font-semibold text-[#1E1E1E] mb-1">베이직 플랜부터 이용 가능해요</p>
-            <p className="text-[15px] text-gray-text leading-relaxed">
+            <p className="text-[17px] text-gray-text leading-relaxed">
               월별 충전·주문 내역, 메뉴별 주문액,<br />거래처별 기여도를 확인할 수 있어요.
             </p>
           </div>
           <button
             onClick={() => setOpen(true)}
-            className="mt-2 px-6 h-[44px] bg-[#2C261F] text-[#F9F9F9] rounded-[10px] font-medium text-[15px] hover:opacity-90 transition-opacity"
+            className="mt-2 px-6 h-[44px] bg-[#2C261F] text-[#F9F9F9] rounded-[10px] font-medium text-[17px] hover:opacity-90 transition-opacity"
           >
             플랜 업그레이드
           </button>
@@ -971,7 +971,7 @@ export default function Sales() {
       <div className="relative flex-shrink-0" ref={filterDropdownRef}>
         <button
           onClick={() => setFilterDropdownOpen(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[14px] font-semibold transition-colors ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[16px] font-semibold transition-colors ${
             excludedAccounts.size > 0
               ? 'border-[#FF8418] bg-[#FF84181F] text-[#FF8418]'
               : 'border-[#D9D9D9] text-[#787878] bg-[#FCFCFC] hover:bg-[#F2F2F2]'
@@ -1013,7 +1013,7 @@ export default function Sales() {
                   <div className="w-2 h-0.5 bg-[#787878] rounded" />
                 )}
               </div>
-              <span className="text-[15px] font-medium text-ink">전체 선택</span>
+              <span className="text-[17px] font-medium text-ink">전체 선택</span>
             </div>
             {/* 개별 거래처 */}
             <div className="max-h-[260px] overflow-y-auto">
@@ -1038,9 +1038,9 @@ export default function Sales() {
                       )}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[15px] text-ink truncate">{acc.account_name}</div>
+                      <div className="text-[17px] text-ink truncate">{acc.account_name}</div>
                       {acc.organization_name && acc.organization_name !== acc.account_name && (
-                        <div className="text-[10px] text-gray-text truncate">{acc.organization_name}</div>
+                        <div className="text-[12px] text-gray-text truncate">{acc.organization_name}</div>
                       )}
                     </div>
                   </div>
@@ -1272,8 +1272,8 @@ export default function Sales() {
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-text">
           <div className="text-[40px]">⚠️</div>
           <div className="text-[16px] font-medium text-ink">데이터를 불러오지 못했습니다</div>
-          <div className="text-[15px]">네트워크 상태를 확인하고 다시 시도해주세요.</div>
-          <button onClick={fetchData} className="mt-1 px-5 py-2 rounded-lg bg-ink text-white text-[15px] font-medium hover:bg-ink/80">
+          <div className="text-[17px]">네트워크 상태를 확인하고 다시 시도해주세요.</div>
+          <button onClick={fetchData} className="mt-1 px-5 py-2 rounded-lg bg-ink text-white text-[17px] font-medium hover:bg-ink/80">
             다시 시도
           </button>
         </div>
@@ -1287,13 +1287,13 @@ export default function Sales() {
             <div className="flex items-center gap-2">
               <button
                 onClick={prevMonth}
-                className="w-[28px] h-[28px] rounded-[8px] bg-[#FCFCFC] hover:bg-[#F2F2F2] border border-[#D9D9D9] flex items-center justify-center text-[15px] text-[#787878] transition-colors"
+                className="w-[28px] h-[28px] rounded-[8px] bg-[#FCFCFC] hover:bg-[#F2F2F2] border border-[#D9D9D9] flex items-center justify-center text-[17px] text-[#787878] transition-colors"
               >‹</button>
-              <span className="text-[14px] font-semibold text-[#1E1E1E]">{monthLabel}</span>
+              <span className="text-[16px] font-semibold text-[#1E1E1E]">{monthLabel}</span>
               <button
                 onClick={nextMonth}
                 disabled={isCurrentMonth}
-                className="w-[28px] h-[28px] rounded-[8px] bg-[#FCFCFC] hover:bg-[#F2F2F2] border border-[#D9D9D9] flex items-center justify-center text-[15px] text-[#787878] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-[28px] h-[28px] rounded-[8px] bg-[#FCFCFC] hover:bg-[#F2F2F2] border border-[#D9D9D9] flex items-center justify-center text-[17px] text-[#787878] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >›</button>
             </div>
 
@@ -1307,13 +1307,13 @@ export default function Sales() {
               <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[14px] font-medium text-[#2C261F] mb-[6px] flex items-center gap-1.5 flex-wrap">
+                    <div className="text-[16px] font-medium text-[#2C261F] mb-[6px] flex items-center gap-1.5 flex-wrap">
                       <span>{MONTH_NAMES[month]} 선결제 매출</span>
                       {filterName && (
                         <>
                           <span className="text-gray-border">·</span>
                           <span className="text-[#2C261F]">{filterName}</span>
-                          <button onClick={() => setFilterAccount(null)} className="text-[10px] text-gray-text hover:text-ink bg-gray-100 rounded px-1.5 py-0.5">필터 해제</button>
+                          <button onClick={() => setFilterAccount(null)} className="text-[12px] text-gray-text hover:text-ink bg-gray-100 rounded px-1.5 py-0.5">필터 해제</button>
                         </>
                       )}
                     </div>
@@ -1345,12 +1345,12 @@ export default function Sales() {
                             {Object.entries(d.days)
                               .sort(([a], [b]) => Number(a) - Number(b))
                               .map(([day, amt]) => (
-                                <div key={day} className="flex justify-between gap-4 text-[10px]">
+                                <div key={day} className="flex justify-between gap-4 text-[12px]">
                                   <span className="text-gray-text">{month + 1}월 {day}일</span>
                                   <span className="font-medium text-[#2C261F]">+{won(amt)}</span>
                                 </div>
                               ))}
-                            <div className="border-t border-[#E5E5E5] pt-1 mt-1 flex justify-between text-[10px] font-medium">
+                            <div className="border-t border-[#E5E5E5] pt-1 mt-1 flex justify-between text-[12px] font-medium">
                               <span>합계</span><span className="text-[#2C261F]">+{won(d.total)}</span>
                             </div>
                           </div>
@@ -1363,7 +1363,7 @@ export default function Sales() {
               <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[14px] font-medium text-[#2C261F] mb-[6px] flex items-center gap-1.5 flex-wrap">
+                    <div className="text-[16px] font-medium text-[#2C261F] mb-[6px] flex items-center gap-1.5 flex-wrap">
                       <span>{MONTH_NAMES[month]} 주문액</span>
                       {filterName && (
                         <>
@@ -1392,12 +1392,12 @@ export default function Sales() {
                             {Object.entries(d.days)
                               .sort(([a], [b]) => Number(a) - Number(b))
                               .map(([day, amt]) => (
-                                <div key={day} className="flex justify-between gap-4 text-[10px]">
+                                <div key={day} className="flex justify-between gap-4 text-[12px]">
                                   <span className="text-gray-text">{month + 1}월 {day}일</span>
                                   <span className="font-medium text-ink">-{won(amt)}</span>
                                 </div>
                               ))}
-                            <div className="border-t border-[#E5E5E5] pt-1 mt-1 flex justify-between text-[10px] font-medium">
+                            <div className="border-t border-[#E5E5E5] pt-1 mt-1 flex justify-between text-[12px] font-medium">
                               <span>합계</span><span>-{won(d.total)}</span>
                             </div>
                           </div>
@@ -1417,7 +1417,7 @@ export default function Sales() {
               <div className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[13px]">
                 <div className="min-w-0">
                   <div className="flex items-center justify-between gap-[8px] mb-[6px]">
-                    <span className="text-[14px] font-medium text-[#2C261F]">
+                    <span className="text-[16px] font-medium text-[#2C261F]">
                       {isCurrentMonth ? '현재 선결제 잔액' : `${MONTH_NAMES[month]} 마감 잔액`}
                     </span>
                     <button
@@ -1448,7 +1448,7 @@ export default function Sales() {
                 숫자가 안 맞는 걸 설명 없이 두면 점주는 시스템을 믿지 않는다. */}
             {closingBalance != null && openingBalance != null && (
               <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
-                <div className="px-3 py-2.5 border-b border-[#E5E5E5] text-[15px] font-medium text-[#2C261F]">
+                <div className="px-3 py-2.5 border-b border-[#E5E5E5] text-[17px] font-medium text-[#2C261F]">
                   {isCurrentMonth ? '지금 잔액' : `${MONTH_NAMES[month]} 마감 잔액`}은 이렇게 나왔어요
                 </div>
                 <div className="px-3 py-2.5">
@@ -1464,17 +1464,17 @@ export default function Sales() {
                       <>
                         {rows.map(r => (
                           <div key={r.label} className="flex items-center justify-between py-[5px]">
-                            <span className="text-[14px] font-normal text-[#6A635E]">{r.label}</span>
-                            <span className={`text-[15px] tabular-nums ${r.value === 0 ? 'text-[#ADADAD]' : 'text-[#2C261F]'}`}>
+                            <span className="text-[16px] font-normal text-[#6A635E]">{r.label}</span>
+                            <span className={`text-[17px] tabular-nums ${r.value === 0 ? 'text-[#ADADAD]' : 'text-[#2C261F]'}`}>
                               {r.value === 0 ? '0원' : `${r.sign === '-' ? '−' : r.sign}${won(Math.abs(r.value))}`}
                             </span>
                           </div>
                         ))}
                         <div className="flex items-center justify-between pt-[8px] mt-[4px] border-t border-[#E5E5E5]">
-                          <span className="text-[14px] font-medium text-[#2C261F]">
+                          <span className="text-[16px] font-medium text-[#2C261F]">
                             {isCurrentMonth ? '지금 잔액' : `${MONTH_NAMES[month]} 마감 잔액`}
                           </span>
-                          <span className={`text-[15px] font-medium tabular-nums ${closingBalance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
+                          <span className={`text-[17px] font-medium tabular-nums ${closingBalance < 0 ? 'text-[#3374FF]' : 'text-[#2C261F]'}`}>
                             {won(closingBalance)}
                           </span>
                         </div>
@@ -1497,8 +1497,8 @@ export default function Sales() {
                                   return (
                                     <div key={a.id} className={`px-[11px] py-[8px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
                                       <div className="flex items-baseline justify-between gap-[8px]">
-                                        <span className="text-[14px] text-[#2C261F] truncate">{name}</span>
-                                        <span className="text-[14px] tabular-nums flex-shrink-0" style={{ color: signColor(a.amount) }}>
+                                        <span className="text-[16px] text-[#2C261F] truncate">{name}</span>
+                                        <span className="text-[16px] tabular-nums flex-shrink-0" style={{ color: signColor(a.amount) }}>
                                           {a.amount < 0 ? '−' : '+'}{won(Math.abs(a.amount))}
                                         </span>
                                       </div>
@@ -1522,7 +1522,7 @@ export default function Sales() {
             {/* ── 일자별 매출 그래프 ── */}
             <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
               <div className="px-3 py-2.5 border-b border-[#E5E5E5] flex items-center justify-between">
-                <div className="text-[15px] font-medium text-[#2C261F]">일자별 매출</div>
+                <div className="text-[17px] font-medium text-[#2C261F]">일자별 매출</div>
                 <div className="flex items-center gap-2 text-[13px]">
                   <button
                     onClick={() => {
@@ -1566,18 +1566,18 @@ export default function Sales() {
             <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
               <div className="px-3 py-2.5 border-b border-[#E5E5E5] flex items-start justify-between">
                 <div>
-                  <div className="text-[15px] font-medium text-[#2C261F]">충전 캘린더</div>
+                  <div className="text-[17px] font-medium text-[#2C261F]">충전 캘린더</div>
                   <div className="text-[13px] text-gray-text mt-0.5">
                     클릭하여 상세 내역을 확인해보세요
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                  <div className="text-[14px] font-semibold text-[#1E1E1E]">
+                  <div className="text-[16px] font-semibold text-[#1E1E1E]">
                     {year}년 {MONTH_NAMES[month]}{isCurrentMonth ? ` ${todayKstDay}일 (${todayKstDow})` : ''}
                   </div>
                   <div className="text-[13px] text-gray-text">{month + 1}월 1일 ~ {month + 1}월 {daysInMonth(year, month)}일</div>
                   {Object.keys(dayAmountMap).length === 0 && (
-                    <span className="text-[10px] text-gray-text bg-gray-100 rounded px-2 py-0.5">{MONTH_NAMES[month]} 충전 없음</span>
+                    <span className="text-[12px] text-gray-text bg-gray-100 rounded px-2 py-0.5">{MONTH_NAMES[month]} 충전 없음</span>
                   )}
                 </div>
               </div>
@@ -1610,14 +1610,14 @@ export default function Sales() {
                       ].join(' ')}
                     >
                       {isToday ? (
-                        <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] bg-[#F2F2F2] text-[14px] font-semibold flex-shrink-0 ${dow === 0 ? 'text-[#FF676F]' : dow === 6 ? 'text-[#3374FF]' : 'text-ink'}`}>{day}</span>
+                        <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] bg-[#F2F2F2] text-[16px] font-semibold flex-shrink-0 ${dow === 0 ? 'text-[#FF676F]' : dow === 6 ? 'text-[#3374FF]' : 'text-ink'}`}>{day}</span>
                       ) : (
-                        <span className={`text-[14px] font-semibold leading-none flex-shrink-0 ${dow === 0 ? 'text-[#FF676F]' : dow === 6 ? 'text-[#3374FF]' : 'text-ink'}`}>{day}</span>
+                        <span className={`text-[16px] font-semibold leading-none flex-shrink-0 ${dow === 0 ? 'text-[#FF676F]' : dow === 6 ? 'text-[#3374FF]' : 'text-ink'}`}>{day}</span>
                       )}
                       {(amount || orderAmount) ? (
                         <div className="mt-auto space-y-0.5">
-                          {amount ? <div className="text-[10px] font-medium leading-tight text-[#2C261F]">+{won(amount)} <span className="font-normal opacity-70">({dayDepositCountMap[day] ?? 0})</span></div> : null}
-                          {orderAmount ? <div className="text-[10px] font-normal leading-tight text-gray-text">-{won(orderAmount)} <span className="opacity-70">({dayOrderCountMap[day] ?? 0})</span></div> : null}
+                          {amount ? <div className="text-[12px] font-medium leading-tight text-[#2C261F]">+{won(amount)} <span className="font-normal opacity-70">({dayDepositCountMap[day] ?? 0})</span></div> : null}
+                          {orderAmount ? <div className="text-[12px] font-normal leading-tight text-gray-text">-{won(orderAmount)} <span className="opacity-70">({dayOrderCountMap[day] ?? 0})</span></div> : null}
                         </div>
                       ) : null}
                     </div>
@@ -1629,7 +1629,7 @@ export default function Sales() {
             {/* ── 거래처별 정산 테이블 ── */}
             <div className="bg-[#FCFCFC] rounded-[11px] border border-[#E5E5E5] overflow-hidden">
               <div className="px-3 py-2.5 border-b border-[#E5E5E5]">
-                <div className="text-[15px] font-semibold text-[#2C261F]">계정별 선결제 주기</div>
+                <div className="text-[17px] font-semibold text-[#2C261F]">계정별 선결제 주기</div>
                 <div className="text-[13px] text-gray-text mt-0.5">
                   충전·주문액은 <strong className="text-ink">{monthLabel} 기준</strong>, 현재 잔액은 <strong className="text-ink">실시간</strong>입니다. 행을 클릭하면 캘린더가 그 계정으로 좁혀져요.
                 </div>
@@ -1637,7 +1637,7 @@ export default function Sales() {
               {accountStats.length === 0 ? (
                 <div className="px-5 py-10 text-center">
                   <div className="text-[28px] mb-2">📭</div>
-                  <div className="text-[15px] font-medium text-ink">거래 내역이 없습니다</div>
+                  <div className="text-[17px] font-medium text-ink">거래 내역이 없습니다</div>
                   <div className="text-[13px] text-gray-text mt-1">{monthLabel}에 충전하거나 주문한 거래처가 없고<br />잔액이 남은 거래처도 없습니다</div>
                 </div>
               ) : (
@@ -1645,19 +1645,19 @@ export default function Sales() {
                   <table className="w-full">
                     <thead>
                       <tr className="bg-[#D7D2CE] border-b border-[#C1B7AA]">
-                        <th className="px-5 h-[36px] text-left  text-[14px] font-normal text-[#6A635E]">계정</th>
-                        <th className="px-4 h-[36px] text-right text-[14px] font-normal text-[#6A635E] whitespace-nowrap">평균 선결제 주기</th>
-                        <th className="px-4 h-[36px] text-right text-[14px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 선결제 매출</th>
-                        <th className="px-4 h-[36px] text-right text-[14px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
-                        <th className="px-3 h-[36px] text-right text-[14px] font-normal text-[#6A635E] whitespace-nowrap">
+                        <th className="px-5 h-[36px] text-left  text-[16px] font-normal text-[#6A635E]">계정</th>
+                        <th className="px-4 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">평균 선결제 주기</th>
+                        <th className="px-4 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 선결제 매출</th>
+                        <th className="px-4 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
+                        <th className="px-3 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">
                           <span className="inline-flex items-center gap-[4px]">
                             주문 비중
                             <InfoTip text={'이번 달 전체 주문액 중\n이 계정이 차지하는 몫이에요'} label="주문 비중 설명" />
                           </span>
                         </th>
-                        <th className="px-3 h-[36px] text-right text-[14px] font-normal text-[#6A635E] whitespace-nowrap">주문수</th>
-                        <th className="px-5 h-[36px] text-right text-[14px] font-normal text-[#6A635E] whitespace-nowrap">현재 잔액</th>
-                        <th className="px-4 h-[36px] text-left  text-[14px] font-normal text-[#6A635E] whitespace-nowrap">상태</th>
+                        <th className="px-3 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">주문수</th>
+                        <th className="px-5 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">현재 잔액</th>
+                        <th className="px-4 h-[36px] text-left  text-[16px] font-normal text-[#6A635E] whitespace-nowrap">상태</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#E5E5E5]">
@@ -1685,23 +1685,23 @@ export default function Sales() {
                           >
                             <td className="px-5 py-2.5">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[14px] font-semibold text-ink">{acc.account_name}</span>
+                                <span className="text-[16px] font-semibold text-ink">{acc.account_name}</span>
                               </div>
                               {acc.organization_name && acc.organization_name !== acc.account_name && <div className="text-[13px] text-gray-text">{acc.organization_name}</div>}
                             </td>
                             {/* 평균 선결제 주기 — 충전이 1건뿐이면 주기를 말할 수 없어 '—' */}
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">
                               {depCycle[acc.account_code] != null
-                                ? <span className="text-[14px] font-medium text-ink tabular-nums">{depCycle[acc.account_code]}일</span>
-                                : <span className="text-[14px] text-[#ADADAD]">—</span>}
+                                ? <span className="text-[16px] font-medium text-ink tabular-nums">{depCycle[acc.account_code]}일</span>
+                                : <span className="text-[16px] text-[#ADADAD]">—</span>}
                             </td>
                             <td className="px-4 py-2.5 text-right">
-                              <span className={`text-[14px] font-semibold ${monthDeposit > 0 ? 'text-[#2C261F]' : 'text-gray-text'}`}>
+                              <span className={`text-[16px] font-semibold ${monthDeposit > 0 ? 'text-[#2C261F]' : 'text-gray-text'}`}>
                                 {monthDeposit > 0 ? won(monthDeposit) : '—'}
                               </span>
                             </td>
                             <td className="px-4 py-2.5 text-right">
-                              <span className={`text-[14px] font-semibold ${monthOrder > 0 ? 'text-ink' : 'text-gray-text'}`}>
+                              <span className={`text-[16px] font-semibold ${monthOrder > 0 ? 'text-ink' : 'text-gray-text'}`}>
                                 {monthOrder > 0 ? won(monthOrder) : '—'}
                               </span>
                             </td>
@@ -1712,20 +1712,20 @@ export default function Sales() {
                                   <span className="w-[34px] h-[4px] rounded-full bg-[#E5E5E5] overflow-hidden flex-shrink-0">
                                     <span className="block h-full rounded-full bg-[#6A635E]" style={{ width: `${Math.min(100, share)}%` }} />
                                   </span>
-                                  <span className="text-[14px] font-normal text-[#787878] tabular-nums w-[30px]">{Math.round(share)}%</span>
+                                  <span className="text-[16px] font-normal text-[#787878] tabular-nums w-[30px]">{Math.round(share)}%</span>
                                 </div>
-                              ) : <span className="text-[14px] text-gray-text">—</span>}
+                              ) : <span className="text-[16px] text-gray-text">—</span>}
                             </td>
                             <td className="px-3 py-2.5 text-right">
-                              <span className="text-[14px] font-normal text-[#787878]">
+                              <span className="text-[16px] font-normal text-[#787878]">
                                 {orderCount > 0 ? `${orderCount}건` : '—'}
                               </span>
                             </td>
                             <td className="px-5 py-2.5 text-right">
-                              <span className={`text-[14px] font-medium ${balNeg ? 'text-danger' : 'text-ink'}`}>
+                              <span className={`text-[16px] font-medium ${balNeg ? 'text-danger' : 'text-ink'}`}>
                                 {won(acc.current_balance)}
                               </span>
-                              {balNeg && <div className="text-[10px] text-danger font-normal">다음 충전 시 정산</div>}
+                              {balNeg && <div className="text-[12px] text-danger font-normal">다음 충전 시 정산</div>}
                             </td>
                             <td className="px-4 py-2.5">
                               {/* 상태 — 기획엔 '⚠ 잔액부족'이 있었지만 경고 기준 개념을 없앴으므로
@@ -1745,13 +1745,13 @@ export default function Sales() {
                     <tfoot>
                       <tr className="border-t border-[#C1B7AA] bg-[#F2F2F2]">
                         <td className="px-5 py-2.5 text-[13px] font-medium text-gray-text">합계 ({contribution.length}개 거래처)</td>
-                        <td className="px-4 py-2.5 text-right text-[14px] font-medium text-[#2C261F]">{won(tableTotals.deposit)}</td>
-                        <td className="px-4 py-2.5 text-right text-[14px] font-medium text-[#1E1E1E]">{won(tableTotals.order)}</td>
+                        <td className="px-4 py-2.5 text-right text-[16px] font-medium text-[#2C261F]">{won(tableTotals.deposit)}</td>
+                        <td className="px-4 py-2.5 text-right text-[16px] font-medium text-[#1E1E1E]">{won(tableTotals.order)}</td>
                         <td className="px-3 py-2.5 text-right text-[13px] font-normal text-[#ADADAD]">100%</td>
-                        <td className="px-3 py-2.5 text-right text-[14px] font-normal text-[#787878]">
+                        <td className="px-3 py-2.5 text-right text-[16px] font-normal text-[#787878]">
                           {contribution.reduce((n, r) => n + r.orderCount, 0)}건
                         </td>
-                        <td className="px-5 py-2.5 text-right text-[14px] font-medium text-[#1E1E1E]">{won(totalLiability)}</td>
+                        <td className="px-5 py-2.5 text-right text-[16px] font-medium text-[#1E1E1E]">{won(totalLiability)}</td>
                         <td className="px-4 py-2.5" />
                       </tr>
                     </tfoot>
@@ -1770,7 +1770,7 @@ export default function Sales() {
               {/* 헤더 */}
               <div className="px-[14px] py-[12px] border-b border-[#E8E4E2] flex items-start justify-between flex-shrink-0">
                 <div className="min-w-0">
-                  <div className="text-[15px] font-semibold text-[#1E1E1E] truncate">{panelAccount.account_name}</div>
+                  <div className="text-[17px] font-semibold text-[#1E1E1E] truncate">{panelAccount.account_name}</div>
                   <div className="text-[13px] text-gray-text mt-0.5">
                     현재 잔액&nbsp;
                     <span className="font-medium text-gray-text">
@@ -1808,7 +1808,7 @@ export default function Sales() {
                               className={`text-gray-text transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
                               <polyline points="9 18 15 12 9 6"/>
                             </svg>
-                            <span className="text-[14px] font-medium text-[#1E1E1E]">{hmLabel}</span>
+                            <span className="text-[16px] font-medium text-[#1E1E1E]">{hmLabel}</span>
                           </div>
                           <div className="text-right flex-shrink-0 ml-2">
                             {hm.totalDeposit > 0 && (
@@ -1830,15 +1830,15 @@ export default function Sales() {
                                     {hm.month + 1}월 {item.day}일
                                   </span>
                                   {item.type === 'deposit' && item.note && (
-                                    <div className="text-[10px] text-gray-text truncate">{item.note}</div>
+                                    <div className="text-[12px] text-gray-text truncate">{item.note}</div>
                                   )}
                                   {item.type === 'order' && (
                                     <>
-                                      {item.orderer_name && <div className="text-[10px] text-gray-text">{item.orderer_name}</div>}
-                                      {item.menu_summary && <div className="text-[10px] text-gray-text truncate">{item.menu_summary}</div>}
+                                      {item.orderer_name && <div className="text-[12px] text-gray-text">{item.orderer_name}</div>}
+                                      {item.menu_summary && <div className="text-[12px] text-gray-text truncate">{item.menu_summary}</div>}
                                     </>
                                   )}
-                                  <div className="text-[10px] text-gray-text/70">{kstTimeStr(item.created_at)}</div>
+                                  <div className="text-[12px] text-gray-text/70">{kstTimeStr(item.created_at)}</div>
                                 </div>
                                 <span className={`text-[13px] flex-shrink-0
                                   ${item.type === 'deposit' ? 'font-medium text-[#2C261F]' : 'font-normal text-[#787878]'}`}>
@@ -1860,7 +1860,7 @@ export default function Sales() {
               {/* 헤더 */}
               <div className="px-[14px] py-[12px] border-b border-[#E8E4E2] flex items-start justify-between flex-shrink-0">
                 <div>
-                  <div className="text-[14px] font-semibold text-[#1E1E1E]">{month + 1}월 {selectedDay}일</div>
+                  <div className="text-[16px] font-semibold text-[#1E1E1E]">{month + 1}월 {selectedDay}일</div>
                   <div className="mt-1 space-y-0.5">
                     {selectedDayDeposits.length > 0 && (
                       <div className="text-[13px] text-gray-text">
@@ -1884,20 +1884,20 @@ export default function Sales() {
                 {selectedDayDeposits.length > 0 && (
                   <div>
                     <div className="mx-3 my-2.5 flex">
-                      <span className="text-[14px] font-medium text-ink bg-[#F2F2F2] rounded-[7px] px-2.5 py-1">충전</span>
+                      <span className="text-[16px] font-medium text-ink bg-[#F2F2F2] rounded-[7px] px-2.5 py-1">충전</span>
                     </div>
                     <div className="divide-y divide-[#E5E5E5]">
                       {selectedDayDeposits.map(d => (
                         <div key={d.deposit_id} className="px-4 py-2.5">
                           <div className="flex items-start justify-between gap-2 mb-0.5">
                             <span className="text-[13px] font-semibold text-ink leading-snug">{d.account_name}</span>
-                            <span className="text-[14px] font-medium text-[#2C261F] flex-shrink-0">+{won(d.amount)}</span>
+                            <span className="text-[16px] font-medium text-[#2C261F] flex-shrink-0">+{won(d.amount)}</span>
                           </div>
                           {d.note && <div className="text-[13px] text-gray-text">{d.note}</div>}
                           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                            <span className="text-[10px] text-gray-text">{kstTimeStr(d.created_at)}</span>
+                            <span className="text-[12px] text-gray-text">{kstTimeStr(d.created_at)}</span>
                             {d.payment_method && (
-                              <span className="text-[10px] bg-gray-100 text-gray-text px-1.5 py-0.5 rounded font-medium">{d.payment_method}</span>
+                              <span className="text-[12px] bg-gray-100 text-gray-text px-1.5 py-0.5 rounded font-medium">{d.payment_method}</span>
                             )}
                           </div>
                         </div>
@@ -1910,14 +1910,14 @@ export default function Sales() {
                 {selectedDayOrders.length > 0 && (
                   <div>
                     <div className="mx-3 my-2.5 flex">
-                      <span className="text-[14px] font-medium text-ink bg-[#F2F2F2] rounded-[7px] px-2.5 py-1">주문</span>
+                      <span className="text-[16px] font-medium text-ink bg-[#F2F2F2] rounded-[7px] px-2.5 py-1">주문</span>
                     </div>
                     <div className="divide-y divide-[#E5E5E5]">
                       {selectedDayOrders.map(o => (
                         <div key={o.order_code} className="px-4 py-2.5">
                           <div className="flex items-start justify-between gap-2 mb-0.5">
                             <span className="text-[13px] font-semibold text-ink leading-snug">{o.account_name}</span>
-                            <span className="text-[14px] font-medium text-ink flex-shrink-0">{won(o.total_amount)}</span>
+                            <span className="text-[16px] font-medium text-ink flex-shrink-0">{won(o.total_amount)}</span>
                           </div>
                           <div className="text-[13px] text-gray-text">{o.orderer_name} · {o.method}</div>
                           <div className="text-[13px] text-gray-text mt-0.5">
@@ -1925,7 +1925,7 @@ export default function Sales() {
                               <span key={i}>{item.quantity > 1 ? `${item.menu_name} ×${item.quantity}` : item.menu_name}{i < o.items.length - 1 ? ', ' : ''}</span>
                             ))}
                           </div>
-                          <div className="text-[10px] text-gray-text/70 mt-0.5">{kstTimeStr(o.ordered_at)}</div>
+                          <div className="text-[12px] text-gray-text/70 mt-0.5">{kstTimeStr(o.ordered_at)}</div>
                         </div>
                       ))}
                     </div>
