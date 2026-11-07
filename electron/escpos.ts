@@ -29,28 +29,46 @@ const CMD = {
   BOLD_ON:      Buffer.from([ESC, 0x45, 0x01]),
   BOLD_OFF:     Buffer.from([ESC, 0x45, 0x00]),
   // GS ! n — 상위 니블이 폭 배수-1, 하위 니블이 높이 배수-1
-  SIZE_H1:      Buffer.from([GS,  0x21, 0x00]),  // 1폭 x 1높이
-  SIZE_H2:      Buffer.from([GS,  0x21, 0x01]),  // 1폭 x 2높이 ← '보통'
-  SIZE_H3:      Buffer.from([GS,  0x21, 0x02]),  // 1폭 x 3높이 ← '크게'
-  SIZE_W2H2:    Buffer.from([GS,  0x21, 0x11]),  // 2폭 x 2높이 (폭을 키우면 칼럼이 깨진다)
+  //
+  // ⚠️ **높이만** 키우면(0x01·0x02) 글자가 위아래로 늘어난다. 같은 글꼴인데
+  //    아래위로 잡아당긴 모양이라, 한 종이 안에서 메뉴 줄(1x1)과 나란히 놓이면
+  //    글꼴이 두 가지인 것처럼 보인다. 실제로 그렇게 출력되고 있었다.
+  //    키울 땐 폭과 높이를 **같이** 키운다(0x11) — 모양이 안 망가진다.
+  SIZE_1X:      Buffer.from([GS,  0x21, 0x00]),  // 1폭 x 1높이 — 기본
+  SIZE_2X:      Buffer.from([GS,  0x21, 0x11]),  // 2폭 x 2높이 — '크게'
   FEED_CUT:     Buffer.from([GS,  0x56, 0x42, 0x04]),
 }
 
 /**
  * 설정값('보통'/'크게') → ESC/POS 크기 명령.
  *
- * ⚠️ 폭(width)을 키우면 한 줄에 들어가는 글자 수가 42 → 21 → 14 로 줄어, 칼럼을
- *    글자 수로 맞춰 둔 메뉴 표가 깨진다. 그래서 **높이만** 키운다.
+ * '보통'이 1x1 이다. 전엔 1폭x2높이였는데, 그게 **글자가 위아래로 늘어나 보이던
+ * 원인**이다 — 메뉴 표 줄만 1x1 이라 한 종이에 글꼴이 두 가지인 것처럼 찍혔다.
  *
- * 2026-10-18 버그 수정: 'large' 와 기본값이 둘 다 0x01(1폭x2높이) 이어서
- *    크게를 골라도 보통과 **완전히 같은 영수증**이 나왔다. 설정이 아무 일도
- *    하지 않고 있었다. 이제 크게는 0x02(1폭x3높이) 다 — 폭은 그대로라 칼럼은 안 깨진다.
+ * '크게'는 폭과 높이를 같이 키운다(2x2). 대신 한 줄에 들어가는 글자가 절반이 되므로
+ * 그 줄을 자를 때는 lineWidthFor() 로 폭을 반으로 줄여서 쓴다.
  */
 function sizeCmd(size: ReceiptTextSize | undefined): Buffer {
-  switch (size) {
-    case 'large':  return CMD.SIZE_H3   // 1폭 x 3높이
-    default:       return CMD.SIZE_H2   // '보통' — 1폭 x 2높이
-  }
+  return size === 'large' ? CMD.SIZE_2X : CMD.SIZE_1X
+}
+
+/**
+ * 지금부터 n분 뒤 시각 — '오후 5:20'.
+ *
+ * 기준이 '지금'인 이유: 이 종이는 **접수하는 그 순간** 나온다. 주문 시각부터
+ * 재면 한참 방치됐다 접수한 주문에서 이미 지난 시각이 찍힌다.
+ */
+function clockAfter(minutes: number, from: Date = new Date()): string {
+  const at   = new Date(from.getTime() + minutes * 60_000)
+  const h24  = at.getHours()
+  const ampm = h24 < 12 ? '오전' : '오후'
+  const h12  = h24 % 12 === 0 ? 12 : h24 % 12
+  return `${ampm} ${h12}:${String(at.getMinutes()).padStart(2, '0')}`
+}
+
+/** 그 크기로 찍을 때 한 줄에 들어가는 글자 수 */
+function lineWidthFor(size: ReceiptTextSize | undefined, W: number): number {
+  return size === 'large' ? Math.floor(W / 2) : W
 }
 
 // 설정이 없을 때의 기본값 — 침산점 실측값(80mm 에서 42자).
@@ -158,62 +176,81 @@ function layout(lineChars = DEFAULT_LINE_CHARS) {
 // ── 영수증 빌더 ────────────────────────────────────────────────────────────
 
 /** ① 주방용 */
-export function buildKitchenReceiptEscPos(order: OrderPayload, settings: ReceiptSettings, lineChars?: number): Buffer {
+/**
+ * @param prepMins 접수하면서 정한 소요시간(분). 주면 메뉴 표 바로 위에
+ *                 '예상도착시간'을 찍는다. 재출력처럼 그 값이 없을 땐 생략한다 —
+ *                 지어낸 시각을 찍느니 안 찍는 게 낫다.
+ */
+export function buildKitchenReceiptEscPos(order: OrderPayload, settings: ReceiptSettings, lineChars?: number, prepMins?: number): Buffer {
   const L = layout(lineChars)
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
   // 메뉴명 줄은 글자 수로 칼럼을 맞추므로 크기를 바꾸지 않는다(sizeCmd 주석 참고).
   // 독립된 줄인 옵션·금액만 설정 크기를 따른다.
   const optCmd = sizeCmd(settings.optionSize)
+  // '크게'(2x2)면 한 줄에 들어가는 글자가 절반이다 — 그 폭으로 자른다
+  const optW   = lineWidthFor(settings.optionSize, L.W)
   const amtCmd = sizeCmd(settings.amountSize)
 
   p(CMD.INIT)
 
   // 헤더
-  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_H2)
+  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_1X)
   p(enc('[주방용]'), nl())
   p(CMD.BOLD_OFF, enc(`${order.store_name ?? '샐러리아 침산점'} - 선결제 영수증`), nl())
-  p(CMD.SIZE_H1, CMD.ALIGN_LEFT)
+  p(CMD.SIZE_1X, CMD.ALIGN_LEFT)
   p(L.hr(), nl())
 
   // 블록1: 주문번호 / 주문일시
-  p(CMD.SIZE_H2)
+  p(CMD.SIZE_1X)
   p(enc('주문번호 : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
   p(enc('주문일시 : ' + formatDate(order.ordered_at)), nl())
-  p(CMD.SIZE_H1)
+  p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
-  p(CMD.SIZE_H2)
+  p(CMD.SIZE_1X)
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc('주문자   : ' + maskName(order.orderer_name)), nl())
   p(enc('전화번호 : ' + (order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
     p(enc('거래처   : ' + order.account_name), nl())
   }
-  p(CMD.SIZE_H1)
+  p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록3: 배달 정보 (배달일 때만)
   if (order.delivery_address) {
-    p(CMD.SIZE_H2)
+    p(CMD.SIZE_1X)
     for (const line of wrapName('배달주소 : ' + order.delivery_address, L.W)) p(enc(line), nl())
     if (order.delivery_detail) {
       for (const line of wrapName('배달상세 : ' + order.delivery_detail, L.W)) p(enc(line), nl())
     }
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
     p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())
-    p(CMD.SIZE_H1)
+    p(CMD.SIZE_1X)
     p(L.hr(), nl())
   } else {
-    p(CMD.SIZE_H2)
+    p(CMD.SIZE_1X)
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
-    p(CMD.SIZE_H1)
+    p(CMD.SIZE_1X)
+    p(L.hr(), nl())
+  }
+
+  // 예상도착시간 — 메뉴 바로 위, 이 종이에서 **가장 큰 글자**.
+  // 주방이 조리 순서를 정하는 건 이 한 줄이다(주문번호·주문자는 나중에 찾을 때 쓴다).
+  // '(15분 뒤)' 를 같이 적는 이유: 시각만 보면 지금 몇 시인지 머리로 빼야 한다.
+  if (prepMins != null && prepMins > 0) {
+    p(CMD.SIZE_2X, CMD.BOLD_ON)
+    p(enc('예상도착시간'), nl())
+    p(enc(clockAfter(prepMins)), nl())
+    p(CMD.BOLD_OFF, CMD.SIZE_1X)
+    p(enc(`(${prepMins}분 뒤)`), nl())
     p(L.hr(), nl())
   }
 
   // 메뉴 테이블 헤더 (3열, SIZE_NORMAL = 작은 크기)
-  p(CMD.SIZE_H1, CMD.BOLD_ON)
+  p(CMD.SIZE_1X, CMD.BOLD_ON)
   p(enc(padL('메뉴명', L.nameW) + padR('수량', QTY_W) + ' '.repeat(COL_SEP) + padR('가격', PRICE_W)))
   p(CMD.BOLD_OFF, nl())
   p(L.subHr(), nl())
@@ -225,7 +262,7 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
     const nameLines = wrapName(item.menu_name, L.nameW)
     for (let i = 0; i < nameLines.length; i++) {
       const isLast = i === nameLines.length - 1
-      p(CMD.SIZE_H1, CMD.BOLD_ON)
+      p(CMD.SIZE_1X, CMD.BOLD_ON)
       if (isLast) p(enc(padL(nameLines[i], L.nameW) + padR(qtyStr, QTY_W) + ' '.repeat(COL_SEP) + padR(priceStr, PRICE_W)))
       else        p(enc(padL(nameLines[i], L.nameW) + ' '.repeat(QTY_W + COL_SEP + PRICE_W)))
       p(CMD.BOLD_OFF, nl())
@@ -234,7 +271,7 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
       const optLabel = opt.extra_price > 0
         ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
         : `  > ${opt.option_name}`
-      p(optCmd, enc(clamp(optLabel, L.W)), nl())
+      p(optCmd, enc(clamp(optLabel, optW)), nl())
     }
   }
 
@@ -244,9 +281,9 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(amtCmd)
   p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
   if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
-  p(CMD.SIZE_H1)
+  p(CMD.SIZE_1X)
   p(L.hr(), nl())
-  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_H1, nl())
+  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(L.hr(), nl())
 
   // 잔액 — 설정에서 끌 수 있다(기본 켬)
@@ -255,13 +292,13 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
     p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
     p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
     if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
-    p(CMD.SIZE_H1)
+    p(CMD.SIZE_1X)
   }
 
   // 점주가 설정한 하단 문구
   if (settings.footerText?.trim()) {
     p(L.hr(), nl())
-    p(CMD.ALIGN_CENTER, CMD.SIZE_H1)
+    p(CMD.ALIGN_CENTER, CMD.SIZE_1X)
     for (const line of settings.footerText.trim().split('\n')) p(enc(clamp(line, L.W)), nl())
     p(CMD.ALIGN_LEFT)
   }
@@ -276,55 +313,57 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   const chunks: Buffer[] = []
   const p = (...bufs: Buffer[]) => chunks.push(...bufs)
   const optCmd = sizeCmd(settings.customerOptionSize)
+  // '크게'(2x2)면 한 줄에 들어가는 글자가 절반이다 — 그 폭으로 자른다
+  const optW   = lineWidthFor(settings.customerOptionSize, L.W)
   const amtCmd = sizeCmd(settings.amountSize)
 
   p(CMD.INIT)
 
   // 헤더
-  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_H2)
+  p(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_1X)
   p(enc('[고객용]'), nl())
   p(CMD.BOLD_OFF, enc(`${order.store_name ?? '샐러리아 침산점'} - 선결제 영수증`), nl())
-  p(CMD.SIZE_H1, CMD.ALIGN_LEFT)
+  p(CMD.SIZE_1X, CMD.ALIGN_LEFT)
   p(L.hr(), nl())
 
   // 블록1: 주문번호 / 주문일시
-  p(CMD.SIZE_H2)
+  p(CMD.SIZE_1X)
   p(enc('주문번호 : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
   p(enc('주문일시 : ' + formatDate(order.ordered_at)), nl())
-  p(CMD.SIZE_H1)
+  p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
-  p(CMD.SIZE_H2)
+  p(CMD.SIZE_1X)
   p(enc('이용방법 : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc('주문자   : ' + maskName(order.orderer_name)), nl())
   p(enc('전화번호 : ' + (order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
     p(enc('거래처   : ' + order.account_name), nl())
   }
-  p(CMD.SIZE_H1)
+  p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록3: 배달 정보 + 요청사항
   if (order.delivery_address) {
-    p(CMD.SIZE_H2)
+    p(CMD.SIZE_1X)
     for (const line of wrapName('배달주소 : ' + order.delivery_address, L.W)) p(enc(line), nl())
     if (order.delivery_detail) {
       for (const line of wrapName('배달상세 : ' + order.delivery_detail, L.W)) p(enc(line), nl())
     }
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
     p(enc('배달요청 : ' + (order.delivery_note || '없음')), nl())
-    p(CMD.SIZE_H1)
+    p(CMD.SIZE_1X)
     p(L.hr(), nl())
   } else {
-    p(CMD.SIZE_H2)
+    p(CMD.SIZE_1X)
     p(enc('가게요청 : ' + (order.note || '없음')), nl())
-    p(CMD.SIZE_H1)
+    p(CMD.SIZE_1X)
     p(L.hr(), nl())
   }
 
   // 메뉴 테이블 헤더 (3열, SIZE_NORMAL = 작은 크기)
-  p(CMD.SIZE_H1, CMD.BOLD_ON)
+  p(CMD.SIZE_1X, CMD.BOLD_ON)
   p(enc(padL('메뉴명', L.nameW) + padR('수량', QTY_W) + ' '.repeat(COL_SEP) + padR('가격', PRICE_W)))
   p(CMD.BOLD_OFF, nl())
   p(L.subHr(), nl())
@@ -336,7 +375,7 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
     const nameLines = wrapName(item.menu_name, L.nameW)
     for (let i = 0; i < nameLines.length; i++) {
       const isLast = i === nameLines.length - 1
-      p(CMD.SIZE_H1, CMD.BOLD_ON)
+      p(CMD.SIZE_1X, CMD.BOLD_ON)
       if (isLast) p(enc(padL(nameLines[i], L.nameW) + padR(qtyStr, QTY_W) + ' '.repeat(COL_SEP) + padR(priceStr, PRICE_W)))
       else        p(enc(padL(nameLines[i], L.nameW) + ' '.repeat(QTY_W + COL_SEP + PRICE_W)))
       p(CMD.BOLD_OFF, nl())
@@ -345,7 +384,7 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
       const optLabel = opt.extra_price > 0
         ? `  > ${opt.option_name} (+${opt.extra_price.toLocaleString('ko-KR')}원)`
         : `  > ${opt.option_name}`
-      p(optCmd, enc(clamp(optLabel, L.W)), nl())
+      p(optCmd, enc(clamp(optLabel, optW)), nl())
     }
   }
 
@@ -355,9 +394,9 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(amtCmd)
   p(enc('메뉴 소계 : ' + formatWon(order.menu_subtotal)), nl())
   if (order.delivery_fee > 0) p(enc('배달료   : ' + formatWon(order.delivery_fee)), nl())
-  p(CMD.SIZE_H1)
+  p(CMD.SIZE_1X)
   p(L.hr(), nl())
-  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_H1, nl())
+  p(amtCmd, CMD.BOLD_ON, enc('합  계   : ' + formatWon(order.total_amount)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(L.hr(), nl())
 
   // 잔액 — 설정에서 끌 수 있다(기본 켬)
@@ -366,13 +405,13 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
     p(enc('주문전 잔액 : ' + formatWon(order.balance_before)), nl())
     p(CMD.BOLD_ON, enc('주문후 잔액 : ' + formatWon(order.balance_after)), CMD.BOLD_OFF, nl())
     if (order.balance_after < 0) p(enc('※ 잔액 부족 - 다음 충전 시 정산'), nl())
-    p(CMD.SIZE_H1)
+    p(CMD.SIZE_1X)
   }
 
   // 점주가 설정한 하단 문구
   if (settings.footerText?.trim()) {
     p(L.hr(), nl())
-    p(CMD.ALIGN_CENTER, CMD.SIZE_H1)
+    p(CMD.ALIGN_CENTER, CMD.SIZE_1X)
     for (const line of settings.footerText.trim().split('\n')) p(enc(clamp(line, L.W)), nl())
     p(CMD.ALIGN_LEFT)
   }
@@ -512,9 +551,9 @@ export function buildQrReceiptEscPos(p: QrReceiptPayload, lineChars?: number, qr
   push(CMD.INIT)
 
   // ── 헤더 ──
-  push(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_H2)
+  push(CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.SIZE_1X)
   push(enc(`[${p.accountName} 선결제 QR오더]`), nl())
-  push(CMD.BOLD_OFF, CMD.SIZE_H1)
+  push(CMD.BOLD_OFF, CMD.SIZE_1X)
   push(L.hr(), nl())
 
   // ── QR 코드 — 래스터 비트이미지로 직접 찍는다 ──
@@ -539,7 +578,7 @@ export function buildQrReceiptEscPos(p: QrReceiptPayload, lineChars?: number, qr
 
   // ── 정보 ──
   push(CMD.ALIGN_LEFT, L.hr(), nl())
-  push(CMD.SIZE_H2)
+  push(CMD.SIZE_1X)
 
   const row = (label: string, value: string) => {
     const LW = 6  // 라벨 인쇄폭
@@ -556,16 +595,16 @@ export function buildQrReceiptEscPos(p: QrReceiptPayload, lineChars?: number, qr
   // (호출부도 pin: '' 로 보내고 있었는데, 그러면 "PIN" 라벨만 덩그러니 찍혔다.)
   row('PIN', '관리자에게 문의')
 
-  push(CMD.SIZE_H1, L.hr(), nl())
+  push(CMD.SIZE_1X, L.hr(), nl())
 
   // ── 푸터 — 매장 이름과 연락처 ──
   // 손님이 이 종이를 보고 물어볼 곳이 있어야 한다. 전엔 매장 이름만 있었다.
   //
   // 대표자 이름은 찍지 않는다. 이 종이는 거래처 사무실 벽에 붙는데, 거기서
   // 필요한 건 "어디에 물어보나"(매장 이름·전화)지 대표자 개인 이름이 아니다.
-  push(CMD.ALIGN_CENTER, CMD.SIZE_H2)
+  push(CMD.ALIGN_CENTER, CMD.SIZE_1X)
   push(enc(p.storeName), nl())
-  push(CMD.SIZE_H1)
+  push(CMD.SIZE_1X)
   if (p.storePhone) push(enc(p.storePhone), nl())
   push(CMD.FEED_CUT)
 
@@ -579,15 +618,15 @@ export function buildTestReceiptEscPos(lineChars?: number): Buffer {
   const now = new Date().toLocaleString('ko-KR')
 
   p(CMD.INIT)
-  p(CMD.ALIGN_CENTER, CMD.SIZE_H2, CMD.BOLD_ON)
+  p(CMD.ALIGN_CENTER, CMD.SIZE_1X, CMD.BOLD_ON)
   p(enc('=== 테스트 출력 ==='), nl())
   p(enc('샐러리아 침산점 POS'), nl())
-  p(CMD.BOLD_OFF, CMD.SIZE_H1, CMD.ALIGN_LEFT)
+  p(CMD.BOLD_OFF, CMD.SIZE_1X, CMD.ALIGN_LEFT)
   p(L.hr(), nl())
-  p(CMD.SIZE_H2)
+  p(CMD.SIZE_1X)
   p(enc('프린터 상태 : 정상'), nl())
   p(enc(now), nl())
-  p(CMD.SIZE_H1)
+  p(CMD.SIZE_1X)
   p(L.hr(), nl())
   p(CMD.FEED_CUT)
 

@@ -1468,7 +1468,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <div className="relative flex-shrink-0">
                 <button
                   onClick={() => setTableSortOpen(v => !v)}
-                  className="h-[30px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors whitespace-nowrap"
+                  className="h-[32px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors whitespace-nowrap"
                 >
                   {TABLE_SORTS.find(x => x.key === tableSort)?.label}
                   <svg
@@ -1636,7 +1636,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             {onOpenDetail && (
               <button
                 onClick={onOpenDetail}
-                className="pressable-tab flex-shrink-0 h-[30px] px-[13px] rounded-[9px] text-[16px] font-normal bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2] transition-colors"
+                className="pressable-tab flex-shrink-0 h-[32px] px-[13px] rounded-[9px] text-[16px] font-normal bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2] transition-colors"
               >
                 자세히 보기
               </button>
@@ -1647,7 +1647,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             <div className="relative ml-auto flex-shrink-0">
               <button
                 onClick={() => setPanelFilterOpen(v => !v)}
-                className={`pressable-tab h-[30px] px-[13px] rounded-[9px] text-[16px] font-normal flex items-center gap-[5px] transition-colors ${
+                className={`pressable-tab h-[32px] px-[13px] rounded-[9px] text-[16px] font-normal flex items-center gap-[5px] transition-colors ${
                   panelFilter !== null
                     ? 'bg-[#6A635E] text-[#FCFCFC] hover:brightness-110'
                     : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'

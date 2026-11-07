@@ -496,7 +496,7 @@ export default function QrPrintPanel() {
                     key={o.key}
                     onClick={() => setPaper(o.key)}
                     title={o.note}
-                    className={`h-[32px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
+                    className={`h-[34px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
                       paper === o.key ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                     }`}
                   >
@@ -516,7 +516,7 @@ export default function QrPrintPanel() {
                     {mmToCm(geo.qrMM)} × {mmToCm(geo.qrMM)}
                   </div>
                 </div>
-                <div className="w-px h-[28px] bg-[#D9D9D9]" />
+                <div className="w-px h-[30px] bg-[#D9D9D9]" />
                 {/* 성격이 다른 두 숫자를 한 라벨에 묶지 않는다.
                     전에는 '한 장에 : 8곳 · 총 4장' 이라 "한 장에 4장"으로 읽혔다.
                     '8곳'은 용지가 정하는 값이고, '4장'은 고른 거래처 수가 정하는 값이다. */}
@@ -533,7 +533,7 @@ export default function QrPrintPanel() {
                       <div className="text-[13px] font-normal text-[#787878] mb-[3px]">한 장에</div>
                       <div className="text-[17px] font-medium text-[#1E1E1E]">{geo.perPage}곳</div>
                     </div>
-                    <div className="w-px h-[28px] bg-[#D9D9D9]" />
+                    <div className="w-px h-[30px] bg-[#D9D9D9]" />
                     <div>
                       <div className="text-[13px] font-normal text-[#787878] mb-[3px]">용지 수</div>
                       <div className="text-[17px] font-medium text-[#1E1E1E]">
@@ -594,7 +594,7 @@ export default function QrPrintPanel() {
                   return (
                     <div
                       key={a.account_code}
-                      className={`h-[30px] rounded-[8px] text-[16px] font-normal flex items-center transition-colors ${
+                      className={`h-[32px] rounded-[8px] text-[16px] font-normal flex items-center transition-colors ${
                         on ? 'bg-[#6A635E] text-[#FCFCFC] pr-[4px]' : 'bg-[#FCFCFC] text-[#787878] hover:bg-[#E8E4E2]'
                       }`}
                     >

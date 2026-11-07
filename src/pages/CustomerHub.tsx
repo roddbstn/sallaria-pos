@@ -1020,14 +1020,14 @@ function AccountsPanel() {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="거래처·관리자 검색"
-                className="field-soft h-[32px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#D9D9D9] text-[17px] text-[#1E1E1E] outline-none"
+                className="field-soft h-[34px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#D9D9D9] text-[17px] text-[#1E1E1E] outline-none"
               />
             </div>
             {FILTERS.map(f => (
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={`h-[32px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
+                className={`h-[34px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
                   filter === f.key ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                 }`}
               >
@@ -1037,7 +1037,7 @@ function AccountsPanel() {
             <div className="relative ml-auto">
               <button
                 onClick={() => setSortOpen(v => !v)}
-                className="h-[32px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
+                className="h-[34px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] font-normal flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
               >
                 {SORTS.find(s => s.key === sort)?.label}
                 <svg width="10" height="6" viewBox="0 0 16 10" fill="none"><path d="M1 1L8 8L15 1" stroke="#6A635E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -1132,7 +1132,7 @@ function AccountsPanel() {
               <button
                 disabled={checked.size === 0}
                 onClick={() => exportBalanceCsv(visible.filter(r => checked.has(r.code)))}
-                className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] font-normal hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
+                className="h-[34px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] font-normal hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
               >
                 잔액 현황 내보내기
               </button>

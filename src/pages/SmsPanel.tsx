@@ -234,7 +234,7 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                 <button
                   key={t.kind}
                   onClick={() => pickKind(t.kind)}
-                  className={`h-[32px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
+                  className={`h-[34px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
                     kind === t.kind ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                   }`}
                 >

@@ -1282,7 +1282,7 @@ export default function Menus() {
                     <button
                       key={c.id}
                       onClick={() => { setPreviewCatId(c.id); setOptionPanelMenu(null) }}
-                      className={`pressable-tab h-[30px] px-[13px] rounded-[15px] text-[17px] whitespace-nowrap transition-colors ${
+                      className={`pressable-tab h-[32px] px-[13px] rounded-[15px] text-[17px] whitespace-nowrap transition-colors ${
                         previewCatId === c.id
                           ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
                           : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'

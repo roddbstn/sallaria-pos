@@ -561,7 +561,8 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
   const receipt = store.get('receipt')
   try {
     await printEscPos(buildCustomerReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
-    await printEscPos(buildKitchenReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
+    // prepMins 를 넘겨야 주방 영수증에 '예상도착시간'이 찍힌다
+    await printEscPos(buildKitchenReceiptEscPos(order, receipt, resolveLineChars(printerCfg()), prepMins))
     console.log(`[IPC] 영수증 출력 완료: ${order.order_code}`)
   } catch (err) {
     console.error('[IPC] 영수증 출력 실패 (무시):', err)

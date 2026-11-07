@@ -47,7 +47,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   return (
     <button
       onClick={onClick}
-      className={`h-[32px] px-[11px] rounded-[9px] text-[16px] leading-[17px] whitespace-nowrap transition-colors ${
+      className={`h-[34px] px-[11px] rounded-[9px] text-[16px] leading-[17px] whitespace-nowrap transition-colors ${
         active ? 'bg-[#6A635E] text-[#FCFCFC] font-normal' : 'bg-[#F2F2F2] text-[#787878] font-normal'
       }`}
     >
@@ -126,7 +126,7 @@ function SectionPill({ label, onClick }: { label: string; onClick: () => void })
   return (
     <button
       onClick={onClick}
-      className="h-[32px] w-[178px] px-[11px] rounded-[9px] bg-[#F2F2F2] flex items-center justify-between hover:bg-[#E8E4E2] transition-colors"
+      className="h-[34px] w-[178px] px-[11px] rounded-[9px] bg-[#F2F2F2] flex items-center justify-between hover:bg-[#E8E4E2] transition-colors"
     >
       <span className="text-[16px] leading-[17px] font-normal text-[#787878]">{label}</span>
       <ChevronIcon />
@@ -137,7 +137,7 @@ function SectionPill({ label, onClick }: { label: string; onClick: () => void })
 // Figma Frame 189: bg #E8E4E2 · radius 10→6 · #2C261F
 function DateChip({ label, onRemove }: { label: string; onRemove?: () => void }) {
   return (
-    <div className="pressable h-[32px] px-[11px] rounded-[6px] bg-[#E8E4E2] flex items-center gap-[10px] flex-shrink-0">
+    <div className="pressable h-[34px] px-[11px] rounded-[6px] bg-[#E8E4E2] flex items-center gap-[10px] flex-shrink-0">
       <span className="text-[16px] leading-[17px] font-normal text-[#2C261F] whitespace-nowrap">{label}</span>
       {onRemove && (
         <button onClick={onRemove} aria-label={`${label} 삭제`} className="hover:opacity-60 transition-opacity">
@@ -363,7 +363,7 @@ function StoreSettingsPanel({
         ) : (
           <button
             onClick={onOpenHours}
-            className="flex-1 min-w-0 h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] flex items-center justify-between hover:bg-[#E8E4E2] transition-colors"
+            className="flex-1 min-w-0 h-[34px] px-[11px] rounded-[9px] bg-[#F2F2F2] flex items-center justify-between hover:bg-[#E8E4E2] transition-colors"
           >
             <span className="text-[16px] leading-[17px] font-normal text-[#787878]">휴무</span>
             <ChevronIcon />
@@ -421,7 +421,7 @@ function StoreSettingsPanel({
                 </span>
                 <button
                   onClick={() => { setPhone(phoneSaved); setEditingPhone(true) }}
-                  className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
+                  className="h-[34px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
                 >
                   {phoneSaved ? '변경' : '등록'}
                 </button>
@@ -445,14 +445,14 @@ function StoreSettingsPanel({
                 <button
                   onClick={() => void savePhone()}
                   disabled={phoneSaving}
-                  className="h-[32px] px-[11px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[16px] leading-[17px] font-medium hover:opacity-90 transition-opacity flex-shrink-0 disabled:opacity-40"
+                  className="h-[34px] px-[11px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[16px] leading-[17px] font-medium hover:opacity-90 transition-opacity flex-shrink-0 disabled:opacity-40"
                 >
                   저장
                 </button>
                 <button
                   onClick={() => { setPhone(phoneSaved); setEditingPhone(false) }}
                   disabled={phoneSaving}
-                  className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
+                  className="h-[34px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
                 >
                   취소
                 </button>
@@ -503,7 +503,7 @@ function StoreSettingsPanel({
               <div className="flex flex-col gap-[11px]">
                 <div className="h-[42px] border border-[#D9D9D9] rounded-[9px] pl-[21px] pr-[8px] flex items-center justify-between gap-[12px]">
                   <span className="text-[17px] leading-[18px] font-normal text-[#1E1E1E] truncate">{delivery.roadAddress}</span>
-                  <button onClick={() => setEditingLocation(true)} className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0">
+                  <button onClick={() => setEditingLocation(true)} className="h-[34px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0">
                     변경
                   </button>
                 </div>
@@ -516,7 +516,7 @@ function StoreSettingsPanel({
             ) : (
               <div className="h-[42px] bg-[#F2F2F2] rounded-[9px] pl-[21px] pr-[8px] flex items-center justify-between gap-[12px]">
                 <span className="text-[16px] leading-[17px] font-normal text-[#787878]">매장 주소가 아직 등록되지 않았어요</span>
-                <button onClick={() => setEditingLocation(true)} className="h-[32px] px-[11px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[16px] leading-[17px] font-medium hover:opacity-90 transition-opacity flex-shrink-0">
+                <button onClick={() => setEditingLocation(true)} className="h-[34px] px-[11px] rounded-[9px] bg-[#6A635E] text-[#FCFCFC] text-[16px] leading-[17px] font-medium hover:opacity-90 transition-opacity flex-shrink-0">
                   등록
                 </button>
               </div>
@@ -539,14 +539,14 @@ function StoreSettingsPanel({
               />
               <div className="flex justify-end gap-[9px]">
                 {delivery.roadAddress && (
-                  <button onClick={() => setEditingLocation(false)} className="h-[32px] px-[14px] bg-[#F2F2F2] text-[#787878] rounded-[9px] text-[17px] font-medium hover:bg-[#E8E4E2] transition-colors">
+                  <button onClick={() => setEditingLocation(false)} className="h-[34px] px-[14px] bg-[#F2F2F2] text-[#787878] rounded-[9px] text-[17px] font-medium hover:bg-[#E8E4E2] transition-colors">
                     취소
                   </button>
                 )}
                 <button
                   onClick={handleSaveLocation}
                   disabled={delivery.savingLocation || !delivery.draftAddress.trim()}
-                  className="h-[32px] px-[16px] bg-[#6A635E] text-[#FCFCFC] rounded-[9px] text-[17px] font-medium hover:opacity-90 disabled:opacity-50 transition-colors"
+                  className="h-[34px] px-[16px] bg-[#6A635E] text-[#FCFCFC] rounded-[9px] text-[17px] font-medium hover:opacity-90 disabled:opacity-50 transition-colors"
                 >
                   {delivery.savingLocation ? <Working label="저장 중" /> : '저장'}
                 </button>
@@ -819,7 +819,7 @@ function RepresentativePanel({
             </span>
             <button
               onClick={() => showToast('전화번호 변경은 준비 중이에요')}
-              className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
+              className="h-[34px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
             >
               변경
             </button>
@@ -836,7 +836,7 @@ function RepresentativePanel({
                 if (!phone) { showToast('등록된 전화번호가 없어 인증을 보낼 수 없어요'); return }
                 setPwModalOpen(true)
               }}
-              className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
+              className="h-[34px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
             >
               변경
             </button>
@@ -853,7 +853,7 @@ function RepresentativePanel({
             <span className="text-[17px] font-medium leading-[21px] text-[#1E1E1E]">{PLAN_NAMES[plan]}</span>
             <button
               onClick={() => setPlanModalOpen(true)}
-              className="h-[32px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
+              className="h-[34px] px-[11px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] leading-[17px] font-normal hover:bg-[#E8E4E2] transition-colors flex-shrink-0"
             >
               변경
             </button>

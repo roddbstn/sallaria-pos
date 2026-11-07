@@ -70,7 +70,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   return (
     <button
       onClick={onClick}
-      className={`h-[32px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
+      className={`h-[34px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
         active ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
       }`}
     >
@@ -90,7 +90,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-[32px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#ADADAD] text-[17px] text-[#1E1E1E] outline-none focus:border-[#6A635E]"
+        className="h-[34px] w-[200px] pl-[30px] pr-[11px] rounded-[9px] border border-[#ADADAD] text-[17px] text-[#1E1E1E] outline-none focus:border-[#6A635E]"
       />
     </div>
   )
@@ -100,7 +100,7 @@ function PrimaryAction({ onClick, children }: { onClick: () => void; children: R
   return (
     <button
       onClick={onClick}
-      className="h-[32px] px-[14px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[17px] font-medium hover:opacity-90 transition-opacity"
+      className="h-[34px] px-[14px] rounded-[9px] bg-[#2C261F] text-[#F9F9F9] text-[17px] font-medium hover:opacity-90 transition-opacity"
     >
       {children}
     </button>
@@ -443,7 +443,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
               <>
                 <button
                   onClick={() => setReorder(false)}
-                  className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[17px] hover:bg-[#E8E4E2] transition-colors"
+                  className="h-[34px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#787878] text-[17px] hover:bg-[#E8E4E2] transition-colors"
                 >
                   취소
                 </button>
@@ -454,7 +454,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 <button
                   onClick={startReorder}
                   disabled={(data?.categories.length ?? 0) < 2}
-                  className="h-[32px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
+                  className="h-[34px] px-[13px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] hover:bg-[#E8E4E2] disabled:opacity-40 transition-colors"
                 >
                   순서 편집
                 </button>
@@ -488,7 +488,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                     onDragStart={() => setDragIdx(i)}
                     onDragOver={e => { e.preventDefault(); if (dragIdx !== null) moveCat(dragIdx, i), setDragIdx(i) }}
                     onDragEnd={() => setDragIdx(null)}
-                    className={`h-[32px] px-[12px] rounded-[9px] border border-dashed flex items-center gap-[7px] cursor-grab active:cursor-grabbing text-[17px] transition-colors ${
+                    className={`h-[34px] px-[12px] rounded-[9px] border border-dashed flex items-center gap-[7px] cursor-grab active:cursor-grabbing text-[17px] transition-colors ${
                       dragIdx === i ? 'border-[#6A635E] bg-[#E8E4E2] text-[#2C261F]' : 'border-[#ADADAD] bg-[#FCFCFC] text-[#414141]'
                     }`}
                   >
@@ -509,7 +509,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 <button
                   key={t.key}
                   onClick={() => setCatTab(t.key)}
-                  className={`h-[32px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
+                  className={`h-[34px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
                     catTab === t.key ? 'bg-[#2C261F] text-[#F9F9F9]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                   }`}
                 >
@@ -533,7 +533,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
             <div className="relative">
               <button
                 onClick={() => setSortOpen(v => !v)}
-                className="h-[32px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
+                className="h-[34px] px-[12px] rounded-[9px] bg-[#F2F2F2] text-[#1E1E1E] text-[17px] flex items-center gap-[6px] hover:bg-[#E8E4E2] transition-colors"
               >
                 {SORT_LABEL[sortBy]}
                 <svg width="9" height="9" viewBox="0 0 16 16" fill="none" className={sortOpen ? 'rotate-180' : ''}>
@@ -548,7 +548,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                       <button
                         key={k}
                         onClick={() => { setSortBy(k); setSortOpen(false) }}
-                        className={`w-full h-[32px] px-[12px] text-left text-[17px] transition-colors ${
+                        className={`w-full h-[34px] px-[12px] text-left text-[17px] transition-colors ${
                           k === sortBy ? 'bg-[#F2F2F2] text-[#2C261F] font-medium' : 'text-[#414141] hover:bg-[#F2F2F2]'
                         }`}
                       >
@@ -622,7 +622,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 <span className={`w-[80px] text-center text-[16px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
                   {r.groupCount === 0 ? '없음' : `${r.groupCount}그룹`}
                 </span>
-                <span className="w-[132px] text-right text-[17px] text-[#1E1E1E]">{r.sold}개</span>
+                <span className="w-[132px] text-center text-[17px] text-[#1E1E1E]">{r.sold}개</span>
                 <span className="w-[70px] text-center">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] ${
                     r.menu.is_sold_out ? 'bg-[#FFEFEF] text-[#C92A2A]' : 'bg-[#E6F4EC] text-[#017333]'
@@ -799,7 +799,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                 <button
                   key={k}
                   onClick={() => { setKind(k); setQ('') }}
-                  className={`h-[32px] px-[13px] rounded-[10px] text-[17px] font-medium transition-colors ${
+                  className={`h-[34px] px-[13px] rounded-[10px] text-[17px] font-medium transition-colors ${
                     kind === k
                       ? 'bg-[#FCFCFC] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-ink'
                       : 'text-[#BDB4A7] hover:text-ink'
@@ -837,7 +837,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                     <button
                       key={g.id}
                       onClick={() => setSelected(g.id)}
-                      className={`h-[32px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
+                      className={`h-[34px] px-[13px] rounded-[9px] text-[17px] whitespace-nowrap transition-colors ${
                         on ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                       }`}
                     >
@@ -871,7 +871,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                     <div className="ml-auto">
                       <button
                         onClick={() => setEditing(group)}
-                        className="h-[30px] px-[12px] rounded-[8px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] hover:bg-[#E8E4E2] transition-colors"
+                        className="h-[32px] px-[12px] rounded-[8px] bg-[#F2F2F2] text-[#1E1E1E] text-[16px] hover:bg-[#E8E4E2] transition-colors"
                       >
                         수정
                       </button>
@@ -903,7 +903,7 @@ function OptionDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                   {(group.option_items ?? []).length === 0 ? (
                     <div className="px-[20px] py-[16px] text-[13px] text-[#ADADAD]">항목이 없어요</div>
                   ) : (<>
-                    <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[32px] text-[13px] font-normal text-[#6A635E]">
+                    <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[34px] text-[13px] font-normal text-[#6A635E]">
                       <span className="flex-1 min-w-0">항목</span>
                       <span className="w-[90px] text-right">추가 금액</span>
                       <span className="w-[90px] text-right flex items-center justify-end gap-[4px]">

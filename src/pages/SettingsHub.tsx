@@ -104,7 +104,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 /** 토스 벤치마크 — 출력 여부와 매수를 하나로. 0이면 출력 안 함 */
 function Stepper({ value, onChange, max = 5 }: { value: number; onChange: (n: number) => void; max?: number }) {
   return (
-    <div className="flex items-center h-[32px] rounded-[9px] bg-[#F2F2F2] overflow-hidden">
+    <div className="flex items-center h-[34px] rounded-[9px] bg-[#F2F2F2] overflow-hidden">
       <button
         onClick={() => onChange(Math.max(0, value - 1))}
         disabled={value <= 0}
@@ -146,7 +146,7 @@ function SegButtons<T extends string>({ value, options, onChange }: {
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`h-[30px] px-[11px] rounded-[8px] text-[15px] transition-colors ${
+          className={`h-[32px] px-[11px] rounded-[8px] text-[15px] transition-colors ${
             value === o.v ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
           }`}
         >
@@ -167,7 +167,7 @@ function SmallButton({ onClick, children, disabled, tone = 'plain' }: {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`h-[30px] px-[12px] rounded-[8px] text-[14px] font-medium disabled:opacity-40 transition-opacity ${
+      className={`h-[32px] px-[12px] rounded-[8px] text-[14px] font-medium disabled:opacity-40 transition-opacity ${
         tone === 'dark' ? 'bg-[#2C261F] text-[#F9F9F9] hover:opacity-90' : 'bg-[#F2F2F2] text-[#1E1E1E] hover:bg-[#E8E4E2]'
       }`}
     >
@@ -648,7 +648,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                 onChange={e => patch({ host: e.target.value.trim() })}
                 placeholder="192.168.0.50"
                 inputMode="decimal"
-                className="w-[132px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[17px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
+                className="w-[132px] h-[34px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[17px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
               />
             </Row>
             <Row label="포트" hint={`비우면 ${DEFAULT_TCP_PORT} 를 써요 (영수증 프린터 표준)`}>
@@ -660,7 +660,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
                 }}
                 placeholder={String(DEFAULT_TCP_PORT)}
                 inputMode="numeric"
-                className="w-[78px] h-[32px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[17px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
+                className="w-[78px] h-[34px] px-[10px] rounded-[8px] bg-[#F2F2F2] text-[17px] tabular-nums text-[#1E1E1E] text-right outline-none focus:bg-[#E8E4E2]"
               />
             </Row>
           </>
@@ -669,7 +669,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
             <select
               value={cfg.baudRate ?? 9600}
               onChange={e => patch({ baudRate: Number(e.target.value) })}
-              className="h-[32px] px-[9px] rounded-[8px] bg-[#F2F2F2] text-[17px] tabular-nums text-[#1E1E1E] outline-none"
+              className="h-[34px] px-[9px] rounded-[8px] bg-[#F2F2F2] text-[17px] tabular-nums text-[#1E1E1E] outline-none"
             >
               {BAUD_RATES.map(b => <option key={b} value={b}>{b.toLocaleString('ko-KR')} bps</option>)}
             </select>
