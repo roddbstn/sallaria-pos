@@ -1167,6 +1167,9 @@ export default function Menus() {
         const countOf = (catId: string) => menus.filter(m => m.categoryId === catId).length
         const selectedCat = categories.find(c => c.id === previewCatId) ?? null
         const itemsOfSelectedCat = selectedCat ? menus.filter(m => m.categoryId === selectedCat.id) : []
+        // ⚠️ 글자 크기를 바꿀 땐 **두 갈래를 같이** 본다.
+        //    2026-11-07 에 일괄 치환으로 메뉴 이름 쪽 삼항이 'text-[17px]' : 'text-[17px]'
+        //    가 돼서, '기본'과 '큰 글씨'가 똑같이 보였다. 설정은 있는데 효과가 없었다.
         const catTextSizeClass = categoryTextSize === 'large' ? 'text-[17px]' : 'text-[16px]'
         const listForLeft = menuEditMode ? editOrder : categories
 
@@ -1434,7 +1437,7 @@ export default function Menus() {
                               } ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
                               style={{ minHeight: 86 }}
                             >
-                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[17px]'}`} style={{ paddingRight: 58 }}>
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'}`} style={{ paddingRight: 58 }}>
                                 {menu.name}
                               </div>
                               <div className="text-[16px] font-light text-ink mt-auto">{won(menu.price)}</div>
@@ -1502,7 +1505,7 @@ export default function Menus() {
                               }`}
                               style={{ minHeight: 86 }}
                             >
-                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[17px]'}`} style={{ paddingRight: 58 }}>
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'}`} style={{ paddingRight: 58 }}>
                                 {menu.name}
                               </div>
                               <div className="text-[16px] font-light text-ink mt-auto">{won(menu.price)}</div>
