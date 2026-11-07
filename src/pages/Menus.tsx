@@ -1170,7 +1170,7 @@ export default function Menus() {
         // ⚠️ 글자 크기를 바꿀 땐 **두 갈래를 같이** 본다.
         //    2026-11-07 에 일괄 치환으로 메뉴 이름 쪽 삼항이 'text-[17px]' : 'text-[17px]'
         //    가 돼서, '기본'과 '큰 글씨'가 똑같이 보였다. 설정은 있는데 효과가 없었다.
-        const catTextSizeClass = categoryTextSize === 'large' ? 'text-[17px]' : 'text-[16px]'
+        const catTextSizeClass = categoryTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'
         const listForLeft = menuEditMode ? editOrder : categories
 
         // 개별메뉴 모드 — 카테고리별 제목 + 6열 카드 묶음, 모든 px는 Figma 원본 × FIGMA_SCALE

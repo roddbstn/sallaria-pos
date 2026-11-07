@@ -1413,7 +1413,7 @@ export default function App() {
                       <button
                         key={item.label}
                         onClick={item.onClick}
-                        className="pressable-tab block w-full px-3 py-2 rounded-[10px] text-[17px] text-ink font-medium text-left hover:bg-[#F2F2F2]"
+                        className="pressable-tab block w-full px-3 py-2 rounded-[10px] text-[20px] text-ink font-medium text-left hover:bg-[#F2F2F2]"
                       >
                         {item.label}
                       </button>

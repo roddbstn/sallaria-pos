@@ -87,15 +87,17 @@ function toKst(iso: string) {
 
 // 타이틀은 13 → 15px. 영역이 넷이라 제목이 작으면 어디가 어디인지 훑기 어렵다.
 // hint(서브텍스트)는 전부 뺐다 — 설명이 필요한 건 i 로 붙이고, 아니면 제목이 설명을 겸한다.
-function Section({ title, right, children }: {
+function Section({ title, right, rightInline, children }: {
   title:    string
   /** 제목 줄 오른쪽에 붙일 것(요약 문장 등) */
   right?:   React.ReactNode
+  /** 오른쪽 끝이 아니라 제목 **바로 옆**에 붙인다 — 칼럼이 좁을 때 */
+  rightInline?: boolean
   children: React.ReactNode
 }) {
   return (
     <div className="mb-[30px]">
-      <div className="flex items-end justify-between gap-[16px] mb-[10px]">
+      <div className={`flex items-end gap-[16px] mb-[10px] ${rightInline ? '' : 'justify-between'}`}>
         <div className="text-[17px] font-semibold text-[#2C261F]">{title}</div>
         {right}
       </div>
@@ -440,8 +442,19 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
           기간 버튼(7/30/90/전체)이 이 박스 **아래**에 있는 것도 같은 이유다 —
           추이는 그 창에 묶이지 않는다(항상 최근 12구간). 버튼을 추이 위에 두면
           추이까지 걸러지는 것처럼 읽힌다. */}
+      {/* 주문 추이(좌) | 월별 주문율(우) — 한 줄에 나란히.
+          "몇 건 들어왔나"와 "몇 명이 시켰나"는 같이 봐야 뜻이 선다.
+          건수가 늘었는데 주문율이 그대로면 같은 사람이 더 자주 시킨 것이고,
+          둘 다 늘었으면 사람이 늘어난 것이다 — 다음에 할 일이 달라진다.
+          위아래로 두면 그 비교를 하려고 스크롤을 오가야 했고, 아래 '주문 시간대'가
+          한 화면 밖으로 밀려났다. */}
+      <div className="flex items-start gap-[16px] mb-[30px]">
+        <div className="flex-1 min-w-0">
       <Section
         title="주문 추이"
+        /* 단위 탭을 제목 오른쪽 끝이 아니라 **제목 바로 옆**에 붙인다.
+           칼럼이 좁아져서 오른쪽 끝으로 보내면 제목과 탭 사이가 휑하게 벌어진다. */
+        rightInline
         right={
           <SegmentedTabs
             options={TREND_UNITS.map(u => ({ value: u, label: UNIT_LABEL[u] }))}
@@ -532,21 +545,17 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
         </div>
         )}
       </Section>
+        </div>
 
-      {/* 0-2. 월별 주문율 ───────────────────────────────────────────────
-          주문 추이가 "몇 건 들어왔나"라면 이건 "**몇 명이** 시켰나"다.
-          둘을 붙여 두는 이유: 건수가 늘었는데 주문율이 그대로면 같은 사람이
-          더 자주 시킨 것이고, 둘 다 늘었으면 사람이 늘어난 것이다.
-          그 차이에 따라 다음에 할 일이 다르다(메뉴를 늘릴지 사람을 늘릴지).
-
-          고객 현황에 있던 차트를 옮겨 왔다. 거기는 "누가 빠지고 있나"를 보는
-          자리라 드나듦 차트가 그 자리를 대신한다. */}
-      {orderRates.length > 0 && (
-        <Section title="월별 주문율">
-          <div className="bg-[#FCFCFC] rounded-[11px] px-[20px] py-[18px]">
-            <div className="max-w-[460px]">
+        {/* 월별 주문율 — 맨 오른쪽. 막대 여섯 개라 좁아도 읽힌다.
+            고객 현황에 있던 차트를 옮겨 왔다. 거기는 "누가 빠지고 있나"를 보는
+            자리라 드나듦 차트가 그 자리를 대신한다. */}
+        {orderRates.length > 0 && (
+          <div className="flex-shrink-0 w-[300px]">
+            <div className="text-[17px] font-semibold text-[#2C261F] mb-[10px]">월별 주문율</div>
+            <div className="bg-[#FCFCFC] rounded-[11px] px-[18px] py-[16px]">
               <TrendBars
-                title="그 달에 주문한 손님 비율"
+                title="해당 월에 주문한 손님 비율"
                 hint={'해당 월 말일까지 등록된 손님 중\n해당 월에 주문한 분의 비율이에요'}
                 color="#8C8379"
                 kind="rate"
@@ -558,8 +567,8 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
               />
             </div>
           </div>
-        </Section>
-      )}
+        )}
+      </div>
 
       {/* 기간 탭 — 여기부터 아래가 이 창의 영향을 받는다.
           추이 단위 탭과 **같은 모양·같은 오른쪽 끝**에 선다. 둘 다 "무엇을 기준으로

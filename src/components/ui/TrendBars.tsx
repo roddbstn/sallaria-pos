@@ -26,7 +26,7 @@ function Tip({ text }: { text: string }) {
 
 function Head({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="flex items-center gap-[5px] mb-[10px]">
+    <div className="flex items-center gap-[5px] mb-[18px]">
       <span className="text-[13px] font-normal text-[#6A635E]">{title}</span>
       {/* ⚠️ 브라우저 기본 title 속성을 쓰면 안 된다.
           똑같이 생긴 'i' 인데 **1~2초 기다려야** OS 툴팁이 뜨고 모양도 우리 것과

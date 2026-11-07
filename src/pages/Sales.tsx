@@ -12,6 +12,9 @@ import type { PlanTier } from '../lib/plans'
 import InfoTip from '../components/ui/InfoTip'
 import { signColor } from '../lib/sign-color'
 
+/** 날짜 상세 패널 폭 — 헤더의 거래처 필터가 이만큼 비켜서야 안 겹친다 */
+const DAY_PANEL_W = 260
+
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 const MONTH_NAMES   = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
@@ -968,7 +971,15 @@ export default function Sales() {
       return
     }
     setHeaderRight(
-      <div className="relative flex-shrink-0" ref={filterDropdownRef}>
+      // 날짜 패널(260px)이 열리면 그만큼 **왼쪽으로 비켜선다.**
+      // 패널은 본문 안에 있고 이 버튼은 그 위 헤더에 있어서, 가만 두면 버튼이
+      // 패널 머리 위에 겹쳐 앉는다 — 패널의 날짜·합계를 가리고, 버튼이
+      // 패널에 속한 것처럼 읽힌다.
+      <div
+        className="relative flex-shrink-0 transition-[margin] duration-200"
+        style={{ marginRight: selectedDay !== null ? DAY_PANEL_W + 12 : 0 }}
+        ref={filterDropdownRef}
+      >
         <button
           onClick={() => setFilterDropdownOpen(v => !v)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[16px] font-semibold transition-colors ${
@@ -1052,7 +1063,7 @@ export default function Sales() {
       </div>
     )
     return () => setHeaderRight(null)
-  }, [accounts, excludedAccounts, filterDropdownOpen])
+  }, [accounts, excludedAccounts, filterDropdownOpen, selectedDay])
 
   // 제외된 거래처가 상세 패널에 열려 있으면 자동 닫기
   useEffect(() => {
@@ -1856,7 +1867,7 @@ export default function Sales() {
             </div>
           ) : selectedDay !== null ? (
             /* ── 날짜 상세 패널 ── */
-            <div className="w-[260px] flex-shrink-0 border-l border-[#E8E4E2] bg-[#FCFCFC] flex flex-col overflow-hidden">
+            <div style={{ width: DAY_PANEL_W }} className="flex-shrink-0 border-l border-[#E8E4E2] bg-[#FCFCFC] flex flex-col overflow-hidden">
               {/* 헤더 */}
               <div className="px-[14px] py-[12px] border-b border-[#E8E4E2] flex items-start justify-between flex-shrink-0">
                 <div>

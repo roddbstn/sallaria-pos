@@ -569,8 +569,8 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                   메뉴를 찾는 순서이기도 하다. */}
               {catTab === 'all' && <span className="w-[150px]">카테고리</span>}
               <span className="flex-1 min-w-0">메뉴({rows.length}개)</span>
-              <span className="w-[90px] text-right">가격</span>
-              <span className="w-[80px] text-right">옵션</span>
+              <span className="w-[90px] text-center">가격</span>
+              <span className="w-[80px] text-center">옵션</span>
               {/* 기간을 바꿀 수 있다. 고른 값은 저장돼서 다시 들어와도 그대로다. */}
               <span className="w-[132px] text-right relative">
                 <button
@@ -603,7 +603,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                   </>
                 )}
               </span>
-              <span className="w-[70px] text-right">상태</span>
+              <span className="w-[70px] text-center">상태</span>
               <span className="w-[96px] text-right">QR오더 표시</span>
             </div>
             {rows.length === 0 ? <Empty note="조건에 맞는 메뉴가 없어요" /> : rows.map((r, i) => (
@@ -618,12 +618,12 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                   <span className="w-[150px] pr-[10px] text-[16px] text-[#787878] truncate" title={r.category}>{r.category}</span>
                 )}
                 <span className="flex-1 min-w-0 text-[17px] text-[#1E1E1E] truncate" title={r.menu.name}>{r.menu.name}</span>
-                <span className="w-[90px] text-right text-[17px] text-[#1E1E1E]">{won(r.menu.base_price)}</span>
-                <span className={`w-[80px] text-right text-[16px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
+                <span className="w-[90px] text-center text-[17px] text-[#1E1E1E]">{won(r.menu.base_price)}</span>
+                <span className={`w-[80px] text-center text-[16px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
                   {r.groupCount === 0 ? '없음' : `${r.groupCount}그룹`}
                 </span>
                 <span className="w-[132px] text-right text-[17px] text-[#1E1E1E]">{r.sold}개</span>
-                <span className="w-[70px] text-right">
+                <span className="w-[70px] text-center">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] ${
                     r.menu.is_sold_out ? 'bg-[#FFEFEF] text-[#C92A2A]' : 'bg-[#E6F4EC] text-[#017333]'
                   }`}>
@@ -1107,9 +1107,9 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
             <div className="flex items-center bg-[#E8E4E2] px-[20px] h-[40px] text-[16px] font-normal text-[#6A635E]">
               <span className="w-[46px]">순서</span>
               <span className="flex-1 min-w-0">카테고리</span>
-              <span className="w-[90px] text-right">메뉴</span>
-              <span className="w-[100px] text-right">30일 판매</span>
-              <span className="w-[80px] text-right">노출</span>
+              <span className="w-[90px] text-center">메뉴</span>
+              <span className="w-[100px] text-center">30일 판매</span>
+              <span className="w-[80px] text-center">노출</span>
             </div>
 
             {categories.length === 0 ? <Empty note="등록된 카테고리가 없어요" /> : categories.map((c, i) => (
@@ -1155,9 +1155,9 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
                   {i + 1}
                 </span>
                 <span className="flex-1 min-w-0 text-[17px] text-[#1E1E1E] truncate">{c.name}</span>
-                <span className="w-[90px] text-right text-[17px] text-[#1E1E1E]">{stats[c.id]?.menus ?? 0}개</span>
-                <span className="w-[100px] text-right text-[17px] text-[#1E1E1E]">{stats[c.id]?.sold ?? 0}개</span>
-                <span className="w-[80px] text-right">
+                <span className="w-[90px] text-center text-[17px] text-[#1E1E1E]">{stats[c.id]?.menus ?? 0}개</span>
+                <span className="w-[100px] text-center text-[17px] text-[#1E1E1E]">{stats[c.id]?.sold ?? 0}개</span>
+                <span className="w-[80px] text-center">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] ${
                     c.is_active ? 'bg-[#E6F4EC] text-[#017333]' : 'bg-[#F2F2F2] text-[#787878]'
                   }`}>
@@ -1175,9 +1175,9 @@ function CategoryDetailPanel({ data, loading, reload, showToast }: PanelProps) {
           <div className="mt-[11px] flex items-center px-[20px] h-[44px] rounded-[11px] border border-dashed border-[#D9D2C8] bg-[#FCFCFC]">
             <span className="w-[46px] text-[16px] text-[#ADADAD]">—</span>
             <span className="flex-1 min-w-0 text-[17px] text-[#787878]">미분류</span>
-            <span className="w-[90px] text-right text-[17px] text-[#787878]">{stats['__none__']?.menus ?? 0}개</span>
-            <span className="w-[100px] text-right text-[17px] text-[#787878]">{stats['__none__']?.sold ?? 0}개</span>
-            <span className="w-[80px] text-right">
+            <span className="w-[90px] text-center text-[17px] text-[#787878]">{stats['__none__']?.menus ?? 0}개</span>
+            <span className="w-[100px] text-center text-[17px] text-[#787878]">{stats['__none__']?.sold ?? 0}개</span>
+            <span className="w-[80px] text-center">
               <span className="inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] bg-[#F2F2F2] text-[#787878]">
                 QR 미노출
               </span>

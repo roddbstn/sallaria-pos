@@ -156,9 +156,9 @@ function StatCard({ label, value, sub, wide }: { label: string; value: string; s
   return (
     <div className={`${wide ? 'flex-[2]' : 'flex-[1]'} ${CARD_SURFACE} rounded-[12px] px-[16px] py-[17px]`}>
       <div className="text-[16px] font-normal text-[#787878] mb-[8px]">{label}</div>
-      {/* 이 칼럼의 주인공. 17 → 20 → 25px 으로 두 번 올렸다.
-          옆 표 본문이 13px 이라 20px 도 "요약"으로 안 읽혔다. 굵기도 medium → semibold. */}
-      <div className="text-[25px] font-semibold text-[#2C261F] leading-tight whitespace-nowrap">{value}</div>
+      {/* 이 칼럼의 주인공. 17 → 20 → 25 → 30px.
+          옆 표 본문이 커지면서 25px 도 '요약'으로 덜 읽혔다. 굵기도 medium → semibold. */}
+      <div className="text-[30px] font-semibold text-[#2C261F] leading-tight whitespace-nowrap">{value}</div>
       {sub && <div className="text-[13px] font-normal text-[#ADADAD] mt-[3px]">{sub}</div>}
     </div>
   )
