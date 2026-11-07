@@ -42,6 +42,15 @@ export default function HomeOrderDetail({
   const note = parseNote(order.remarks)
   const isDelivery = order.method === '배달'
   const isCancelled = order.status === '취소'
+  /**
+   * 취소 사유.
+   *
+   * 지금은 note 에서 읽는다 — cancel_order 가 note 를 사유로 덮어쓰기 때문이다.
+   * 0079 마이그레이션이 적용되면 `order.cancelReason` 한 줄로 바뀐다.
+   */
+  const cancelReason = isCancelled
+    ? (note.customerNote || note.deliveryNote || '')
+    : ''
   /** 이미 끝난 주문 — 완료·취소. 더 할 수 있는 게 없다(영수증 재출력만 남는다) */
   const isSettled  = order.status === '완료' || isCancelled
 
@@ -74,17 +83,23 @@ export default function HomeOrderDetail({
 
       {/* 본문 */}
       <div className="flex-1 min-h-0 overflow-y-auto px-[28px]">
-        {/* 요청사항 — 있으면 가장 먼저. 놓치면 음식을 다시 만든다.
-            '요청사항' 라벨은 뺐다. 주황 박스가 이 화면에 하나뿐이라 박스 자체가 라벨 역할을 한다. */}
-        {/* 취소된 주문은 **취소 사유가 먼저**다. 요청사항은 이미 쓸모가 없다.
-            ⚠️ cancel_order 가 note 를 취소 사유로 **덮어쓴다**(note = coalesce(p_note, note)).
-               그래서 취소 주문의 note 는 손님 요청사항이 아니라 점주가 고른 사유다.
-               사유 없이 취소한 옛 주문은 손님 요청사항이 그대로 남아 있어 여기 섞여 보인다. */}
-        {isCancelled ? (
-          <div className="mb-[16px] rounded-[10px] bg-[#FFEFEF] px-[14px] py-[12px]">
-            <div className="text-[13px] font-normal text-[#C92A2A] mb-[4px]">주문 취소</div>
+        {/* 취소 사유 — **요청사항과 별개의 박스**로, 그 위에 둔다.
+            전엔 요청사항 박스를 취소 사유로 바꿔치기했다. 그러면 점주가 고른 사유가
+            손님이 쓴 요청사항 자리에 앉아서, 누가 쓴 말인지가 섞인다.
+            둘은 성격이 다른 정보라 자리도 따로 가져야 한다.
+
+            ⚠️ 지금은 사유를 note 에서 읽는다 — cancel_order 가 note 를 사유로
+               **덮어쓰기** 때문이다(note = coalesce(p_note, note)).
+               그래서 취소된 주문은 아래 요청사항 박스가 비어 보인다. 손님이 쓴 말이
+               지워졌기 때문이지 안 쓴 게 아니다. 배달 주소까지 같이 지워진다
+               (취소된 배달 4건 중 3건에서 [배달주소]가 사라져 있었다).
+               supabase/migrations/0079_order_cancel_reason.sql 이 그걸 고친다.
+               적용되면 아래 cancelReason 한 줄만 바꾸면 된다. */}
+        {isCancelled && (
+          <div className="mb-[12px] rounded-[10px] bg-[#FFEFEF] px-[14px] py-[12px]">
+            <div className="text-[13px] font-normal text-[#C92A2A] mb-[4px]">주문 취소 사유</div>
             <div className="text-[17px] font-medium text-[#2C261F] leading-relaxed">
-              {note.customerNote || note.deliveryNote || '사유가 기록되지 않았어요'}
+              {cancelReason || '사유가 기록되지 않았어요'}
             </div>
             {order.cancelledAt && (
               <div className="text-[13px] font-normal text-[#787878] mt-[6px] tabular-nums">
@@ -92,7 +107,12 @@ export default function HomeOrderDetail({
               </div>
             )}
           </div>
-        ) : (note.customerNote || note.deliveryNote) && (
+        )}
+
+        {/* 요청사항 — 놓치면 음식을 다시 만든다.
+            '요청사항' 라벨은 뺐다. 주황 박스가 이 화면에 하나뿐이라 박스 자체가 라벨 역할을 한다.
+            (취소 박스는 빨강이라 색으로 갈린다) */}
+        {(note.customerNote || note.deliveryNote) && (
           <div className="mb-[16px] rounded-[10px] bg-[#FFF4E8] px-[14px] py-[11px]">
             <div className="text-[17px] font-medium text-[#2C261F] leading-relaxed">
               {[note.customerNote, note.deliveryNote].filter(Boolean).join(' / ')}
