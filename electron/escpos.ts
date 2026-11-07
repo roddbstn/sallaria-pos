@@ -253,9 +253,11 @@ function layout(lineChars = DEFAULT_LINE_CHARS) {
  * 메뉴명 한 품목 — 설정이 '크게'면 이름을 **자기 줄에 2배(GS ! 0x11)** 로 찍는다.
  *
  * 감열 프린터는 글자를 정수 배수로만 키운다(1배 · 2배 · 3배). "조금만 더 크게"가
- * 없다. 그래서 2배를 쓰는데, 2배 글자는 한 칸이 아니라 두 칸을 먹으므로 이름을
- * 표 안에 두면 수량·가격 칼럼이 밀려 나간다. 이름을 자기 줄로 빼고 수량·가격을
- * 다음 줄 같은 칼럼 위치로 내리면, 머리글(메뉴명 수량 가격)이 그대로 유효하다.
+ * 없다. 그래서 2배를 쓴다. 2배 글자는 한 칸이 아니라 두 칸을 먹으므로 메뉴명 칸이
+ * 절반으로 줄고, ESC/POS 는 줄 중간에 배수를 바꿀 수 있으니 **한 줄 안에서**
+ * 이름만 2배로 찍고 수량·가격은 1배로 오른쪽에 그대로 세운다.
+ * (전엔 이름을 자기 줄로 빼고 수량·가격을 다음 줄로 내렸는데, 이름이 한 줄 끝까지
+ *  가서 아래 줄의 수량·가격 자리를 덮어 쓰는 것처럼 보였다.)
  *
  * ⚠️ 이 설정은 2026-11-07 까지 **인쇄에 아무 효과가 없었다.** 화면엔 '메뉴 크기'
  *    토글이 있는데 escpos 쪽은 menuSize 를 읽지도 않고 늘 SIZE_1X 로 찍고 있었다
@@ -267,10 +269,24 @@ function itemNameLines(item: OrderItem, L: ReturnType<typeof layout>, big: boole
   const tail = padR(String(item.quantity), QTY_W) + ' '.repeat(COL_SEP) + padR(formatWon(item.subtotal), PRICE_W)
 
   if (big) {
-    for (const line of wrapName(item.menu_name, Math.floor(L.W / 2))) {
-      out.push(CMD.SIZE_2X, CMD.BOLD_ON, enc(line), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
+    // 수량 숫자가 **시작하는 칸 바로 왼쪽**까지를 메뉴명 칸으로 본다.
+    //
+    // 수량 칼럼은 4칸인데 '1' 은 한 칸만 쓴다 — 나머지 세 칸은 그냥 공백이다.
+    // 고정 칼럼(26칸)에서 끊으면 그 공백을 버리고, 반대로 한 줄 끝(42칸)까지
+    // 끊으면 수량·가격 자리를 침범한다. 실제로 찍히는 글자 바로 앞에서 끊는다.
+    const avail = L.nameW + (QTY_W - pw(String(item.quantity))) - 1
+    const w2 = Math.max(1, Math.floor(avail / 2))   // 2배 글자는 한 칸이 두 칸
+    const lines = wrapName(item.menu_name, w2)
+
+    // 1배 기준 한 줄 — 왼쪽은 비우고 오른쪽에 수량·가격. 2배 이름이 먹은 칸만큼
+    // 앞을 잘라 이어 붙이면 수량·가격이 머리글 칼럼에 그대로 선다.
+    // (잘라내는 구간은 전부 공백이라 칸 수 = 글자 수다.)
+    const full = ' '.repeat(L.nameW) + tail
+    for (let i = 0; i < lines.length; i++) {
+      out.push(CMD.SIZE_2X, CMD.BOLD_ON, enc(lines[i]), CMD.SIZE_1X)
+      if (i === 0) out.push(enc(full.slice(pw(lines[i]) * 2)))
+      out.push(CMD.BOLD_OFF, nl())
     }
-    out.push(CMD.SIZE_1X, CMD.BOLD_ON, enc(' '.repeat(L.nameW) + tail), CMD.BOLD_OFF, nl())
     return out
   }
 

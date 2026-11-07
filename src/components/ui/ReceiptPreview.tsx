@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   LINE_CHARS, LINE_RATIO, PREVIEW_FONT_PX, PAPER_MM, PRINT_MM,
   QTY_W, PRICE_W, COL_SEP,
-  padL, padR, clamp, wrapName, hr, subHr, field, amountField,
+  pw, padL, padR, clamp, wrapName, hr, subHr, field, amountField,
 } from '../../lib/receipt-layout'
 import { sampleReceiptDisplay, sampleOrderPayload } from '../../lib/receipt-sample'
 
@@ -63,12 +63,14 @@ type Sample = ReturnType<typeof sampleReceiptDisplay>
 
 /** 한 줄 — 조각 단위로 굵게가 갈린다(실제 프린터도 줄 중간에 BOLD 를 켠다) */
 export interface PLine {
-  segs:    { t: string; b?: boolean }[]
-  /** GS ! 0x11 — 2폭 2높이. 한 줄에 들어가는 칸이 절반이 된다 */
-  x2?:     boolean
+  /**
+   * 한 줄의 조각들. x2 는 **조각 단위**다 — ESC/POS 는 줄 중간에 배수를 바꿀 수 있고
+   * (GS ! 를 그 자리에서 다시 보낸다) 메뉴명 줄이 실제로 그걸 쓴다:
+   * 이름만 2배, 수량·가격은 1배로 같은 줄에.
+   */
+  segs:    { t: string; b?: boolean; x2?: boolean }[]
   /** ESC a 1 — 인쇄 영역 가운데 정렬 */
   center?: boolean
-  /** ESC/POS 의 가로 구분선. 격자 안에서 '-' 를 채우는 것과 같다 */
 }
 
 const t  = (text: string, bold = false): PLine => ({ segs: [{ t: text, b: bold }] })
@@ -121,8 +123,8 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
 
   // ── 예상도착시간 — 메뉴 바로 위, 이 종이에서 가장 큰 글자. 주방용만.
   if (kind === 'kitchen') {
-    out.push({ segs: [{ t: '예상도착시간', b: true }], x2: true })
-    out.push({ segs: [{ t: SAMPLE.etaClock, b: true }], x2: true })
+    out.push({ segs: [{ t: '예상도착시간', b: true, x2: true }] })
+    out.push({ segs: [{ t: SAMPLE.etaClock, b: true, x2: true }] })
     if (SAMPLE.etaRelative) out.push(t(SAMPLE.etaRelative))
     HR()
   }
@@ -143,12 +145,19 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
       : padR(qty, QTY_W)
 
     if (bigName) {
-      // 2배 글자는 칸을 두 배로 먹으니 이름이 표에 안 들어간다. 그래서 이름을
-      // **자기 줄**에 크게 찍고, 수량·가격은 다음 줄에 머리글 칼럼에 맞춰 오른쪽으로 보낸다.
-      for (const l of wrapName(it.name, Math.floor(W / 2))) {
-        out.push({ segs: [{ t: l, b: true }], x2: true })
-      }
-      out.push(t(' '.repeat(nameW) + tail, true))
+      // 수량 숫자가 **시작하는 칸 바로 왼쪽**까지를 메뉴명 칸으로 본다 —
+      // escpos.ts itemNameLines() 와 같은 계산. 수량 칼럼 4칸 중 '1' 은 한 칸만
+      // 쓰므로 남는 세 칸까지 메뉴명이 들어간다.
+      const avail = nameW + (QTY_W - pw(qty)) - 1
+      const w2 = Math.max(1, Math.floor(avail / 2))
+      const lines = wrapName(it.name, w2)
+      // 1배 기준 한 줄에서 2배 이름이 먹은 칸만큼 앞을 잘라 붙인다(잘리는 구간은 공백)
+      const full = ' '.repeat(nameW) + tail
+      lines.forEach((l, i) => {
+        const segs: PLine['segs'] = [{ t: l, b: true, x2: true }]
+        if (i === 0) segs.push({ t: full.slice(pw(l) * 2), b: true })
+        out.push({ segs })
+      })
     } else {
       const lines = wrapName(it.name, nameW)
       lines.forEach((l, i) => {
@@ -157,21 +166,21 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
       })
     }
     for (const o of it.opts) {
-      out.push({ segs: [{ t: clamp('  > ' + o, optW) }], x2: cfg.optionSize === 'large' })
+      out.push({ segs: [{ t: clamp('  > ' + o, optW), x2: cfg.optionSize === 'large' }] })
     }
   }
   HR()
 
   // ── 금액
-  out.push({ segs: [{ t: amountField('메뉴 소계', SAMPLE.subtotal, amtX2) }], x2: amtX2 })
-  out.push({ segs: [{ t: amountField('배달료', SAMPLE.deliveryFee, amtX2) }], x2: amtX2 })
+  out.push({ segs: [{ t: amountField('메뉴 소계', SAMPLE.subtotal, amtX2), x2: amtX2 }] })
+  out.push({ segs: [{ t: amountField('배달료', SAMPLE.deliveryFee, amtX2), x2: amtX2 }] })
   HR()
-  out.push({ segs: [{ t: amountField('합  계', SAMPLE.total, amtX2), b: true }], x2: amtX2 })
+  out.push({ segs: [{ t: amountField('합  계', SAMPLE.total, amtX2), b: true, x2: amtX2 }] })
   HR()
 
   if (cfg.showBalance) {
-    out.push({ segs: [{ t: amountField('주문전 잔액', SAMPLE.balanceBefore, amtX2) }], x2: amtX2 })
-    out.push({ segs: [{ t: amountField('주문후 잔액', SAMPLE.balanceAfter, amtX2), b: true }], x2: amtX2 })
+    out.push({ segs: [{ t: amountField('주문전 잔액', SAMPLE.balanceBefore, amtX2), x2: amtX2 }] })
+    out.push({ segs: [{ t: amountField('주문후 잔액', SAMPLE.balanceAfter, amtX2), b: true, x2: amtX2 }] })
   }
 
   if (cfg.footerText.trim()) {
@@ -192,11 +201,13 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
  * 칸마다 글자를 가운데 두는 건 실물과 같은 모양이다 — 감열 프린터도 글자를
  * 12×24(한글 24×24) 도트 칸 가운데에 찍는다. 그게 영수증의 '자간'이다.
  */
-function Cells({ segs }: { segs: PLine['segs'] }) {
+function Cells({ segs, scale }: { segs: PLine['segs']; scale: number }) {
   return (
     <>
       {segs.map((seg, si) => (
-        <span key={si} style={{ fontWeight: seg.b ? 700 : 400 }}>
+        // 줄은 가장 큰 글자 크기로 서 있다. 1배 조각은 거기서 되돌린다 —
+        // 칸 폭이 조각의 글자 크기에 em 으로 매여 있으니 폭도 같이 맞는다.
+        <span key={si} style={{ fontWeight: seg.b ? 700 : 400, fontSize: `${(seg.x2 ? 2 : 1) / scale}em` }}>
           {[...seg.t].map((ch, ci) => (
             <span
               key={ci}
@@ -239,22 +250,26 @@ function Paper({ lines }: { lines: PLine[] }) {
       }}
     >
       <div style={{ width: `${LINE_CHARS / 2}em` }}>
-        {lines.map((l, i) => (
-          <div
-            key={i}
-            style={{
-              // 2배 줄은 글자도 줄간격도 같이 두 배가 된다(프린터가 그렇게 먹인다)
-              fontSize: l.x2 ? '2em' : '1em',
-              lineHeight: LINE_RATIO,
-              textAlign: l.center ? 'center' : 'left',
-              whiteSpace: 'nowrap',
-              // 칸 수 초과는 테스트로 막지만, 뚫려도 종이 폭이 늘어나진 않게
-              overflow: 'hidden',
-            }}
-          >
-            <Cells segs={l.segs} />
-          </div>
-        ))}
+        {lines.map((l, i) => {
+          // 줄 높이는 **그 줄에서 가장 큰 글자**가 정한다. 2배 조각이 하나라도 있으면
+          // 줄 간격도 두 배다(프린터가 그 줄을 그만큼 먹인다).
+          const scale = l.segs.some(sg => sg.x2) ? 2 : 1
+          return (
+            <div
+              key={i}
+              style={{
+                fontSize: `${scale}em`,
+                lineHeight: LINE_RATIO,
+                textAlign: l.center ? 'center' : 'left',
+                whiteSpace: 'nowrap',
+                // 칸 수 초과는 테스트로 막지만, 뚫려도 종이 폭이 늘어나진 않게
+                overflow: 'hidden',
+              }}
+            >
+              <Cells segs={l.segs} scale={scale} />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
