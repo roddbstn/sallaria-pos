@@ -146,7 +146,7 @@ function SegButtons<T extends string>({ value, options, onChange }: {
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`h-[30px] px-[11px] rounded-[8px] text-[16px] transition-colors ${
+          className={`h-[30px] px-[11px] rounded-[8px] text-[15px] transition-colors ${
             value === o.v ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
           }`}
         >
@@ -167,7 +167,7 @@ function SmallButton({ onClick, children, disabled, tone = 'plain' }: {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`h-[30px] px-[12px] rounded-[8px] text-[16px] font-medium disabled:opacity-40 transition-opacity ${
+      className={`h-[30px] px-[12px] rounded-[8px] text-[14px] font-medium disabled:opacity-40 transition-opacity ${
         tone === 'dark' ? 'bg-[#2C261F] text-[#F9F9F9] hover:opacity-90' : 'bg-[#F2F2F2] text-[#1E1E1E] hover:bg-[#E8E4E2]'
       }`}
     >
@@ -809,7 +809,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
               }}
               rows={2}
               placeholder={'감사합니다\n또 오세요'}
-              className="w-[220px] px-[11px] py-[7px] rounded-[9px] border border-[#ADADAD] text-[17px] text-[#1E1E1E] outline-none focus:border-[#6A635E] resize-none leading-[1.4]"
+              className="w-[220px] px-[11px] py-[7px] rounded-[9px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E] resize-none leading-[1.4]"
             />
             <span className="text-[13px] font-normal text-[#ADADAD] tabular-nums">
               {footer.replace(/\n/g, '').length} / {FOOTER_MAX}자

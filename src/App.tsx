@@ -1262,7 +1262,7 @@ export default function App() {
                   if (el && id === tab) measureUnderline()
                 }}
                 onClick={() => goTo(id)}
-                className={`pressable-tab absolute top-[15px] px-[10px] py-[6px] rounded-[8px] text-[24px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
+                className={`pressable-tab absolute top-[11px] px-[10px] py-[6px] rounded-[8px] text-[24px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
                   tab === id ? 'text-ink font-semibold' : 'text-[#787878] font-medium hover:text-ink'
                 }`}
                 style={{ left: 114 + i * 108 - 10 }}
@@ -1324,7 +1324,7 @@ export default function App() {
 
             {/* 날짜/시간 — 오른쪽 가장자리에서 140px 떨어진 지점에 중앙정렬(translate-x-1/2 + right) */}
             <div
-              className="absolute translate-x-1/2 flex flex-col items-center leading-[normal] text-[#6A635E] font-semibold text-[15px] whitespace-nowrap"
+              className="absolute translate-x-1/2 flex flex-col items-center leading-[normal] text-[#6A635E] font-semibold text-[14px] whitespace-nowrap"
               style={{ right: 140, top: 12 }}
             >
               <span>{formatKstDate(now)}</span>

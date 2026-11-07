@@ -263,15 +263,10 @@ function CustomerReceipt({ cfg }: { cfg: ReceiptPreviewConfig }) {
       <Field label="배달요청">{SAMPLE.deliveryNote}</Field>
       <Line />
 
-      {/* 예상 도착 시간 — 고객용에도 넣는다. 손님이 이 종이에서 가장 궁금한 건
-          "언제 오면 되나"다. 가격은 아래 합계에 있고, 번호는 부를 때 쓴다. */}
-      <div className="font-bold" style={{ fontSize: ETA_PX, lineHeight: 1.25 }}>
-        예상도착시간
-      </div>
-      <div className="font-bold" style={{ fontSize: ETA_PX, lineHeight: 1.25 }}>
-        {SAMPLE.etaClock} <span style={{ fontSize: Math.round(ETA_PX * 0.8) }}>({SAMPLE.etaRelative})</span>
-      </div>
-      <Line />
+      {/* 예상 도착 시간은 **주방용에만** 둔다.
+          손님은 주문 직후 QR웹 화면에서 이미 그 시각을 보고 있고, 거기 숫자는
+          점주가 시간을 고치면 같이 바뀐다. 종이에 한 번 찍힌 시각은 안 바뀌어서
+          둘이 어긋나는 순간 종이 쪽이 거짓말이 된다. */}
 
       {/* 가격을 끄면 칸이 통째로 빠져 메뉴명이 그만큼 넓어진다(줄바꿈 방지).
           주방 주문서와 **같은 설정을 따른다** — 영수증 양식은 한 벌이라야

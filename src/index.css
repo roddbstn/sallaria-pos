@@ -120,7 +120,7 @@ body {
   /* lib/viewport-scale.ts 의 FLUID_MIN_W 와 같은 값.
      배율이 하한(0.55)에 걸린 아주 작은 화면에서만 의미가 있다 —
      그땐 눌러서 뭉개는 것보다 모양을 지키고 가로로 스크롤되는 게 낫다. */
-  min-width: 1240px;
+  min-width: 1024px;
 }
 
 ::-webkit-scrollbar       { width: 6px; }
