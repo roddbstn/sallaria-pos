@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   LINE_CHARS, LINE_RATIO, PREVIEW_FONT_PX, PAPER_MM, PRINT_MM,
   QTY_W, PRICE_W, COL_SEP,
   padL, padR, clamp, wrapName, hr, subHr, field, amountField,
 } from '../../lib/receipt-layout'
+import { sampleReceiptDisplay, sampleOrderPayload } from '../../lib/receipt-sample'
 
 // 감열 영수증 미리보기 — 주방 주문서 / 고객 영수증 2종.
 //
@@ -52,35 +53,13 @@ const TABS: { kind: ReceiptKind; label: string }[] = [
   { kind: 'customer', label: '고객 영수증' },
 ]
 
-// 실제 출력 예시(샐러리아 침산점 배달 주문)를 그대로 옮긴 표본.
-// 지어낸 값을 쓰면 줄 수와 줄바꿈 위치가 실물과 어긋난다.
-const SAMPLE = {
-  storeName:   '샐러리아 침산점',
-  orderNumber: '11610',
-  orderedAt:   '2026/07/02 17:05',
-  method:      '배달',
-  orderer:     '김*보',
-  phone:       '010-****-4224',
-  account:     '북구청 정보통신과',
-  address:     '대구 북구 옥산로 65',
-  addressSub:  '별관 3층',
-  storeNote:   '수저·포크 O',
-  deliveryNote: '문 앞에 두고 노크해주세요.',
-  // 실제로는 접수시각 + 소요시간으로 계산한다(escpos.ts etaLines 와 같은 기준)
-  etaClock:    '오후 5:20',
-  etaRelative: '(15분 뒤)',
-  items: [
-    { name: '닭가슴살 단백질 도시락', qty: 1, price: '8,400원',
-      opts: ['스팀닭가슴살', '매콤마요(와사비베이스)'] },
-    { name: '수비드 통삼겹 단백질 도시락', qty: 1, price: '13,000원',
-      opts: ['멕시칸치폴레', '연두부튀김 추가 (+2,000원)'] },
-  ],
-  subtotal:      '21,400원',
-  deliveryFee:   '3,500원',
-  total:         '24,900원',
-  balanceBefore: '711,800원',
-  balanceAfter:  '686,900원',
-}
+// 표본 주문은 src/lib/receipt-sample.ts 에 있다 — 임시 출력(종이)과 **같은 값**을
+// 써야 "미리보기와 종이가 다르다" 가 안 생긴다.
+//
+// 모듈 로드가 아니라 **화면이 열릴 때** 만든다(아래 useMemo). 표본의 주문 시각이
+// '지금'이라서, 모듈 상수로 두면 앱을 켜 둔 채 몇 시간 뒤에 설정을 열었을 때
+// 예상도착시간이 과거로 남는다.
+type Sample = ReturnType<typeof sampleReceiptDisplay>
 
 /** 한 줄 — 조각 단위로 굵게가 갈린다(실제 프린터도 줄 중간에 BOLD 를 켠다) */
 export interface PLine {
@@ -103,7 +82,7 @@ const ct = (text: string, bold = false): PLine => ({ segs: [{ t: text, b: bold }
  *  있고 그 숫자는 점주가 시간을 고치면 같이 바뀐다. 종이에 찍힌 시각은 안 바뀌어서
  *  어긋나는 순간 종이 쪽이 거짓말이 된다.)
  */
-export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig): PLine[] {
+export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE: Sample = sampleReceiptDisplay()): PLine[] {
   const W = LINE_CHARS
   const showPrice = cfg.showItemPrice
   const nameW = showPrice ? W - QTY_W - COL_SEP - PRICE_W : W - QTY_W
@@ -144,7 +123,7 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig): PLine[
   if (kind === 'kitchen') {
     out.push({ segs: [{ t: '예상도착시간', b: true }], x2: true })
     out.push({ segs: [{ t: SAMPLE.etaClock, b: true }], x2: true })
-    out.push(t(SAMPLE.etaRelative))
+    if (SAMPLE.etaRelative) out.push(t(SAMPLE.etaRelative))
     HR()
   }
 
@@ -281,15 +260,53 @@ function Paper({ lines }: { lines: PLine[] }) {
   )
 }
 
+/**
+ * 지금 보고 있는 영수증 한 장만 실제로 뽑는다.
+ *
+ * 표본 주문(receipt-sample.ts)을 그대로 메인 프로세스에 보내고, 메인은 평소
+ * 주문 영수증과 **똑같은 빌더**로 찍는다. 그래서 이 버튼이 나오는 종이가
+ * 영업 중에 나올 종이와 같다 — 설정을 고치고 손님 주문을 기다릴 필요가 없다.
+ *
+ * '주방 주문서' 탭이면 주방용만, '고객 영수증' 탭이면 고객용만 나간다.
+ * 둘 다 나가면 어느 쪽 설정을 본 건지 헷갈리고 종이도 두 장 버린다.
+ */
+async function printSample(kind: ReceiptKind, storeName?: string): Promise<{ ok: boolean; error?: string }> {
+  const w = window as unknown as {
+    api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> }
+  }
+  if (!w.api?.reprintOrder) return { ok: false, error: '데스크톱 앱에서만 출력할 수 있어요' }
+  return w.api.reprintOrder({ order: sampleOrderPayload(storeName), kinds: [kind] })
+}
+
 /** 탭 + 종이 미리보기. 프린터 화면과 영수증·증빙 화면이 공유한다. */
 export default function ReceiptPreview({
   config = DEFAULT_RECEIPT_CONFIG,
   initialKind = 'kitchen',
+  storeName,
+  showToast,
 }: {
   config?: ReceiptPreviewConfig
   initialKind?: ReceiptKind
+  storeName?: string
+  showToast?: (msg: string) => void
 }) {
   const [kind, setKind] = useState<ReceiptKind>(initialKind)
+  const [printing, setPrinting] = useState(false)
+  // showToast 가 없는 화면(프린터 연결)에서도 결과를 알아야 한다
+  const [note, setNote] = useState<string | null>(null)
+  const sample = useMemo(() => sampleReceiptDisplay(storeName), [storeName])
+
+  const onPrint = async () => {
+    if (printing) return
+    setPrinting(true)
+    setNote(null)
+    const res = await printSample(kind, storeName)
+    const label = TABS.find(x => x.kind === kind)!.label
+    const msg = res.ok ? `${label} 한 장을 출력했어요` : (res.error || '출력에 실패했어요')
+    if (showToast) showToast(msg)
+    else setNote(msg)
+    setPrinting(false)
+  }
 
   return (
     <div>
@@ -305,10 +322,22 @@ export default function ReceiptPreview({
             {tab.label}
           </button>
         ))}
+        {/* 탭 오른쪽 끝 — '지금 보고 있는 이 장'을 뽑는 버튼이라 탭 옆이 맞다 */}
+        <button
+          onClick={onPrint}
+          disabled={printing}
+          className="ml-auto h-[30px] px-[11px] rounded-[8px] text-[15px] border border-[#ADADAD]
+                     text-[#1E1E1E] bg-[#FCFCFC] hover:bg-[#F2F2F2] transition-colors
+                     disabled:opacity-50 disabled:cursor-default"
+        >
+          {printing ? '출력 중…' : '임시 출력'}
+        </button>
       </div>
 
+      {note && <div className="text-[13px] text-[#787878] mb-[8px]">{note}</div>}
+
       <div className="rounded-[11px] bg-[#F2F2F2] py-[22px] px-[16px] overflow-x-auto">
-        <Paper lines={buildLines(kind, config)} />
+        <Paper lines={buildLines(kind, config, sample)} />
         <div className="text-center text-[10px] text-[#787878] mt-[12px]">
           79mm 용지 · 한 줄 {LINE_CHARS}자 실제 비율
         </div>

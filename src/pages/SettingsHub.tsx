@@ -712,7 +712,7 @@ function PrinterPanel({ showToast }: { showToast: (msg: string) => void }) {
       {/* 어떤 문서가 어떻게 찍히는지 — 매수를 정하기 전에 모양부터 보여준다 */}
       <div className="mb-[34px]">
         <div className="text-[16px] font-normal text-[#6A635E] mb-[6px]">출력 미리보기</div>
-        <ReceiptPreview />
+        <ReceiptPreview showToast={showToast} />
       </div>
 
       {diagOpen && (
@@ -809,7 +809,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
               }}
               rows={2}
               placeholder={'감사합니다\n또 오세요'}
-              className="w-[220px] px-[11px] py-[7px] rounded-[9px] border border-[#ADADAD] text-[13px] text-[#1E1E1E] outline-none focus:border-[#6A635E] resize-none leading-[1.4]"
+              className="w-[220px] px-[11px] py-[7px] rounded-[9px] border border-[#ADADAD] text-[16px] text-[#1E1E1E] outline-none focus:border-[#6A635E] resize-none leading-[1.4]"
             />
             <span className="text-[13px] font-normal text-[#ADADAD] tabular-nums">
               {footer.replace(/\n/g, '').length} / {FOOTER_MAX}자
@@ -820,10 +820,13 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
 
         </div>
 
-        {/* 위에서 바꾼 글자 크기·하단 문구·잔액 표시가 그대로 반영된다 */}
-        <div className="flex-shrink-0 w-[260px]">
+        {/* 위에서 바꾼 글자 크기·하단 문구·잔액 표시가 그대로 반영된다.
+            폭 300px — 종이(42칸 × 0.5em @11px = 231px)에 실물 비율 여백 22px,
+            회색 박스 좌우 패딩 32px 를 더하면 285px 다. 260px 이던 동안 종이
+            오른쪽 변이 잘려 보였다. */}
+        <div className="flex-shrink-0 w-[300px]">
           <div className="text-[17px] font-normal text-[#6A635E] mb-[6px]">미리보기</div>
-          <ReceiptPreview config={cfg} initialKind="customer" />
+          <ReceiptPreview config={cfg} initialKind="customer" showToast={showToast} />
         </div>
       </div>
 

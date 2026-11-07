@@ -70,6 +70,8 @@ const supabase = SUPABASE_URL
   : null
 
 let mainWindow: BrowserWindow | null = null
+/** 개발자도구를 한 번 떼어냈는지 (아래 devtools-opened 참고) */
+let devToolsDetached = false
 let currentStoreId: string | null = null
 
 // ── 창 생성 ───────────────────────────────────────────────────────────────────
@@ -107,7 +109,26 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show()
-    if (is.dev) mainWindow!.webContents.openDevTools()
+    if (is.dev) {
+      devToolsDetached = true   // 아래 핸들러가 다시 열 필요 없다
+      mainWindow!.webContents.openDevTools({ mode: 'detach' })
+    }
+  })
+
+  // 개발자도구는 **떼어낸 창**으로 연다.
+  //
+  // 창 안(docked)으로 열면 렌더러 뷰포트가 그만큼 좁아진다. 우리 화면은 좁아지면
+  // 배율을 낮추게 되어 있어서(src/lib/viewport-scale.ts), 개발자도구를 여는 순간
+  // UI 전체가 쪼그라든다 — 보려고 열었는데 볼 게 작아진다.
+  //
+  // Chromium 이 마지막 dock 상태를 기억하므로 **한 번만** 떼어 주면 그다음부터는
+  // 메뉴로 열어도 떼어낸 창으로 뜬다. 한 번만 하는 이유는 닫고-다시-열기가
+  // 이 이벤트를 또 일으켜서, 조건을 잘못 잡으면 무한히 깜빡이기 때문이다.
+  mainWindow.webContents.on('devtools-opened', () => {
+    if (devToolsDetached) return
+    devToolsDetached = true
+    mainWindow?.webContents.closeDevTools()
+    mainWindow?.webContents.openDevTools({ mode: 'detach' })
   })
   mainWindow.on('closed', () => { mainWindow = null })
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -677,11 +698,25 @@ ipcMain.handle('printer:list-os', async () => {
 })
 
 /** 영수증 재출력 */
-ipcMain.handle('printer:reprint', async (_e, { order }: { order: OrderPayload }) => {
+/**
+ * 영수증 재출력.
+ *
+ * kinds 를 주면 **그중 하나만** 찍는다. 설정 > 영수증·증빙의 '임시 출력' 이 그렇다 —
+ * 미리보기에서 고른 한 장만 확인하려는 것이라, 두 장이 나오면 어느 쪽 설정을 본
+ * 건지 헷갈리고 종이도 한 장 버린다. 안 주면 예전처럼 둘 다 (주문 상세의 재출력).
+ */
+ipcMain.handle('printer:reprint', async (_e, { order, kinds }: {
+  order: OrderPayload
+  kinds?: ('kitchen' | 'customer')[]
+}) => {
   const receipt = store.get('receipt')
+  const want = kinds?.length ? kinds : ['customer', 'kitchen'] as const
   try {
-    await printEscPos(buildCustomerReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
-    await printEscPos(buildKitchenReceiptEscPos(order, receipt, resolveLineChars(printerCfg())))
+    const lineChars = resolveLineChars(printerCfg())
+    for (const kind of want) {
+      if (kind === 'customer') await printEscPos(buildCustomerReceiptEscPos(order, receipt, lineChars))
+      else                     await printEscPos(buildKitchenReceiptEscPos(order, receipt, lineChars))
+    }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }

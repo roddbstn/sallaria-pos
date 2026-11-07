@@ -8,7 +8,7 @@ const api = {
   onOrderNew:    (cb: (order: unknown) => void) => ipcRenderer.on('order:new',    (_e, v) => cb(v)),
   offOrderNew:   ()                             => ipcRenderer.removeAllListeners('order:new'),
   approveOrder:  (p: { order: Record<string, unknown>; prepMins: number }) => ipcRenderer.invoke('order:approve',  p),
-  reprintOrder:  (p: { order: Record<string, unknown> })                   => ipcRenderer.invoke('printer:reprint', p),
+  reprintOrder:  (p: { order: Record<string, unknown>; kinds?: ('kitchen' | 'customer')[] }) => ipcRenderer.invoke('printer:reprint', p),
   listOsPrinters: ()                                                      => ipcRenderer.invoke('printer:list-os'),
 
   // ── Realtime 상태 ────────────────────────────────────────────────────────────

@@ -1377,7 +1377,11 @@ export default function App() {
             onClick={() => setHamburgerOpen(v => !v)}
             title="전체 메뉴"
             aria-expanded={hamburgerOpen}
-            className="pressable-tab flex flex-col gap-[5px] p-[8px] rounded-[8px] hover:bg-topbar-hover"
+            // 열려 있는 동안 한 단계 더 눌린 배경(topbar-deep)을 깐다. 드로어가 열려도
+            // 버튼은 그대로여서, 패널을 덮어 가린 상태에서 "내가 누른 건가" 가 됐다.
+            className={`pressable-tab flex flex-col gap-[5px] p-[8px] rounded-[8px] transition-colors ${
+              hamburgerOpen ? 'bg-topbar-deep' : 'hover:bg-topbar-hover'
+            }`}
           >
             <span className="w-[22px] h-[2px] bg-ink rounded-[1px]" />
             <span className="w-[22px] h-[2px] bg-ink rounded-[1px]" />
