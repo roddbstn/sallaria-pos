@@ -75,20 +75,25 @@ let currentStoreId: string | null = null
 // ── 창 생성 ───────────────────────────────────────────────────────────────────
 
 function createWindow(): void {
-  // 모니터가 매장마다 다르다 — 침산점은 1024×768 이다.
-  // 전엔 1440×810 고정에 minWidth 1400 이라, 그 화면에서는 **창이 아예 안 들어갔다.**
-  // 이제 렌더러가 해상도에 맞춰 배율을 잡으므로(lib/viewport-scale.ts)
-  // 창은 화면이 허락하는 만큼만 열면 된다.
+  // ── 기준 해상도 1024×768 (4:3) ──
+  //
+  // 매장 POS 모니터가 그 크기다(침산점). 윈도우 POS 기기는 아직 4:3 이 흔해서
+  // 16:9 로 열면 세로가 모자라 아래가 잘린다.
+  // 화면이 더 작으면 그만큼만 연다 — 1024×768 모니터에서는 작업표시줄·타이틀바
+  // 몫이 빠지므로 그대로 768 을 요구하면 창이 화면 밖으로 밀린다.
   const work = screen.getPrimaryDisplay().workAreaSize
   mainWindow = new BrowserWindow({
-    width:          Math.min(1440, work.width),
-    height:         Math.min(810,  work.height),
-    // 하한은 기본 크기(1440×810)의 70%.
-    // 여기까지 줄여도 **글자와 박스는 그대로**이고 보이는 범위만 좁아진다 —
-    // 배율을 창이 아니라 모니터로 잡기 때문이다(lib/viewport-scale.ts).
-    // 모자란 폭은 가로 스크롤이 받는다.
-    minWidth:       1008,
-    minHeight:      567,
+    width:          Math.min(1024, work.width),
+    height:         Math.min(768,  work.height),
+    // 하한도 4:3. 여기서 더 줄이면 배율이 0.65 아래로 내려가 글자를 못 읽는다.
+    minWidth:       800,
+    minHeight:      600,
+    // 창을 끌어도 4:3 을 유지한다. 레이아웃이 그 비율에 맞춰져 있어서,
+    // 가로로만 늘리면 아래쪽에 쓰지 않는 빈 띠가 남는다.
+    // (⚠️ macOS 는 setAspectRatio 가 콘텐츠 영역 기준이라 타이틀바만큼 차이가 난다)
+    useContentSize: true,
+    // 윈도우에서 메뉴 막대(File·Edit·View)를 아예 숨긴다 — 아래 applyAppMenu 참고
+    autoHideMenuBar: true,
     title:          '선포스',
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -108,6 +113,7 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  mainWindow.setAspectRatio(4 / 3)
   loadRenderer(mainWindow)
 }
 
@@ -943,9 +949,36 @@ function applyAppMenu(): void {
   if (is.dev) return   // 기본 메뉴 유지 — 개발자도구 포함
 
   const isMac = process.platform === 'darwin'
+
+  // ── 윈도우·리눅스는 메뉴 막대가 **창 안에** 그려진다 ──
+  //
+  // 그래서 점주 화면 맨 위에 File·Edit·View 가 한 줄 붙는다. POS 에서 쓸 일이
+  // 없는 줄이고 세로를 한 줄 먹는다. 창의 autoHideMenuBar 로 평소엔 안 보이게 한다.
+  //
+  // **완전히 없애지는(setApplicationMenu(null)) 않는다.** 그러면 화면이 멈췄을 때
+  // 새로고침할 길이 사라진다 — 점주가 쓸 수 있는 유일한 복구 수단이다.
+  // Alt 를 누르면 그때만 나타나고, 평소에는 없는 것과 같다.
+  // ⌃C/⌃V 는 윈도우에서 메뉴 없이도 동작하므로 편집 항목은 안 만든다
+  // (macOS 는 반대다 — 메뉴에서 Edit 역할을 빼면 ⌘C/⌘V 가 입력칸에서 아예 안 먹는다).
+  if (!isMac) {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      {
+        label: '창',
+        submenu: [
+          { role: 'reload',           label: '새로고침' },
+          { role: 'togglefullscreen', label: '전체 화면' },
+          { type:  'separator' },
+          { role: 'minimize', label: '최소화' },
+          { role: 'close',    label: '닫기' },
+        ],
+      },
+    ] as unknown as Parameters<typeof Menu.buildFromTemplate>[0]))
+    return
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const template: any[] = [
-    ...(isMac ? [{
+    {
       label: app.name,
       submenu: [
         { role: 'about',    label: '선포스 정보' },
@@ -958,7 +991,7 @@ function applyAppMenu(): void {
         { type:  'separator' },
         { role: 'quit', label: '선포스 종료' },
       ],
-    }] : []),
+    },
     {
       label: '편집',
       submenu: [

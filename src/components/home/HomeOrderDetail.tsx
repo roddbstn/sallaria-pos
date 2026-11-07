@@ -2,6 +2,7 @@ import { won, orderToPayload, parseNote } from '../../lib/ipc'
 import { maskName, maskPhone } from '../../lib/mask'
 import RevealText from '../ui/RevealText'
 import CopyButton from '../ui/CopyButton'
+import { isKnownCancelReason } from '../../lib/cancel-reason'
 import type { Order } from '../../lib/mock-data'
 
 // 홈 우측의 주문 상세.
@@ -45,11 +46,14 @@ export default function HomeOrderDetail({
   /**
    * 취소 사유.
    *
-   * 지금은 note 에서 읽는다 — cancel_order 가 note 를 사유로 덮어쓰기 때문이다.
+   * note 를 그대로 쓰면 **손님이 쓴 '수저·포크 O' 가 취소 사유로 둔갑한다** —
+   * cancel_order 가 사유를 note 에 덮어쓰는데, 사유 없이 취소한 주문은
+   * 손님 요청사항이 그대로 남아 있기 때문이다. 고정 목록에 있는 말일 때만 사유로 본다
+   * (lib/cancel-reason.ts).
    * 0079 마이그레이션이 적용되면 `order.cancelReason` 한 줄로 바뀐다.
    */
-  const cancelReason = isCancelled
-    ? (note.customerNote || note.deliveryNote || '')
+  const cancelReason = isCancelled && isKnownCancelReason(note.customerNote)
+    ? (note.customerNote as string)
     : ''
   /** 이미 끝난 주문 — 완료·취소. 더 할 수 있는 게 없다(영수증 재출력만 남는다) */
   const isSettled  = order.status === '완료' || isCancelled
@@ -112,13 +116,18 @@ export default function HomeOrderDetail({
         {/* 요청사항 — 놓치면 음식을 다시 만든다.
             '요청사항' 라벨은 뺐다. 주황 박스가 이 화면에 하나뿐이라 박스 자체가 라벨 역할을 한다.
             (취소 박스는 빨강이라 색으로 갈린다) */}
-        {(note.customerNote || note.deliveryNote) && (
-          <div className="mb-[16px] rounded-[10px] bg-[#FFF4E8] px-[14px] py-[11px]">
-            <div className="text-[17px] font-medium text-[#2C261F] leading-relaxed">
-              {[note.customerNote, note.deliveryNote].filter(Boolean).join(' / ')}
+        {(() => {
+          // 위에서 사유로 쓴 문장은 여기서 뺀다 — 같은 글자가 두 박스에 뜨면
+          // 손님이 쓴 건지 점주가 고른 건지 더 헷갈린다
+          const req = [cancelReason ? null : note.customerNote, note.deliveryNote]
+            .filter(Boolean).join(' / ')
+          if (!req) return null
+          return (
+            <div className="mb-[16px] rounded-[10px] bg-[#FFF4E8] px-[14px] py-[11px]">
+              <div className="text-[17px] font-medium text-[#2C261F] leading-relaxed">{req}</div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* 메뉴 표 */}
         {/* 머리글 밑줄도 아래 행 구분선과 같은 #E5E5E5. 잉크색(#2C261F)으로 그었더니

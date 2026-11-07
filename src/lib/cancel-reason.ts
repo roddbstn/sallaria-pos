@@ -1,0 +1,42 @@
+// 취소된 주문의 note 가 '취소 사유'인지 '손님 요청사항'인지 가린다.
+//
+// ── 왜 가려야 하나 ────────────────────────────────────────────────────────
+// cancel_order 가 취소 사유를 orders.note 에 **덮어쓴다**:
+//     update orders set note = coalesce(p_note, note) ...
+// 그래서 취소 주문의 note 는 둘 중 하나다.
+//   · 사유 없이 취소한 옛 주문 → 손님이 쓴 요청사항이 그대로 남아 있다
+//   · 사유를 골라 취소한 주문   → 점주가 고른 사유로 바뀌어 있다
+// 구분하는 컬럼이 없어서, 그냥 note 를 사유 자리에 적으면 **손님이 쓴
+// '수저·포크 O' 가 취소 사유로 둔갑한다.** 실제로 그렇게 보였다.
+//
+// ── 어떻게 가리나 ─────────────────────────────────────────────────────────
+// 사유는 점주가 **고정 목록에서 고른다**(CancelReasonModal · OrderPopup).
+// 그 목록에 있는 말과 똑같을 때만 사유로 본다. 아니면 손님이 쓴 말로 두고
+// 사유 자리는 비운다 — 모르면 모른다고 하는 쪽이 지어내는 쪽보다 낫다.
+//
+// '직접 입력'으로 쓴 사유는 이 목록에 없어서 요청사항으로 넘어간다.
+// 그건 받아들인다. 반대로 틀리면 손님이 쓴 말을 점주 말로 바꿔 보여주게 된다.
+//
+// supabase/migrations/0079_order_cancel_reason.sql 이 적용되면 이 추측이
+// 통째로 필요 없어진다 — orders.cancel_reason 을 그냥 읽으면 된다.
+
+/** 점주가 고를 수 있는 취소 사유 — 두 화면의 목록을 합친 것 */
+const KNOWN_REASONS: readonly string[] = [
+  // CancelReasonModal (홈 화면 취소)
+  '재료 소진',
+  '영업 종료',
+  '주문 폭주로 조리 불가',
+  '손님 요청으로 취소',
+  '중복 주문',
+  // OrderPopup (신규 주문 거부)
+  '마감시간 초과',
+  '주문 폭주',
+  '매장 사정',
+  '기타',
+]
+
+/** 이 문장이 점주가 고른 취소 사유인가 */
+export function isKnownCancelReason(note: string | null | undefined): boolean {
+  if (!note) return false
+  return KNOWN_REASONS.includes(note.trim())
+}
