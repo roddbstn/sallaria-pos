@@ -68,6 +68,8 @@ export function mapOrderRow(row: any): Order {
     total:         row.total_amount,
     prepMins:      row.prep_minutes ?? 0,
     acceptedAt:    row.accepted_at ?? undefined,
+    // 취소 시각 — 전용 컬럼이 없다(mock-data.ts 의 cancelledAt 주석 참고)
+    cancelledAt:   row.updated_at ?? undefined,
     completedAt:   row.completed_at ?? undefined,
     requestedPickupMinutes: row.requested_pickup_minutes ?? undefined,
     createdAt:     row.ordered_at,

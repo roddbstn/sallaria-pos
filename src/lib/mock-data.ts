@@ -41,6 +41,15 @@ export interface Order {
   /** '준비 완료'를 누른 시각. 완료 카드의 '소요 시간'은 이 시각 − acceptedAt 이다 */
   completedAt?:  string
   /**
+   * 취소한 시각.
+   *
+   * ⚠️ 전용 컬럼이 없어서 **orders.updated_at** 을 쓴다. cancel_order 가 취소할 때
+   *    updated_at 을 갱신하므로 취소 주문에서는 사실상 취소 시각이다.
+   *    다른 상태에서는 '마지막으로 뭔가 바뀐 시각'이라 뜻이 없다 —
+   *    그래서 status === '취소' 일 때만 읽는다.
+   */
+  cancelledAt?:  string
+  /**
    * 고객이 주문할 때 고른 예상 수령시간 (주문시각 기준 분). 0 = 지금, undefined = 미선택.
    * 점주가 승인 화면에서 정하는 prepMins 와는 다른 값이다 —
    * 이건 "손님이 언제 오겠다고 했는지"이고 prepMins 는 "주방이 언제까지 만들 수 있는지".

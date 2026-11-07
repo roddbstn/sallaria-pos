@@ -1,5 +1,5 @@
 import { won } from '../../lib/ipc'
-import { remainingTime, elapsedTime, remainStyle } from '../../lib/pickup-time'
+import { cancelledTime, remainingTime, elapsedTime, remainStyle } from '../../lib/pickup-time'
 import type { Order } from '../../lib/mock-data'
 
 // 홈 좌측 목록의 주문 카드 한 장.
@@ -26,10 +26,15 @@ export default function HomeOrderCard({ order, selected, onClick, now }: {
   now:      Date
 }) {
   // 끝난 주문은 '남은 시간'이 아니라 **'소요 시간'**을 보여준다 —
-  // 접수하고 몇 분 만에 '준비 완료'를 눌렀는지. 취소는 잴 게 없으니 진행 중과 같이 둔다.
-  const remain = order.status === '완료'
-    ? elapsedTime(order.acceptedAt, order.completedAt)
-    : remainingTime(order.acceptedAt, order.prepMins, now)
+  // 접수하고 몇 분 만에 '준비 완료'를 눌렀는지.
+  // 취소는 '취소'라고 적는다. 전엔 진행 중과 같이 remainingTime() 으로 보냈는데,
+  // 취소 주문은 accepted_at 이 없어서 '대기'가 찍혔다 — 거부한 주문이 아직
+  // 기다리는 중인 것처럼 보였다.
+  const remain = order.status === '취소'
+    ? cancelledTime()
+    : order.status === '완료'
+      ? elapsedTime(order.acceptedAt, order.completedAt)
+      : remainingTime(order.acceptedAt, order.prepMins, now)
   const style  = remainStyle(remain.tone)
   const qty    = order.items.reduce((s, it) => s + it.qty, 0)
   const method = METHOD_SHORT[order.method] ?? order.method

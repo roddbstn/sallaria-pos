@@ -58,21 +58,6 @@ const api = {
   offPrinterStatus: () => ipcRenderer.removeAllListeners('printer:status'),
 
   // ── 딥링크 (비밀번호 재설정) ─────────────────────────────────────────────────
-  // ── 주문 알림 팝업 창 (electron/index.ts 주석 참고) ──
-  popupOpen:     ()          => ipcRenderer.invoke('popup:open'),
-  popupClose:    ()          => ipcRenderer.invoke('popup:close'),
-  /** 메인 창 → 팝업 창 */
-  popupSync:     (p: unknown) => ipcRenderer.invoke('popup:sync', p),
-  onPopupData:   (cb: (v: unknown) => void) => ipcRenderer.on('popup:data', (_e, v) => cb(v)),
-  offPopupData:  () => ipcRenderer.removeAllListeners('popup:data'),
-  /** 팝업 창 → 메인 창 */
-  popupAction:   (p: unknown) => ipcRenderer.invoke('popup:action', p),
-  onPopupAction: (cb: (v: unknown) => void) => ipcRenderer.on('popup:action', (_e, v) => cb(v)),
-  offPopupAction: () => ipcRenderer.removeAllListeners('popup:action'),
-  /** 사용자가 팝업 창을 닫았다 */
-  onPopupClosed:  (cb: () => void) => ipcRenderer.on('popup:closed', () => cb()),
-  offPopupClosed: () => ipcRenderer.removeAllListeners('popup:closed'),
-
   onAuthDeeplink:  (cb: (url: string) => void) => ipcRenderer.on('auth:deeplink', (_e, v) => cb(v)),
   offAuthDeeplink: () => ipcRenderer.removeAllListeners('auth:deeplink'),
 }

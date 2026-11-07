@@ -54,6 +54,7 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     order_code, order_number, account_code, orderer_name, orderer_phone,
     ordered_at, menu_subtotal, delivery_fee, total_amount, balance_before, balance_after,
     method, status, note, is_deleted, requested_pickup_minutes, prep_minutes, accepted_at, completed_at,
+    updated_at,
     delivery_departed_at,
     accounts ( account_name, account_type ),
     order_items ( menu_name, quantity, unit_price, subtotal,

@@ -324,24 +324,6 @@ export default function App() {
   }, [measureUnderline])
   const [headerRight, setHeaderRight] = useState<React.ReactNode>(null)
   const [queue,      setQueue]      = useState<Order[]>([])
-  /**
-   * 새 주문을 **별도 창**으로 띄우고 있나.
-   *
-   * 점주가 메인 POS(오케이포스 등)를 앞에 띄워 두면 선포스 창이 가려져서,
-   * 주문이 들어와도 화면에 아무 일도 안 일어난다. 그래서 알림만 떼어 내
-   * 항상 맨 앞에 서는 창으로 띄운다(electron/index.ts 의 popupWindow).
-   * 그 창이 떠 있는 동안에는 메인 창 가운데 모달을 그리지 않는다 — 같은 주문이
-   * 두 군데 떠 있으면 어느 걸 눌러야 하는지가 애매해진다.
-   */
-  const [popupWindowOn, setPopupWindowOn] = useState(false)
-  /**
-   * 점주가 그 창을 직접 닫았다.
-   *
-   * 닫으면 메인 창 가운데 모달로 되돌아간다. 이 표시가 없으면 아래 effect 가
-   * "큐가 비어 있지 않네" 하고 **곧바로 창을 다시 띄워서** 닫을 수가 없다.
-   * 큐가 비면(= 다 처리하면) 풀린다. 다음 주문부터는 다시 창으로 뜬다.
-   */
-  const [popupWindowDismissed, setPopupWindowDismissed] = useState(false)
   const [toast,      setToast]      = useState('')
   const [toastTimer, setToastTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [updateReady, setUpdateReady] = useState<string | null>(null)
@@ -936,57 +918,6 @@ export default function App() {
     setQueue(q => q.slice(1))
   }
 
-  // ── 주문 알림 창 ──────────────────────────────────────────────────────────
-  // 큐가 차면 띄우고 비면 닫는다. 점주가 직접 닫았으면(popupWindowDismissed)
-  // 그 큐가 다 빠질 때까지 다시 띄우지 않는다.
-  useEffect(() => {
-    const w = window as unknown as { api?: { popupOpen?: () => void; popupClose?: () => void } }
-    if (queue.length === 0) {
-      if (popupWindowOn) w.api?.popupClose?.()
-      setPopupWindowOn(false)
-      setPopupWindowDismissed(false)   // 다음 주문은 다시 창으로
-      return
-    }
-    if (!popupWindowOn && !popupWindowDismissed) {
-      w.api?.popupOpen?.()
-      setPopupWindowOn(true)
-    }
-  }, [queue.length, popupWindowOn, popupWindowDismissed])
-
-  // 큐·매장 정보가 바뀔 때마다 창에 그대로 보낸다.
-  // 창은 스스로 아무것도 조회하지 않는다 — 여기 있는 것이 유일한 원본이다.
-  useEffect(() => {
-    if (!popupWindowOn) return
-    const w = window as unknown as { api?: { popupSync?: (p: unknown) => void } }
-    w.api?.popupSync?.({ queue, session })
-  }, [popupWindowOn, queue, session])
-
-  // 창에서 누른 접수/거부가 돌아온다 — 처리는 여기서 한 번만 한다
-  useEffect(() => {
-    const w = window as unknown as {
-      api?: {
-        onPopupAction?: (cb: (v: unknown) => void) => void
-        offPopupAction?: () => void
-        onPopupClosed?: (cb: () => void) => void
-        offPopupClosed?: () => void
-      }
-    }
-    w.api?.onPopupAction?.(v => {
-      const a = v as { type?: string; message?: string }
-      if (a.type === 'dismiss')      dismissPopup()
-      else if (a.type === 'approve') showToast('🖨️ 영수증을 출력합니다')
-      else if (a.type === 'error' && a.message) showToast(a.message)
-    })
-    w.api?.onPopupClosed?.(() => {
-      setPopupWindowOn(false)
-      setPopupWindowDismissed(true)   // 가운데 모달로 되돌아간다
-    })
-    return () => {
-      w.api?.offPopupAction?.()
-      w.api?.offPopupClosed?.()
-    }
-  }, [])
-
   async function handleSignOut() {
     intentionalSignOutRef.current = true
     await supabase.auth.signOut()
@@ -1517,10 +1448,8 @@ export default function App() {
           </HeaderSlotContext.Provider>
         </div>
 
-        {/* ── 신규 주문 팝업 ──
-            별도 창으로 떠 있을 때는 그리지 않는다. 같은 주문이 두 군데 떠 있으면
-            어느 걸 눌러야 하는지가 애매해지고, 양쪽에서 접수가 두 번 나갈 수도 있다. */}
-        {queue.length > 0 && !popupWindowOn && (
+        {/* ── 신규 주문 팝업 ── */}
+        {queue.length > 0 && (
           <OrderPopup
             queue={queue}
             onClose={dismissPopup}

@@ -49,7 +49,7 @@ export function readyClock(minutes: number, from: Date = new Date()): string {
 //
 // accepted_at 이 없는 주문(아직 안 받은 신규)은 셀 기준 자체가 없으므로 'pending'.
 
-export type RemainTone = 'pending' | 'calm' | 'soon' | 'now' | 'over'
+export type RemainTone = 'pending' | 'calm' | 'soon' | 'now' | 'over' | 'cancelled'
 
 export interface Remaining {
   tone:  RemainTone
@@ -120,6 +120,19 @@ export function remainingTime(
 }
 
 /**
+ * 취소된 주문의 자리에 들어갈 값.
+ *
+ * 전엔 취소도 remainingTime() 으로 보냈다. 취소 주문은 accepted_at 이 없으니
+ * 거기서 'pending' 이 나오고, 완료 목록에 **'대기'** 라고 찍혔다 —
+ * 이미 끝난(그것도 거부한) 주문이 아직 기다리는 중인 것처럼 보였다.
+ *
+ * 잴 시간이 없는 게 아니라 **잴 이유가 없다.** 상태를 그대로 적는다.
+ */
+export function cancelledTime(): Remaining {
+  return { tone: 'cancelled', value: null, minutes: null, label: '취소', unit: '', heading: '' }
+}
+
+/**
  * 끝난 주문의 '소요 시간'.
  *
  * 완료된 주문에 '남은 시간'을 묻는 건 말이 안 된다 — 이미 끝났으니 남은 게 없다.
@@ -153,6 +166,9 @@ export function remainStyle(tone: RemainTone): { color: string; background?: str
     case 'now':  return { color: '#FF8418' }
     case 'soon': return { color: '#FF8418' }
     case 'calm': return { color: '#2C261F' }
+    // 취소는 빨강이 아니라 회색이다. 빨강은 '늦었다'(over)에 쓰는 색이라,
+    // 취소까지 빨갛게 두면 목록에서 급한 건과 끝난 건이 같은 신호를 낸다.
+    case 'cancelled': return { color: '#ADADAD' }
     default:     return { color: '#6A635E' }
   }
 }
