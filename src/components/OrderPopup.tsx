@@ -153,7 +153,16 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
     void (async () => {
       try {
         // ① cancel_order RPC (status → '취소' + 잔액 환원 — QR 웹사이트 postgres_changes 트리거)
-        const { error } = await supabase.rpc('cancel_order', { p_order_code: target.code })
+        //
+        // ⚠️ p_note 를 안 넘기고 있었다. 사유는 아래 ② 브로드캐스트로만 나가서,
+        //    **손님 화면에는 '기타'가 뜨는데 DB 에는 아무것도 안 남았다.**
+        //    그래서 POS 의 취소 사유 칸이 '사유가 기록되지 않았어요'가 됐고,
+        //    손님이 나중에 그 링크를 다시 열어도 사유를 못 봤다(브로드캐스트는 한 번 뿐).
+        //    홈 화면의 취소(Home.tsx handleCancel)는 처음부터 넘기고 있었다 — 두 경로가 달랐다.
+        const { error } = await supabase.rpc('cancel_order', {
+          p_order_code: target.code,
+          p_note:       why,
+        })
         if (error) throw error
 
         // ② broadcast로 거부 사유 전달 (fire-and-forget)

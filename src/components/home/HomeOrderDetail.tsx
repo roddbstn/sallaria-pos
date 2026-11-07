@@ -79,7 +79,7 @@ export default function HomeOrderDetail({
         </span>
         <button
           onClick={onReprint}
-          className="pressable flex-shrink-0 h-[38px] px-[16px] rounded-[19px] border border-[#D9D9D9] bg-[#FCFCFC] text-[14px] font-medium text-[#414141] hover:bg-[#F2F2F2]"
+          className="pressable flex-shrink-0 h-[42px] px-[18px] rounded-[21px] border border-[#D9D9D9] bg-[#FCFCFC] text-[16px] font-medium text-[#414141] hover:bg-[#F2F2F2]"
         >
           영수증 재출력
         </button>
@@ -101,12 +101,12 @@ export default function HomeOrderDetail({
                적용되면 아래 cancelReason 한 줄만 바꾸면 된다. */}
         {isCancelled && (
           <div className="mb-[12px] rounded-[10px] bg-[#FFEFEF] px-[14px] py-[12px]">
-            <div className="text-[13px] font-normal text-[#C92A2A] mb-[4px]">주문 취소 사유</div>
-            <div className="text-[17px] font-medium text-[#2C261F] leading-relaxed">
+            <div className="text-[15px] font-normal text-[#C92A2A] mb-[4px]">주문 취소 사유</div>
+            <div className="text-[19px] font-medium text-[#2C261F] leading-relaxed">
               {cancelReason || '사유가 기록되지 않았어요'}
             </div>
             {order.cancelledAt && (
-              <div className="text-[13px] font-normal text-[#787878] mt-[6px] tabular-nums">
+              <div className="text-[15px] font-normal text-[#787878] mt-[6px] tabular-nums">
                 {orderedAtLabel(order.cancelledAt)} 취소
               </div>
             )}
@@ -124,7 +124,7 @@ export default function HomeOrderDetail({
           if (!req) return null
           return (
             <div className="mb-[16px] rounded-[10px] bg-[#FFF4E8] px-[14px] py-[11px]">
-              <div className="text-[17px] font-medium text-[#2C261F] leading-relaxed">{req}</div>
+              <div className="text-[19px] font-medium text-[#2C261F] leading-relaxed">{req}</div>
             </div>
           )
         })()}
@@ -132,7 +132,7 @@ export default function HomeOrderDetail({
         {/* 메뉴 표 */}
         {/* 머리글 밑줄도 아래 행 구분선과 같은 #E5E5E5. 잉크색(#2C261F)으로 그었더니
             머리글만 표에서 떨어져 나와 보였다 — 여기 글자는 13px 회색이라 굵은 선이 과하다. */}
-        <div className="flex items-end border-b border-[#E5E5E5] pb-[8px] text-[15px] font-normal text-[#787878]">
+        <div className="flex items-end border-b border-[#E5E5E5] pb-[8px] text-[17px] font-normal text-[#787878]">
           <span className="flex-1">메뉴</span>
           <span className="w-[64px] text-center">수량</span>
           <span className="w-[100px] text-right">금액</span>
@@ -143,9 +143,9 @@ export default function HomeOrderDetail({
           return (
             <div key={i} className="py-[12px] border-b border-[#E5E5E5]">
               <div className="flex items-start">
-                <span className="flex-1 text-[19px] font-medium text-[#1E1E1E] pr-[8px]">{it.name}</span>
-                <span className="w-[64px] text-center text-[19px] font-medium text-[#1E1E1E] tabular-nums">{it.qty}</span>
-                <span className="w-[100px] text-right text-[19px] font-medium text-[#1E1E1E] tabular-nums">
+                <span className="flex-1 text-[22px] font-medium text-[#1E1E1E] pr-[8px]">{it.name}</span>
+                <span className="w-[64px] text-center text-[22px] font-medium text-[#1E1E1E] tabular-nums">{it.qty}</span>
+                <span className="w-[100px] text-right text-[22px] font-medium text-[#1E1E1E] tabular-nums">
                   {won(it.price * it.qty)}
                 </span>
               </div>
@@ -154,7 +154,7 @@ export default function HomeOrderDetail({
                   그런데 위 금액은 이미 옵션값이 더해진 값이라, 한 번 더 더해야 하는 것처럼
                   읽혔다. 이름 뒤에 붙이면 "이 옵션 때문에 500원"으로 읽힌다. */}
               {opts.map((o, j) => (
-                <div key={j} className="mt-[4px] text-[17px] font-normal text-[#787878] pl-[14px]">
+                <div key={j} className="mt-[4px] text-[19px] font-normal text-[#787878] pl-[14px]">
                   {o.name}
                   {o.extraPrice ? <span className="text-[#ADADAD]"> (+{won(o.extraPrice)})</span> : null}
                 </div>
@@ -166,9 +166,9 @@ export default function HomeOrderDetail({
         {/* 배달료는 메뉴가 아니라 별도 줄 — 영수증과 같은 규칙 */}
         {isDelivery && (order.deliveryFee ?? 0) > 0 && (
           <div className="flex items-center py-[12px] border-b border-[#E5E5E5]">
-            <span className="flex-1 text-[17px] font-normal text-[#787878]">배달료</span>
+            <span className="flex-1 text-[19px] font-normal text-[#787878]">배달료</span>
             <span className="w-[64px]" />
-            <span className="w-[100px] text-right text-[17px] font-normal text-[#787878] tabular-nums">
+            <span className="w-[100px] text-right text-[19px] font-normal text-[#787878] tabular-nums">
               {won(order.deliveryFee ?? 0)}
             </span>
           </div>
@@ -177,9 +177,9 @@ export default function HomeOrderDetail({
         {/* 최종금액 */}
         {/* 메뉴 줄과 같은 크기·굵기(19/medium) — 표의 마지막 줄로 읽히게 */}
         <div className="flex items-center py-[16px]">
-          <span className="flex-1 text-[19px] font-medium text-[#1E1E1E]">최종금액</span>
-          <span className="w-[64px] text-center text-[19px] font-medium text-[#1E1E1E] tabular-nums">{qty}</span>
-          <span className="w-[100px] text-right text-[19px] font-medium text-[#1E1E1E] tabular-nums">
+          <span className="flex-1 text-[22px] font-medium text-[#1E1E1E]">최종금액</span>
+          <span className="w-[64px] text-center text-[22px] font-medium text-[#1E1E1E] tabular-nums">{qty}</span>
+          <span className="w-[100px] text-right text-[22px] font-medium text-[#1E1E1E] tabular-nums">
             {won(order.total)}
           </span>
         </div>
@@ -190,7 +190,7 @@ export default function HomeOrderDetail({
             전화를 걸기 전에 "언제 시킨 건지"를 먼저 봐야 한다. */}
         <div className="rounded-[10px] bg-[#F7F7F7] px-[14px] py-[12px] mb-[16px]">
           <div className="mb-[6px]">
-            <span className="text-[13px] font-normal text-[#787878] tabular-nums">
+            <span className="text-[15px] font-normal text-[#787878] tabular-nums">
               {orderedAtLabel(order.createdAt)} 주문
             </span>
           </div>
@@ -199,7 +199,7 @@ export default function HomeOrderDetail({
               가려진 값과 떨어져 보였다.
               key 를 주는 이유: 이 패널은 주문을 바꿔도 다시 그려지지 않아서, key 가 없으면
               A 를 열어둔 상태가 B 로 넘어간다. */}
-          <div className="flex items-center gap-[4px] text-[15px] font-normal text-[#1E1E1E] min-w-0">
+          <div className="flex items-center gap-[4px] text-[17px] font-normal text-[#1E1E1E] min-w-0">
             <span className="truncate">{order.accountName}</span>
             <span className="text-[#787878] flex-shrink-0">·</span>
             <RevealText
@@ -213,7 +213,7 @@ export default function HomeOrderDetail({
               <RevealText
                 key={`p-${order.code}`}
                 value={order.phone} masked={maskPhone(order.phone)}
-                className="text-[14px] font-normal text-[#787878] tabular-nums" iconSize={13}
+                className="text-[16px] font-normal text-[#787878] tabular-nums" iconSize={15}
               />
             </div>
           )}
@@ -226,14 +226,14 @@ export default function HomeOrderDetail({
           {isDelivery && note.deliveryAddress && (
             <div className="mt-[6px] flex flex-col gap-[2px]">
               <div className="flex items-center gap-[2px]">
-                <span className="text-[14px] font-normal text-[#414141] leading-relaxed min-w-0">
+                <span className="text-[16px] font-normal text-[#414141] leading-relaxed min-w-0">
                   {note.deliveryAddress}
                 </span>
                 <CopyButton variant="black" text={note.deliveryAddress} />
               </div>
               {note.deliveryDetail && (
                 <div className="flex items-center gap-[2px]">
-                  <span className="text-[14px] font-normal text-[#787878] leading-relaxed min-w-0">
+                  <span className="text-[16px] font-normal text-[#787878] leading-relaxed min-w-0">
                     {note.deliveryDetail}
                   </span>
                   <CopyButton variant="black" text={note.deliveryDetail} />
