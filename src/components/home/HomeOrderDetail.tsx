@@ -3,6 +3,7 @@ import { maskName, maskPhone } from '../../lib/mask'
 import RevealText from '../ui/RevealText'
 import CopyButton from '../ui/CopyButton'
 import { isKnownCancelReason } from '../../lib/cancel-reason'
+import { pickupClock, pickupLabel } from '../../lib/pickup-time'
 import type { Order } from '../../lib/mock-data'
 
 // 홈 우측의 주문 상세.
@@ -198,6 +199,20 @@ export default function HomeOrderDetail({
               {orderedAtLabel(order.createdAt)} 주문
             </span>
           </div>
+          {/* 손님이 **주문할 때 고른** 수령 시각.
+              점주가 접수하며 정한 소요시간(prepMins)과는 다른 값이다 —
+              이건 손님이 한 말이고, 끝난 주문에서도 안 변한다.
+              주문 시각이 기준이라 그때 화면에 떴던 시각과 같다.
+              안 고른 주문(배달 등)은 줄 자체를 안 그린다 — '미선택'이라고 적으면
+              손님이 건너뛴 것처럼 읽힌다. */}
+          {order.requestedPickupMinutes != null && (
+            <div className="mb-[6px]">
+              <span className="text-[15px] font-normal text-[#787878] tabular-nums">
+                예상 도착시간 {pickupClock(order.createdAt, order.requestedPickupMinutes)}
+                <span className="text-[#ADADAD]"> ({pickupLabel(order.requestedPickupMinutes)})</span>
+              </span>
+            </div>
+          )}
           {/* 눈 버튼은 값 바로 옆에 붙는다 — 주문 팝업·고객 패널과 같은 RevealText 다.
               전엔 박스 오른쪽 위에 '보기' 글자 하나가 떨어져 있어서, 무엇을 여는 버튼인지
               가려진 값과 떨어져 보였다.
