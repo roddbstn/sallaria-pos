@@ -1,56 +1,46 @@
 import { describe, it, expect } from 'vitest'
-import { fitZoom, DESIGN_W, DESIGN_H } from './viewport-scale'
+import { fitZoom, DESIGN_W, BASE_ZOOM, FLUID_MIN_W } from './viewport-scale'
 
-describe('fitZoom — 해상도별 배율', () => {
-  it('1440×810 은 전에 박아 두던 1.07 과 같다', () => {
-    // 이 식이 기존 고정값을 그대로 재현하는지가 유일한 검증 기준이다
+describe('fitZoom — 창 크기 → 배율', () => {
+  it('기본 창(1440×810)은 BASE_ZOOM — 전에 index.css 에 박혀 있던 1.07', () => {
     expect(fitZoom(1440, 810)).toBeCloseTo(1.07, 2)
+    expect(fitZoom(1440, 810)).toBe(BASE_ZOOM)
   })
 
-  it('침산점 1024×768 — 가로가 기준이고 세로가 남는다', () => {
-    const z = fitZoom(1024, 768)
-    expect(z).toBeCloseTo(1024 / DESIGN_W, 3)
-    expect(768 / z).toBeGreaterThan(DESIGN_H)   // 세로 여유
+  it('FLUID_MIN 까지는 **글자 크기가 안 변한다** — 레이아웃만 좁아진다', () => {
+    // 토스포스가 하는 일이 이것이다. 이 구간에서 배율이 흔들리면 글자가 같이 흔들린다.
+    const wide   = fitZoom(1440, 810)
+    const narrow = fitZoom(Math.ceil(FLUID_MIN_W * BASE_ZOOM), 810)
+    expect(narrow).toBe(wide)
   })
 
-  it('1920×1080 은 설계비(16:9)라 가로·세로가 동시에 맞는다', () => {
-    const z = fitZoom(1920, 1080)
-    expect(1920 / z).toBeCloseTo(DESIGN_W, 0)
-    expect(1080 / z).toBeCloseTo(DESIGN_H, 0)
+  it('그 구간에서 레이아웃 폭은 실제로 줄어든다', () => {
+    const z = fitZoom(1340, 810)
+    expect(1340 / z).toBeLessThan(DESIGN_W)        // 1346 보다 좁아졌다
+    expect(1340 / z).toBeGreaterThanOrEqual(FLUID_MIN_W)
   })
 
-  it('가로로 긴 화면은 세로가 기준 — 잘리지 않는다', () => {
-    const z = fitZoom(2560, 1080)
-    expect(1080 / z).toBeGreaterThanOrEqual(DESIGN_H)
-    expect(2560 / z).toBeGreaterThan(DESIGN_W)  // 가로 여유
+  it('FLUID_MIN 아래로는 그제서야 줄인다 — 안 그러면 잘린다', () => {
+    const z = fitZoom(1024, 768)                    // 침산점
+    expect(z).toBeLessThan(BASE_ZOOM)
+    expect(1024 / z).toBeCloseTo(FLUID_MIN_W, 0)    // 레이아웃은 floor 에서 멈춘다
   })
 
-  it('어떤 해상도에서도 설계 크기가 다 들어간다', () => {
-    for (const [w, h] of [[1024, 768], [1280, 720], [1366, 768], [1440, 900], [1920, 1080], [2560, 1440]]) {
-      const z = fitZoom(w, h)
-      expect(w / z).toBeGreaterThanOrEqual(DESIGN_W - 1)
-      expect(h / z).toBeGreaterThanOrEqual(DESIGN_H - 1)
+  it('침산점은 전(1024/1346=0.761)보다 글자가 커진다', () => {
+    expect(fitZoom(1024, 768)).toBeGreaterThan(1024 / DESIGN_W)
+  })
+
+  it('어떤 창에서도 레이아웃이 FLUID_MIN 아래로 눌리지 않는다', () => {
+    for (const [w, h] of [[1024, 768], [1280, 720], [1366, 768], [1440, 900], [1920, 1080]]) {
+      expect(w / fitZoom(w, h)).toBeGreaterThanOrEqual(FLUID_MIN_W - 1)
     }
   })
 
   it('아주 작은 화면은 하한에서 멈춘다 — 더 줄이면 글자를 못 읽는다', () => {
-    expect(fitZoom(640, 480)).toBe(0.55)
-  })
-
-  it('아주 큰 화면은 상한에서 멈춘다', () => {
-    expect(fitZoom(3840, 2160)).toBe(2)
+    expect(fitZoom(400, 300)).toBe(0.55)
   })
 
   it('크기를 아직 모를 때는 1', () => {
     expect(fitZoom(0, 0)).toBe(1)
-  })
-
-  it('허용된 최소 창(기본의 70%)에서도 가로·세로가 동시에 딱 맞는다', () => {
-    // 1008×567 은 1440×810 의 70% 이고 설계비(16:9)와 같다.
-    // 그래서 이 범위 안에서는 **잘리는 구간이 없다.**
-    const z = fitZoom(1008, 567)
-    expect(1008 / z).toBeCloseTo(DESIGN_W, 0)
-    expect(567 / z).toBeCloseTo(DESIGN_H, 0)
-    expect(z).toBeGreaterThan(0.55)   // 하한에 안 걸린다
   })
 })
