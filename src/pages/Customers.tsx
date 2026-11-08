@@ -38,6 +38,7 @@ import ModalOverlay from '../components/ui/ModalOverlay'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import BottomToast from '../components/BottomToast'
 import { TABLE_HEAD_BASE } from '../components/ui/DataTable'
+import TimePopover, { timeLabel } from '../components/ui/TimePopover'
 
 const BASE_URL = 'https://sallaria.web.app'
 const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
@@ -449,6 +450,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [chargeMethod,      setChargeMethod]      = useState('신용카드')
   const [chargeDate,        setChargeDate]        = useState('')   // "YYYY-MM-DD"
   const [chargeTime,        setChargeTime]        = useState('')   // "HH:MM"
+  const [chargeTimeOpen,    setChargeTimeOpen]    = useState(false)
   const [chargeConfirm,     setChargeConfirm]     = useState(false)
   const [chargeLoading,     setChargeLoading]     = useState(false)
   const [statementOpen,     setStatementOpen]     = useState(false)
@@ -2343,7 +2345,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
       {/* ── 충전 등록 모달 — scale 제거, FIGMA_SCALE로 고정 px 재계산 ── */}
       {chargeOpen && selected && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false) }}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-[40px]" onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false); setChargeTimeOpen(false) }}>
           <div
             className="modal-in bg-[#FCFCFC] rounded-[20px] shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
             /* 1단계는 금액 키패드 + 입력 3개가 2열로 서서 1040 이 필요하다.
@@ -2399,7 +2401,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                         <div className="relative flex-1 min-w-0">
                           <button
                             type="button"
-                            onClick={() => setChargeCalOpen(v => !v)}
+                            onClick={() => { setChargeCalOpen(v => !v); setChargeTimeOpen(false) }}
                             className={`${CUST_INPUT_BASE} w-full text-left flex items-center justify-between whitespace-nowrap ${chargeCalOpen ? 'border-ink' : ''}`}
                           >
                             <span>{chargeDate ? chargeDate.replace(/-/g, '. ') : '날짜 선택'}</span>
@@ -2417,10 +2419,31 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                             />
                           )}
                         </div>
-                        {/* 폭은 인라인 style 로 못박는다 — 클래스로 주면 base 의 폭과 또 싸운다 */}
-                        <input type="time" value={chargeTime} onChange={e => setChargeTime(e.target.value)}
-                          style={{ width: 124 }}
-                          className={`${CUST_INPUT_BASE} flex-shrink-0`} />
+                        {/* 시각도 팝오버로 고른다 — 옆 날짜는 우리 캘린더인데 여기만
+                            OS 기본 time 위젯이 뜨면 한 줄 안에서 두 제품이 섞여 보인다.
+                            폭은 인라인 style 로 못박는다 — 클래스로 주면 base 의 폭과 또 싸운다 */}
+                        <div className="relative flex-shrink-0" style={{ width: 124 }}>
+                          <button
+                            type="button"
+                            onClick={() => { setChargeTimeOpen(v => !v); setChargeCalOpen(false) }}
+                            className={`${CUST_INPUT_BASE} w-full text-left flex items-center justify-between whitespace-nowrap ${chargeTimeOpen ? 'border-ink' : ''}`}
+                          >
+                            <span className={chargeTime ? '' : 'text-[#ADADAD]'}>
+                              {timeLabel(chargeTime) ?? '시간 선택'}
+                            </span>
+                            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 ml-[6px]">
+                              <circle cx="8" cy="8" r="6.3" stroke="#787878" strokeWidth="1.4"/>
+                              <path d="M8 4.6V8l2.4 1.6" stroke="#787878" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </button>
+                          {chargeTimeOpen && (
+                            <TimePopover
+                              value={chargeTime}
+                              onPick={setChargeTime}
+                              onClose={() => setChargeTimeOpen(false)}
+                            />
+                          )}
+                        </div>
                       </div>
                     </CustFormField>
 
@@ -2432,7 +2455,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 </div>
 
                 <div className="bg-[#FCFCFC] flex items-center justify-end gap-[9px] px-[46px] py-[15px] flex-shrink-0">
-                  <button onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false) }}
+                  <button onClick={() => { setChargeOpen(false); setChargeError(''); setChargeCalOpen(false); setChargeTimeOpen(false) }}
                     className="h-[50px] px-[32px] rounded-[13px] bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:brightness-95 transition-all">
                     취소
                   </button>
@@ -2467,7 +2490,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     </div>
                     <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
                       <span className="text-[16px] text-[#6A635E]">실제 선결제 일시</span>
-                      <span className="text-[16px] font-semibold text-ink">{chargeDate} {chargeTime}</span>
+                      <span className="text-[16px] font-semibold text-ink">
+                        {chargeDate.replace(/-/g, '. ')} {timeLabel(chargeTime) ?? chargeTime}
+                      </span>
                     </div>
                     {chargeMemo && (
                       <div className="flex justify-between items-center border-t border-[#D9D9D9] pt-[10px]">
