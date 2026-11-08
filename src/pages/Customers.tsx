@@ -37,6 +37,7 @@ import { signColor } from '../lib/sign-color'
 import ModalOverlay from '../components/ui/ModalOverlay'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import BottomToast from '../components/BottomToast'
+import { TABLE_HEAD_BASE } from '../components/ui/DataTable'
 
 const BASE_URL = 'https://sallaria.web.app'
 const SUNPOS_KAKAO_URL = 'https://sunpos-kakao.vercel.app'
@@ -1503,17 +1504,29 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           </div>
 
           {/* 테이블 */}
+          {/* 칼럼 폭 — 1024 해상도 기준.
+              우측 패널이 400 고정이라 좌측은 624, 표 좌우 여백 52 와 머리글 여백 30 을
+              빼면 **542칸**이 전부다. 전엔 고정 칼럼 합이 562 라 계정 이름 칸(flex-1)이
+              0 이 됐고, 머리글 '계정 이름' 이 한 글자씩 세로로 쌓였다(2026-11-08).
+              주문 내역 표·메뉴 카드와 **같은 종류의 버그**다.
+                순번 42 + 유형 52 + 추이 60 + 이용자 72 + 주문 92 + 선결제 110 = 428
+                + 이름 최소 110 = 538  → 542 안에 들어간다
+              각 폭은 머리글 글자(17px)와 값 중 **긴 쪽**에 맞췄다.
+              예: '이번달 선결제' 6자 = 106칸, '+500,000원' = 91칸 → 110 */}
+
           <div className="relative flex-1 min-h-0">
             <ScrollHint scrollRef={tableScrollRef} topOffset={55} bottomOffset={38} />
             <div ref={tableScrollRef} className="h-full overflow-y-auto scroll-stable px-[26px] pb-[26px]">
             {/* overflow-hidden 을 빼야 머리글 sticky 가 산다(DataTable.tsx 주석 참고).
                 모서리는 rounded + 첫 행/마지막 행이 알아서 맞춰진다. */}
             <div className="bg-canvas-soft rounded-[13px]">
-              <div className="sticky top-0 z-10 bg-[#D7D2CE] border-y border-[#C1B7AA] flex items-center text-[#6A635E] text-[17px] font-medium rounded-t-[13px]" style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
-                <span style={{ width: 51 }}>순번</span>
-                <span className="flex-1">계정 이름</span>
-                <span style={{ width: 80 }}>유형</span>
-                <span style={{ width: 77 }} className="flex items-center justify-end gap-[5px]">
+              {/* whitespace-nowrap — 폭이 모자라도 글자가 세로로 서지는 않아야
+                  '어디가 좁은지'가 보인다(components/ui/DataTable.tsx 의 같은 주석 참고) */}
+              <div className={`sticky top-0 z-10 border-y border-[#C1B7AA] text-[17px] font-medium rounded-t-[13px] ${TABLE_HEAD_BASE}`} style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
+                <span className="flex-shrink-0" style={{ width: 42 }}>순번</span>
+                <span className="flex-1 min-w-[110px] overflow-hidden">계정 이름</span>
+                <span className="flex-shrink-0" style={{ width: 52 }}>유형</span>
+                <span style={{ width: 60 }} className="flex-shrink-0 flex items-center justify-end gap-[5px]">
                   추이
                   <span
                     className="w-[13px] h-[13px] rounded-full bg-[#E8E4E2] text-[#787878] text-[9px] flex items-center justify-center cursor-default"
@@ -1523,12 +1536,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                     i
                   </span>
                 </span>
-                <span style={{ width: 97 }} className="text-right">이용자수</span>
+                <span style={{ width: 72 }} className="flex-shrink-0 text-right">이용자수</span>
                 {/* 잔액을 뺀 자리다. 잔액은 누적값이라 '이번달에 얼마나 쓰고 있나'를
                     말해주지 못한다 — 그건 오른쪽 패널에서 크게 본다.
                     대신 넣은 돈(선결제)과 쓴 돈(주문)을 **나란히** 둔다. */}
-                <span style={{ width: 116 }} className="text-right">이번달 주문</span>
-                <span style={{ width: 141 }} className="text-right">이번달 선결제</span>
+                <span style={{ width: 92 }} className="flex-shrink-0 text-right">이번달 주문</span>
+                <span style={{ width: 110 }} className="flex-shrink-0 text-right">이번달 선결제</span>
               </div>
 
               {loading ? (
@@ -1559,12 +1572,12 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       }`}
                       style={{ height: 46, paddingLeft: 15, paddingRight: 15 }}
                     >
-                      <span style={{ width: 51 }}>{i + 1}</span>
+                      <span className="flex-shrink-0" style={{ width: 42 }}>{i + 1}</span>
                       {/* 잔액 칸을 뺀 대신 **경고만** 이름 옆에 남긴다.
                           선결제 제품에서 '누가 바닥났나'는 표를 훑는 가장 큰 이유인데,
                           숫자를 통째로 빼면 거래처를 하나씩 눌러 봐야 알 수 있다.
                           숫자는 패널에서 보고, 여기서는 '봐야 할 곳'만 집어준다. */}
-                      <span className="flex-1 min-w-0 flex items-center gap-[6px]">
+                      <span className="flex-1 min-w-[110px] overflow-hidden flex items-center gap-[6px]">
                         <span className="truncate">{acc.account_name}</span>
                         {acc.current_balance < 0 ? (
                           <span className="flex-shrink-0 px-[7px] py-[2px] rounded-[6px] text-[13px] font-medium bg-[#E8EEFF] text-[#3374FF] whitespace-nowrap">
@@ -1576,7 +1589,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                           </span>
                         ) : null}
                       </span>
-                      <span style={{ width: 80 }}>
+                      <span className="flex-shrink-0" style={{ width: 52 }}>
                         {(() => {
                           const c = typeColorOf(acc.account_type)
                           return (
@@ -1589,14 +1602,14 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                           )
                         })()}
                       </span>
-                      <span style={{ width: 77 }} className={`text-right ${deltaClass(trend)}`}>
+                      <span style={{ width: 60 }} className={`flex-shrink-0 text-right ${deltaClass(trend)}`}>
                         {trend > 0 ? `+${trend}건` : trend < 0 ? `${trend}건` : '-'}
                       </span>
-                      <span style={{ width: 97 }} className={`text-right ${NUM}`}>{memberCounts[acc.account_code] ?? 0}명</span>
-                      <span style={{ width: 116 }} className={`text-right ${(monthlyUsage[acc.account_code] ?? 0) > 0 ? NUM_STRONG : NUM_MUTED}`}>
+                      <span style={{ width: 72 }} className={`flex-shrink-0 text-right ${NUM}`}>{memberCounts[acc.account_code] ?? 0}명</span>
+                      <span style={{ width: 92 }} className={`flex-shrink-0 text-right ${(monthlyUsage[acc.account_code] ?? 0) > 0 ? NUM_STRONG : NUM_MUTED}`}>
                         {won(monthlyUsage[acc.account_code] ?? 0)}
                       </span>
-                      <span style={{ width: 141 }} className={`text-right ${(monthlyDeposits[acc.account_code] ?? 0) > 0 ? NUM_UP : NUM_MUTED}`}>
+                      <span style={{ width: 110 }} className={`flex-shrink-0 text-right ${(monthlyDeposits[acc.account_code] ?? 0) > 0 ? NUM_UP : NUM_MUTED}`}>
                         {(monthlyDeposits[acc.account_code] ?? 0) > 0 ? `+${won(monthlyDeposits[acc.account_code])}` : won(0)}
                       </span>
                     </button>

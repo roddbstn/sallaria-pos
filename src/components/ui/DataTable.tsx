@@ -35,6 +35,22 @@ export function DataTable({ children, className = '' }: { children: ReactNode; c
   )
 }
 
+/**
+ * 표 머리글의 공통 '언어' — 색·바탕·줄바꿈 금지.
+ *
+ * DataTableHead 를 안 쓰고 손으로 그린 머리글이 세 군데 있다(고객 · 주문 분석 ·
+ * 매출). 높이·여백·글자 크기가 화면마다 달라서 컴포넌트로는 못 묶었는데,
+ * **whitespace-nowrap 만은 빠지면 안 된다.** 그게 빠진 채 칸이 0 이 되면
+ * 머리글 글자가 한 자씩 세로로 서면서 표 위아래로 삐져나온다
+ * (2026-11-08 고객 화면 '계정 이름'). 그 한 줄을 여기서 나눠 쓴다.
+ *
+ * 글자 굵기·크기는 **안 넣는다.** 화면마다 다른데, 같은 속성을 두 번 주면
+ * 어느 쪽이 이길지가 클래스를 적은 순서가 아니라 Tailwind 가 CSS 를 뽑는 순서로
+ * 정해진다 — 눈으로 못 잡는 종류의 사고다.
+ */
+export const TABLE_HEAD_BASE =
+  'flex items-center bg-[#D7D2CE] text-[#6A635E] whitespace-nowrap'
+
 export function DataTableHead({
   density = 'compact', children,
 }: {
@@ -53,7 +69,7 @@ export function DataTableHead({
     // 칸이 모자라는 건 폭을 고쳐야 할 일이지만, 적어도 **글자가 세로로 서지는
     // 않아야** 어디가 좁은지 바로 보인다.
     <div
-      className="sticky top-0 z-10 bg-[#D7D2CE] border-b border-[#C1B7AA] flex items-center text-[#6A635E] font-medium whitespace-nowrap"
+      className={`sticky top-0 z-10 border-b border-[#C1B7AA] font-medium ${TABLE_HEAD_BASE}`}
       style={{ height: d.head, fontSize: d.headText, paddingLeft: d.padX, paddingRight: d.padX }}
     >
       {children}

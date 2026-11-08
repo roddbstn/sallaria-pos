@@ -14,6 +14,7 @@ import {
 } from '../lib/order-trend'
 import { rootZoom } from '../lib/figma-scale'
 import { TrendBars } from '../components/ui/TrendBars'
+import { TABLE_HEAD_BASE } from '../components/ui/DataTable'
 
 // ── 주문 리포트 ───────────────────────────────────────────────────────────────
 //
@@ -797,12 +798,12 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
               </div>
             ) : (
               <div className="rounded-[11px] overflow-hidden">
-                <div className="flex items-center bg-[#D7D2CE] border-b border-[#C1B7AA] px-[15px] h-[36px] text-[16px] font-normal text-[#6A635E]">
-                  <span className="flex-1">계정</span>
-                  <span className="w-[70px] text-right">주문</span>
-                  <span className="w-[90px] text-right">평균 간격</span>
-                  <span className="w-[95px] text-right">마지막 주문</span>
-                  <span className="w-[105px] text-right">현재 잔액</span>
+                <div className={`border-b border-[#C1B7AA] px-[15px] h-[36px] text-[16px] font-normal ${TABLE_HEAD_BASE}`}>
+                  <span className="flex-1 min-w-[90px] overflow-hidden">계정</span>
+                  <span className="w-[70px] flex-shrink-0 text-right">주문</span>
+                  <span className="w-[90px] flex-shrink-0 text-right">평균 간격</span>
+                  <span className="w-[95px] flex-shrink-0 text-right">마지막 주문</span>
+                  <span className="w-[105px] flex-shrink-0 text-right">현재 잔액</span>
                 </div>
                 {/* 전엔 .slice(0, 12) 로 잘려 있었다. 자른다는 표시가 없어서
                     "왜 우리 과가 없지?"를 확인할 길이 없었다(활성 25곳 중 24곳이
