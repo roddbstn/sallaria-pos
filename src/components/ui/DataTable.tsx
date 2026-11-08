@@ -112,10 +112,19 @@ export function DataTableHead({
 // --canvas-soft 는 바탕(#F2F2F2)에서 밝기만 올린 값이라, 흰 카드 위에서
 // 한 단계 눌리면서도 화면 전체와 같은 계열로 읽힌다.
 export function DataTableRow({
-  density = 'compact', onClick, last = false, children,
+  density = 'compact', onClick, hover = false, last = false, children,
 }: {
   density?: TableDensity
   onClick?: () => void
+  /**
+   * 행을 누를 수는 없지만 **안에 버튼이 있는** 표용.
+   *
+   * 행 자체에 onClick 이 없으면 호버 표시도 없다. 그런데 계정 관리 표처럼 행 안에
+   * 버튼이 들어 있으면, 버튼에 마우스를 올려도 그 버튼만 반응해서 **지금 몇 번째
+   * 줄을 보고 있는지**가 안 보인다. 칼럼이 여섯이라 눈이 가로로 길게 움직이는데
+   * 짚어주는 게 없었다. 행을 한 단계 어둡게 깔아 준다.
+   */
+  hover?: boolean
   /** 마지막 행이면 아래 구분선을 그리지 않는다 */
   last?: boolean
   children: ReactNode
@@ -125,7 +134,7 @@ export function DataTableRow({
     <div
       onClick={onClick}
       className={`flex items-center bg-canvas-soft text-ink transition-colors ${
-        onClick ? 'pressable-row cursor-pointer hover:bg-white/40' : ''
+        onClick ? 'pressable-row cursor-pointer hover:bg-white/40' : hover ? 'hover:bg-[#F2F2F2]' : ''
       } ${last ? '' : 'border-b border-[#E5E5E5]'}`}
       style={{ height: d.row, fontSize: d.rowText, paddingLeft: d.padX, paddingRight: d.padX }}
     >

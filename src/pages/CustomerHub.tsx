@@ -1100,7 +1100,7 @@ function AccountsPanel() {
               const neg  = r.balance < 0
               const dep  = daysSince(r.lastDepositAt)
               return (
-                <DataTableRow key={r.code} last={i === visible.length - 1}>
+                <DataTableRow key={r.code} hover last={i === visible.length - 1}>
                   <span className="w-[30px] flex-shrink-0" onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={checked.has(r.code)} onChange={() => toggle(r.code)} />
                   </span>

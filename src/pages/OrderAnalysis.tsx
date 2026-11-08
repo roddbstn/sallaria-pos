@@ -88,21 +88,36 @@ function toKst(iso: string) {
 
 // 타이틀은 13 → 15px. 영역이 넷이라 제목이 작으면 어디가 어디인지 훑기 어렵다.
 // hint(서브텍스트)는 전부 뺐다 — 설명이 필요한 건 i 로 붙이고, 아니면 제목이 설명을 겸한다.
-function Section({ title, right, rightInline, children }: {
+/** 제목 줄 높이 — 제목 글자(17px)보다 탭(30px)이 크다. 옆 칼럼 제목도 이 높이를 쓴다 */
+export const SECTION_HEAD_H = 30
+
+function Section({ title, right, rightInline, fill, children }: {
   title:    string
   /** 제목 줄 오른쪽에 붙일 것(요약 문장 등) */
   right?:   React.ReactNode
   /** 오른쪽 끝이 아니라 제목 **바로 옆**에 붙인다 — 칼럼이 좁을 때 */
   rightInline?: boolean
+  /**
+   * 옆 칼럼과 **높이를 맞출 때.**
+   *
+   * 아래 여백(mb-30)을 빼고 세로로 펴진다. 여백이 남아 있으면 옆 박스가 그만큼
+   * 더 길어져서, 나란히 둔 두 박스의 아랫변이 안 맞는다.
+   * 제목 줄도 SECTION_HEAD_H 로 못박는다 — 탭이 있는 쪽만 줄이 두꺼워서
+   * 본문 시작 높이가 달라지던 걸 막는다.
+   */
+  fill?:    boolean
   children: React.ReactNode
 }) {
   return (
-    <div className="mb-[30px]">
-      <div className={`flex items-end gap-[16px] mb-[10px] ${rightInline ? '' : 'justify-between'}`}>
+    <div className={fill ? 'flex flex-col flex-1 min-h-0' : 'mb-[30px]'}>
+      <div
+        className={`flex items-end gap-[16px] mb-[10px] ${rightInline ? '' : 'justify-between'}`}
+        style={fill ? { height: SECTION_HEAD_H } : undefined}
+      >
         <div className="text-[17px] font-semibold text-[#2C261F]">{title}</div>
         {right}
       </div>
-      {children}
+      {fill ? <div className="flex-1 min-h-0">{children}</div> : children}
     </div>
   )
 }
@@ -449,13 +464,16 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
           둘 다 늘었으면 사람이 늘어난 것이다 — 다음에 할 일이 달라진다.
           위아래로 두면 그 비교를 하려고 스크롤을 오가야 했고, 아래 '주문 시간대'가
           한 화면 밖으로 밀려났다. */}
-      <div className="flex items-start gap-[16px] mb-[30px]">
-        <div className="flex-1 min-w-0">
+      {/* items-stretch — 두 박스의 아랫변을 맞춘다. 전엔 items-start 라
+          월별 주문율 박스가 내용만큼만 높아서 옆과 길이가 달랐다. */}
+      <div className="flex items-stretch gap-[16px] mb-[30px]">
+        <div className="flex-1 min-w-0 flex flex-col">
       <Section
         title="주문 추이"
-        /* 단위 탭을 제목 오른쪽 끝이 아니라 **제목 바로 옆**에 붙인다.
-           칼럼이 좁아져서 오른쪽 끝으로 보내면 제목과 탭 사이가 휑하게 벌어진다. */
-        rightInline
+        fill
+        /* 단위 탭은 제목 줄 **오른쪽 끝**에 붙인다 — 아래 기간 탭과 같은 자리.
+           둘 다 "무엇을 기준으로 볼지" 고르는 같은 성격의 조작이라 세로로 줄이 맞아야
+           한 쌍으로 읽힌다. */
         right={
           <SegmentedTabs
             options={TREND_UNITS.map(u => ({ value: u, label: UNIT_LABEL[u] }))}
@@ -552,9 +570,16 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
             고객 현황에 있던 차트를 옮겨 왔다. 거기는 "누가 빠지고 있나"를 보는
             자리라 드나듦 차트가 그 자리를 대신한다. */}
         {orderRates.length > 0 && (
-          <div className="flex-shrink-0 w-[300px]">
-            <div className="text-[17px] font-semibold text-[#2C261F] mb-[10px]">월별 주문율</div>
-            <div className="bg-[#FCFCFC] rounded-[11px] px-[18px] py-[16px]">
+          <div className="flex-shrink-0 w-[300px] flex flex-col">
+            {/* 제목 줄 높이를 옆과 같게 못박는다 — 저쪽은 탭 때문에 30px 이라,
+                그냥 두면 본문 시작 높이가 9px 어긋난다 */}
+            <div
+              className="flex items-end text-[17px] font-semibold text-[#2C261F] mb-[10px]"
+              style={{ height: SECTION_HEAD_H }}
+            >
+              월별 주문율
+            </div>
+            <div className="flex-1 bg-[#FCFCFC] rounded-[11px] px-[18px] py-[16px] flex flex-col justify-center">
               <TrendBars
                 title="해당 월에 주문한 손님 비율"
                 hint={'해당 월 말일까지 등록된 손님 중\n해당 월에 주문한 분의 비율이에요'}
@@ -575,8 +600,14 @@ export default function OrderAnalysis({ onOpenSms }: { onOpenSms?: (kind: SmsKin
           추이 단위 탭과 **같은 모양·같은 오른쪽 끝**에 선다. 둘 다 "무엇을 기준으로
           볼지" 고르는 같은 성격의 조작인데, 모양이나 자리가 다르면 하나는 버튼,
           하나는 탭으로 읽힌다. 라벨을 따로 안 붙인 이유도 같다 — 바로 위 추이 탭에도
-          라벨이 없고, 탭은 고르는 물건이라는 게 모양만으로 읽힌다. */}
-      <div className="flex justify-end mt-[16px] mb-[20px]">
+          라벨이 없고, 탭은 고르는 물건이라는 게 모양만으로 읽힌다.
+
+          여백이 위로 쏠려 있다(위 36 : 아래 8). 전엔 16:20 이라 탭이 위 추이 박스와
+          아래 '주문 시간대' 사이 한가운데 떠서, **어느 쪽 것인지**가 안 읽혔다.
+          아래로 붙여 두면 '여기부터 아래' 라는 뜻이 자리만으로 보인다.
+          ※ '주문 시간대' 제목 줄 안으로 넣지는 않는다 — 그러면 그 박스 하나만
+             거르는 것처럼 읽힌다. 이 탭은 아래 전부에 걸린다. */}
+      <div className="flex justify-end mt-[36px] mb-[8px]">
         <SegmentedTabs
           options={DAY_OPTIONS.map(d => ({ value: d, label: d === 0 ? '전체' : `최근 ${d}일` }))}
           value={days}
