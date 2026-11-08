@@ -45,8 +45,15 @@ export function DataTableHead({
   return (
     // 엑셀의 '첫 행 고정'과 같은 것 — 스크롤해도 어느 칸이 무슨 값인지 알 수 있어야 한다.
     // 스크롤 컨테이너가 바로 바깥에 있어야 붙는다(DataTable 주석 참고).
+    //
+    // whitespace-nowrap 은 **안전장치**다. 머리글 칼럼은 보통
+    // `flex-1 min-w-0` + 고정폭 형제들로 짜는데, 고정폭 합이 패널 폭을 넘으면
+    // flex-1 이 0 이 된다. 그때 줄바꿈이 허용돼 있으면 '거래처 · 주문자' 가
+    // 한 글자씩 세로로 쌓이면서 머리글 위아래로 삐져나온다(2026-11-08 주문 내역).
+    // 칸이 모자라는 건 폭을 고쳐야 할 일이지만, 적어도 **글자가 세로로 서지는
+    // 않아야** 어디가 좁은지 바로 보인다.
     <div
-      className="sticky top-0 z-10 bg-[#D7D2CE] border-b border-[#C1B7AA] flex items-center text-[#6A635E] font-medium"
+      className="sticky top-0 z-10 bg-[#D7D2CE] border-b border-[#C1B7AA] flex items-center text-[#6A635E] font-medium whitespace-nowrap"
       style={{ height: d.head, fontSize: d.headText, paddingLeft: d.padX, paddingRight: d.padX }}
     >
       {children}

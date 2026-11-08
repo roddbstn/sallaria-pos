@@ -59,6 +59,19 @@ function Badge({ label, color }: { label: string; color: string }) {
   )
 }
 
+/**
+ * 목록용 주문일시 — **두 줄로 쪼갠다.**
+ *
+ * "11/8 (일) 10:52" 를 한 줄로 두면 17px tabular 로 124칸을 먹는다. 1024 해상도에서
+ * 표에 쓸 수 있는 폭이 556칸뿐이라(아래 칼럼 폭 주석), 그 124가 거래처명이 설 자리를
+ * 통째로 가져갔다. 행은 어차피 46px 에 두 줄짜리라 날짜도 두 줄이면 64칸에 들어간다.
+ */
+export function dateLines(iso: string): [string, string] {
+  const label = formatDate(iso)          // "11/8 (일) 10:52"
+  const cut = label.lastIndexOf(' ')     // 마지막 토큰이 시각이다
+  return cut < 0 ? [label, ''] : [label.slice(0, cut), label.slice(cut + 1)]
+}
+
 // ── 날짜 유틸 ─────────────────────────────────────────────────────────────────
 /**
  * "에그인헬 외 2" — 목록 한 줄에 무엇을 시켰는지 보여준다.
@@ -906,16 +919,29 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
             <div className="relative flex-1 min-h-0">
               {/* 고정 머리글(43px) 아래에 뜨도록 위 화살표를 내린다 */}
               <ScrollHint scrollRef={listScrollRef} topOffset={55} />
-              <div ref={listScrollRef} className="h-full overflow-y-auto rounded-[13px] bg-canvas-soft">
-              <DataTable>
+              {/* overflow-auto — 위 계산보다 더 좁아지는 환경이 있으면 가로로 스크롤한다.
+                  칼럼이 소리 없이 0 으로 무너지는 것보다 스크롤바가 보이는 게 낫다. */}
+              <div ref={listScrollRef} className="h-full overflow-auto rounded-[13px] bg-canvas-soft">
+              <DataTable className="min-w-[512px]">
+                {/* 칼럼 폭 — 1024 해상도 기준으로 맞춰져 있다.
+                    왼쪽 통계 칼럼이 380 고정이라 이 패널은 1024 에서 586 밖에 안 되고,
+                    좌우 여백 30 을 빼면 **556칸**이 전부다. 전엔 고정 칼럼 합이
+                    정확히 556 이라 거래처명 칸이 0 이 됐고, 머리글 글자가 한 자씩
+                    세로로 쌓였다(flex-1 이 0 폭 + 줄바꿈 허용).
+                      일시 74 + 번호 70 + 방법 64 + 상태 74 + 금액 100 = 382
+                      + 거래처 여백 20 + 거래처 최소 110 = 512  → 556 안에 들어간다
+                    고정 칼럼엔 flex-shrink-0 을 건다. 안 걸면 좁아질 때 소리 없이
+                    같이 쪼그라들어서, 어디가 문제인지 안 보인다. */}
                 <DataTableHead density="comfortable">
-                  <span className="w-[124px]">주문일시</span>
-                  <span className="w-[88px]">주문번호</span>
-                  <span className="flex-1 min-w-0 pl-[10px]">거래처 · 주문자</span>
-                  <span className="w-[74px]">이용방법</span>
-                  <span className="w-[68px]">상태</span>
-                  <span className="w-[92px] text-right">금액</span>
-                  <span className="w-[100px] text-right">주문 후 잔액</span>
+                  <span className="w-[74px] flex-shrink-0">주문일시</span>
+                  <span className="w-[70px] flex-shrink-0">주문번호</span>
+                  <span className="flex-1 min-w-[110px] pl-[10px] overflow-hidden">거래처 · 주문자</span>
+                  <span className="w-[64px] flex-shrink-0">이용방법</span>
+                  <span className="w-[74px] flex-shrink-0">상태</span>
+                  {/* 금액과 잔액을 한 칸에 위아래로. 둘 다 오른쪽 정렬 금액이고
+                      "이 주문 얼마 / 그래서 남은 게 얼마" 라 같이 읽는 값이다.
+                      따로 두면 92+100=192칸인데 합치면 100칸이면 된다. */}
+                  <span className="w-[100px] flex-shrink-0 text-right">금액 · 잔액</span>
                 </DataTableHead>
 
                 {loading ? (
@@ -933,12 +959,14 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     last={i === arr.length - 1}
                     onClick={() => { setSelected(order); setDeleteConfirmCode(null) }}
                   >
-                    <span className="w-[124px] text-[17px] text-[#787878] tabular-nums">{formatDate(order.createdAt)}</span>
+                    <span className="w-[74px] flex-shrink-0 text-[15px] leading-[1.25] text-[#787878] tabular-nums">
+                      {dateLines(order.createdAt).map(l => <span key={l} className="block">{l}</span>)}
+                    </span>
                     {/* 주문번호는 전화 응대에서 가장 먼저 대조하는 값이라 회색 11px 로 묻어두면 안 된다 */}
-                    <span className="w-[88px] text-[17px] font-normal text-[#1E1E1E] tabular-nums truncate">
+                    <span className="w-[70px] flex-shrink-0 text-[17px] font-normal text-[#1E1E1E] tabular-nums truncate">
                       #{order.orderNumber ?? order.code.slice(0, 6)}
                     </span>
-                    <span className="flex-1 min-w-0 pl-[10px] pr-[10px]">
+                    <span className="flex-1 min-w-[110px] pl-[10px] pr-[10px] overflow-hidden">
                       <span className="block text-[17px] font-medium text-[#1E1E1E] truncate">
                         {order.accountName}
                         <span className="text-[#787878] font-normal ml-[5px]">· {order.orderer}</span>
@@ -948,22 +976,26 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                         {itemsSummary(order.items)}
                       </span>
                     </span>
-                    <span className="w-[74px]">
+                    <span className="w-[64px] flex-shrink-0">
                       <Badge label={order.method} color={METHOD_COLOR[order.method] ?? '#ADADAD'} />
                     </span>
-                    <span className="w-[68px]">
+                    <span className="w-[74px] flex-shrink-0">
                       <Badge label={order.status} color={STATUS_COLOR[order.status] ?? '#787878'} />
                     </span>
-                    <span className={`w-[92px] text-right text-[17px] tabular-nums ${
-                      order.status === '취소' ? 'text-[#ADADAD] line-through' : 'font-medium text-[#1E1E1E]'
-                    }`}>
-                      {won(order.total)}
-                    </span>
-                    <span className={`w-[100px] text-right text-[17px] font-normal tabular-nums ${
-                      order.balanceAfter == null ? 'text-[#ADADAD]'
-                      : order.balanceAfter < 0 ? 'text-[#3374FF]' : 'text-[#787878]'
-                    }`}>
-                      {order.balanceAfter == null ? '—' : won(order.balanceAfter)}
+                    {/* 위 = 이 주문 금액, 아래 = 주문 후 잔액.
+                        잔액이 핵심이다 — 거래처와 금액 분쟁이 나면 이 두 줄로 끝난다. */}
+                    <span className="w-[100px] flex-shrink-0 text-right leading-[1.25]">
+                      <span className={`block text-[17px] tabular-nums ${
+                        order.status === '취소' ? 'text-[#ADADAD] line-through' : 'font-medium text-[#1E1E1E]'
+                      }`}>
+                        {won(order.total)}
+                      </span>
+                      <span className={`block text-[15px] font-normal tabular-nums ${
+                        order.balanceAfter == null ? 'text-[#ADADAD]'
+                        : order.balanceAfter < 0 ? 'text-[#3374FF]' : 'text-[#787878]'
+                      }`}>
+                        {order.balanceAfter == null ? '—' : won(order.balanceAfter)}
+                      </span>
                     </span>
                   </DataTableRow>
                 ))}
