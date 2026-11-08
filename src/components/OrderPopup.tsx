@@ -199,8 +199,9 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
 
   // 하단 버튼 — Figma 733:652/673 공통 (h 78→50, r 20→13, 거부·이전 171 : 승인·접수 377 ≈ 1:2.2)
   // 높이는 Figma 환산값(50)보다 키웠다 — 터치로도 누르는 POS라 손가락 목표를 넉넉히.
+  // (50 → 58 → 64. 피크타임에 급히 누르는 버튼이라 조금씩 키워 왔다)
   // 굵기는 semibold → medium 한 단계 낮춤(카드 안에서 제일 굵은 글자가 버튼일 필요는 없다).
-  const BTN = 'h-[58px] rounded-[13px] text-[18px] font-medium flex items-center justify-center transition-colors disabled:opacity-50'
+  const BTN = 'h-[64px] rounded-[13px] text-[18px] font-medium flex items-center justify-center transition-colors disabled:opacity-50'
 
   return (
     // z-[65] — 헤더 바깥에 따로 떠 있는 햄버거·알림벨(z-[60])까지 덮어야 한다.

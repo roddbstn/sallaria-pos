@@ -43,9 +43,12 @@ describe('영수증 미리보기 격자', () => {
     expect(new Set(cols).size).toBe(1)
   })
 
-  it('예상도착시간은 주방 주문서에만 있다', () => {
-    expect(all('kitchen').some(l => text(l).includes('예상도착시간'))).toBe(true)
-    expect(all('customer').some(l => text(l).includes('예상도착시간'))).toBe(false)
+  it('준비완료 시각은 주방 주문서에만 있다', () => {
+    // 표본은 배달 주문이라 '배달출발'. 라벨이 '예상도착시간' 이던 때는 점주가 고른
+    // 소요시간을 손님이 고른 도착 시각인 것처럼 말하고 있었다.
+    expect(all('kitchen').some(l => text(l).includes('배달출발'))).toBe(true)
+    expect(all('customer').some(l => text(l).includes('배달출발'))).toBe(false)
+    expect(all('kitchen').some(l => text(l).includes('예상도착시간'))).toBe(false)
   })
 
   it("잔액을 끄면 잔액 두 줄이 사라진다", () => {

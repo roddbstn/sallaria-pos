@@ -87,8 +87,8 @@ const ct = (text: string, bold = false): PLine => ({ segs: [{ t: text, b: bold }
 /**
  * escpos.ts 의 두 빌더와 **같은 순서·같은 문자열**로 줄 목록을 만든다.
  *
- * 주방/고객 차이는 머리말 한 줄과 예상도착시간 유무뿐이다 — 실제 빌더도 그렇다.
- * (고객 영수증에 예상도착시간을 안 찍는 이유: 손님은 QR웹에서 같은 시각을 보고
+ * 주방/고객 차이는 머리말 한 줄과 준비완료 시각 유무뿐이다 — 실제 빌더도 그렇다.
+ * (고객 영수증에 그 시각을 안 찍는 이유: 손님은 QR웹에서 같은 시각을 보고
  *  있고 그 숫자는 점주가 시간을 고치면 같이 바뀐다. 종이에 찍힌 시각은 안 바뀌어서
  *  어긋나는 순간 종이 쪽이 거짓말이 된다.)
  */
@@ -100,10 +100,10 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
   // '크게'(2배)면 한 줄에 들어가는 칸이 절반이다 — 그 폭으로 자른다
   const optW = cfg.optionSize === 'large' ? Math.floor(W / 2) : W
   const amtX2 = cfg.amountSize === 'large'
-  // 주문번호·이용방법만 따로 — 2배면 한 줄이 21칸이라 값을 그 폭으로 자른다
+  // 주문번호·이용방법 — 라벨('주문번호 : ')은 1배 그대로, **값만** 키운다.
+  // 라벨까지 키우면 줄이 길어지기만 하고 정작 눈에 띄어야 할 번호가 상대적으로 안 커 보인다.
   const hdrX2 = cfg.headerSize === 'large'
-  const hdrW  = hdrX2 ? Math.floor(W / 2) : W
-  const hdrValW = hdrW - LABEL_W - 3
+  const hdrValW = Math.floor((W - LABEL_W - 3) / (hdrX2 ? 2 : 1))
 
   const out: PLine[] = []
   const HR  = () => out.push(t(hr(W)))
@@ -115,7 +115,7 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
 
   // ── 주문번호 / 주문일시
   out.push({ segs: [
-    { t: padL('주문번호', LABEL_W) + ' : ', x2: hdrX2 },
+    { t: padL('주문번호', LABEL_W) + ' : ' },
     { t: clamp(SAMPLE.orderNumber, hdrValW), b: true, x2: hdrX2 },
   ] })
   out.push(t(field('주문일시', SAMPLE.orderedAt)))
@@ -124,7 +124,7 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
   // ── 이용방법 / 주문자 / 전화번호 / 선결제계정
   //    전화번호가 선결제계정 **위**다 — 두 영수증이 같은 순서라야 겹쳐 볼 때 눈이 덜 움직인다
   out.push({ segs: [
-    { t: padL('이용방법', LABEL_W) + ' : ', x2: hdrX2 },
+    { t: padL('이용방법', LABEL_W) + ' : ' },
     { t: clamp(SAMPLE.method, hdrValW), b: true, x2: hdrX2 },
   ] })
   out.push(t(field('주문자', SAMPLE.orderer)))
@@ -139,9 +139,11 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
   out.push(t(field('배달요청', SAMPLE.deliveryNote)))
   HR()
 
-  // ── 예상도착시간 — 메뉴 바로 위, 이 종이에서 가장 큰 글자. 주방용만.
+  // ── 메뉴 바로 위, 이 종이에서 가장 큰 글자. 주방용만.
+  //    라벨이 '예상도착시간' 이었는데 틀린 말이었다 — 이 값은 점주가 접수하면서 고른
+  //    소요시간이지 손님이 고른 도착 시각이 아니다(escpos.ts 같은 자리 주석 참고).
   if (kind === 'kitchen') {
-    out.push({ segs: [{ t: '예상도착시간', b: true, x2: true }] })
+    out.push({ segs: [{ t: SAMPLE.method === '배달' ? '배달출발' : '준비완료', b: true, x2: true }] })
     out.push({ segs: [{ t: SAMPLE.etaClock, b: true, x2: true }] })
     if (SAMPLE.etaRelative) out.push(t(SAMPLE.etaRelative))
     HR()

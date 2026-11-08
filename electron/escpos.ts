@@ -311,7 +311,10 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   const optW   = lineWidthFor(settings.optionSize, L.W)
   // 주문번호·이용방법만 따로 키운다(printer.ts headerSize 주석)
   const hdrCmd = sizeCmd(settings.headerSize)
-  const hdrW   = lineWidthFor(settings.headerSize, L.W)
+  // 라벨('주문번호 : ')은 1배 그대로, **값만** 키운다. 라벨까지 키우면 줄이 길어지기만
+  // 하고 정작 눈에 띄어야 할 번호가 상대적으로 안 커 보인다.
+  // 값이 쓸 수 있는 칸 = 한 줄 − 라벨칸 − ' : '. 2배 글자는 한 칸이 두 칸을 먹는다.
+  const hdrValW = Math.floor((L.W - LABEL_W - 3) / (settings.headerSize === 'large' ? 2 : 1))
   const bigAmt = settings.amountSize === 'large'
   const amtCmd = sizeCmd(settings.amountSize)
 
@@ -325,20 +328,16 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(L.hr(), nl())
 
   // 블록1: 주문번호 / 주문일시
-  p(hdrCmd)
   // 값만 자른다 — 주문번호가 없으면 order_code(UUID 36자)가 들어와 줄을 넘긴다
-  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON,
-    enc(clamp(order.order_number ?? order.order_code, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
-  p(CMD.SIZE_1X)
+  p(CMD.SIZE_1X, enc(padL('주문번호', LABEL_W) + ' : '))
+  p(hdrCmd, CMD.BOLD_ON, enc(clamp(order.order_number ?? order.order_code, hdrValW)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(enc(field('주문일시', formatDate(order.ordered_at))), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
-  p(hdrCmd)
-  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON,
-    enc(clamp(order.method, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
-  p(CMD.SIZE_1X)
+  p(CMD.SIZE_1X, enc(padL('이용방법', LABEL_W) + ' : '))
+  p(hdrCmd, CMD.BOLD_ON, enc(clamp(order.method, hdrValW)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(enc(field('주문자', maskName(order.orderer_name))), nl())
   p(enc(field('전화번호', order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
@@ -365,15 +364,23 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
     p(L.hr(), nl())
   }
 
-  // 예상도착시간 — 메뉴 바로 위, 이 종이에서 **가장 큰 글자**.
+  // 메뉴 바로 위, 이 종이에서 **가장 큰 글자**.
   // 주방이 조리 순서를 정하는 건 이 한 줄이다(주문번호·주문자는 나중에 찾을 때 쓴다).
   // '(15분 뒤)' 를 같이 적는 이유: 시각만 보면 지금 몇 시인지 머리로 빼야 한다.
   // 접수 때는 인자로 받고(그 순간 DB 에 아직 안 쓰였다), 재출력 때는 주문에서 읽는다
+  //
+  // ⚠️ 라벨이 '예상도착시간' 이었다. 틀린 말이었다 — 이 값은 **점주가 접수하면서 고른
+  //    소요시간**(prep_minutes)이지 손님이 고른 도착 시각이 아니다. 배달은 손님에게
+  //    수령 시간을 물어보는 자리조차 없는데도 '예상도착시간'이라고 찍혀서, 손님이
+  //    고르지도 않은 값이 손님의 말인 것처럼 보였다. 게다가 배달에서 이 시각은
+  //    '도착'이 아니라 **출발**이다(주방이 다 만든 때).
+  //    팝업 안내 박스가 이미 쓰고 있던 말을 그대로 가져온다 —
+  //    "고객에게 [N분 뒤 배달출발 / 준비완료]로 안내돼요" (OrderPopup.tsx).
   const eta = prepMins ?? order.prep_minutes ?? null
   if (eta != null && eta > 0) {
     const { clock, relative } = etaLines(eta, order.accepted_at)
     p(CMD.SIZE_2X, CMD.BOLD_ON)
-    p(enc('예상도착시간'), nl())
+    p(enc(order.method === '배달' ? '배달출발' : '준비완료'), nl())
     p(enc(clock), nl())
     p(CMD.BOLD_OFF, CMD.SIZE_1X)
     if (relative) p(enc(relative), nl())
@@ -440,7 +447,8 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   const optW   = lineWidthFor(settings.customerOptionSize, L.W)
   // 주문번호·이용방법만 따로 키운다(printer.ts headerSize 주석)
   const hdrCmd = sizeCmd(settings.headerSize)
-  const hdrW   = lineWidthFor(settings.headerSize, L.W)
+  // 라벨은 1배, 값만 키운다 (주방 빌더의 같은 자리 주석 참고)
+  const hdrValW = Math.floor((L.W - LABEL_W - 3) / (settings.headerSize === 'large' ? 2 : 1))
   const bigAmt = settings.amountSize === 'large'
   const amtCmd = sizeCmd(settings.amountSize)
 
@@ -454,20 +462,16 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(L.hr(), nl())
 
   // 블록1: 주문번호 / 주문일시
-  p(hdrCmd)
   // 값만 자른다 — 주문번호가 없으면 order_code(UUID 36자)가 들어와 줄을 넘긴다
-  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON,
-    enc(clamp(order.order_number ?? order.order_code, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
-  p(CMD.SIZE_1X)
+  p(CMD.SIZE_1X, enc(padL('주문번호', LABEL_W) + ' : '))
+  p(hdrCmd, CMD.BOLD_ON, enc(clamp(order.order_number ?? order.order_code, hdrValW)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(enc(field('주문일시', formatDate(order.ordered_at))), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
-  p(hdrCmd)
-  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON,
-    enc(clamp(order.method, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
-  p(CMD.SIZE_1X)
+  p(CMD.SIZE_1X, enc(padL('이용방법', LABEL_W) + ' : '))
+  p(hdrCmd, CMD.BOLD_ON, enc(clamp(order.method, hdrValW)), CMD.BOLD_OFF, CMD.SIZE_1X, nl())
   p(enc(field('주문자', maskName(order.orderer_name))), nl())
   p(enc(field('전화번호', order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {

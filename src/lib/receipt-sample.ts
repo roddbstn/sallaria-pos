@@ -10,7 +10,7 @@
 
 import { maskName, maskPhone } from './mask'
 
-/** 접수 후 예상 소요시간(분) — 표본의 '예상도착시간' 재료 */
+/** 점주가 접수하면서 고른 소요시간(분) — 주방 영수증 '준비완료/배달출발' 의 재료 */
 export const SAMPLE_PREP_MINUTES = 15
 
 /**
