@@ -14,6 +14,7 @@ import { TrendBars, FlowBars } from '../components/ui/TrendBars'
 import { buildCustomerFlow, type FlowMonth } from '../lib/customer-flow'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import CustomerProfileModal from '../components/customer/CustomerProfileModal'
+import { TableScroll } from '../components/ui/DataTable'
 
 // 햄버거 드로어 "고객" 그룹에서 들어오는 전체메뉴 화면 — Figma node 532:3003(고객 현황) ·
 // 570:694(계정 관리) · 570:717(QR오더) · 570:673(문자 보내기).
@@ -623,21 +624,24 @@ function CustomerDetailPanel() {
         {loading ? <LoadingBlock py={40} /> : topOrderers.length === 0 ? (
           <HubPlaceholder note="아직 주문이 없어요" />
         ) : (
-          <div className="rounded-[13px] overflow-hidden border border-[#E8E4E2]">
-            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[13px] font-medium text-[#787878]">
-              <span className="w-[26px]" />
+          <TableScroll minW={804} className="rounded-[13px] border border-[#E8E4E2]">
+            {/* 칼럼이 여덟이라 1024 에서는 자리가 모자란다(허브 본문 669칸).
+                고정 604 + 좌우 여백 40 + '자주 시킨 메뉴' 최소 160 = 804.
+                쥐어짜지 말고 스크롤한다 — TableScroll 주석 참고. */}
+            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[13px] font-medium text-[#787878] whitespace-nowrap">
+              <span className="w-[26px] flex-shrink-0" />
               <span className="w-[96px]">주문자</span>
               {/* 거래처는 고정폭으로 줄였다 — 과 이름은 길어봐야 한 줄이라 flex-1 로
                   남는 폭을 다 먹을 이유가 없었다. 남는 자리는 메뉴 칸이 쓴다. */}
               <span className="w-[132px] min-w-0">거래처</span>
               <span className="w-[58px] text-right">주문</span>
               <span className="w-[96px] text-right">금액</span>
-              <span className="w-[112px] text-right flex items-center justify-end gap-[4px]">
+              <span className="w-[112px] flex-shrink-0 text-right flex items-center justify-end gap-[4px]">
                 계정 내 주문비중
                 <InfoTip text={'그 거래처 주문 중\n이 분이 차지하는 몫이에요'} label="계정 내 주문비중 설명" />
               </span>
-              <span className="flex-1 min-w-0 pl-[34px]">자주 시킨 메뉴</span>
-              <span className="w-[84px] text-right">상태</span>
+              <span className="flex-1 min-w-[160px] overflow-hidden pl-[34px]">자주 시킨 메뉴</span>
+              <span className="w-[84px] flex-shrink-0 text-right">상태</span>
             </div>
             {topOrderers.map((c, i) => {
               // 이용자가 1명뿐인 거래처는 비중이 늘 100%다 — 위험이 아니라 구조라서 칠하지 않는다
@@ -661,7 +665,7 @@ function CustomerDetailPanel() {
                       <>{c.share_pct}%<span className="text-[#ADADAD] font-normal"> ({c.orders}/{c.account_orders})</span></>
                     )}
                   </span>
-                  <span className="flex-1 pl-[34px] min-w-0 text-[16px] font-normal text-[#787878] truncate">
+                  <span className="flex-1 pl-[34px] min-w-[160px] text-[16px] font-normal text-[#787878] truncate">
                     {c.top_menu
                       ? <>{c.top_menu}<span className="text-[#ADADAD]"> {c.top_menu_count}회</span></>
                       : EMPTY}
@@ -674,7 +678,7 @@ function CustomerDetailPanel() {
                 </div>
               )
             })}
-          </div>
+          </TableScroll>
         )}
         {topOrderers.some(c => (c.share_pct ?? 0) >= 45 && c.account_members > 1) && (
           <p className="mt-[8px] text-[13px] font-normal text-[#ADADAD]">
@@ -692,17 +696,19 @@ function CustomerDetailPanel() {
       {lapsed.length > 0 && (
         <div className="mt-[46px]">
           <HubSection title="돌아오지 않은 단골" />
-          <div className="rounded-[13px] overflow-hidden border border-[#E8E4E2]">
+          <TableScroll minW={776} className="rounded-[13px] border border-[#E8E4E2]">
+            {/* 고정 636 + 좌우 여백 40 + '평소 주기' 최소 100 = 776.
+                허브 본문은 1024 에서 669칸뿐이라 쥐어짜지 말고 스크롤한다. */}
             {/* 위 표와 같은 머리 줄. 전엔 없어서 '12.2' 같은 숫자가 무슨 값인지
                 행을 눌러보기 전엔 알 수 없었다. */}
-            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[13px] font-medium text-[#787878]">
-              <span className="w-[96px]">주문자</span>
-              <span className="w-[130px]">거래처</span>
-              <span className="flex-1 min-w-0">평소 주기</span>
-              <span className="w-[96px] text-right">누적 주문액</span>
-              <span className="w-[152px] pl-[18px]">주문 기간</span>
-              <span className="w-[72px] text-right">주문 건수</span>
-              <span className="w-[90px] text-right">안 온 기간</span>
+            <div className="flex items-center px-[20px] h-[36px] bg-[#F2F2F2] text-[13px] font-medium text-[#787878] whitespace-nowrap">
+              <span className="w-[96px] flex-shrink-0">주문자</span>
+              <span className="w-[130px] flex-shrink-0">거래처</span>
+              <span className="flex-1 min-w-[100px] overflow-hidden">평소 주기</span>
+              <span className="w-[96px] flex-shrink-0 text-right">누적 주문액</span>
+              <span className="w-[152px] flex-shrink-0 pl-[18px]">주문 기간</span>
+              <span className="w-[72px] flex-shrink-0 text-right">주문 건수</span>
+              <span className="w-[90px] flex-shrink-0 text-right">안 온 기간</span>
             </div>
             {lapsed.slice(0, 8).map(c => (
               <div
@@ -734,7 +740,7 @@ function CustomerDetailPanel() {
                 </span>
               </div>
             ))}
-          </div>
+          </TableScroll>
           <p className="mt-[8px] text-[13px] font-normal text-[#ADADAD]">
             평소 주기보다 3배 넘게 안 오신 분들이에요 · 오래 안 오신 순{lapsed.length > 8 && ` · 전체 ${lapsed.length}명 중 8명`}
           </p>
@@ -1071,12 +1077,21 @@ function AccountsPanel() {
                   onChange={() => setChecked(allVisibleChecked ? new Set() : new Set(visible.map(r => r.code)))}
                 />
               </span>
-              <span className="flex-1 min-w-0">거래처({visible.length}곳)</span>
-              <span className="w-[150px]">관리자</span>
-              <span className="w-[90px] text-right">이용자</span>
-              <span className="w-[110px] text-right">이번 달 주문</span>
-              <span className="w-[120px] text-right">최근 충전</span>
-              <span className="w-[120px] text-right">잔액</span>
+              {/* 칼럼 폭 — 허브 본문은 1024 에서 669칸(1024 − 나비 227 − 좌우 여백 128).
+                  전엔 고정 합이 590 + 체크박스 30 + 머리글 여백 30 = 650 이라
+                  거래처 이름 칸에 19칸밖에 안 남았다. 각 폭을 머리글 글자(13px)와
+                  값(16~17px) 중 긴 쪽으로 다시 쟀다:
+                    체크 30 + 관리자 130 + 이용자 60 + 주문 112 + 충전 70 + 잔액 86 = 488
+                    + 여백 30 + 거래처 최소 150 = 668  → 669 안에 들어간다
+                  '이번 달 주문'은 값이 '3건 · 106,600원' 이라 112 가 필요하다.
+                  ⚠️ 여기는 TableScroll 로 감싸면 안 된다 — overflow-x 가 스크롤
+                     컨테이너를 만들어서 머리글 sticky 가 죽는다(DataTable.tsx 주석). */}
+              <span className="flex-1 min-w-[150px] overflow-hidden">거래처({visible.length}곳)</span>
+              <span className="w-[130px] flex-shrink-0">관리자</span>
+              <span className="w-[60px] flex-shrink-0 text-right">이용자</span>
+              <span className="w-[112px] flex-shrink-0 text-right">이번 달 주문</span>
+              <span className="w-[70px] flex-shrink-0 text-right">최근 충전</span>
+              <span className="w-[86px] flex-shrink-0 text-right">잔액</span>
             </DataTableHead>
 
             {visible.length === 0 ? (
@@ -1086,7 +1101,7 @@ function AccountsPanel() {
               const dep  = daysSince(r.lastDepositAt)
               return (
                 <DataTableRow key={r.code} last={i === visible.length - 1}>
-                  <span className="w-[30px]" onClick={e => e.stopPropagation()}>
+                  <span className="w-[30px] flex-shrink-0" onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={checked.has(r.code)} onChange={() => toggle(r.code)} />
                   </span>
                   <button
@@ -1094,7 +1109,7 @@ function AccountsPanel() {
                       code: r.code, name: r.name, type: r.type,
                       typeColor: typeColorOf(r.type), adminPending: r.adminPending,
                     })}
-                    className="pressable-soft flex-1 min-w-0 text-left flex items-center gap-[7px] hover:underline underline-offset-2 decoration-[#D7D7D7]"
+                    className="pressable-soft flex-1 min-w-[150px] overflow-hidden text-left flex items-center gap-[7px] hover:underline underline-offset-2 decoration-[#D7D7D7]"
                   >
                     <span className="text-[17px] text-[#1E1E1E] truncate">{r.name}</span>
                     <span
@@ -1104,18 +1119,18 @@ function AccountsPanel() {
                       {r.type}
                     </span>
                   </button>
-                  <span className="w-[150px] flex items-center gap-[5px] text-[16px] text-[#787878]">
+                  <span className="w-[130px] flex-shrink-0 flex items-center gap-[5px] text-[16px] text-[#787878]">
                     <span className="truncate">{r.manager ? maskName(r.manager) : '—'}</span>
                     {r.adminPending && <StatusTag label="등록대기" />}
                   </span>
-                  <span className="w-[90px] text-right text-[16px] text-[#787878]">{r.memberCount}명</span>
-                  <span className="w-[110px] text-right text-[16px] text-[#1E1E1E]">
+                  <span className="w-[60px] flex-shrink-0 text-right text-[16px] text-[#787878]">{r.memberCount}명</span>
+                  <span className="w-[112px] flex-shrink-0 text-right text-[16px] text-[#1E1E1E]">
                     {r.monthOrders > 0 ? `${r.monthOrders}건 · ${won(r.monthAmount)}` : '—'}
                   </span>
-                  <span className={`w-[120px] text-right text-[16px] ${dep != null && dep > 30 ? 'text-[#ADADAD]' : 'text-[#787878]'}`}>
+                  <span className={`w-[70px] flex-shrink-0 text-right text-[16px] ${dep != null && dep > 30 ? 'text-[#ADADAD]' : 'text-[#787878]'}`}>
                     {dep == null ? '없음' : dep === 0 ? '오늘' : `${dep}일 전`}
                   </span>
-                  <span className={`w-[120px] text-right text-[17px] ${neg ? 'text-danger font-medium' : 'text-[#1E1E1E]'}`}>
+                  <span className={`w-[86px] flex-shrink-0 text-right text-[17px] ${neg ? 'text-danger font-medium' : 'text-[#1E1E1E]'}`}>
                     {won(r.balance)}
                   </span>
                 </DataTableRow>

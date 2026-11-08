@@ -1647,10 +1647,16 @@ export default function Sales() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  {/* min-w-max — 표가 **줄어들지 않고 넘치게** 둔다.
+                      w-full 만 두면 테이블이 컨테이너 폭에 맞춰 칼럼을 min-content 까지
+                      쥐어짠다. 줄바꿈이 허용된 한글의 min-content 는 **한 글자**라,
+                      1024 에서 계정 이름이 '북/구/청/안/전/…' 으로 세로로 섰다
+                      (2026-11-08). table 이라 0 으로 무너지진 않지만 결과는 같았다.
+                      넘치면 가로로 스크롤한다 — 칼럼을 뭉개는 것보다 낫다. */}
+                  <table className="w-full min-w-max">
                     <thead>
                       <tr className="bg-[#D7D2CE] border-b border-[#C1B7AA]">
-                        <th className="px-5 h-[36px] text-left  text-[16px] font-normal text-[#6A635E]">계정</th>
+                        <th className="px-5 h-[36px] text-left  text-[16px] font-normal text-[#6A635E] whitespace-nowrap">계정</th>
                         <th className="px-4 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">평균 선결제 주기</th>
                         <th className="px-4 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 선결제 매출</th>
                         <th className="px-4 h-[36px] text-right text-[16px] font-normal text-[#6A635E] whitespace-nowrap">{MONTH_NAMES[month]} 주문액</th>
@@ -1689,10 +1695,11 @@ export default function Sales() {
                             className={`cursor-pointer transition-colors ${isPanelOpen ? 'bg-[#E8E4E2]' : isFiltered ? 'bg-[#F2F2F2]' : 'hover:bg-[#F2F2F2]'}`}
                           >
                             <td className="px-5 py-2.5">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[16px] font-semibold text-ink">{acc.account_name}</span>
+                              <div className="flex items-center gap-2">
+                                {/* 계정 이름은 안 접는다 — 접히면 '북/구/청/…' 이 된다(위 min-w-max 주석) */}
+                                <span className="text-[16px] font-semibold text-ink whitespace-nowrap">{acc.account_name}</span>
                               </div>
-                              {acc.organization_name && acc.organization_name !== acc.account_name && <div className="text-[13px] text-gray-text">{acc.organization_name}</div>}
+                              {acc.organization_name && acc.organization_name !== acc.account_name && <div className="text-[13px] text-gray-text whitespace-nowrap">{acc.organization_name}</div>}
                             </td>
                             {/* 평균 선결제 주기 — 충전이 1건뿐이면 주기를 말할 수 없어 '—' */}
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">

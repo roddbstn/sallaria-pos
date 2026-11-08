@@ -51,6 +51,33 @@ export function DataTable({ children, className = '' }: { children: ReactNode; c
 export const TABLE_HEAD_BASE =
   'flex items-center bg-[#D7D2CE] text-[#6A635E] whitespace-nowrap'
 
+/**
+ * 가로로 넘치면 **스크롤하는** 표 껍데기.
+ *
+ * 왜 필요한가: 칼럼이 많은 표는 좁은 창에서 들어갈 자리가 없다. 그런데 flex 는
+ * 자리가 없으면 소리 없이 쥐어짠다 — flex-1 칸은 0 이 되고, 줄바꿈이 허용돼
+ * 있으면 글자가 한 자씩 세로로 선다. 2026-11-07~08 에 주문 내역·메뉴·고객·매출
+ * 네 화면에서 차례로 터진 게 전부 이 모양이었다.
+ *
+ * 칼럼을 더 못 줄이겠으면 **스크롤바를 보여주는 게 낫다.** 칸을 뭉개면 값이
+ * 사라지지만 스크롤은 적어도 거기 있다고 말해 준다.
+ *
+ * minW 는 '모든 칼럼이 제 폭을 가질 때의 합'이다. 고정 칼럼 합 + 좌우 여백 +
+ * 유동 칼럼 최소폭으로 계산해서 넣는다. 머리글과 행이 **같은 래퍼 안에** 있어야
+ * 가로로 같이 움직인다.
+ */
+export function TableScroll({ minW, className = '', children }: {
+  minW: number
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={`overflow-x-auto ${className}`}>
+      <div style={{ minWidth: minW }}>{children}</div>
+    </div>
+  )
+}
+
 export function DataTableHead({
   density = 'compact', children,
 }: {

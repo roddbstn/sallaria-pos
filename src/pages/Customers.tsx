@@ -2555,11 +2555,16 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 </div>
               </div>
 
-              <div className="overflow-y-auto flex-1 px-[41px] pb-[26px]">
+              {/* overflow-auto · min-w-max — 명세서는 칼럼이 아홉이다.
+                  모달이 1030 인데 바깥 여백이 40씩이라 1024 화면에서는 944 로 줄고,
+                  w-full 만 두면 테이블이 칼럼을 min-content 까지 쥐어짠다.
+                  줄바꿈이 허용된 한글의 min-content 는 한 글자다 — 거래처명이
+                  세로로 선다. 넘치면 가로로 스크롤한다. */}
+              <div className="overflow-auto flex-1 px-[41px] pb-[26px]">
                 {stmtLoading ? (
                   <LoadingBlock py={40} size={34} />
                 ) : (
-                  <table className="text-[16px] border-collapse w-full">
+                  <table className="text-[16px] border-collapse w-full min-w-max">
                     <thead>
                       <tr className="bg-gray-bg text-[12px] font-bold text-gray-text uppercase">
                         <th colSpan={3} className="text-left py-[8px] border border-gray-border px-[8px]">선결제내역</th>

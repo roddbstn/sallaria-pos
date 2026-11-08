@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "receipt:diff": "vite-node scripts/receipt-diff.ts",
+    "scan:layout": "node scripts/scan-layout.mjs",
     "verify": "pnpm typecheck && pnpm test"
   },
   "devDependencies": {
