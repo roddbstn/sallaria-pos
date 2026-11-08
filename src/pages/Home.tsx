@@ -31,11 +31,11 @@ const UNDEFINED_COLUMN = '42703'
 /**
  * 0079(orders.cancel_reason · cancelled_at)를 조회에 넣을지.
  *
- * 선포스는 **설치형**이라 앱 버전과 DB 스키마가 어긋난 채로 돌 수 있다. 자동
- * 업데이트가 아직 안 되는 상태라(CLAUDE.md) 구버전 앱이 한참 남고, 반대로
- * 새 앱이 마이그레이션 전 DB를 볼 수도 있다. 없는 컬럼을 그냥 요청하면 조회가
- * **통째로** 실패해서, 취소 사유 한 줄 때문에 홈 화면이 빈다. 그래서 한 번
- * 시도해 보고 없다고 하면 그 뒤로는 안 넣는다. 세션당 한 번만 판단한다.
+ * 2026-11-08 에 적용됐으니 지금 프로덕션에서는 **늘 들어간다.** 그래도 폴백을
+ * 남겨 두는 이유: 선포스는 **설치형**이고 DB 는 한 벌이다. 로컬·브랜치 DB 나
+ * 마이그레이션을 아직 안 돌린 환경에서 이 앱을 띄울 수 있다. 없는 컬럼을 그냥
+ * 요청하면 조회가 **통째로** 실패해서, 취소 사유 한 줄 때문에 홈 화면이 빈다.
+ * 한 번 시도해 보고 없다고 하면 그 뒤로는 안 넣는다. 세션당 한 번만 판단한다.
  */
 let cancelCols = `
     cancel_reason, cancelled_at,`
@@ -96,11 +96,11 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     ])
 
     let [a, d] = await fetchBoth()
-    // 0079 가 아직 안 올라간 DB면 컬럼이 없다고 답한다 — 그 둘만 떼고 한 번 다시.
+    // 0079 를 안 돌린 DB면 컬럼이 없다고 답한다 — 그 둘만 떼고 한 번 다시.
     // (아래 cancelCols 주석 참고. 떼고 나면 사유는 note 추측으로 떨어진다.)
     if (cancelCols && [a.error, d.error].some(e => e?.code === UNDEFINED_COLUMN)) {
       cancelCols = ''
-      console.warn('[Home] orders.cancel_reason 이 없다 — 0079 마이그레이션 전이다. 취소 사유는 note 추측으로 간다')
+      console.warn('[Home] orders.cancel_reason 이 없다 — 0079 를 안 돌린 DB다. 취소 사유는 note 추측으로 간다')
       ;[a, d] = await fetchBoth()
     }
 
