@@ -14,6 +14,7 @@ import MenuFormModal from '../components/menu/MenuFormModal'
 import OptionGroupAddModal from '../components/menu/OptionGroupAddModal'
 import { useMenuForm } from '../components/menu/use-menu-form'
 import { MenuTagBadges, MenuTagRow } from '../components/menu/tag-badges'
+import { menuGrid, GRID_PAD, GRID_GAP, THUMB } from '../lib/menu-grid'
 
 type MenuTab      = 'menu' | 'option' | 'category'
 import type { SoldOutState } from '../components/menu/menu-form-types'
@@ -1156,14 +1157,10 @@ export default function Menus() {
 
       {/* ── 메뉴 탭 — 좌측 카테고리 그리드(항상 고정) + 우측 QR오더/개별메뉴 탭 (Figma node 491:592, 491:715, 491:836, 491:1346) ── */}
       {!loading && tab === 'menu' && (() => {
-        const COLS = 6
-        const GRID_PAD = 26
-        const GRID_GAP = 10
-        // 좌측 영역 실측 폭(gridAreaW) 기준으로 카드 폭을 매번 다시 계산 — 창 크기가 달라져도
-        // 항상 좌우 GRID_PAD만큼의 패딩만 남기고 6열이 꽉 차도록(고정 px면 창이 넓을 때 사이드
-        // 패널 앞에 큰 여백이 남았음)
-        const CARD_W = Math.max(80, Math.round((gridAreaW - GRID_PAD * 2 - GRID_GAP * (COLS - 1)) / COLS))
-        const COL_STEP = CARD_W + GRID_GAP
+        // 치수·열 수 산수는 lib/menu-grid.ts 에 있다 — 거기 머리말에 1024 에서
+        // 메뉴 이름이 세로로 쌓였던 경위와, 테스트로 박아 둔 불변식이 적혀 있다.
+        const { cols: COLS, cardW: CARD_W, colStep: COL_STEP, namePadR: NAME_PAD_R } =
+          menuGrid(gridAreaW, itemImageVisible)
         const countOf = (catId: string) => menus.filter(m => m.categoryId === catId).length
         const selectedCat = categories.find(c => c.id === previewCatId) ?? null
         const itemsOfSelectedCat = selectedCat ? menus.filter(m => m.categoryId === selectedCat.id) : []
@@ -1437,14 +1434,14 @@ export default function Menus() {
                               } ${!menu.active || menu.soldOut ? 'opacity-60' : ''}`}
                               style={{ minHeight: 86 }}
                             >
-                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'}`} style={{ paddingRight: 58 }}>
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'}`} style={{ paddingRight: NAME_PAD_R }}>
                                 {menu.name}
                               </div>
                               <div className="text-[16px] font-light text-ink mt-auto">{won(menu.price)}</div>
                               {itemImageVisible && (menu.imageUrl ? (
-                                <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                                <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px]" style={{ right: 10, top: 10, width: THUMB, height: THUMB }} />
                               ) : (
-                                <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                                <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ right: 10, top: 10, width: THUMB, height: THUMB }} />
                               ))}
                             </button>
                           ))}
@@ -1505,14 +1502,14 @@ export default function Menus() {
                               }`}
                               style={{ minHeight: 86 }}
                             >
-                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'}`} style={{ paddingRight: 58 }}>
+                              <div className={`font-semibold text-ink leading-snug ${menuTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'}`} style={{ paddingRight: NAME_PAD_R }}>
                                 {menu.name}
                               </div>
                               <div className="text-[16px] font-light text-ink mt-auto">{won(menu.price)}</div>
                               {itemImageVisible && (menu.imageUrl ? (
-                                <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px] pointer-events-none" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                                <img src={menu.imageUrl} alt="" className="absolute object-cover rounded-[6px] pointer-events-none" style={{ right: 10, top: 10, width: THUMB, height: THUMB }} />
                               ) : (
-                                <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ right: 10, top: 10, width: 48, height: 48 }} />
+                                <div className="absolute bg-[#F2F2F2] rounded-[6px]" style={{ right: 10, top: 10, width: THUMB, height: THUMB }} />
                               ))}
                               <button
                                 onClick={e => { e.stopPropagation(); requestDeleteMenu(menu) }}
