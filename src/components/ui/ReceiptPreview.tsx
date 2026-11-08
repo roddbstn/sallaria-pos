@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   LINE_CHARS, LINE_RATIO, PREVIEW_FONT_PX, PAPER_MM, PRINT_MM,
   QTY_W, PRICE_W, COL_SEP,
-  pw, padL, padR, clamp, wrapName, hr, subHr, field, amountField,
+  pw, padL, padR, clamp, wrapName, hr, subHr, field, amountField, LABEL_W,
 } from '../../lib/receipt-layout'
 import { sampleReceiptDisplay, sampleOrderPayload } from '../../lib/receipt-sample'
 
@@ -26,6 +26,14 @@ export type ReceiptKind = 'kitchen' | 'customer'
 export type TextSize = 'normal' | 'large'
 
 export interface ReceiptPreviewConfig {
+  /**
+   * 주문번호·이용방법 두 줄의 크기.
+   *
+   * 이 둘은 **멀리서 흘깃 보는 값**이다. 주문번호는 전화 응대에서 제일 먼저
+   * 대조하고, 이용방법은 담는 방식을 가른다. 나머지 머리말(주문일시·주문자·
+   * 전화번호·선결제계정)은 찾을 때 들여다보는 값이라 같이 키우면 종이만 길어진다.
+   */
+  headerSize:  TextSize
   menuSize:    TextSize
   optionSize:  TextSize
   amountSize:  TextSize
@@ -42,7 +50,7 @@ export interface ReceiptPreviewConfig {
 }
 
 export const DEFAULT_RECEIPT_CONFIG: ReceiptPreviewConfig = {
-  menuSize: 'normal', optionSize: 'normal', amountSize: 'normal',
+  headerSize: 'normal', menuSize: 'normal', optionSize: 'normal', amountSize: 'normal',
   showItemPrice: true,
   // 빈 값이면 영수증 아래가 휑하게 끝난다. 매장이 고쳐 쓰라고 초안을 깔아둔다.
   footerText: '감사합니다', showBalance: true,
@@ -92,6 +100,10 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
   // '크게'(2배)면 한 줄에 들어가는 칸이 절반이다 — 그 폭으로 자른다
   const optW = cfg.optionSize === 'large' ? Math.floor(W / 2) : W
   const amtX2 = cfg.amountSize === 'large'
+  // 주문번호·이용방법만 따로 — 2배면 한 줄이 21칸이라 값을 그 폭으로 자른다
+  const hdrX2 = cfg.headerSize === 'large'
+  const hdrW  = hdrX2 ? Math.floor(W / 2) : W
+  const hdrValW = hdrW - LABEL_W - 3
 
   const out: PLine[] = []
   const HR  = () => out.push(t(hr(W)))
@@ -102,13 +114,19 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
   HR()
 
   // ── 주문번호 / 주문일시
-  out.push({ segs: [{ t: padL('주문번호', 11) + ' : ' }, { t: SAMPLE.orderNumber, b: true }] })
+  out.push({ segs: [
+    { t: padL('주문번호', LABEL_W) + ' : ', x2: hdrX2 },
+    { t: clamp(SAMPLE.orderNumber, hdrValW), b: true, x2: hdrX2 },
+  ] })
   out.push(t(field('주문일시', SAMPLE.orderedAt)))
   HR()
 
   // ── 이용방법 / 주문자 / 전화번호 / 선결제계정
   //    전화번호가 선결제계정 **위**다 — 두 영수증이 같은 순서라야 겹쳐 볼 때 눈이 덜 움직인다
-  out.push({ segs: [{ t: padL('이용방법', 11) + ' : ' }, { t: SAMPLE.method, b: true }] })
+  out.push({ segs: [
+    { t: padL('이용방법', LABEL_W) + ' : ', x2: hdrX2 },
+    { t: clamp(SAMPLE.method, hdrValW), b: true, x2: hdrX2 },
+  ] })
   out.push(t(field('주문자', SAMPLE.orderer)))
   out.push(t(field('전화번호', SAMPLE.phone)))
   out.push(t(field('선결제계정', SAMPLE.account)))

@@ -129,6 +129,15 @@ export function resolveQrPrintMM(p?: PrinterSettings): number {
 export type ReceiptTextSize = 'normal' | 'large'
 
 export interface ReceiptSettings {
+  /**
+   * 주문번호·이용방법 두 줄의 크기.
+   *
+   * 이 둘은 **멀리서 흘깃 보는 값**이다. 주문번호는 전화 응대에서 제일 먼저
+   * 대조하고, 이용방법(포장/내점/배달)은 담는 방식을 가른다. 나머지 머리말
+   * (주문일시·주문자·전화번호·선결제계정)은 찾을 때 들여다보는 값이라 같이
+   * 키우면 종이만 길어진다 — 그래서 이 둘만 따로 뗐다.
+   */
+  headerSize?:        ReceiptTextSize
   menuSize:           ReceiptTextSize
   optionSize:         ReceiptTextSize
   customerMenuSize:   ReceiptTextSize

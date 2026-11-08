@@ -309,6 +309,9 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   const optCmd = sizeCmd(settings.optionSize)
   // '크게'(2x2)면 한 줄에 들어가는 글자가 절반이다 — 그 폭으로 자른다
   const optW   = lineWidthFor(settings.optionSize, L.W)
+  // 주문번호·이용방법만 따로 키운다(printer.ts headerSize 주석)
+  const hdrCmd = sizeCmd(settings.headerSize)
+  const hdrW   = lineWidthFor(settings.headerSize, L.W)
   const bigAmt = settings.amountSize === 'large'
   const amtCmd = sizeCmd(settings.amountSize)
 
@@ -322,15 +325,20 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   p(L.hr(), nl())
 
   // 블록1: 주문번호 / 주문일시
+  p(hdrCmd)
+  // 값만 자른다 — 주문번호가 없으면 order_code(UUID 36자)가 들어와 줄을 넘긴다
+  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON,
+    enc(clamp(order.order_number ?? order.order_code, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
   p(CMD.SIZE_1X)
-  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
   p(enc(field('주문일시', formatDate(order.ordered_at))), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
+  p(hdrCmd)
+  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON,
+    enc(clamp(order.method, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
   p(CMD.SIZE_1X)
-  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc(field('주문자', maskName(order.orderer_name))), nl())
   p(enc(field('전화번호', order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {
@@ -430,6 +438,9 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   const optCmd = sizeCmd(settings.customerOptionSize)
   // '크게'(2x2)면 한 줄에 들어가는 글자가 절반이다 — 그 폭으로 자른다
   const optW   = lineWidthFor(settings.customerOptionSize, L.W)
+  // 주문번호·이용방법만 따로 키운다(printer.ts headerSize 주석)
+  const hdrCmd = sizeCmd(settings.headerSize)
+  const hdrW   = lineWidthFor(settings.headerSize, L.W)
   const bigAmt = settings.amountSize === 'large'
   const amtCmd = sizeCmd(settings.amountSize)
 
@@ -443,15 +454,20 @@ export function buildCustomerReceiptEscPos(order: OrderPayload, settings: Receip
   p(L.hr(), nl())
 
   // 블록1: 주문번호 / 주문일시
+  p(hdrCmd)
+  // 값만 자른다 — 주문번호가 없으면 order_code(UUID 36자)가 들어와 줄을 넘긴다
+  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON,
+    enc(clamp(order.order_number ?? order.order_code, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
   p(CMD.SIZE_1X)
-  p(enc(padL('주문번호', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.order_number ?? order.order_code), CMD.BOLD_OFF, nl())
   p(enc(field('주문일시', formatDate(order.ordered_at))), nl())
   p(CMD.SIZE_1X)
   p(L.hr(), nl())
 
   // 블록2: 이용방법 / 주문자 / 전화번호
+  p(hdrCmd)
+  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON,
+    enc(clamp(order.method, hdrW - LABEL_W - 3)), CMD.BOLD_OFF, nl())
   p(CMD.SIZE_1X)
-  p(enc(padL('이용방법', LABEL_W) + ' : '), CMD.BOLD_ON, enc(order.method), CMD.BOLD_OFF, nl())
   p(enc(field('주문자', maskName(order.orderer_name))), nl())
   p(enc(field('전화번호', order.orderer_phone ? maskPhone(order.orderer_phone) : '없음')), nl())
   if (order.account_name) {

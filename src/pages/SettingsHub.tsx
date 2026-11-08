@@ -750,6 +750,7 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
   useEffect(() => {
     api().updateSettings?.({
       receipt: {
+        headerSize:         cfg.headerSize,
         menuSize:           cfg.menuSize,
         optionSize:         cfg.optionSize,
         customerMenuSize:   cfg.menuSize,
@@ -776,6 +777,10 @@ function ReceiptPanel({ showToast }: { showToast: (msg: string) => void }) {
 
       <Group title="영수증 양식">
         <PaperWidthRow />
+        {/* 주문번호·이용방법만 따로 뗀 이유는 ReceiptPreviewConfig.headerSize 주석 참고 */}
+        <Row label="주문번호 · 이용방법 글자 크기">
+          <SegButtons value={cfg.headerSize} options={SIZE_OPTS} onChange={v => patch({ headerSize: v })} />
+        </Row>
         <Row label="메뉴명 글자 크기">
           <SegButtons value={menuSize} options={SIZE_OPTS} onChange={v => patch({ menuSize: v })} />
         </Row>

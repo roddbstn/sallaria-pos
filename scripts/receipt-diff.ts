@@ -39,10 +39,11 @@ function previewLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig): string[] {
 //    하면 이 목록에 { showItemPrice: false } 경우를 넣을 것.
 const CASES: { name: string; cfg: ReceiptPreviewConfig }[] = [
   { name: '기본',        cfg: DEFAULT_RECEIPT_CONFIG },
+  { name: '머리말 크게', cfg: { ...DEFAULT_RECEIPT_CONFIG, headerSize: 'large' } },
   { name: '메뉴 크게',   cfg: { ...DEFAULT_RECEIPT_CONFIG, menuSize: 'large' } },
   { name: '옵션 크게',   cfg: { ...DEFAULT_RECEIPT_CONFIG, optionSize: 'large' } },
   { name: '금액 크게',   cfg: { ...DEFAULT_RECEIPT_CONFIG, amountSize: 'large' } },
-  { name: '전부 크게',   cfg: { ...DEFAULT_RECEIPT_CONFIG, menuSize: 'large', optionSize: 'large', amountSize: 'large' } },
+  { name: '전부 크게',   cfg: { ...DEFAULT_RECEIPT_CONFIG, headerSize: 'large', menuSize: 'large', optionSize: 'large', amountSize: 'large' } },
   { name: '잔액 끔',     cfg: { ...DEFAULT_RECEIPT_CONFIG, showBalance: false } },
   { name: '하단문구 없음', cfg: { ...DEFAULT_RECEIPT_CONFIG, footerText: '' } },
 ]
@@ -52,6 +53,7 @@ for (const { name, cfg } of CASES) {
   // 인쇄 쪽은 ReceiptSettings 모양이다. 주방/고객이 같은 설정을 쓰도록 SettingsHub 가
   // 보내는 방식(customerMenuSize = menuSize)을 그대로 흉내 낸다.
   const settings = {
+    headerSize: cfg.headerSize,
     menuSize: cfg.menuSize, optionSize: cfg.optionSize,
     customerMenuSize: cfg.menuSize, customerOptionSize: cfg.optionSize,
     amountSize: cfg.amountSize, footerText: cfg.footerText, showBalance: cfg.showBalance,
