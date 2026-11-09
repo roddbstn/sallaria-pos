@@ -472,7 +472,7 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                           return (
                             <div className="mt-[20px] rounded-[13px] bg-[#F2F2F2] px-[19px] py-[14px] min-h-[57px] flex flex-col justify-center">
                               <div className="text-[15px] font-semibold text-[#1E1E1E]">
-                                고객에게 [{notify}분 뒤 {o.method === '배달' ? '배달출발' : '준비완료'}]로 안내돼요
+                                [{notify}분 뒤 {o.method === '배달' ? '배달출발' : '준비완료'}]로 안내돼요
                               </div>
                             </div>
                           )
