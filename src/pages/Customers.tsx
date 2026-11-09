@@ -1340,7 +1340,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="계정이름 또는 주문자 이름 검색"
+                placeholder="계정이름 또는 주문자이름"
                 className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[17px] text-ink placeholder:text-[#8C8379] bg-transparent"
               />
             </div>
