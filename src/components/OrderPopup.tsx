@@ -94,11 +94,16 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
     const target  = order     // dismiss 후 queue[0] 이 바뀌므로 지금 값을 붙잡는다
     const mins    = prepMins
 
-    // 손님 화면에 안내할 시간은 **둘 중 긴 쪽**이다.
-    //   · 주방이 30분 필요한데 손님이 10분 뒤에 온다고 했으면 → 30분 (음식이 늦는다)
-    //   · 주방은 5분이면 되는데 손님이 30분 뒤에 온다고 했으면 → 30분 (손님이 그때 온다)
-    // prep_minutes 는 주방 기준이라 그대로 두고, 안내용만 따로 계산한다.
-    const notify = Math.max(mins, target.requestedPickupMinutes ?? 0)
+    // 손님 화면에 안내할 시간은 **점주가 고른 그 시간**이다.
+    //
+    // 전엔 max(주방, 손님요청) 으로 둘 중 긴 쪽을 보냈다. 손님이 30분 뒤에 온다고
+    // 했으면 주방이 5분이어도 30분으로 안내되는 식이었다. 그런데 그러면
+    //   · 점주가 14분을 골랐는데 손님 화면엔 15분이 떠서 "내가 고른 게 왜 안 가지"가 되고,
+    //   · 안내문에 "주방은 14분이지만 손님이 15분 뒤에 온다고 해서…" 라는 해명을
+    //     한 줄 더 달아야 했다. 고른 값이 그대로 안 가는 버튼은 고르는 맛이 없다.
+    // 손님이 고른 수령시간은 윗줄에 그대로 보여주고 있고, 점주는 그걸 보고 분수를
+    // 정한다 — 판단은 이미 사람이 했다. 기계가 한 번 더 고를 이유가 없다.
+    const notify = mins
 
     onApprove?.()
     dismiss()
@@ -458,23 +463,17 @@ export default function OrderPopup({ queue, onClose, onApprove, onError }: Props
                             "몇 분"만 말하면 점주가 머릿속으로 시계를 더해야 해서 시각을 같이 적는다.
                             스테퍼를 돌리면 분과 시각이 같이 움직인다. */}
                         {/* 여기가 스테퍼를 따라 움직이는 줄이다.
-                            ⚠️ prepMins 를 그대로 쓰면 안 된다 — 실제로 손님에게 가는 값은
-                            handleApprove 의 notify = max(prepMins, 손님요청) 이다.
-                            주방이 5분이어도 손님이 30분 뒤 온다고 했으면 30분으로 안내된다.
-                            그 차이를 안 적으면 "내가 5분 했는데 왜 30분이지?"가 된다. */}
+                            스테퍼 값(prepMins)이 **그대로** 손님에게 간다
+                            (handleApprove 의 notify 주석 참고). 전엔 max(주방, 손님요청)
+                            이라 고른 값과 안내되는 값이 달랐고, 그 차이를 해명하는 줄을
+                            아래에 한 줄 더 달아야 했다. 지금은 달 게 없다. */}
                         {(() => {
-                          const req    = o.requestedPickupMinutes ?? 0
-                          const notify = Math.max(prepMins, req)
+                          const notify = prepMins
                           return (
                             <div className="mt-[20px] rounded-[13px] bg-[#F2F2F2] px-[19px] py-[14px] min-h-[57px] flex flex-col justify-center">
                               <div className="text-[15px] font-semibold text-[#1E1E1E]">
                                 고객에게 [{notify}분 뒤 {o.method === '배달' ? '배달출발' : '준비완료'}]로 안내돼요
                               </div>
-                              {notify !== prepMins && (
-                                <div className="text-[12px] font-normal text-[#787878] mt-[4px]">
-                                  주방은 {prepMins}분이지만 손님이 {req}분 뒤에 온다고 해서 그 시간으로 안내돼요
-                                </div>
-                              )}
                             </div>
                           )
                         })()}
