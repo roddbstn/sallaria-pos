@@ -100,17 +100,17 @@ export default function CustomerProfileModal({
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[520px] max-w-[92vw] max-h-[86vh] flex flex-col overflow-hidden"
+        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0_2px_10px_rgba(44,38,31,0.08)] w-[560px] max-w-[92vw] max-h-[86vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-[28px] pt-[24px] pb-[16px] border-b border-[#E8E4E2]">
-          <div className="text-[18px] font-semibold text-[#1E1E1E]">{ordererName}</div>
-          <div className="text-[13px] font-normal text-[#787878] mt-[3px]">{accountName}</div>
+          <div className="text-[22px] font-semibold text-[#1E1E1E]">{ordererName}</div>
+          <div className="text-[16px] font-normal text-[#787878] mt-[3px]">{accountName}</div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-[28px] py-[20px]">
           {loading ? <LoadingBlock py={50} /> : !p || p.orders === 0 ? (
-            <div className="py-[50px] text-center text-[13px] font-normal text-[#ADADAD]">주문 기록이 없어요</div>
+            <div className="py-[50px] text-center text-[16px] font-normal text-[#ADADAD]">주문 기록이 없어요</div>
           ) : (
             <>
               {/* 요약 — 관계의 길이(문장)와 크기(숫자)를 나눠 놓는다.
@@ -120,7 +120,7 @@ export default function CustomerProfileModal({
                   무엇이 누적이고 무엇이 평균인지는 앞의 '평균' 두 글자에만 달려 있었다.
                   라벨을 값 위에 올려 네 칸으로 나눈다. */}
               <div className="rounded-[11px] bg-[#F2F2F2] px-[16px] py-[14px] mb-[20px]">
-                <div className="text-[14px] font-medium text-[#1E1E1E] mb-[12px]">
+                <div className="text-[17px] font-medium text-[#1E1E1E] mb-[12px]">
                   {p.first_at?.slice(0, 10)}부터 {p.months}개월째 오고 계세요
                 </div>
                 <div className="grid grid-cols-2 gap-[7px]">
@@ -131,23 +131,23 @@ export default function CustomerProfileModal({
                     ...(p.cycle_days != null ? [{ label: '주문 주기',   value: `${p.cycle_days}일` }] : []),
                   ]).map(st => (
                     <div key={st.label} className="bg-[#FCFCFC] rounded-[9px] px-[12px] py-[9px]">
-                      <div className="text-[11px] font-normal text-[#787878]">{st.label}</div>
-                      <div className="text-[15px] font-semibold text-[#1E1E1E] tabular-nums mt-[2px]">{st.value}</div>
+                      <div className="text-[13px] font-normal text-[#787878]">{st.label}</div>
+                      <div className="text-[20px] font-semibold text-[#1E1E1E] tabular-nums mt-[2px]">{st.value}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* 월별 흐름 — 이 화면의 핵심. 목록에서는 안 보이는 것 */}
-              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">월별 주문</div>
+              <div className="text-[16px] font-medium text-[#2C261F] mb-[9px]">월별 주문</div>
               <div className="flex flex-col gap-[6px] mb-[6px]">
                 {p.monthly.map(m => (
                   <div key={m.label} className="flex items-center gap-[10px]">
-                    <span className="w-[38px] text-[12px] font-normal text-[#787878] tabular-nums">{m.label}</span>
+                    <span className="w-[46px] text-[15px] font-normal text-[#787878] tabular-nums">{m.label}</span>
                     <div className="flex-1 h-[16px] bg-[#F2F2F2] rounded-[4px] overflow-hidden">
                       <div className="h-full bg-[#6A635E] rounded-[4px]" style={{ width: `${(m.n / maxMonth) * 100}%` }} />
                     </div>
-                    <span className="w-[34px] text-right text-[12px] font-medium text-[#1E1E1E] tabular-nums">{m.n}건</span>
+                    <span className="w-[44px] text-right text-[15px] font-medium text-[#1E1E1E] tabular-nums">{m.n}건</span>
                   </div>
                 ))}
               </div>
@@ -163,8 +163,8 @@ export default function CustomerProfileModal({
                     <circle cx="8" cy="11.4" r="0.8" fill="#C92A2A"/>
                   </svg>
                   <div className="min-w-0">
-                    <div className="text-[13px] font-semibold text-[#C92A2A] leading-snug">주문이 줄고 있어요</div>
-                    <div className="text-[12px] font-normal text-[#A94442] mt-[3px] leading-relaxed">
+                    <div className="text-[16px] font-semibold text-[#C92A2A] leading-snug">주문이 줄고 있어요</div>
+                    <div className="text-[15px] font-normal text-[#A94442] mt-[3px] leading-relaxed">
                       가장 많았던 달 {maxMonth}건의 절반도 안 되는 {p.monthly[p.monthly.length - 1].n}건이에요
                       {' '}({p.monthly[p.monthly.length - 1].label} 기준).
                     </div>
@@ -175,13 +175,13 @@ export default function CustomerProfileModal({
               )}
 
               {/* 선호 메뉴 */}
-              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">선호 메뉴</div>
+              <div className="text-[16px] font-medium text-[#2C261F] mb-[9px]">선호 메뉴</div>
               <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mb-[20px]">
                 {p.menus.map((m, i) => (
-                  <div key={m.name} className={`flex items-center px-[14px] h-[36px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
-                    <span className="flex-1 min-w-0 text-[12px] font-normal text-[#414141] truncate">{m.name}</span>
-                    <span className="text-[12px] font-medium text-[#1E1E1E] tabular-nums">{m.c}회</span>
-                    <span className="w-[48px] text-right text-[11px] font-normal text-[#ADADAD] tabular-nums">
+                  <div key={m.name} className={`flex items-center px-[14px] h-[40px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
+                    <span className="flex-1 min-w-0 text-[15px] font-normal text-[#414141] truncate">{m.name}</span>
+                    <span className="text-[15px] font-medium text-[#1E1E1E] tabular-nums">{m.c}회</span>
+                    <span className="w-[56px] text-right text-[13px] font-normal text-[#ADADAD] tabular-nums">
                       {Math.round((m.c / p.orders) * 100)}%
                     </span>
                   </div>
@@ -196,28 +196,28 @@ export default function CustomerProfileModal({
                   '저녁'이 **같은 층처럼 읽혀서** 어느 쪽이 묶는 축인지 알 수 없었다.
                   축을 머리글로 못 박고(행=시간대, 열=평일/주말) 시간 범위까지 적어
                   '점심이 몇 시부터인지'를 화면에서 바로 읽게 한다. */}
-              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">주로 오는 시간</div>
+              <div className="text-[16px] font-medium text-[#2C261F] mb-[9px]">주로 오는 시간</div>
               <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden mb-[20px]">
                 {/* 머리글 — 여기가 '열은 평일/주말이다'라고 말해주는 유일한 자리 */}
-                <div className="flex items-center h-[32px] px-[14px] bg-[#F2F2F2]">
-                  <span className="flex-1 text-[11px] font-medium text-[#6A635E]">시간대</span>
-                  <span className="w-[62px] text-right text-[11px] font-medium text-[#6A635E]">평일</span>
-                  <span className="w-[62px] text-right text-[11px] font-medium text-[#6A635E]">주말</span>
+                <div className="flex items-center h-[36px] px-[14px] bg-[#F2F2F2]">
+                  <span className="flex-1 text-[13px] font-medium text-[#6A635E]">시간대</span>
+                  <span className="w-[72px] text-right text-[13px] font-medium text-[#6A635E]">평일</span>
+                  <span className="w-[72px] text-right text-[13px] font-medium text-[#6A635E]">주말</span>
                 </div>
                 {SLOTS.map(({ slot, range }) => {
                   const wd = slotN('평일', slot)
                   const we = slotN('주말', slot)
                   return (
-                    <div key={slot} className="flex items-center h-[34px] px-[14px] border-t border-[#F2F2F2]">
-                      <span className="flex-1 min-w-0 text-[12px] text-[#414141]">
+                    <div key={slot} className="flex items-center h-[38px] px-[14px] border-t border-[#F2F2F2]">
+                      <span className="flex-1 min-w-0 text-[15px] text-[#414141]">
                         {slot}
                         {/* 범위는 한 단계 흐리게 — 이름이 먼저 읽히고 범위가 뒤따라야 한다 */}
-                        <span className="ml-[5px] text-[11px] font-normal text-[#ADADAD] tabular-nums">{range}</span>
+                        <span className="ml-[5px] text-[13px] font-normal text-[#ADADAD] tabular-nums">{range}</span>
                       </span>
                       {([['평일', wd], ['주말', we]] as const).map(([part, n]) => (
                         <span
                           key={part}
-                          className={`w-[62px] text-right text-[12px] tabular-nums ${
+                          className={`w-[72px] text-right text-[15px] tabular-nums ${
                             n === 0
                               ? 'font-normal text-[#D7D7D7]'
                               : peak && peak.n > 0 && peak.part === part && peak.slot === slot
@@ -232,18 +232,18 @@ export default function CustomerProfileModal({
                   )
                 })}
                 {/* 합계 — 평일·주말 둘 중 어느 쪽 사람인지는 이 줄이 답한다 */}
-                <div className="flex items-center h-[32px] px-[14px] border-t border-[#E8E4E2] bg-[#FAFAFA]">
-                  <span className="flex-1 text-[11px] font-medium text-[#6A635E]">합계</span>
-                  <span className="w-[62px] text-right text-[12px] font-medium text-[#1E1E1E] tabular-nums">{p.weekday_n}건</span>
-                  <span className="w-[62px] text-right text-[12px] font-medium text-[#1E1E1E] tabular-nums">{p.weekend_n}건</span>
+                <div className="flex items-center h-[36px] px-[14px] border-t border-[#E8E4E2] bg-[#FAFAFA]">
+                  <span className="flex-1 text-[13px] font-medium text-[#6A635E]">합계</span>
+                  <span className="w-[72px] text-right text-[15px] font-medium text-[#1E1E1E] tabular-nums">{p.weekday_n}건</span>
+                  <span className="w-[72px] text-right text-[15px] font-medium text-[#1E1E1E] tabular-nums">{p.weekend_n}건</span>
                 </div>
               </div>
 
               {/* 이용방법 */}
-              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">이용방법</div>
+              <div className="text-[16px] font-medium text-[#2C261F] mb-[9px]">이용방법</div>
               <div className="flex gap-[8px] mb-[20px]">
                 {p.methods.map(m => (
-                  <span key={m.method} className="px-[11px] h-[28px] leading-[28px] rounded-[8px] bg-[#F2F2F2] text-[12px] font-normal text-[#414141]">
+                  <span key={m.method} className="px-[11px] h-[28px] leading-[28px] rounded-[8px] bg-[#F2F2F2] text-[15px] font-normal text-[#414141]">
                     {m.method === '내점' ? '매장 식사' : m.method} {m.n}건
                   </span>
                 ))}
@@ -251,21 +251,21 @@ export default function CustomerProfileModal({
 
               {/* 언제 주문했나 — 월별 막대는 흐름을 보여주지만
                   "지난주에 왔나?"는 날짜가 있어야 답한다 */}
-              <div className="text-[13px] font-medium text-[#2C261F] mb-[9px]">
+              <div className="text-[16px] font-medium text-[#2C261F] mb-[9px]">
                 최근 주문
-                <span className="ml-[6px] text-[11px] font-normal text-[#ADADAD]">
+                <span className="ml-[6px] text-[13px] font-normal text-[#ADADAD]">
                   {p.orders > p.recent.length ? `${p.recent.length}건 / 전체 ${p.orders}건` : `${p.recent.length}건`}
                 </span>
               </div>
               <div className="rounded-[11px] border border-[#E8E4E2] overflow-hidden">
                 {p.recent.map((r, i) => (
                   <div key={i} className={`flex items-center px-[14px] py-[8px] gap-[10px] ${i > 0 ? 'border-t border-[#F2F2F2]' : ''}`}>
-                    <span className={`w-[74px] flex-shrink-0 text-[12px] ${NUM}`}>
+                    <span className={`w-[88px] flex-shrink-0 text-[15px] ${NUM}`}>
                       {r.date}<span className="text-[#ADADAD]">({r.dow})</span>
                     </span>
-                    <span className={`w-[38px] flex-shrink-0 text-[11px] ${NUM_MUTED}`}>{r.time}</span>
-                    <span className="flex-1 min-w-0 text-[12px] font-normal text-[#414141] truncate">{r.items ?? '—'}</span>
-                    <span className={`flex-shrink-0 text-[12px] ${NUM_STRONG}`}>{won(r.amount)}</span>
+                    <span className={`w-[46px] flex-shrink-0 text-[13px] ${NUM_MUTED}`}>{r.time}</span>
+                    <span className="flex-1 min-w-0 text-[15px] font-normal text-[#414141] truncate">{r.items ?? '—'}</span>
+                    <span className={`flex-shrink-0 text-[15px] ${NUM_STRONG}`}>{won(r.amount)}</span>
                   </div>
                 ))}
               </div>
@@ -276,7 +276,7 @@ export default function CustomerProfileModal({
         <div className="bg-[#FCFCFC] flex justify-end px-[28px] py-[16px]">
           <button
             onClick={onClose}
-            className="pressable w-[86px] h-[42px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[14px] font-medium hover:opacity-90"
+            className="pressable w-[86px] h-[42px] rounded-[10px] bg-[#E8E4E2] text-[#6A635E] text-[17px] font-medium hover:opacity-90"
           >
             닫기
           </button>

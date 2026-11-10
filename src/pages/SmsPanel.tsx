@@ -5,7 +5,7 @@ import { supabase, type DbAccount } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { won } from '../lib/ipc'
 import { maskName, maskPhone } from '../lib/mask'
-import { SMS_TEMPLATES, fillTemplate, smsByteLength, SMS_BYTE_LIMIT, type SmsKind } from '../lib/sms-templates'
+import { SMS_TEMPLATES, fillTemplate, worstCaseBytes, clampToSms, SMS_BYTE_LIMIT, type SmsKind } from '../lib/sms-templates'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import { isIdleAccount, daysSince, averageGapDays, IDLE_WINDOW_DAYS } from '../lib/idle-accounts'
 
@@ -45,6 +45,8 @@ interface SentLog {
   sent_count:   number
   failed_count: number
   created_at:   string
+  /** 보낼 때 같이 저장해 둔 수신자 목록. 옛 기록엔 없을 수 있다 */
+  recipients:   { account_code?: string; account_name?: string; phone?: string }[] | null
 }
 
 export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}) {
@@ -98,7 +100,7 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
         supabase.from('user_account_links')
           .select('account_code').eq('role', '관리자').eq('status', 'approved').in('account_code', codes),
         supabase.from('sms_logs')
-          .select('id, kind, body, sent_count, failed_count, created_at')
+          .select('id, kind, body, sent_count, failed_count, created_at, recipients')
           .eq('store_id', storeId).order('created_at', { ascending: false }).limit(20),
       ])
 
@@ -156,7 +158,15 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
     account: sample?.name ?? '거래처',
     balance: sample ? won(sample.balance) : '0원',
   })
-  const bytes = smsByteLength(preview)
+  /**
+   * 바이트는 **가장 긴 수신자** 기준으로 잰다.
+   *
+   * 미리보기는 첫 대상 하나만 보여주는데 {거래처}·{잔액}은 사람마다 길이가 다르다.
+   * 첫 대상이 88바이트라 'SMS'라고 떠도 이름 긴 거래처는 94바이트로 **LMS 요금**으로
+   * 나간다 — 보내고 나서야 안다. (lib/sms-templates.ts worstCaseBytes 주석 참고)
+   */
+  const recipientVars = sendable.map(t => ({ name: t.name, balance: won(t.balance) }))
+  const { bytes, who: longest } = worstCaseBytes(draft, storeName, recipientVars)
   const isLms = bytes > SMS_BYTE_LIMIT
 
   function pickKind(next: SmsKind) {
@@ -209,7 +219,7 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
     })
 
     const { data: sent } = await supabase.from('sms_logs')
-      .select('id, kind, body, sent_count, failed_count, created_at')
+      .select('id, kind, body, sent_count, failed_count, created_at, recipients')
       .eq('store_id', storeId).order('created_at', { ascending: false }).limit(20)
     setLogs((sent ?? []) as SentLog[])
 
@@ -251,7 +261,10 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
               <div className="text-[16px] font-medium text-[#2C261F] mb-[8px]">보낼 문구</div>
               <textarea
                 value={draft}
-                onChange={e => setDraft(e.target.value.slice(0, 300))}
+                /* 글자 수가 아니라 **바이트**로 막는다. 전엔 300자로 잘랐는데
+                   그건 단문 한도(90바이트 = 한글 45자)와 아무 상관이 없는 수였다.
+                   치환 뒤 길이로 재므로 {거래처} 가 긴 곳이 있으면 그만큼 덜 쓰게 된다. */
+                onChange={e => setDraft(clampToSms(e.target.value, storeName, recipientVars))}
                 rows={4}
                 className="field-soft w-full rounded-[9px] border border-[#D9D9D9] px-[13px] py-[11px] text-[17px] text-[#1E1E1E] outline-none resize-none leading-relaxed"
               />
@@ -263,8 +276,16 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
               <div className="rounded-[9px] bg-[#F2F2F2] px-[13px] py-[11px] text-[17px] text-[#1E1E1E] leading-relaxed whitespace-pre-wrap">
                 {preview}
               </div>
+              {/* 남은 바이트를 보여준다 — '몇 바이트 썼나'보다 '얼마나 더 쓸 수 있나'가
+                  지금 필요한 정보다. 한글은 2바이트씩 줄어든다.
+                  길이를 정하는 사람 이름도 같이 적는다. 거래처명이 치환되는 자리라
+                  내가 쓴 글자 수와 실제 길이가 다른데, 그 이유를 안 적으면
+                  "왜 여기서 더 안 써지지"가 된다. */}
               <div className={`mt-[6px] text-[13px] font-normal ${isLms ? 'text-danger' : 'text-[#ADADAD]'}`}>
-                {bytes}바이트 · {isLms ? 'LMS (단가가 올라가요)' : 'SMS'}
+                {bytes}/{SMS_BYTE_LIMIT}바이트 · {isLms ? 'LMS (단가가 올라가요)' : `단문 · 한글 ${Math.floor((SMS_BYTE_LIMIT - bytes) / 2)}자 더`}
+                {longest && sendable.length > 1 && (
+                  <span className="text-[#C1B7AA]"> · 가장 긴 곳 「{longest}」 기준</span>
+                )}
               </div>
             </div>
 
@@ -337,7 +358,21 @@ export default function SmsPanel({ initialKind }: { initialKind?: SmsKind } = {}
                         {`${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`}
                       </span>
                       <span className="text-[16px] text-[#1E1E1E] flex-shrink-0 w-[110px]">{t?.label ?? l.kind}</span>
-                      <span className="text-[13px] text-[#787878] flex-1 min-w-0 truncate">{l.body}</span>
+                      {/* 누구에게 보냈는지 — 전엔 문구와 '3명'만 있어서, 같은 문구를
+                          두 번 보냈을 때 **누가 겹쳤는지** 알 수가 없었다. 보낸 사람이
+                          기억해야 할 건 문구가 아니라 받은 사람이다.
+                          이름이 길면 앞 둘만 적고 나머지는 수로 — 한 줄을 지킨다.
+                          (옛 기록엔 recipients 가 없다. 그땐 문구를 그대로 보여준다) */}
+                      <span className="text-[13px] text-[#787878] flex-1 min-w-0 truncate">
+                        {(() => {
+                          const names = (l.recipients ?? [])
+                            .map(r => r.account_name).filter((v): v is string => !!v)
+                          if (names.length === 0) return l.body
+                          return names.length <= 2
+                            ? names.join(', ')
+                            : `${names.slice(0, 2).join(', ')} 외 ${names.length - 2}곳`
+                        })()}
+                      </span>
                       <span className={`text-[13px] flex-shrink-0 ${l.failed_count > 0 ? 'text-danger' : 'text-[#787878]'}`}>
                         {l.sent_count}명{l.failed_count > 0 ? ` · 실패 ${l.failed_count}` : ''}
                       </span>
