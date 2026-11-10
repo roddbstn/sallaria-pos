@@ -369,18 +369,18 @@ export function buildKitchenReceiptEscPos(order: OrderPayload, settings: Receipt
   // '(15분 뒤)' 를 같이 적는 이유: 시각만 보면 지금 몇 시인지 머리로 빼야 한다.
   // 접수 때는 인자로 받고(그 순간 DB 에 아직 안 쓰였다), 재출력 때는 주문에서 읽는다
   //
-  // ⚠️ 라벨이 '예상도착시간' 이었다. 틀린 말이었다 — 이 값은 **점주가 접수하면서 고른
-  //    소요시간**(prep_minutes)이지 손님이 고른 도착 시각이 아니다. 배달은 손님에게
-  //    수령 시간을 물어보는 자리조차 없는데도 '예상도착시간'이라고 찍혀서, 손님이
-  //    고르지도 않은 값이 손님의 말인 것처럼 보였다. 게다가 배달에서 이 시각은
-  //    '도착'이 아니라 **출발**이다(주방이 다 만든 때).
-  //    팝업 안내 박스가 이미 쓰고 있던 말을 그대로 가져온다 —
-  //    "고객에게 [N분 뒤 배달출발 / 준비완료]로 안내돼요" (OrderPopup.tsx).
+  // ⚠️ **배달에는 안 찍는다.**
+  //    포장·내점은 손님이 주문할 때 "몇 분 뒤에 갈게요"를 직접 고르므로 '도착'이라는
+  //    말이 성립한다. 배달은 그걸 묻는 자리가 아예 없고, 점주가 고른 소요시간은
+  //    주방이 다 만드는 시각일 뿐 손님에게 닿는 시각이 아니다. 라이더가 몇 분 걸릴지는
+  //    우리가 모른다 — 모르는 걸 종이에 적으면 그게 약속이 된다.
+  //    (한때 '배달출발'로 적어 봤는데, 주방이 쓰는 종이에 출발 시각을 적어 봐야
+  //     주방이 할 일이 달라지지 않는다. 적을 이유가 없으면 안 적는 게 낫다.)
   const eta = prepMins ?? order.prep_minutes ?? null
-  if (eta != null && eta > 0) {
+  if (order.method !== '배달' && eta != null && eta > 0) {
     const { clock, relative } = etaLines(eta, order.accepted_at)
     p(CMD.SIZE_2X, CMD.BOLD_ON)
-    p(enc(order.method === '배달' ? '배달출발' : '준비완료'), nl())
+    p(enc('예상도착시간'), nl())
     p(enc(clock), nl())
     p(CMD.BOLD_OFF, CMD.SIZE_1X)
     if (relative) p(enc(relative), nl())

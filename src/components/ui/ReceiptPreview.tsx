@@ -4,7 +4,7 @@ import {
   QTY_W, PRICE_W, COL_SEP,
   pw, padL, padR, clamp, wrapName, hr, subHr, field, amountField, LABEL_W,
 } from '../../lib/receipt-layout'
-import { sampleReceiptDisplay, sampleOrderPayload } from '../../lib/receipt-sample'
+import { sampleReceiptDisplay, sampleOrderPayload, type SampleMethod } from '../../lib/receipt-sample'
 
 // 감열 영수증 미리보기 — 주방 주문서 / 고객 영수증 2종.
 //
@@ -61,6 +61,16 @@ const TABS: { kind: ReceiptKind; label: string }[] = [
   { kind: 'customer', label: '고객 영수증' },
 ]
 
+/**
+ * 이용방법 — 영수증이 셋으로 갈린다.
+ *
+ * 한 장만 보여주면 나머지 둘이 어떻게 나오는지 모른다. 실제로 갈리는 게 적지 않다:
+ *   포장·내점  예상도착시간 **있음** · 배달 주소 없음 · 배달료 줄 없음
+ *   배달       예상도착시간 **없음** · 배달 주소/상세/요청 · 배달료 3,500원
+ * 셋 다 눌러 보고 설정을 정하라고 버튼으로 뺐다.
+ */
+const METHODS: SampleMethod[] = ['포장', '내점', '배달']
+
 // 표본 주문은 src/lib/receipt-sample.ts 에 있다 — 임시 출력(종이)과 **같은 값**을
 // 써야 "미리보기와 종이가 다르다" 가 안 생긴다.
 //
@@ -92,7 +102,11 @@ const ct = (text: string, bold = false): PLine => ({ segs: [{ t: text, b: bold }
  *  있고 그 숫자는 점주가 시간을 고치면 같이 바뀐다. 종이에 찍힌 시각은 안 바뀌어서
  *  어긋나는 순간 종이 쪽이 거짓말이 된다.)
  */
-export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE: Sample = sampleReceiptDisplay()): PLine[] {
+export function buildLines(
+  kind: ReceiptKind,
+  cfg: ReceiptPreviewConfig,
+  SAMPLE: Sample = sampleReceiptDisplay(),
+): PLine[] {
   const W = LINE_CHARS
   const showPrice = cfg.showItemPrice
   const nameW = showPrice ? W - QTY_W - COL_SEP - PRICE_W : W - QTY_W
@@ -132,18 +146,25 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
   out.push(t(field('선결제계정', SAMPLE.account)))
   HR()
 
-  // ── 배달 정보 (배달일 때만 — 표본은 배달 주문이다)
-  for (const l of wrapName(field('배달주소', SAMPLE.address), W)) out.push(t(l))
-  for (const l of wrapName(field('배달상세', SAMPLE.addressSub), W)) out.push(t(l))
-  out.push(t(field('가게요청', SAMPLE.storeNote)))
-  out.push(t(field('배달요청', SAMPLE.deliveryNote)))
+  // ── 배달 정보 — 주소가 있을 때만. escpos.ts 와 같은 분기다
+  if (SAMPLE.address) {
+    for (const l of wrapName(field('배달주소', SAMPLE.address), W)) out.push(t(l))
+    if (SAMPLE.addressSub) for (const l of wrapName(field('배달상세', SAMPLE.addressSub), W)) out.push(t(l))
+    out.push(t(field('가게요청', SAMPLE.storeNote)))
+    out.push(t(field('배달요청', SAMPLE.deliveryNote ?? '없음')))
+  } else {
+    out.push(t(field('가게요청', SAMPLE.storeNote)))
+  }
   HR()
 
-  // ── 메뉴 바로 위, 이 종이에서 가장 큰 글자. 주방용만.
-  //    라벨이 '예상도착시간' 이었는데 틀린 말이었다 — 이 값은 점주가 접수하면서 고른
-  //    소요시간이지 손님이 고른 도착 시각이 아니다(escpos.ts 같은 자리 주석 참고).
-  if (kind === 'kitchen') {
-    out.push({ segs: [{ t: SAMPLE.method === '배달' ? '배달출발' : '준비완료', b: true, x2: true }] })
+  // ── 예상도착시간 — 메뉴 바로 위, 이 종이에서 가장 큰 글자. 주방용 · 포장/내점만.
+  //
+  // **배달은 안 찍는다.** 포장·내점은 손님이 주문할 때 "몇 분 뒤에 갈게요"를 직접
+  // 고르므로 '도착'이라는 말이 성립한다. 배달은 그걸 묻는 자리가 아예 없고,
+  // 점주가 고른 소요시간은 주방이 다 만드는 시각일 뿐 손님에게 닿는 시각이 아니다.
+  // 라이더가 몇 분 걸릴지는 우리가 모른다 — 모르는 걸 종이에 적으면 그게 약속이 된다.
+  if (kind === 'kitchen' && SAMPLE.method !== '배달') {
+    out.push({ segs: [{ t: '예상도착시간', b: true, x2: true }] })
     out.push({ segs: [{ t: SAMPLE.etaClock, b: true, x2: true }] })
     if (SAMPLE.etaRelative) out.push(t(SAMPLE.etaRelative))
     HR()
@@ -193,7 +214,10 @@ export function buildLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, SAMPLE:
 
   // ── 금액
   out.push({ segs: [{ t: amountField('메뉴 소계', SAMPLE.subtotal, amtX2), x2: amtX2 }] })
-  out.push({ segs: [{ t: amountField('배달료', SAMPLE.deliveryFee, amtX2), x2: amtX2 }] })
+  // escpos 는 delivery_fee > 0 일 때만 찍는다 — 포장·내점엔 이 줄이 없다
+  if (SAMPLE.deliveryFeeWon > 0) {
+    out.push({ segs: [{ t: amountField('배달료', SAMPLE.deliveryFee, amtX2), x2: amtX2 }] })
+  }
   HR()
   out.push({ segs: [{ t: amountField('합  계', SAMPLE.total, amtX2), b: true, x2: amtX2 }] })
   HR()
@@ -305,12 +329,16 @@ function Paper({ lines }: { lines: PLine[] }) {
  * '주방 주문서' 탭이면 주방용만, '고객 영수증' 탭이면 고객용만 나간다.
  * 둘 다 나가면 어느 쪽 설정을 본 건지 헷갈리고 종이도 두 장 버린다.
  */
-async function printSample(kind: ReceiptKind, storeName?: string): Promise<{ ok: boolean; error?: string }> {
+async function printSample(
+  kind: ReceiptKind,
+  storeName?: string,
+  method: SampleMethod = '포장',
+): Promise<{ ok: boolean; error?: string }> {
   const w = window as unknown as {
     api?: { reprintOrder?: (p: unknown) => Promise<{ ok: boolean; error?: string }> }
   }
   if (!w.api?.reprintOrder) return { ok: false, error: '데스크톱 앱에서만 출력할 수 있어요' }
-  return w.api.reprintOrder({ order: sampleOrderPayload(storeName), kinds: [kind] })
+  return w.api.reprintOrder({ order: sampleOrderPayload(storeName, new Date(), method), kinds: [kind] })
 }
 
 /** 탭 + 종이 미리보기. 프린터 화면과 영수증·증빙 화면이 공유한다. */
@@ -326,16 +354,19 @@ export default function ReceiptPreview({
   showToast?: (msg: string) => void
 }) {
   const [kind, setKind] = useState<ReceiptKind>(initialKind)
+  // 기본은 포장 — 침산점 주문의 대부분이고, 예상도착시간이 찍히는 쪽이라
+  // 설정을 만지는 사람이 가장 먼저 봐야 할 모양이다
+  const [method, setMethod] = useState<SampleMethod>('포장')
   const [printing, setPrinting] = useState(false)
   // showToast 가 없는 화면(프린터 연결)에서도 결과를 알아야 한다
   const [note, setNote] = useState<string | null>(null)
-  const sample = useMemo(() => sampleReceiptDisplay(storeName), [storeName])
+  const sample = useMemo(() => sampleReceiptDisplay(storeName, new Date(), method), [storeName, method])
 
   const onPrint = async () => {
     if (printing) return
     setPrinting(true)
     setNote(null)
-    const res = await printSample(kind, storeName)
+    const res = await printSample(kind, storeName, method)
     const label = TABS.find(x => x.kind === kind)!.label
     const msg = res.ok ? `${label} 한 장을 출력했어요` : (res.error || '출력에 실패했어요')
     if (showToast) showToast(msg)
@@ -367,6 +398,27 @@ export default function ReceiptPreview({
         >
           {printing ? '출력 중…' : '임시 출력'}
         </button>
+      </div>
+
+      {/* 이용방법 — 탭 아래 한 줄. 탭(어느 종이)과 성격이 달라 모양도 다르게 둔다:
+          탭은 채운 사각, 이것은 테두리 pill. 같은 모양이면 넷 다 같은 축으로 읽힌다. */}
+      <div className="flex items-center gap-[5px] mb-[12px]">
+        {METHODS.map(m => (
+          <button
+            key={m}
+            onClick={() => setMethod(m)}
+            className={`h-[28px] px-[13px] rounded-[14px] text-[14px] border transition-colors ${
+              method === m
+                ? 'border-[#6A635E] bg-[#6A635E] text-[#FCFCFC] font-medium'
+                : 'border-[#D9D9D9] bg-[#FCFCFC] text-[#787878] hover:bg-[#F2F2F2]'
+            }`}
+          >
+            {m}
+          </button>
+        ))}
+        <span className="ml-[4px] text-[13px] text-[#ADADAD]">
+          {method === '배달' ? '배달 주소·배달료 · 예상도착시간 없음' : '예상도착시간 15분 뒤'}
+        </span>
       </div>
 
       {note && <div className="text-[13px] text-[#787878] mb-[8px]">{note}</div>}

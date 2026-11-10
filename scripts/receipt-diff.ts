@@ -13,7 +13,7 @@
  */
 import iconv from 'iconv-lite'
 import { buildKitchenReceiptEscPos, buildCustomerReceiptEscPos } from '../electron/escpos'
-import { sampleOrderPayload } from '../src/lib/receipt-sample'
+import { sampleOrderPayload, sampleReceiptDisplay } from '../src/lib/receipt-sample'
 import { buildLines, DEFAULT_RECEIPT_CONFIG } from '../src/components/ui/ReceiptPreview'
 import type { ReceiptPreviewConfig, ReceiptKind } from '../src/components/ui/ReceiptPreview'
 
@@ -26,8 +26,8 @@ function paperLines(buf: Buffer): string[] {
     .split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l !== '')
 }
 
-function previewLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig): string[] {
-  return buildLines(kind, cfg)
+function previewLines(kind: ReceiptKind, cfg: ReceiptPreviewConfig, method: '포장'|'내점'|'배달'): string[] {
+  return buildLines(kind, cfg, sampleReceiptDisplay(undefined, new Date(), method))
     .map(l => l.segs.map(s => s.t).join('').replace(/\s+$/, ''))
     .filter(l => l !== '')
 }
@@ -59,11 +59,12 @@ for (const { name, cfg } of CASES) {
     amountSize: cfg.amountSize, footerText: cfg.footerText, showBalance: cfg.showBalance,
   }
   for (const kind of ['kitchen', 'customer'] as const) {
-    const order = sampleOrderPayload() as never
+   for (const method of ['포장', '내점', '배달'] as const) {
+    const order = sampleOrderPayload(undefined, new Date(), method) as never
     const paper = paperLines(kind === 'kitchen'
       ? buildKitchenReceiptEscPos(order, settings, 42)
       : buildCustomerReceiptEscPos(order, settings, 42))
-    const prev = previewLines(kind, cfg)
+    const prev = previewLines(kind, cfg, method)
 
     const n = Math.max(paper.length, prev.length)
     const diffs: string[] = []
@@ -72,7 +73,7 @@ for (const { name, cfg } of CASES) {
         diffs.push(`    ${i}\n      종이  |${paper[i] ?? '(없음)'}|\n      미리  |${prev[i] ?? '(없음)'}|`)
       }
     }
-    const tag = `${name} / ${kind === 'kitchen' ? '주방' : '고객'}`
+    const tag = `${name} / ${kind === 'kitchen' ? '주방' : '고객'} / ${method}`
     if (diffs.length) {
       bad++
       console.log(`  ⚠️ ${tag} — ${diffs.length}줄 다름`)
@@ -80,6 +81,7 @@ for (const { name, cfg } of CASES) {
     } else {
       console.log(`  ✅ ${tag} — ${paper.length}줄 일치`)
     }
+   }
   }
 }
 

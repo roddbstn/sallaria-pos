@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildLines, DEFAULT_RECEIPT_CONFIG, type ReceiptKind } from './ReceiptPreview'
+import { sampleReceiptDisplay, type SampleMethod } from '../../lib/receipt-sample'
 import { pw, LINE_CHARS } from '../../lib/receipt-layout'
 
 // 미리보기는 **문자 격자**다. 격자가 깨지는 건 눈으로 봐야 알았는데,
@@ -9,8 +10,9 @@ import { pw, LINE_CHARS } from '../../lib/receipt-layout'
 const KINDS: ReceiptKind[] = ['kitchen', 'customer']
 const SIZES = ['normal', 'large'] as const
 
-function all(kind: ReceiptKind, over: Partial<typeof DEFAULT_RECEIPT_CONFIG> = {}) {
-  return buildLines(kind, { ...DEFAULT_RECEIPT_CONFIG, ...over })
+function all(kind: ReceiptKind, over: Partial<typeof DEFAULT_RECEIPT_CONFIG> = {}, method: SampleMethod = '배달') {
+  return buildLines(kind, { ...DEFAULT_RECEIPT_CONFIG, ...over },
+    sampleReceiptDisplay(undefined, new Date(), method))
 }
 const text = (l: ReturnType<typeof all>[number]) => l.segs.map(s => s.t).join('')
 
@@ -43,12 +45,25 @@ describe('영수증 미리보기 격자', () => {
     expect(new Set(cols).size).toBe(1)
   })
 
-  it('준비완료 시각은 주방 주문서에만 있다', () => {
-    // 표본은 배달 주문이라 '배달출발'. 라벨이 '예상도착시간' 이던 때는 점주가 고른
-    // 소요시간을 손님이 고른 도착 시각인 것처럼 말하고 있었다.
-    expect(all('kitchen').some(l => text(l).includes('배달출발'))).toBe(true)
-    expect(all('customer').some(l => text(l).includes('배달출발'))).toBe(false)
-    expect(all('kitchen').some(l => text(l).includes('예상도착시간'))).toBe(false)
+  it('예상도착시간은 주방 주문서 · 포장/내점에만 있다', () => {
+    // 배달은 안 찍는다 — 손님에게 수령 시간을 묻는 자리가 없고, 점주가 고른
+    // 소요시간은 주방이 다 만드는 시각일 뿐 손님에게 닿는 시각이 아니다.
+    for (const m of ['포장', '내점'] as const) {
+      expect(all('kitchen', {}, m).some(l => text(l).includes('예상도착시간')), m).toBe(true)
+      expect(all('customer', {}, m).some(l => text(l).includes('예상도착시간')), m).toBe(false)
+    }
+    expect(all('kitchen', {}, '배달').some(l => text(l).includes('예상도착시간'))).toBe(false)
+  })
+
+  it('배달 주소·배달료는 배달에만 있다', () => {
+    const d = all('kitchen', {}, '배달').map(text).join('\n')
+    expect(d).toContain('배달주소')
+    expect(d).toContain('배달료')
+    for (const m of ['포장', '내점'] as const) {
+      const o = all('kitchen', {}, m).map(text).join('\n')
+      expect(o, m).not.toContain('배달주소')
+      expect(o, m).not.toContain('배달료')
+    }
   })
 
   it("잔액을 끄면 잔액 두 줄이 사라진다", () => {

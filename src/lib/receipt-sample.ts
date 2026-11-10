@@ -10,7 +10,16 @@
 
 import { maskName, maskPhone } from './mask'
 
-/** 점주가 접수하면서 고른 소요시간(분) — 주방 영수증 '준비완료/배달출발' 의 재료 */
+/** 이용방법 — 영수증이 이것에 따라 갈린다(배달 주소·배달료·예상도착시간) */
+export type SampleMethod = '포장' | '내점' | '배달'
+
+/**
+ * 점주가 접수하면서 고른 소요시간(분).
+ *
+ * 주방 영수증의 '예상도착시간' 재료다 — **포장·내점에만** 찍는다.
+ * 배달은 손님에게 수령 시간을 묻는 자리가 없고, 이 값은 주방이 다 만드는 시각일 뿐
+ * 손님에게 닿는 시각이 아니다. 라이더가 몇 분 걸릴지는 우리가 모른다.
+ */
 export const SAMPLE_PREP_MINUTES = 15
 
 /**
@@ -19,8 +28,13 @@ export const SAMPLE_PREP_MINUTES = 15
  * 전화번호·주문자명은 **마스킹하지 않은 값**이다 — escpos 가 찍을 때 직접
  * 마스킹한다. 여기서 미리 가려 버리면 종이에 '김**보' 처럼 두 번 가려진다.
  */
-export function sampleOrderPayload(storeName = '샐러리아 침산점', now = new Date()) {
+export function sampleOrderPayload(
+  storeName = '샐러리아 침산점',
+  now = new Date(),
+  method: SampleMethod = '포장',
+) {
   const iso = now.toISOString()
+  const isDelivery = method === '배달'
   return {
     order_code:    'SAMPLE',
     order_number:  '11610',
@@ -29,7 +43,7 @@ export function sampleOrderPayload(storeName = '샐러리아 침산점', now = n
     account_type:  '과',
     orderer_name:  '김다보',
     orderer_phone: '01012344224',
-    method:        '배달',
+    method,
     ordered_at:    iso,
     items: [
       {
@@ -48,14 +62,16 @@ export function sampleOrderPayload(storeName = '샐러리아 침산점', now = n
       },
     ],
     menu_subtotal:  21400,
-    delivery_fee:   3500,
-    total_amount:   24900,
+    // 배달료는 배달일 때만 붙는다 — 영수증의 '배달료' 줄이 여기서 갈린다
+    delivery_fee:   isDelivery ? 3500 : 0,
+    total_amount:   isDelivery ? 24900 : 21400,
     balance_before: 711800,
     balance_after:  686900,
     note:             '수저·포크 O',
-    delivery_address: '대구 북구 옥산로 65',
-    delivery_detail:  '별관 3층',
-    delivery_note:    '문 앞에 두고 노크해주세요.',
+    // 배달이 아니면 주소가 아예 없다 — escpos 가 delivery_address 유무로 블록을 가른다
+    delivery_address: isDelivery ? '대구 북구 옥산로 65' : null,
+    delivery_detail:  isDelivery ? '별관 3층' : null,
+    delivery_note:    isDelivery ? '문 앞에 두고 노크해주세요.' : null,
     prep_minutes:     SAMPLE_PREP_MINUTES,
     // 접수 시각 = 주문 시각 = **지금**.
     //
@@ -94,8 +110,8 @@ export function formatReceiptClock(d: Date): string {
  *
  * '(N분 뒤)' 도 인쇄와 **같은 계산**으로 낸다 — 지난 주문이면 null 이고 그 줄이 빠진다.
  */
-export function sampleReceiptDisplay(storeName?: string, now = new Date()) {
-  const o = sampleOrderPayload(storeName, now)
+export function sampleReceiptDisplay(storeName?: string, now = new Date(), method: SampleMethod = '포장') {
+  const o = sampleOrderPayload(storeName, now, method)
   const eta = new Date(new Date(o.accepted_at).getTime() + SAMPLE_PREP_MINUTES * 60_000)
   // escpos.ts etaLines 와 같은 계산 — 지난 주문이면 null 이고 그 줄을 안 찍는다
   const left = Math.ceil((eta.getTime() - Date.now()) / 60_000)
@@ -125,6 +141,8 @@ export function sampleReceiptDisplay(storeName?: string, now = new Date()) {
     })),
     subtotal:      formatReceiptWon(o.menu_subtotal),
     deliveryFee:   formatReceiptWon(o.delivery_fee),
+    /** 배달료 줄을 그릴지 판단하는 원값 — escpos 의 delivery_fee > 0 과 같은 기준 */
+    deliveryFeeWon: o.delivery_fee,
     total:         formatReceiptWon(o.total_amount),
     balanceBefore: formatReceiptWon(o.balance_before),
     balanceAfter:  formatReceiptWon(o.balance_after),
