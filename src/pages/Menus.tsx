@@ -15,6 +15,7 @@ import OptionGroupAddModal from '../components/menu/OptionGroupAddModal'
 import { useMenuForm } from '../components/menu/use-menu-form'
 import { MenuTagBadges, MenuTagRow } from '../components/menu/tag-badges'
 import { menuGrid, GRID_PAD, GRID_GAP, THUMB } from '../lib/menu-grid'
+import { filterMenus, filterCategories, normalize as normSearch } from '../lib/menu-search'
 
 type MenuTab      = 'menu' | 'option' | 'category'
 import type { SoldOutState } from '../components/menu/menu-form-types'
@@ -1163,12 +1164,16 @@ export default function Menus() {
           menuGrid(gridAreaW, itemImageVisible)
         const countOf = (catId: string) => menus.filter(m => m.categoryId === catId).length
         const selectedCat = categories.find(c => c.id === previewCatId) ?? null
-        const itemsOfSelectedCat = selectedCat ? menus.filter(m => m.categoryId === selectedCat.id) : []
+        const itemsOfSelectedCat = selectedCat
+          ? filterMenus(menus, categories, search).filter(m => m.categoryId === selectedCat.id)
+          : []
         // ⚠️ 글자 크기를 바꿀 땐 **두 갈래를 같이** 본다.
         //    2026-11-07 에 일괄 치환으로 메뉴 이름 쪽 삼항이 'text-[17px]' : 'text-[17px]'
         //    가 돼서, '기본'과 '큰 글씨'가 똑같이 보였다. 설정은 있는데 효과가 없었다.
         const catTextSizeClass = categoryTextSize === 'large' ? 'text-[17px]' : 'text-[15px]'
-        const listForLeft = menuEditMode ? editOrder : categories
+        // 편집 모드에서는 거르지 않는다 — 순서를 끌어 옮기는 화면이라 일부만 보이면
+        // 드롭 위치가 실제 순서와 어긋난다.
+        const listForLeft = menuEditMode ? editOrder : filterCategories(categories, menus, search)
 
         // 개별메뉴 모드 — 카테고리별 제목 + 6열 카드 묶음, 모든 px는 Figma 원본 × FIGMA_SCALE
         // — src/lib/figma-scale.ts 참고. 행 높이는 이제 CSS Grid가 자동으로 처리하므로
@@ -1189,11 +1194,16 @@ export default function Menus() {
         const CAT_UNDO_TOP      = 66
         const INDIV_HEADING_GAP = 29
         const INDIV_GROUP_GAP   = 24
+        // 검색 — 좌상단 입력창. 2026-11-10 까지 **거르는 코드가 아예 없었다**
+        // (입력은 되는데 그 값을 쓰는 곳이 한 줄도 없었다). lib/menu-search.ts 참고.
+        const searching = normSearch(search).length > 0
+        const shownMenus = filterMenus(menus, categories, search)
+
         const individualGroups = categories
           .slice()
           .sort((a, b) => a.displayOrder - b.displayOrder)
           .reduce<{ cat: Category; items: MenuDetail[] }[]>((acc, cat) => {
-            const items = menus.filter(m => m.categoryId === cat.id)
+            const items = shownMenus.filter(m => m.categoryId === cat.id)
             if (items.length === 0) return acc
             acc.push({ cat, items })
             return acc
@@ -1295,7 +1305,9 @@ export default function Menus() {
               {menuViewMode === 'category' && !menuEditMode && (
                 listForLeft.length === 0 ? (
                   <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 + pillBandH }}>
-                    아직 등록된 카테고리가 없습니다.
+                    {/* '아직 없다' 와 '검색에 안 걸린다' 는 다른 말이다 —
+                        검색 중인데 '등록된 게 없다'고 하면 지운 줄 안다 */}
+                    {searching ? `'${search.trim()}' 에 맞는 결과가 없어요` : '아직 등록된 카테고리가 없습니다.'}
                   </div>
                 ) : listForLeft.map((cat, i) => {
                   const col = i % COLS
@@ -1415,7 +1427,7 @@ export default function Menus() {
               {menuViewMode === 'individual' && !menuEditMode && (
                 individualGroups.length === 0 ? (
                   <div className="text-[17px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
-                    아직 등록된 메뉴가 없습니다.
+                    {searching ? `'${search.trim()}' 에 맞는 메뉴가 없어요` : '아직 등록된 메뉴가 없습니다.'}
                   </div>
                 ) : (
                   <div style={{ paddingTop: INDIV_FIRST_TOP, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
