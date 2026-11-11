@@ -591,15 +591,18 @@ export default function VerbalOrderModal({
                       </div>
                     )}
                     {errorMsg && <div className="text-[11px] text-danger font-semibold mb-2">{errorMsg}</div>}
+                    {/* 총액을 버튼 **오른쪽**으로. 왼쪽에 두면 눈이 금액을 먼저 읽고
+                        버튼으로 되돌아와야 한다 — 누르는 자리가 먼저 오고 확인할 숫자가
+                        뒤따르는 쪽이 손 움직임과 같은 방향이다. */}
                     <div className="flex items-center gap-3">
-                      <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">{won(total)}</div>
                       <button
                         onClick={handleSubmit}
                         disabled={!canSubmit}
-                        className="flex-1 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors"
+                        className="pressable-soft flex-1 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors"
                       >
                         {submitting ? <Working label="주문 처리 중" /> : '주문하기'}
                       </button>
+                      <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">{won(total)}</div>
                     </div>
                   </div>
                 </div>
@@ -656,7 +659,12 @@ export default function VerbalOrderModal({
                         <button
                           key={it.id}
                           onClick={() => toggleOption(g.id, it.id, g.isMulti, g.maxSelect, locked)}
-                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] transition-colors ${
+                          /* pressable-soft — 전역 button:active 는 0.95 로 줄인다.
+                             폭 340px 짜리 가로로 긴 줄에서는 좌우로 17px 씩 빨려들어가
+                             "덜컹"거린다(index.css 의 .pressable-row 주석과 같은 문제).
+                             여기는 이미 테두리·배경으로 눌린 걸 말하고 있으니
+                             줄어드는 건 0.985 로만 거든다. */
+                          className={`pressable-soft w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] transition-colors ${
                             checked ? 'border-ink bg-gray-bg font-semibold text-ink' : 'border-gray-border text-gray-text hover:bg-gray-bg'
                           } ${locked ? 'cursor-default' : ''}`}
                         >
@@ -705,10 +713,10 @@ export default function VerbalOrderModal({
 
               {errorMsg && <div className="text-[11px] text-danger font-semibold mb-2">{errorMsg}</div>}
               <div className="flex gap-2 mt-2">
-                <button onClick={() => { setOptionPicker(null); setErrorMsg('') }} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]">
+                <button onClick={() => { setOptionPicker(null); setErrorMsg('') }} className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]">
                   취소
                 </button>
-                <button onClick={confirmOptionPicker} className="flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]">
+                <button onClick={confirmOptionPicker} className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]">
                   담기
                 </button>
               </div>
