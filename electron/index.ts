@@ -820,9 +820,30 @@ autoUpdater.on('update-available', (info) => {
   console.log('[Updater] 업데이트 발견:', info.version)
   mainWindow?.webContents.send('updater:status', { type: 'available', version: info.version })
 })
+
+/**
+ * 내려받는 중 — 진행률을 그대로 올려 보낸다.
+ *
+ * 설치파일이 200MB 가 넘어서 매장 인터넷에 따라 몇 분이 걸린다. 전엔 '다운로드 중'
+ * 토스트가 **3초 뜨고 사라져서**, 그 뒤로는 받고 있는지 멈춘 건지 알 길이 없었다.
+ * (blockmap 델타가 먹으면 훨씬 적게 받는데, 그것도 화면에 안 보이긴 마찬가지였다)
+ */
+autoUpdater.on('download-progress', (p) => {
+  mainWindow?.webContents.send('updater:status', {
+    type:        'progress',
+    percent:     Math.round(p.percent),
+    transferred: p.transferred,
+    total:       p.total,
+    bytesPerSecond: p.bytesPerSecond,
+  })
+})
+
 autoUpdater.on('update-downloaded', (info) => {
   console.log('[Updater] 다운로드 완료:', info.version)
-  mainWindow?.webContents.send('updater:status', { type: 'downloaded', version: info.version })
+  // ⚠️ 전엔 type 을 'downloaded' 로 보냈는데 렌더러는 'ready' 를 기다리고 있었다.
+  //    그래서 **'업데이트 준비 완료' 배너가 한 번도 뜬 적이 없다** — 받아 놓고도
+  //    점주는 그 사실을 몰랐고, 앱을 끌 때까지 아무 표시가 없었다.
+  mainWindow?.webContents.send('updater:status', { type: 'ready', version: info.version })
 })
 autoUpdater.on('error', (err) => {
   console.warn('[Updater] 오류 (무시):', err.message)

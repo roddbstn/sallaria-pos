@@ -8,6 +8,7 @@ import { track } from './lib/firebase'
 import { StoreContext, type StoreSession } from './lib/store-context'
 import { playOrderSound, startOrderAlarm, stopOrderAlarm, getSavedVolume, alertKindOf } from './lib/sound'
 import { readSetting } from './hooks/usePersistentState'
+import UpdateProgressBar from './components/ui/UpdateProgressBar'
 
 import storeIcon from './assets/icons/store.svg'
 import { HeaderSlotContext } from './lib/header-slot'
@@ -327,6 +328,10 @@ export default function App() {
   const [toast,      setToast]      = useState('')
   const [toastTimer, setToastTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [updateReady, setUpdateReady] = useState<string | null>(null)
+  /** 내려받는 중 — null 이면 안 받는 중. 다 받으면 null 로 돌리고 준비 배너로 넘긴다 */
+  const [updateProgress, setUpdateProgress] = useState<
+    { percent: number; transferred?: number; total?: number; bytesPerSecond?: number } | null
+  >(null)
   const [profileOpen,  setProfileOpen]  = useState(false)
   // 미리보기용 — 데이터 연동 전까지 auth 화면 눈으로 확인하기 위한 로컬 상태
   const [authView, setAuthView] = useState<'entry' | 'signup' | 'login'>('entry')
@@ -661,9 +666,18 @@ export default function App() {
   // ── 자동 업데이트 알림 구독 ──────────────────────────────────────────────────
   useEffect(() => {
     const w = window as unknown as { api?: { onUpdaterStatus?: Function } }
-    w.api?.onUpdaterStatus?.(({ type, version }: { type: string; version: string }) => {
-      if (type === 'available') showToast(`새 버전 ${version} 다운로드 중...`)
-      if (type === 'ready')     setUpdateReady(version)
+    w.api?.onUpdaterStatus?.((u: {
+      type: 'available' | 'progress' | 'ready'
+      version?: string
+      percent?: number; transferred?: number; total?: number; bytesPerSecond?: number
+    }) => {
+      // '받기 시작했다'는 토스트로 알리지 않는다 — 3초 뒤 사라져서 200MB 를 받는
+      // 몇 분 동안 아무 표시가 없었다. 막대를 0% 로 띄워 두고 진행률이 채운다.
+      if (u.type === 'available') setUpdateProgress({ percent: 0 })
+      if (u.type === 'progress')  setUpdateProgress({
+        percent: u.percent ?? 0, transferred: u.transferred, total: u.total, bytesPerSecond: u.bytesPerSecond,
+      })
+      if (u.type === 'ready') { setUpdateProgress(null); setUpdateReady(u.version ?? '') }
     })
   }, [])
 
@@ -1461,6 +1475,9 @@ export default function App() {
             onError={showToast}
           />
         )}
+
+        {/* ── 새 버전 받는 중 — 다 받을 때까지 계속 떠 있는다 ── */}
+        {updateProgress && <UpdateProgressBar {...updateProgress} />}
 
         {/* ── 업데이트 준비 배너 ── */}
         {/* 토스트와 같은 박스에 버튼만 얹는다 (BottomToast 의 action) */}

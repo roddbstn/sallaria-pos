@@ -16,7 +16,12 @@ const api = {
   offRealtimeStatus: ()                             => ipcRenderer.removeAllListeners('realtime:status'),
 
   // ── 자동 업데이트 ────────────────────────────────────────────────────────────
-  onUpdaterStatus: (cb: (info: { type: string; version: string }) => void) =>
+  onUpdaterStatus: (cb: (info: {
+    type: 'available' | 'progress' | 'ready'
+    version?: string
+    /** type==='progress' 일 때만 */
+    percent?: number; transferred?: number; total?: number; bytesPerSecond?: number
+  }) => void) =>
     ipcRenderer.on('updater:status', (_e, v) => cb(v)),
   updaterInstall: () => ipcRenderer.invoke('updater:install'),
   updaterCheck:   () => ipcRenderer.invoke('updater:check') as Promise<{
