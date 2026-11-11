@@ -6,7 +6,6 @@ import { type MenuDetail, type Category } from '../lib/mock-data'
 import { mapMenuRow } from '../lib/mappers'
 import ModalOverlay from './ui/ModalOverlay'
 import DaumPostcodeEmbed from './DaumPostcodeEmbed'
-import ConfirmDialog from './ui/ConfirmDialog'
 
 // ── 구두주문 받기 — 전화/현장 구두주문을 POS에서 직접 입력해 create_order RPC로 제출 ──
 // 별도 "장바구니 화면" 없이 메뉴를 고르면 우측 주문요약에 바로 반영되는 단일 화면 구성.
@@ -95,7 +94,6 @@ export default function VerbalOrderModal({
 
   const [cart, setCart] = useState<CartItem[]>([])
   /** 바깥 클릭으로 닫으려는데 입력한 게 있을 때 띄우는 확인창 */
-  const [discardConfirm, setDiscardConfirm] = useState(false)
   const [optionPicker, setOptionPicker] = useState<MenuDetail | null>(null)
   const [optionSel,    setOptionSel]    = useState<Record<string, string[]>>({})
   const [optionQty,    setOptionQty]    = useState(1)
@@ -322,17 +320,14 @@ export default function VerbalOrderModal({
     onClose()
   }
 
-  // 바깥을 눌러 닫을 때 **입력한 걸 말없이 버리지 않는다.**
-  // 이 모달은 거래처·주문자·장바구니를 다 들고 있고, 피크타임에 전화를 받으면서 채운다.
-  // 빈 상태면 그냥 닫고, 뭔가 담겨 있으면 한 번 묻는다.
-  const hasWork = cart.length > 0 || !!selectedAccount || !!memberName.trim()
-  function closeFromBackdrop() {
-    if (!hasWork) { onClose(); return }
-    setDiscardConfirm(true)
-  }
-
+  // 바깥을 누르면 **그냥 닫는다.**
+  //
+  // 전엔 담긴 게 있으면 '입력한 구두주문을 버릴까요?'를 한 번 물었다. 걷어낸 이유:
+  // 구두주문은 전화를 받으면서 몇 초 만에 채우는 화면이라 다시 채우는 비용이 작고,
+  // 피크타임에 확인 모달이 한 겹 더 뜨는 쪽이 더 거슬린다. 헤더의 ✕ 는 원래 바로
+  // 닫았으니, 이제 닫는 두 길이 같은 동작을 한다.
   return (
-    <ModalOverlay onClose={closeFromBackdrop} z={50}>
+    <ModalOverlay onClose={onClose} z={50}>
       <div className="modal-in bg-white rounded-2xl shadow-xl w-[90vw] max-w-[1100px] h-[85vh] flex flex-col overflow-hidden">
 
         {/* 헤더 */}
@@ -724,20 +719,6 @@ export default function VerbalOrderModal({
           </div>
         )}
       </div>
-
-      {/* 입력한 주문을 버릴지 확인 — 바깥 클릭으로 닫으려 할 때만 뜬다.
-          헤더의 ✕ 는 "닫겠다"는 분명한 의사표시라 그대로 닫는다. */}
-      {discardConfirm && (
-        <ConfirmDialog
-          title="입력한 구두주문을 버릴까요?"
-          description="담은 메뉴와 고른 거래처가 사라져요. 주문은 아직 접수되지 않았어요."
-          confirmLabel="버리기"
-          cancelLabel="계속 입력"
-          tone="danger"
-          onConfirm={() => { setDiscardConfirm(false); onClose() }}
-          onCancel={() => setDiscardConfirm(false)}
-        />
-      )}
 
       {/* 다음 주소검색 — 매장 정보 화면과 같은 컴포넌트.
           z-[95]: 이 구두주문 모달 위에 떠야 하고, 삭제 확인(z-90)보다도 위다. */}
