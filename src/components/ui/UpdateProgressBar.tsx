@@ -51,10 +51,11 @@ export default function UpdateProgressBar({ percent, transferred, total, bytesPe
         </div>
       )}
 
-      {/* 다 받아도 지금 당장 바뀌는 건 없다는 걸 말해 둔다 — 안 적으면
-          "100% 인데 왜 그대로지"가 된다 */}
+      {/* 100% 가 돼도 화면은 그대로다. 그때 뭘 해야 하는지를 **한 문장으로** 적는다.
+          '다 받으면 앱을 끌 때 설치돼요' 라고 썼다가 걷어냈다 — '설치'는 점주가 할 일처럼
+          들리는데 실제로 점주가 할 일은 껐다 켜는 것 하나뿐이다. 할 일과 결과만 남긴다. */}
       <div className="mt-[6px] text-[12px] text-white/45 leading-snug">
-        다 받으면 앱을 끌 때 설치돼요. 하던 일은 그대로 하셔도 돼요.
+        선포스를 껐다 켜면 새 버전으로 바뀌어요.
       </div>
     </div>
   )
