@@ -1253,6 +1253,8 @@ export default function Menus() {
         const individualGroups = categories
           .slice()
           .sort((a, b) => a.displayOrder - b.displayOrder)
+          // pill 로 고른 분류만. '전체'(previewCatId === 'all')면 거르지 않는다.
+          .filter(cat => previewCatId === 'all' || cat.id === previewCatId)
           .reduce<{ cat: Category; items: MenuDetail[] }[]>((acc, cat) => {
             const items = shownMenus.filter(m => m.categoryId === cat.id)
             if (items.length === 0) return acc
@@ -1265,7 +1267,10 @@ export default function Menus() {
         // 없었다(RLS 가 category_id 로 소유를 판단했다). 이제 만들 수 있으니 보일 자리도
         // 있어야 한다 — 안 그러면 "저장은 됐다는데 어디에도 없는" 메뉴가 된다.
         // 진짜 카테고리가 아니므로 편집/순서변경 대상인 좌측 카테고리 카드에는 넣지 않는다.
-        const uncategorized = menus.filter(m => !m.categoryId)
+        // ⚠️ shownMenus 로 거른다 — 전엔 menus 를 그대로 써서 **검색을 무시했다.**
+        //    '단호박'을 쳐도 미분류 묶음은 전부 그대로 남아 있었다.
+        //    그리고 pill 로 특정 분류를 고르면 미분류는 빠진다(미분류 pill 은 없다).
+        const uncategorized = previewCatId === 'all' ? shownMenus.filter(m => !m.categoryId) : []
         if (uncategorized.length > 0) {
           individualGroups.push({
             cat: { id: '__uncategorized__', name: '미분류', displayOrder: Number.MAX_SAFE_INTEGER },
@@ -1342,11 +1347,13 @@ export default function Menus() {
                    바로 붙어 보이지 않도록 padding-bottom 확보 */}
               <div className="absolute overflow-y-auto pb-[26px]" style={{ left: 0, top: 0, right: 0, bottom: 0 }}>
 
-              {/* 카테고리 빠른 선택 — 검색창 바로 아래.
-                  카드 그리드만 있으면 아래로 스크롤한 뒤에는 어느 분류를 보고 있는지,
-                  다른 분류로 어떻게 가는지가 안 보인다. 카드는 '개수·편집'용으로 두고
-                  전환은 이 줄에서 한다. 줄 수가 늘어도 카드가 겹치지 않도록 높이를 재서 민다. */}
-              {menuViewMode === 'category' && !menuEditMode && categories.length > 0 && (
+              {/* 카테고리 빠른 선택 — **메뉴 보기 모드**에만 둔다.
+                  카테고리 모드에는 분류 카드가 이미 깔려 있어서 같은 걸 두 번 보여주는
+                  꼴이었다. 정작 필요한 쪽은 여기다 — 메뉴 보기는 분류별로 묶인 긴 목록이라
+                  아래로 내려가면 어느 분류를 보고 있는지, 다른 분류로 어떻게 가는지가 안 보인다.
+                  누르면 그 분류만 남는다('전체'면 전부).
+                  줄 수가 늘어도 카드가 겹치지 않도록 높이를 재서 민다. */}
+              {menuViewMode === 'individual' && !menuEditMode && categories.length > 0 && (
                 <div className="absolute" style={{ left: 26, right: 26, top: 62 }}>
                   {/* 바깥이 높이를 자르고, 안쪽(pillBandRef)은 **항상 자연 높이**로 둔다.
                       잘린 높이로 줄 수를 세면 접기/펼치기가 무한히 깜빡인다(위 주석 참고). */}
@@ -1398,7 +1405,7 @@ export default function Menus() {
               {/* 카테고리 모드 — 일반 보기(고정 그리드) */}
               {menuViewMode === 'category' && !menuEditMode && (
                 listForLeft.length === 0 ? (
-                  <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 + pillShownH }}>
+                  <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
                     {/* '아직 없다' 와 '검색에 안 걸린다' 는 다른 말이다 —
                         검색 중인데 '등록된 게 없다'고 하면 지운 줄 안다 */}
                     {searching ? `'${search.trim()}' 에 맞는 결과가 없어요` : '아직 등록된 카테고리가 없습니다.'}
@@ -1413,7 +1420,7 @@ export default function Menus() {
                       className={`absolute rounded-[13px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left transition-colors ${
                         previewCatId === cat.id ? 'bg-[#E5E5E5]' : 'bg-[#FCFCFC]'
                       }`}
-                      style={{ left: GRID_PAD + col * COL_STEP, top: 62 + pillShownH + 12 + row * 123, width: CARD_W, height: 117 }}
+                      style={{ left: GRID_PAD + col * COL_STEP, top: 62 + 12 + row * 123, width: CARD_W, height: 117 }}
                     >
                       <div className={`absolute ${catTextSizeClass} font-semibold text-ink leading-snug`} style={{ left: 10, top: 10, right: 10 }}>
                         {cat.name}
@@ -1520,11 +1527,16 @@ export default function Menus() {
                    않는다. 다음 행은 그 행의 최대 높이만큼만 간격이 벌어지고 내려감. */}
               {menuViewMode === 'individual' && !menuEditMode && (
                 individualGroups.length === 0 ? (
-                  <div className="text-[17px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 }}>
-                    {searching ? `'${search.trim()}' 에 맞는 메뉴가 없어요` : '아직 등록된 메뉴가 없습니다.'}
+                  // 비어 있는 이유가 셋이라 말을 갈라 둔다. 하나로 뭉뚱그리면
+                  // 분류를 골라서 빈 건데 '등록된 메뉴가 없다'고 해서 다 지운 줄 안다.
+                  // pill 띠는 그대로 둔다 — 안 그러면 '전체'로 되돌아갈 길이 사라진다.
+                  <div className="text-[17px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 + pillShownH }}>
+                    {searching            ? `'${search.trim()}' 에 맞는 메뉴가 없어요`
+                     : previewCatId !== 'all' ? '이 분류에는 아직 메뉴가 없어요'
+                     : '아직 등록된 메뉴가 없습니다.'}
                   </div>
                 ) : (
-                  <div style={{ paddingTop: INDIV_FIRST_TOP, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
+                  <div style={{ paddingTop: INDIV_FIRST_TOP + pillShownH, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
                     {individualGroups.map(({ cat, items }, gi) => (
                       <div key={cat.id} style={{ marginTop: gi > 0 ? INDIV_GROUP_GAP : 0 }}>
                         <div className="text-[18px] font-semibold text-ink" style={{ marginBottom: INDIV_HEADING_GAP }}>
