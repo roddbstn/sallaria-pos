@@ -91,6 +91,26 @@ export default function Menus() {
     return () => ro.disconnect()
   })
 
+  /**
+   * 검색창 오른쪽 버튼 줄의 폭.
+   *
+   * 검색창(left:26)과 버튼 줄(right:17)이 **둘 다 absolute** 라 서로를 모른다.
+   * 검색창 폭이 250 으로 박혀 있어서, 창을 좁히면 둘이 그대로 겹쳤다.
+   * 버튼 글자는 모드마다 달라서('메뉴 보기'·'카테고리 추가'…) 폭을 추정할 수 없다 — 잰다.
+   */
+  /** 검색창과 버튼 줄 사이에 **반드시 남겨 두는 벽**. 좁혀도 둘이 안 닿는다 */
+  const HEADER_GAP = 20
+  const headerBtnsRef = useRef<HTMLDivElement | null>(null)
+  const [headerBtnsW, setHeaderBtnsW] = useState(0)
+  useEffect(() => {
+    const el = headerBtnsRef.current
+    if (!el) { setHeaderBtnsW(0); return }
+    const ro = new ResizeObserver(() => setHeaderBtnsW(el.offsetWidth))
+    ro.observe(el)
+    setHeaderBtnsW(el.offsetWidth)
+    return () => ro.disconnect()
+  })
+
   // QR오더 미리보기(iframe)와 좌측 카테고리 선택을 양방향으로 동기화.
   // postMessage는 "이 특정 부모창 ↔ 이 특정 iframe" 사이에서만 오가므로, 손님이 QR코드를 찍어
   // 최상위 탭으로 여는 실제 sallaria.web.app에는 전혀 영향 없음 — iframe 안에서 열렸을 때만 작동.
@@ -1228,8 +1248,18 @@ export default function Menus() {
             <div ref={gridAreaRef} className="relative flex-1 min-w-0 overflow-hidden">
               {/* 검색창 + 모드/편집 버튼 — 고정 영역 (뒤의 스크롤 콘텐츠를 가리도록 배경 깔고 z-index 위로) */}
               <div className="absolute bg-gray-100" style={{ left: 0, top: 0, right: 0, height: 59, zIndex: 10 }} />
-              {/* 검색창 */}
-              <div className="field-wrap absolute border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px]" style={{ left: 26, top: 17, width: 250, height: 31, zIndex: 11 }}>
+              {/* 검색창 — 폭이 **남는 자리에 맞춰 줄어든다.**
+                  전엔 250 으로 박혀 있어서, 창을 좁히면 오른쪽 버튼 줄과 그대로 겹쳤다
+                  (둘 다 absolute 라 서로를 모른다). 이제 버튼 줄 폭을 재서
+                  그 앞까지만 차지하고, 사이에 최소 20px 의 벽을 남긴다.
+                  120 밑으로는 안 줄인다 — 돋보기와 글자 두어 자는 보여야 검색창으로 읽힌다. */}
+              <div
+                className="field-wrap absolute border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px]"
+                style={{
+                  left: 26, top: 17, height: 31, zIndex: 11,
+                  width: Math.max(120, Math.min(250, gridAreaW - 26 - 17 - headerBtnsW - HEADER_GAP)),
+                }}
+              >
                 <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
                 <input
                   value={search}
@@ -1241,12 +1271,14 @@ export default function Menus() {
 
               {/* 카테고리 추가 / 메뉴 추가 — 현재 모드에 맞는 것만 노출 + "모드 변경"/화면편집. flex-gap으로 버튼 간 간격 항상 동일 — 편집모드일 땐 숨김 */}
               {!menuEditMode && (
-                <div className="absolute flex items-center gap-[8px]" style={{ right: 17, top: -2, zIndex: 11 }}>
+                <div ref={headerBtnsRef} className="absolute flex items-center gap-[8px]" style={{ right: 17, top: -2, zIndex: 11 }}>
                   <button
                     onClick={toggleMenuViewMode}
                     className="hover-chip flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"
                   >
-                    모드 변경
+                    {/* 버튼 글자는 **지금 모드**가 아니라 **누르면 가는 곳**을 말한다.
+                        '모드 변경'은 눌러 보기 전엔 어디로 가는지 알 수 없었다. */}
+                    {menuViewMode === 'category' ? '메뉴 보기' : '카테고리 보기'}
                     <img src={rotateIcon} alt="" width={13} height={13} />
                   </button>
                   <button
