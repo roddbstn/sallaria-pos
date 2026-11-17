@@ -98,6 +98,24 @@ export default function Menus() {
    * 검색창 폭이 250 으로 박혀 있어서, 창을 좁히면 둘이 그대로 겹쳤다.
    * 버튼 글자는 모드마다 달라서('메뉴 보기'·'카테고리 추가'…) 폭을 추정할 수 없다 — 잰다.
    */
+  /**
+   * 카테고리 pill 줄 접기.
+   *
+   * 분류가 많으면 이 띠가 네 줄, 다섯 줄로 늘어나면서 **메뉴 카드를 화면 밖으로 민다.**
+   * 정작 자주 쓰는 건 위쪽 몇 개인데 전부가 자리를 먹는다.
+   *
+   * ⚠️ 높이를 두 개로 나눠 쓴다. 접은 높이로 줄 수를 세면 '2줄이니 접을 필요 없음'
+   *    → 펼침 → '5줄이니 접어야 함' → 접힘 … 으로 **무한히 깜빡인다.**
+   *      pillBandH    펼쳤을 때의 자연 높이 (줄 수 판정용, 안쪽 div 를 잰다)
+   *      pillShownH   지금 실제로 차지하는 높이 (아래 그리드를 미는 값)
+   */
+  const PILL_H = 32, PILL_GAP = 6
+  /** 이 줄 수부터 접기 버튼이 나온다 */
+  const PILL_COLLAPSE_AT = 4
+  /** 접었을 때 남기는 줄 수 */
+  const PILL_COLLAPSED_ROWS = 2
+  const [pillCollapsed, setPillCollapsed] = useState(true)
+
   /** 검색창과 버튼 줄 사이에 **반드시 남겨 두는 벽**. 좁혀도 둘이 안 닿는다 */
   const HEADER_GAP = 20
   const headerBtnsRef = useRef<HTMLDivElement | null>(null)
@@ -1216,6 +1234,19 @@ export default function Menus() {
         const INDIV_GROUP_GAP   = 24
         // 검색 — 좌상단 입력창. 2026-11-10 까지 **거르는 코드가 아예 없었다**
         // (입력은 되는데 그 값을 쓰는 곳이 한 줄도 없었다). lib/menu-search.ts 참고.
+        // ── 카테고리 pill 줄 접기 (상태 선언부 주석 참고) ──
+        // 줄 수는 **자연 높이**(pillBandH)로 센다. 줄 간격을 더해 나눈 뒤 반올림 —
+        // 한 줄이면 32, 두 줄이면 70(32+6+32) 이라 (h+6)/38 이 깔끔히 떨어진다.
+        const PILL_ROW = PILL_H + PILL_GAP
+        const pillRows = pillBandH > 0 ? Math.max(1, Math.round((pillBandH + PILL_GAP) / PILL_ROW)) : 0
+        const pillCanCollapse = pillRows >= PILL_COLLAPSE_AT
+        /** 실제로 접혀 있나 — 접을 만큼 길 때만 접힌다 */
+        const pillClamped = pillCanCollapse && pillCollapsed
+        /** 지금 차지하는 높이. 접혔으면 두 줄, 아니면 자연 높이 */
+        const pillShownH = pillClamped
+          ? PILL_COLLAPSED_ROWS * PILL_H + (PILL_COLLAPSED_ROWS - 1) * PILL_GAP
+          : pillBandH
+
         const searching = normSearch(search).length > 0
         const shownMenus = filterMenus(menus, categories, search)
 
@@ -1316,27 +1347,56 @@ export default function Menus() {
                   다른 분류로 어떻게 가는지가 안 보인다. 카드는 '개수·편집'용으로 두고
                   전환은 이 줄에서 한다. 줄 수가 늘어도 카드가 겹치지 않도록 높이를 재서 민다. */}
               {menuViewMode === 'category' && !menuEditMode && categories.length > 0 && (
-                <div ref={pillBandRef} className="absolute flex flex-wrap gap-[6px]" style={{ left: 26, right: 26, top: 62 }}>
-                  {[{ id: 'all', name: '전체' }, ...sortedCategories()].map(c => (
+                <div className="absolute" style={{ left: 26, right: 26, top: 62 }}>
+                  {/* 바깥이 높이를 자르고, 안쪽(pillBandRef)은 **항상 자연 높이**로 둔다.
+                      잘린 높이로 줄 수를 세면 접기/펼치기가 무한히 깜빡인다(위 주석 참고). */}
+                  <div style={{ maxHeight: pillClamped ? pillShownH : undefined, overflow: 'hidden' }}>
+                    <div ref={pillBandRef} className="flex flex-wrap gap-[6px]">
+                      {[{ id: 'all', name: '전체' }, ...sortedCategories()].map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => { setPreviewCatId(c.id); setOptionPanelMenu(null) }}
+                          className={`pressable-tab h-[32px] px-[13px] rounded-[15px] text-[17px] whitespace-nowrap transition-colors ${
+                            previewCatId === c.id
+                              ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
+                              : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
+                          }`}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 접기/펼치기 — **마지막 줄 오른쪽 끝**에 겹쳐 놓는다.
+                      pill 사이에 끼워 넣으면 줄바꿈 위치에 따라 가운데로 떠내려간다.
+                      뒤에 pill 이 깔릴 수 있어 바탕을 깔고 왼쪽을 그라데이션으로 흐린다 —
+                      칼같이 자르면 글자가 반만 보여서 깨진 것처럼 읽힌다.
+                      세모 방향은 **누르면 일어날 일**이다: 펼친 상태면 ▲(접기). */}
+                  {pillCanCollapse && (
                     <button
-                      key={c.id}
-                      onClick={() => { setPreviewCatId(c.id); setOptionPanelMenu(null) }}
-                      className={`pressable-tab h-[32px] px-[13px] rounded-[15px] text-[17px] whitespace-nowrap transition-colors ${
-                        previewCatId === c.id
-                          ? 'bg-[#6A635E] text-[#FCFCFC] font-medium'
-                          : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
-                      }`}
+                      onClick={() => setPillCollapsed(v => !v)}
+                      title={pillCollapsed ? '분류 모두 보기' : '분류 접기'}
+                      className="pressable-tab absolute right-0 flex items-center gap-[4px] h-[32px] pl-[22px] pr-[11px] rounded-[15px] text-[15px] text-[#6A635E] hover:text-ink"
+                      style={{
+                        top: (pillShownH - PILL_H),
+                        background: 'linear-gradient(to right, rgba(243,244,246,0) 0%, rgb(243,244,246) 18px)',
+                      }}
                     >
-                      {c.name}
+                      {pillCollapsed ? `분류 ${pillRows - PILL_COLLAPSED_ROWS}줄 더` : '접기'}
+                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
+                           style={{ transform: pillCollapsed ? 'rotate(180deg)' : undefined }}>
+                        <path d="M2 8L6 4L10 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
                     </button>
-                  ))}
+                  )}
                 </div>
               )}
 
               {/* 카테고리 모드 — 일반 보기(고정 그리드) */}
               {menuViewMode === 'category' && !menuEditMode && (
                 listForLeft.length === 0 ? (
-                  <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 + pillBandH }}>
+                  <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 + pillShownH }}>
                     {/* '아직 없다' 와 '검색에 안 걸린다' 는 다른 말이다 —
                         검색 중인데 '등록된 게 없다'고 하면 지운 줄 안다 */}
                     {searching ? `'${search.trim()}' 에 맞는 결과가 없어요` : '아직 등록된 카테고리가 없습니다.'}
@@ -1351,7 +1411,7 @@ export default function Menus() {
                       className={`absolute rounded-[13px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] text-left transition-colors ${
                         previewCatId === cat.id ? 'bg-[#E5E5E5]' : 'bg-[#FCFCFC]'
                       }`}
-                      style={{ left: GRID_PAD + col * COL_STEP, top: 62 + pillBandH + 12 + row * 123, width: CARD_W, height: 117 }}
+                      style={{ left: GRID_PAD + col * COL_STEP, top: 62 + pillShownH + 12 + row * 123, width: CARD_W, height: 117 }}
                     >
                       <div className={`absolute ${catTextSizeClass} font-semibold text-ink leading-snug`} style={{ left: 10, top: 10, right: 10 }}>
                         {cat.name}
