@@ -1372,18 +1372,20 @@ export default function Menus() {
                       pill 사이에 끼워 넣으면 줄바꿈 위치에 따라 가운데로 떠내려간다.
                       뒤에 pill 이 깔릴 수 있어 바탕을 깔고 왼쪽을 그라데이션으로 흐린다 —
                       칼같이 자르면 글자가 반만 보여서 깨진 것처럼 읽힌다.
-                      세모 방향은 **누르면 일어날 일**이다: 펼친 상태면 ▲(접기). */}
+                      세모 방향도 글자도 **누르면 일어날 일**을 말한다 — 펼치기 ▼ / 접기 ▲.
+                      '분류 3줄 더' 처럼 숨은 양을 적어 봤는데, 옆의 접기와 짝이 안 맞아
+                      둘이 같은 버튼의 두 상태로 안 읽혔다. */}
                   {pillCanCollapse && (
                     <button
                       onClick={() => setPillCollapsed(v => !v)}
-                      title={pillCollapsed ? '분류 모두 보기' : '분류 접기'}
+                      title={pillCollapsed ? '분류 전부 보기' : '두 줄만 보기'}
                       className="pressable-tab absolute right-0 flex items-center gap-[4px] h-[32px] pl-[22px] pr-[11px] rounded-[15px] text-[15px] text-[#6A635E] hover:text-ink"
                       style={{
                         top: (pillShownH - PILL_H),
                         background: 'linear-gradient(to right, rgba(243,244,246,0) 0%, rgb(243,244,246) 18px)',
                       }}
                     >
-                      {pillCollapsed ? `분류 ${pillRows - PILL_COLLAPSED_ROWS}줄 더` : '접기'}
+                      {pillCollapsed ? '펼치기' : '접기'}
                       <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
                            style={{ transform: pillCollapsed ? 'rotate(180deg)' : undefined }}>
                         <path d="M2 8L6 4L10 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
