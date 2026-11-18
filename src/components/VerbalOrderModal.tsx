@@ -46,19 +46,13 @@ interface CartItem {
 
 const METHODS: { v: VerbalMethod; l: string }[] = [
   { v: '포장', l: '포장' },
-  { v: '내점', l: '매장식사' },
+  { v: '내점', l: '내점' },
   { v: '배달', l: '배달' },
 ]
 
 /** 거래처 유형 칩. DB 실제 값은 부서·기업·개인 세 가지다(2026-11-18 확인) */
 const TYPE_FILTERS = ['전체', '부서', '기업', '개인'] as const
 type TypeFilter = typeof TYPE_FILTERS[number]
-
-const STEP_TITLES: Record<VerbalStep, string> = {
-  1: '거래처 선택',
-  2: '메뉴 선택',
-  3: '주문 확인',
-}
 
 // DB row → MenuDetail 변환은 lib/mappers.ts 의 mapMenuRow 공용 (Menus.tsx 와 공유).
 // 구두주문은 고객에게 바로 나가는 흐름이라 숨김 옵션은 제외.
@@ -186,6 +180,15 @@ export default function VerbalOrderModal({
   const [optionPicker, setOptionPicker] = useState<MenuDetail | null>(null)
   const [optionSel,    setOptionSel]    = useState<Record<string, string[]>>({})
   const [optionQty,    setOptionQty]    = useState(1)
+
+  /**
+   * 바깥 클릭·Esc 로 닫으려 할 때 띄우는 확인창 — **2·3단계에서만**.
+   *
+   * 1단계는 거래처와 주문자만 고른 상태라 다시 고르는 비용이 거의 없다.
+   * 메뉴까지 담은 뒤에 손이 미끄러져 닫히면 전화를 받으면서 쌓은 걸 통째로
+   * 다시 해야 한다 — 거기서만 한 번 묻는다.
+   */
+  const [confirmQuit, setConfirmQuit] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg,   setErrorMsg]   = useState('')
@@ -555,16 +558,38 @@ export default function VerbalOrderModal({
     <div className="text-[13px] text-gray-text">거래처와 주문자를 골라주세요</div>
   )
 
+  /**
+   * 바깥 클릭·Esc.
+   *
+   * 1단계는 **그냥 닫는다** — 거래처·주문자만 고른 상태라 다시 고르는 비용이 작고,
+   * 피크타임에 확인 모달이 한 겹 더 뜨는 쪽이 더 거슬린다.
+   * 2·3단계는 메뉴까지 쌓인 뒤라 한 번 묻는다.
+   */
+  function handleBackdropClose() {
+    if (step === 1) onClose()
+    else setConfirmQuit(true)
+  }
+
   return (
-    <ModalOverlay onClose={onClose} z={50}>
+    <ModalOverlay onClose={handleBackdropClose} z={50}>
       <div className="modal-in bg-white rounded-2xl shadow-xl w-[90vw] max-w-[1100px] h-[85vh] flex flex-col overflow-hidden relative">
 
         {/* ── 헤더 ── */}
         <div className="flex-shrink-0 px-6 py-4 border-b border-gray-border flex items-center gap-3">
+          {/* 뒤로가기 — 1단계엔 돌아갈 곳이 없다. ✕ 는 없앴다(바깥을 누르면 닫힌다) */}
+          {step > 1 && (
+            <button
+              onClick={() => { setStep(s => (s - 1) as VerbalStep); setErrorMsg('') }}
+              className="pressable-soft flex-shrink-0 w-8 h-8 -ml-1 rounded-lg flex items-center justify-center text-[#6A635E] hover:bg-gray-bg transition-colors"
+              aria-label="이전 단계로"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          )}
           <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">
             구두주문 받기
-            <span className="text-gray-border font-normal mx-2">|</span>
-            <span className="text-[15px] font-bold text-[#6A635E]">{STEP_TITLES[step]}</span>
           </div>
 
           {step === 1 ? (
@@ -584,22 +609,23 @@ export default function VerbalOrderModal({
             />
           ) : <div className="flex-1" />}
 
-          {/* 이용방법 — 1단계에서 고르고, 그 뒤에는 여기서 바꾼다 */}
-          <div className="flex-shrink-0 flex gap-1">
-            {METHODS.map(m => (
-              <button
-                key={m.v}
-                onClick={() => setMethod(m.v)}
-                className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
-                  method === m.v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
-                }`}
-              >
-                {m.l}
-              </button>
-            ))}
-          </div>
-
-          <button onClick={onClose} className="flex-shrink-0 text-gray-text hover:text-ink text-[20px] leading-none ml-1">✕</button>
+          {/* 이용방법 — 1단계에선 오른쪽 '고객 확인' 위에서 고르고,
+              그 뒤로는 여기 우상단에서 바꾼다 */}
+          {step > 1 && (
+            <div className="flex-shrink-0 flex gap-1">
+              {METHODS.map(m => (
+                <button
+                  key={m.v}
+                  onClick={() => setMethod(m.v)}
+                  className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
+                    method === m.v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                  }`}
+                >
+                  {m.l}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ══════════ 1단계 — 거래처 · 주문자 ══════════ */}
@@ -710,16 +736,27 @@ export default function VerbalOrderModal({
                         {adding ? '추가 중…' : '고객 추가하기'}
                       </button>
                     </div>
-                    {/* legacy 거래처는 문자를 안 보낸다 — 왜인지 화면에서 미리 말해둔다 */}
-                    {selectedAccount.qr_system !== 'kakao' && (
-                      <div className="text-[11px] text-[#ADADAD] mt-1.5 leading-relaxed">
-                        이 거래처는 PIN 방식이라 등록 문자는 가지 않아요. 명단에만 추가됩니다
-                      </div>
-                    )}
+                  </div>
+
+                  {/* 이용방법 — 2·3단계에선 우상단으로 올라간다 */}
+                  <div className="flex-shrink-0 border-t border-gray-border px-5 pt-3">
+                    <div className="flex gap-1.5">
+                      {METHODS.map(m => (
+                        <button
+                          key={m.v}
+                          onClick={() => setMethod(m.v)}
+                          className={`pressable-soft flex-1 py-2.5 rounded-xl text-[13px] font-bold transition-colors ${
+                            method === m.v ? 'bg-ink text-white' : 'bg-[#F2F2F2] text-[#6A635E] hover:bg-[#E8E4E2]'
+                          }`}
+                        >
+                          {m.l}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* 고른 사람 확인 */}
-                  <div className="flex-shrink-0 border-t border-gray-border px-5 py-3">
+                  <div className="flex-shrink-0 px-5 py-3">
                     <div className="text-[12px] font-semibold text-[#414141] mb-2">
                       선택한 고객님을 확인해주세요.
                     </div>
@@ -935,14 +972,6 @@ export default function VerbalOrderModal({
 
         {/* ── 하단 바 ── */}
         <div className="flex-shrink-0 border-t border-gray-border px-6 py-4 flex items-center gap-4">
-          {step > 1 && (
-            <button
-              onClick={() => { setStep(s => (s - 1) as VerbalStep); setErrorMsg('') }}
-              className="pressable-soft flex-shrink-0 px-4 py-3 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
-            >
-              이전
-            </button>
-          )}
           {summary}
           <div className="ml-auto flex items-center gap-3 flex-shrink-0">
             {errorMsg && <span className="text-[12px] text-danger font-semibold">{errorMsg}</span>}
@@ -963,6 +992,32 @@ export default function VerbalOrderModal({
             </button>
           </div>
         </div>
+
+        {/* ── 그만두기 확인 — 2·3단계에서 바깥을 눌렀을 때 ── */}
+        {confirmQuit && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[320px] p-5">
+              <div className="text-[15px] font-extrabold text-ink mb-2">구두주문을 그만하시겠습니까?</div>
+              <p className="text-[12px] text-gray-text leading-relaxed mb-4">
+                지금까지 고른 메뉴와 입력한 내용은 저장되지 않아요.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmQuit(false)}
+                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]"
+                >
+                  계속 하기
+                </button>
+                <button
+                  onClick={onClose}
+                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]"
+                >
+                  그만하기
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── 토스트 ── */}
         {toast && (
@@ -1057,8 +1112,11 @@ export default function VerbalOrderModal({
                           /* pressable-soft — 전역 button:active 는 0.95 로 줄인다.
                              폭 340px 짜리 가로로 긴 줄에서는 좌우로 17px 씩 빨려들어가
                              "덜컹"거린다(index.css 의 .pressable-row 주석과 같은 문제). */
-                          className={`pressable-soft w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] transition-colors ${
-                            checked ? 'border-ink bg-gray-bg font-semibold text-ink' : 'border-gray-border text-gray-text hover:bg-gray-bg'
+                          /* 선택돼도 **테두리는 그대로 둔다.** 테두리가 같이 진해지면
+                             줄마다 굵기가 달라 보여서 목록이 들썩인다. 배경만 아주 살짝
+                             브라운으로 내려앉히고, 켜졌다는 건 오른쪽 라디오·체크가 말한다. */
+                          className={`pressable-soft w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-border text-[12px] transition-colors ${
+                            checked ? 'bg-[#F4F0EC] font-semibold text-ink' : 'text-gray-text hover:bg-gray-bg'
                           } ${locked ? 'cursor-default' : ''}`}
                         >
                           <span className="flex-1 text-left">{it.name}</span>

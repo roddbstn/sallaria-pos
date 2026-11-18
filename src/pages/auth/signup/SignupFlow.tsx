@@ -12,7 +12,7 @@ import CustomerTypeStep from './steps/CustomerTypeStep'
 import PrinterSetupStep from './steps/PrinterSetupStep'
 import PlanStep from './steps/PlanStep'
 
-type Step = 'password' | 'storeName' | 'source' | 'ownerName' | 'address' | 'businessType' | 'customerType' | 'printerSetup' | 'plan'
+export type Step = 'password' | 'storeName' | 'source' | 'ownerName' | 'address' | 'businessType' | 'customerType' | 'printerSetup' | 'plan'
 
 const ORDER: Step[] = ['password', 'storeName', 'source', 'ownerName', 'address', 'businessType', 'customerType', 'printerSetup', 'plan']
 
@@ -40,11 +40,14 @@ interface SignupFlowProps {
   /** 이미 비밀번호가 설정돼 있으면(= onboarding 재진입) password 스텝을 건너뛰고 storeName부터 시작.
    *  App.tsx가 clients/stores 프리필과 같은 시점에 확인해서 내려준다. */
   hasPassword: boolean
+  /** dev 미리보기(src/dev/signup-preview.tsx)에서 특정 스텝부터 바로 열기 위한 것.
+   *  안 넘기면 기존대로 hasPassword 가 시작 스텝을 정한다 — 프로덕션 동작은 그대로. */
+  initialStep?: Step
 }
 
 /** 회원가입 프로필 입력 — 매장명부터 요금제까지 7단계. 전화인증은 PhoneAuthFlow가 별도로 담당. */
-export default function SignupFlow({ onComplete, onCancel, initialData, hasPassword }: SignupFlowProps) {
-  const [step, setStep] = useState<Step>(hasPassword ? 'storeName' : 'password')
+export default function SignupFlow({ onComplete, onCancel, initialData, hasPassword, initialStep }: SignupFlowProps) {
+  const [step, setStep] = useState<Step>(initialStep ?? (hasPassword ? 'storeName' : 'password'))
   const [data, setData] = useState<SignupData>({ ...INITIAL_SIGNUP_DATA, ...initialData })
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
