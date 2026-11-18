@@ -1068,17 +1068,16 @@ export default function VerbalOrderModal({
               <p className="text-[12px] text-gray-text leading-relaxed mb-4">
                 지금까지 고른 메뉴와 입력한 내용은 저장되지 않아요.
               </p>
-              {/* 두 버튼은 붙여 둔다 — 사이를 띄우면 둘이 서로 다른 무게로 읽힌다 */}
-              <div className="flex rounded-xl overflow-hidden">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmQuit(false)}
-                  className="pressable-soft flex-1 py-2.5 bg-gray-100 text-gray-text font-bold text-[13px]"
+                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]"
                 >
-                  계속 하기
+                  계속하기
                 </button>
                 <button
                   onClick={onClose}
-                  className="pressable-soft flex-1 py-2.5 bg-[#2C261F] text-white font-bold text-[13px]"
+                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-[#2C261F] text-white font-bold text-[13px]"
                 >
                   그만하기
                 </button>
