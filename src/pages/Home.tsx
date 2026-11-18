@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store-context'
 import { mapOrderRow } from '../lib/mappers'
 import { won, orderToPayload } from '../lib/ipc'
-import { remainingTime } from '../lib/pickup-time'
+import { sortActiveQueue } from '../lib/order-queue'
 import type { Order } from '../lib/mock-data'
 import HomeOrderCard from '../components/home/HomeOrderCard'
 import HomeOrderDetail from '../components/home/HomeOrderDetail'
@@ -123,22 +123,26 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     return () => { supabase.removeChannel(ch) }
   }, [storeId])
 
-  // 급한 것부터 — 남은 시간이 적은 순. 아직 승인 안 된 신규는 맨 위로 올린다
+  /**
+   * '준비 알림'을 이미 보낸 주문.
+   *
+   * 세션 안에서만 산다 — 보냈는지 적어두는 컬럼이 없다. 새로고침하면 지워지고
+   * 버튼은 '준비 알림'으로 돌아간다. 그래도 괜찮다: 이 표시는 **못 누르게
+   * 막는 장치가 아니라** "방금 보냈다"를 알려주는 글자일 뿐이고,
+   * 알림은 몇 번을 보내도 손님 화면은 '준비 완료' 한 상태로 같다.
+   */
+  // ⚠️ 정렬이 이 값을 보므로 아래 list 보다 **위에** 있어야 한다 (const 는 TDZ)
+  const [notified, setNotified] = useState<Set<string>>(new Set())
+
+  // 급한 것부터 — 남은 시간이 촉박한 순. 줄 세우는 규칙은 lib/order-queue.ts 에 있다
+  // (단위 테스트 붙어 있음). 여기 인라인으로 있던 비교자는 prep_minutes 가 빈 주문을
+  // 전부 'pending' 동률로 묶어서, 그 덩어리 안에서는 쿼리 순서(최신순)가 그대로
+  // 남았다 — 오래 기다린 주문이 맨 아래로 가는 거꾸로 된 순서였다.
   const list = useMemo(() => {
     const src = tab === 'active' ? active : done
     if (tab === 'done') return src
-    return [...src].sort((x, y) => {
-      const rx = remainingTime(x.acceptedAt, x.prepMins, now)
-      const ry = remainingTime(y.acceptedAt, y.prepMins, now)
-      if (rx.tone === 'pending' && ry.tone !== 'pending') return -1
-      if (ry.tone === 'pending' && rx.tone !== 'pending') return 1
-      // 화면에 찍히는 value 는 60분이 넘으면 '시간'으로 접힌다. 정렬은 접기 전 분으로 —
-      // value 로 비교하면 2시간 초과(2)가 59분 초과(59)보다 덜 급해진다.
-      const mx = rx.tone === 'over' ? -(rx.minutes ?? 0) : (rx.minutes ?? 0)
-      const my = ry.tone === 'over' ? -(ry.minutes ?? 0) : (ry.minutes ?? 0)
-      return mx - my
-    })
-  }, [tab, active, done, now])
+    return sortActiveQueue(src, now, o => notified.has(o.code))
+  }, [tab, active, done, now, notified])
 
   // 선택이 목록에서 사라지면(완료 처리 등) 자동으로 다음 건을 잡는다
   const selected = useMemo(
@@ -151,16 +155,6 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
     const ok = done.filter(o => o.status !== '취소')
     return { count: ok.length, amount: ok.reduce((s, o) => s + o.total, 0) }
   }, [done])
-
-  /**
-   * '준비 알림'을 이미 보낸 주문.
-   *
-   * 세션 안에서만 산다 — 보냈는지 적어두는 컬럼이 없다. 새로고침하면 지워지고
-   * 버튼은 '준비 알림'으로 돌아간다. 그래도 괜찮다: 이 표시는 **못 누르게
-   * 막는 장치가 아니라** "방금 보냈다"를 알려주는 글자일 뿐이고,
-   * 알림은 몇 번을 보내도 손님 화면은 '준비 완료' 한 상태로 같다.
-   */
-  const [notified, setNotified] = useState<Set<string>>(new Set())
 
   /**
    * 준비 알림 — **상태를 바꾸지 않는다.**
