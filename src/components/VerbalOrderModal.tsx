@@ -635,9 +635,13 @@ export default function VerbalOrderModal({
               </svg>
             </button>
           )}
-          <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">
-            구두주문
-          </div>
+          {/* 2단계는 제목을 뺀다 — 메뉴 검색창에 폭을 주려고.
+              3단계는 검색창이 없어서 빼면 헤더가 횡해진다 */}
+          {step !== 2 && (
+            <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">
+              구두주문
+            </div>
+          )}
 
           {step === 1 ? (
             <input
@@ -665,7 +669,7 @@ export default function VerbalOrderModal({
                   key={m.v}
                   onClick={() => setMethod(m.v)}
                   className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
-                    method === m.v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                    method === m.v ? 'bg-[#2C261F] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
                   }`}
                 >
                   {m.l}
@@ -759,7 +763,7 @@ export default function VerbalOrderModal({
                               key={m.id}
                               onClick={() => { setPicked(m); setRevealName(false); setRevealPhone(false) }}
                               className={`pressable-soft px-3.5 py-2 rounded-full text-[13px] transition-colors ${
-                                on ? 'bg-ink text-white font-bold' : 'bg-[#F2F2F2] text-[#414141] hover:bg-[#E8E4E2]'
+                                on ? 'bg-[#2C261F] text-white font-bold' : 'bg-[#F2F2F2] text-[#414141] hover:bg-[#E8E4E2]'
                               }`}
                             >
                               {m.name}
@@ -792,7 +796,7 @@ export default function VerbalOrderModal({
                       <button
                         onClick={addMember}
                         disabled={adding}
-                        className="pressable-soft flex-shrink-0 px-3 py-2 rounded-lg bg-ink text-white text-[12px] font-bold disabled:opacity-40"
+                        className="pressable-soft flex-shrink-0 px-3 py-2 rounded-lg bg-[#2C261F] text-white text-[12px] font-bold disabled:opacity-40"
                       >
                         {adding ? '추가 중…' : '고객 추가하기'}
                       </button>
@@ -807,7 +811,7 @@ export default function VerbalOrderModal({
                           key={m.v}
                           onClick={() => setMethod(m.v)}
                           className={`pressable-soft flex-1 py-2.5 rounded-xl text-[13px] font-bold transition-colors ${
-                            method === m.v ? 'bg-ink text-white' : 'bg-[#F2F2F2] text-[#6A635E] hover:bg-[#E8E4E2]'
+                            method === m.v ? 'bg-[#2C261F] text-white' : 'bg-[#F2F2F2] text-[#6A635E] hover:bg-[#E8E4E2]'
                           }`}
                         >
                           {m.l}
@@ -891,7 +895,7 @@ export default function VerbalOrderModal({
                         className="pressable-soft relative text-left bg-gray-bg hover:bg-gray-100 rounded-xl p-3 transition-colors"
                       >
                         {inCart > 0 && (
-                          <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-ink text-white text-[11px] font-bold flex items-center justify-center">
+                          <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-[#2C261F] text-white text-[11px] font-bold flex items-center justify-center">
                             {inCart}
                           </span>
                         )}
@@ -1032,7 +1036,13 @@ export default function VerbalOrderModal({
             {errorMsg && <span className="text-[12px] text-danger font-semibold">{errorMsg}</span>}
             {step > 1 && (
               <div className="text-right">
-                <div className="text-[17px] font-extrabold text-ink tabular-nums">{won(total)}</div>
+                <div className="text-[17px] font-extrabold text-ink tabular-nums">
+                  {won(total)}
+                  {cartCount > 0 && (
+                    <span className="text-gray-border font-normal mx-1.5">|</span>
+                  )}
+                  {cartCount > 0 && <span className="text-[15px]">{cartCount}개</span>}
+                </div>
                 {selectedAccount && (
                   <div className="text-[11px] text-gray-text tabular-nums">잔액: {won(selectedAccount.current_balance)}</div>
                 )}
@@ -1041,16 +1051,10 @@ export default function VerbalOrderModal({
             <button
               onClick={goNext}
               disabled={!advanceOk || submitting}
-              className="pressable-soft px-8 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors flex items-center gap-2"
+              className="pressable-soft px-8 py-3 rounded-xl bg-[#2C261F] text-white font-bold text-[14px] disabled:opacity-40 hover:bg-[#2C261F]/80 transition-colors flex items-center gap-2"
             >
               {submitting ? <Working label="주문 처리 중" /> : (
-                <>
-                  {/* 담긴 수 — QR오더 '장바구니 보기' 버튼의 그 배지와 같은 모양 */}
-                  {cartCount > 0 && (
-                    <span className="bg-black/20 rounded-lg px-2 py-0.5 text-[13px]">{cartCount}개</span>
-                  )}
-                  <span>{step === 3 ? '주문하기' : '다음'}</span>
-                </>
+                <span>{step === 3 ? '주문하기' : '다음'}</span>
               )}
             </button>
           </div>
@@ -1074,7 +1078,7 @@ export default function VerbalOrderModal({
                 </button>
                 <button
                   onClick={onClose}
-                  className="pressable-soft flex-1 py-2.5 bg-ink text-white font-bold text-[13px]"
+                  className="pressable-soft flex-1 py-2.5 bg-[#2C261F] text-white font-bold text-[13px]"
                 >
                   그만하기
                 </button>
@@ -1085,7 +1089,7 @@ export default function VerbalOrderModal({
 
         {/* ── 토스트 ── */}
         {toast && (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-[86px] z-20 bg-ink text-white text-[12px] font-semibold px-4 py-2.5 rounded-full shadow-lg whitespace-nowrap">
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-[86px] z-20 bg-[#2C261F] text-white text-[12px] font-semibold px-4 py-2.5 rounded-full shadow-lg whitespace-nowrap">
             {toast}
           </div>
         )}
@@ -1118,7 +1122,7 @@ export default function VerbalOrderModal({
                 <button
                   onClick={sendInvite}
                   disabled={inviteSending}
-                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px] disabled:opacity-40"
+                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-[#2C261F] text-white font-bold text-[13px] disabled:opacity-40"
                 >
                   {inviteSending ? <Working label="보내는 중" /> : '문자 보내기'}
                 </button>
@@ -1144,7 +1148,7 @@ export default function VerbalOrderModal({
                     key={cat.id}
                     onClick={() => { setCatId(cat.id); setCatPicker(false) }}
                     className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors ${
-                      catId === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                      catId === cat.id ? 'bg-[#2C261F] text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
                     }`}
                   >
                     {cat.name}
@@ -1211,7 +1215,7 @@ export default function VerbalOrderModal({
                           <span
                             className={`flex-shrink-0 w-[15px] h-[15px] flex items-center justify-center border-[1.5px] transition-colors ${
                               g.isMulti ? 'rounded-[4px]' : 'rounded-full'
-                            } ${checked ? 'border-ink bg-ink' : 'border-gray-border bg-white'}`}
+                            } ${checked ? 'border-ink bg-[#2C261F]' : 'border-gray-border bg-white'}`}
                           >
                             {checked && (g.isMulti
                               ? <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.8 3.4 6.6 7.5 2.4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -1234,7 +1238,7 @@ export default function VerbalOrderModal({
                   <button onClick={() => { setOptionPicker(null); setErrorMsg('') }} className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]">
                     취소
                   </button>
-                  <button onClick={confirmOptionPicker} className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]">
+                  <button onClick={confirmOptionPicker} className="pressable-soft flex-1 py-2.5 rounded-xl bg-[#2C261F] text-white font-bold text-[13px]">
                     담기
                   </button>
                 </div>
