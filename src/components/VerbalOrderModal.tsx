@@ -70,14 +70,6 @@ interface MemberLite {
   lastOrderedAt: string | null
 }
 
-/** '2026년 11월 5일' */
-function koreanDate(iso: string | null): string {
-  if (!iso) return '첫 주문 전'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
-}
-
 /** 눈 버튼 — 기본은 가린 상태, 누르면 연다 (lib/mask.ts 의 설계 참고) */
 function RevealRow({
   label, value, masked, open, onToggle,
@@ -130,6 +122,15 @@ export default function VerbalOrderModal({
   const [accountQuery,   setAccountQuery]   = useState('')
   const [typeFilter,     setTypeFilter]     = useState<TypeFilter>('전체')
   const [accountResults, setAccountResults] = useState<DbAccountLite[]>([])
+  /**
+   * 검색어가 **주문자 이름**으로 걸린 거래처 → 그 거래처에서 걸린 사람들.
+   *
+   * 같은 이름이 여러 과에 있는 건 흔하다('김민수'). 그래서 하나로 추리지 않고
+   * 걸린 거래처를 **전부** 보여주고, 각 줄에 그 과에서 걸린 사람 이름을 적는다.
+   * 어느 과인지는 전화를 받고 있는 점주가 안다 — 우리가 찍으면 틀린다.
+   * 거래처를 고를 때 그 과에서 걸린 사람이 **한 명뿐이면** 주문자까지 자동으로 잡는다.
+   */
+  const [memberHits, setMemberHits] = useState<Record<string, string[]>>({})
   const [searchingAcct,  setSearchingAcct]  = useState(false)
   const [selectedAccount, setSelectedAccount] = useState<DbAccountLite | null>(null)
 
@@ -212,33 +213,79 @@ export default function VerbalOrderModal({
       .order('order_count', { ascending: false })
       .then(({ data }) => {
         if (cancelled) return
-        setMembers(((data ?? []) as {
+        const list = ((data ?? []) as {
           id: string; name: string; phone: string | null
           order_count: number | null; last_ordered_at: string | null
         }[]).map(m => ({
           id: m.id, name: m.name, phone: m.phone,
           orders: m.order_count ?? 0, lastOrderedAt: m.last_ordered_at,
-        })))
+        }))
+        setMembers(list)
+        // 주문자 이름으로 검색해서 이 과에서 **한 명만** 걸렸으면 그 사람으로 잡아준다.
+        // 둘 이상이면 고르게 둔다 — 동명이인을 우리가 찍으면 틀린 사람 이름으로 주문이 나간다.
+        const hit = memberHits[selectedAccount.account_code] ?? []
+        if (hit.length === 1) {
+          const auto = list.find(m => m.name === hit[0])
+          if (auto) setPicked(auto)
+        }
         setMembersLoading(false)
       })
     return () => { cancelled = true }
+    // memberHits 는 일부러 deps 에 안 넣는다 — 넣으면 검색을 칠 때마다 명단을 다시
+    // 불러 깜빡인다. 거래처를 누르는 시점의 렌더엔 이미 최신 memberHits 가 들어 있다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccount])
 
   // ── 거래처 목록 — 검색어 없이도 바로 전체가 보이고, 치면 좁혀진다(디바운스) ──
   useEffect(() => {
     setSearchingAcct(true)
     const id = setTimeout(async () => {
-      let q = supabase
+      const term = accountQuery.trim()
+
+      const base = () => supabase
         .from('accounts')
         .select('account_code, account_name, account_type, current_balance, qr_system')
         .eq('is_active', true)
         .eq('store_id', storeId)
-        .order('account_name')
         .limit(100)
-      if (accountQuery.trim()) q = q.ilike('account_name', `%${accountQuery.trim()}%`)
+
+      // ① 거래처명으로
+      let q = base().order('account_name')
+      if (term) q = q.ilike('account_name', `%${term}%`)
       if (typeFilter !== '전체') q = q.eq('account_type', typeFilter)
-      const { data } = await q
-      setAccountResults((data ?? []) as DbAccountLite[])
+      const { data: byName } = await q
+
+      // ② 주문자 이름으로 — 점주는 "김민수요" 를 먼저 듣지 과 이름을 먼저 듣지 않는다
+      let hits: Record<string, string[]> = {}
+      let byMember: DbAccountLite[] = []
+      if (term) {
+        const { data: ms } = await supabase
+          .from('account_members')
+          .select('name, account_code')
+          .ilike('name', `%${term}%`)
+          .limit(200)
+        for (const m of (ms ?? []) as { name: string; account_code: string }[]) {
+          (hits[m.account_code] ??= []).push(m.name)
+        }
+        const codes = Object.keys(hits)
+        if (codes.length > 0) {
+          let mq = base().in('account_code', codes)
+          if (typeFilter !== '전체') mq = mq.eq('account_type', typeFilter)
+          const { data } = await mq
+          byMember = (data ?? []) as DbAccountLite[]
+          // 다른 매장 거래처는 위 쿼리에서 이미 걸러졌다 — hits 도 같이 맞춘다
+          const allowed = new Set(byMember.map(a => a.account_code))
+          hits = Object.fromEntries(Object.entries(hits).filter(([c]) => allowed.has(c)))
+        }
+      }
+
+      // 이름으로 걸린 거래처를 **위에** 올린다 — 사람 이름을 쳤으면 그걸 찾는 중이다
+      const seen = new Set<string>()
+      const merged = [...byMember, ...((byName ?? []) as DbAccountLite[])]
+        .filter(a => (seen.has(a.account_code) ? false : (seen.add(a.account_code), true)))
+
+      setMemberHits(hits)
+      setAccountResults(merged)
       setSearchingAcct(false)
     }, 200)
     return () => clearTimeout(id)
@@ -589,7 +636,7 @@ export default function VerbalOrderModal({
             </button>
           )}
           <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">
-            구두주문 받기
+            구두주문
           </div>
 
           {step === 1 ? (
@@ -597,7 +644,7 @@ export default function VerbalOrderModal({
               autoFocus
               value={accountQuery}
               onChange={e => setAccountQuery(e.target.value)}
-              placeholder="거래처를 입력하세요."
+              placeholder="거래처 또는 주문자를 입력하세요."
               className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[13px] outline-none focus:border-[#6A635E] transition-colors"
             />
           ) : step === 2 ? (
@@ -665,7 +712,16 @@ export default function VerbalOrderModal({
                       selectedAccount?.account_code === acc.account_code ? 'bg-[#E8E4E2]' : 'hover:bg-gray-bg/60'
                     }`}
                   >
-                    <span className="text-[14px] font-semibold text-ink truncate">{acc.account_name}</span>
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-semibold text-ink truncate">{acc.account_name}</div>
+                      {/* 사람 이름으로 걸렸으면 누가 걸렸는지 적는다 — 동명이인일 때
+                          어느 과인지 고르는 단서가 된다 */}
+                      {(memberHits[acc.account_code]?.length ?? 0) > 0 && (
+                        <div className="text-[11px] text-[#6A635E] truncate mt-[1px]">
+                          {memberHits[acc.account_code].join(', ')}
+                        </div>
+                      )}
+                    </div>
                     <span className={`text-[14px] font-semibold flex-shrink-0 tabular-nums ${
                       acc.current_balance < 0 ? 'text-[#3374FF]' : 'text-[#414141]'
                     }`}>
@@ -684,29 +740,34 @@ export default function VerbalOrderModal({
                 </div>
               ) : (
                 <>
-                  <div className="flex-1 min-h-0 overflow-y-auto">
+                  {/* 주문자 — 버튼을 쫙 깔아 한 번에 하나만 고른다.
+                      세로 한 줄씩 쌓으면 10명만 돼도 스크롤이 생겨서, 전화를 받으며
+                      이름을 찾는 동안 눈이 목록을 훑어야 했다. 칩으로 깔면 한눈에 든다. */}
+                  <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3">
                     {membersLoading ? (
                       <div className="text-[12px] text-gray-text text-center py-6">불러오는 중…</div>
                     ) : members.length === 0 ? (
-                      <div className="text-[12px] text-[#ADADAD] text-center py-8 px-5 leading-relaxed">
+                      <div className="text-[12px] text-[#ADADAD] text-center py-8 leading-relaxed">
                         아직 등록된 이용자가 없어요.<br />아래에서 추가해주세요
                       </div>
-                    ) : members.map(m => {
-                      const on = picked?.id === m.id
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => { setPicked(m); setRevealName(false); setRevealPhone(false) }}
-                          className={`w-full px-5 py-[11px] text-center border-b border-gray-border/60 transition-colors ${
-                            on ? 'bg-[#E8E4E2]' : 'hover:bg-gray-bg/60'
-                          }`}
-                        >
-                          <span className={`text-[14px] ${on ? 'font-bold text-ink' : 'text-[#414141]'}`}>
-                            {m.name}
-                          </span>
-                        </button>
-                      )
-                    })}
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {members.map(m => {
+                          const on = picked?.id === m.id
+                          return (
+                            <button
+                              key={m.id}
+                              onClick={() => { setPicked(m); setRevealName(false); setRevealPhone(false) }}
+                              className={`pressable-soft px-3.5 py-2 rounded-full text-[13px] transition-colors ${
+                                on ? 'bg-ink text-white font-bold' : 'bg-[#F2F2F2] text-[#414141] hover:bg-[#E8E4E2]'
+                              }`}
+                            >
+                              {m.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* 명단에 없는 손님 */}
@@ -769,12 +830,6 @@ export default function VerbalOrderModal({
                         label="전화번호" value={picked?.phone ?? ''} masked={maskPhone(picked?.phone)}
                         open={revealPhone} onToggle={() => setRevealPhone(v => !v)}
                       />
-                      <div className="flex items-center justify-between gap-2 px-3 py-2">
-                        <span className="text-[12px] text-[#787878]">마지막 주문일</span>
-                        <span className="text-[12px] font-semibold text-ink">
-                          {picked ? koreanDate(picked.lastOrderedAt) : '—'}
-                        </span>
-                      </div>
                     </div>
                   </div>
                 </>
@@ -986,9 +1041,17 @@ export default function VerbalOrderModal({
             <button
               onClick={goNext}
               disabled={!advanceOk || submitting}
-              className="pressable-soft px-8 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors"
+              className="pressable-soft px-8 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors flex items-center gap-2"
             >
-              {submitting ? <Working label="주문 처리 중" /> : step === 3 ? '주문하기' : '다음'}
+              {submitting ? <Working label="주문 처리 중" /> : (
+                <>
+                  {/* 담긴 수 — QR오더 '장바구니 보기' 버튼의 그 배지와 같은 모양 */}
+                  {cartCount > 0 && (
+                    <span className="bg-black/20 rounded-lg px-2 py-0.5 text-[13px]">{cartCount}개</span>
+                  )}
+                  <span>{step === 3 ? '주문하기' : '다음'}</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -1001,16 +1064,17 @@ export default function VerbalOrderModal({
               <p className="text-[12px] text-gray-text leading-relaxed mb-4">
                 지금까지 고른 메뉴와 입력한 내용은 저장되지 않아요.
               </p>
-              <div className="flex gap-2">
+              {/* 두 버튼은 붙여 둔다 — 사이를 띄우면 둘이 서로 다른 무게로 읽힌다 */}
+              <div className="flex rounded-xl overflow-hidden">
                 <button
                   onClick={() => setConfirmQuit(false)}
-                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]"
+                  className="pressable-soft flex-1 py-2.5 bg-gray-100 text-gray-text font-bold text-[13px]"
                 >
                   계속 하기
                 </button>
                 <button
                   onClick={onClose}
-                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]"
+                  className="pressable-soft flex-1 py-2.5 bg-ink text-white font-bold text-[13px]"
                 >
                   그만하기
                 </button>
@@ -1094,8 +1158,29 @@ export default function VerbalOrderModal({
         {/* ── 옵션 선택 ── */}
         {optionPicker && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30" onClick={() => setOptionPicker(null)}>
-            <div className="modal-in bg-white rounded-2xl shadow-xl w-[380px] max-h-[80%] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
-              <div className="text-[15px] font-extrabold text-ink mb-3">{optionPicker.name}</div>
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[380px] max-h-[80%] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* 머리 — 메뉴명과 수량. 수량은 옵션 목록이 길어도 늘 보여야 한다
+                  (전엔 목록 맨 아래에 있어서 스크롤을 끝까지 내려야 보였다) */}
+              <div className="flex-shrink-0 px-5 pt-5 pb-3 border-b border-gray-border">
+                <div className="text-[15px] font-extrabold text-ink mb-3">{optionPicker.name}</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-ink">수량</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setOptionQty(q => Math.max(1, q - 1))}
+                      className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
+                    >−</button>
+                    <span className="text-[14px] font-bold text-ink w-5 text-center tabular-nums">{optionQty}</span>
+                    <button
+                      onClick={() => setOptionQty(q => q + 1)}
+                      className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
+                    >+</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 가운데 — 옵션 목록만 스크롤 */}
+              <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4">
               {optionPicker.optionGroups.map(g => (
                 <div key={g.id} className="mb-4">
                   <div className="text-[12px] font-bold text-ink mb-1.5">
@@ -1140,29 +1225,19 @@ export default function VerbalOrderModal({
                 </div>
               ))}
 
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-bold text-ink">수량</span>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setOptionQty(q => Math.max(1, q - 1))}
-                    className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
-                  >−</button>
-                  <span className="text-[14px] font-bold text-ink w-5 text-center">{optionQty}</span>
-                  <button
-                    onClick={() => setOptionQty(q => q + 1)}
-                    className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
-                  >+</button>
-                </div>
               </div>
 
-              {errorMsg && <div className="text-[11px] text-danger font-semibold mb-2">{errorMsg}</div>}
-              <div className="flex gap-2 mt-2">
-                <button onClick={() => { setOptionPicker(null); setErrorMsg('') }} className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]">
-                  취소
-                </button>
-                <button onClick={confirmOptionPicker} className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]">
-                  담기
-                </button>
+              {/* 발 — 늘 같은 자리에 고정. 옵션이 많아도 담기 버튼을 찾아 내려갈 일이 없다 */}
+              <div className="flex-shrink-0 px-5 pt-3 pb-5 border-t border-gray-border">
+                {errorMsg && <div className="text-[11px] text-danger font-semibold mb-2">{errorMsg}</div>}
+                <div className="flex gap-2">
+                  <button onClick={() => { setOptionPicker(null); setErrorMsg('') }} className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px]">
+                    취소
+                  </button>
+                  <button onClick={confirmOptionPicker} className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px]">
+                    담기
+                  </button>
+                </div>
               </div>
             </div>
           </div>

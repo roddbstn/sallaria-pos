@@ -17,11 +17,28 @@ declare global {
   }
 }
 
-// 다음 우편번호 스크립트 — 여러 훅/화면에서 중복 로드되지 않게 scriptId로 가드
+// 다음 우편번호 스크립트 — 여러 훅/화면에서 중복 로드되지 않게 scriptId로 가드.
+//
+// ⚠️ 태그가 **있다고 로드가 끝난 건 아니다.** 전엔 getElementById 만 보고 바로
+//    resolve 해서, 두 화면이 거의 동시에 부르면 뒤쪽이 window.daum 이 아직 없는
+//    상태로 진행했다. 실제로 준비됐는지를 보고, 로드 중이면 그 태그의 load 를 기다린다.
 export function loadDaumPostcodeScript(): Promise<void> {
   return new Promise((resolve) => {
     const scriptId = 'daum-postcode'
-    if (document.getElementById(scriptId)) { resolve(); return }
+    const ready = () => (window as unknown as { daum?: { Postcode?: unknown } }).daum?.Postcode != null
+    if (ready()) { resolve(); return }
+
+    const existing = document.getElementById(scriptId)
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true })
+      // load 가 이미 지나갔는데 아직 window.daum 이 안 보이는 드문 경우를 위한 보험
+      const t = window.setInterval(() => {
+        if (ready()) { window.clearInterval(t); resolve() }
+      }, 50)
+      window.setTimeout(() => window.clearInterval(t), 10_000)
+      return
+    }
+
     const script = document.createElement('script')
     script.id = scriptId
     script.src = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
