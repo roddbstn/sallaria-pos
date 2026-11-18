@@ -362,6 +362,7 @@ export default function Home({ onOpenOrders }: { onOpenOrders?: () => void }) {
       {verbalOpen && storeId && (
         <VerbalOrderModal
           storeId={storeId}
+          storeName={storeName ?? ''}
           onClose={() => setVerbalOpen(false)}
           onCreated={() => load()}
         />

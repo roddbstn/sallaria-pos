@@ -6,15 +6,32 @@ import { type MenuDetail, type Category } from '../lib/mock-data'
 import { mapMenuRow } from '../lib/mappers'
 import ModalOverlay from './ui/ModalOverlay'
 import DaumPostcodeEmbed from './DaumPostcodeEmbed'
+import { maskName, maskPhone } from '../lib/mask'
+import { qrUrlFor, SUNPOS_KAKAO_URL } from '../lib/qr-order'
+import {
+  type VerbalStep, type VerbalMethod,
+  formatPhoneInput, phoneDigits, isMobilePhone, isDuplicateName,
+  canAdvance, inviteSmsText, inviteSmsFits, canInviteBySms,
+} from '../lib/verbal-order'
 
-// ── 구두주문 받기 — 전화/현장 구두주문을 POS에서 직접 입력해 create_order RPC로 제출 ──
-// 별도 "장바구니 화면" 없이 메뉴를 고르면 우측 주문요약에 바로 반영되는 단일 화면 구성.
+// ── 구두주문 받기 — 전화·현장 주문을 POS 에서 직접 넣는다 ───────────────────
+//
+// 세 단계다: ① 거래처·주문자  ② 메뉴  ③ 최종 확인
+//
+// 전엔 한 화면에 3열(거래처 | 이용자 | 메뉴)로 다 들어 있었다. 전화를 받으면서
+// 쓰는 화면이라 빠른 건 좋았는데, 배달 주소와 요청사항이 메뉴 위 좁은 띠에 끼어
+// 있어서 실제로는 거기까지 눈이 안 갔다 — 배달인데 주소가 빈 주문이 들어왔다.
+// 단계를 나누면 각 단계에서 물어볼 것만 묻고, 마지막에 한 번 다 보여준다.
+//
+// 단계 전환 조건은 lib/verbal-order.ts 에 있다(단위 테스트 붙어 있음).
 
 interface DbAccountLite {
   account_code:    string
   account_name:    string
   account_type:    string
   current_balance: number
+  /** 'kakao' 만 초대 문자를 보낼 수 있다 — verbal-order.ts 의 canInviteBySms 참고 */
+  qr_system:       'legacy' | 'kakao' | null
 }
 
 interface CartOption { id: string; name: string; extra: number }
@@ -27,14 +44,24 @@ interface CartItem {
   options:  CartOption[]
 }
 
-const METHODS: { v: '포장' | '내점' | '배달'; l: string }[] = [
+const METHODS: { v: VerbalMethod; l: string }[] = [
   { v: '포장', l: '포장' },
-  { v: '내점', l: '매장 식사' },
+  { v: '내점', l: '매장식사' },
   { v: '배달', l: '배달' },
 ]
 
-// DB row → MenuDetail 변환은 lib/mappers.ts의 mapMenuRow 공용 (Menus.tsx와 공유).
-// 구두주문은 고객에게 바로 노출되는 흐름이라 숨김 옵션은 제외.
+/** 거래처 유형 칩. DB 실제 값은 부서·기업·개인 세 가지다(2026-11-18 확인) */
+const TYPE_FILTERS = ['전체', '부서', '기업', '개인'] as const
+type TypeFilter = typeof TYPE_FILTERS[number]
+
+const STEP_TITLES: Record<VerbalStep, string> = {
+  1: '거래처 선택',
+  2: '메뉴 선택',
+  3: '주문 확인',
+}
+
+// DB row → MenuDetail 변환은 lib/mappers.ts 의 mapMenuRow 공용 (Menus.tsx 와 공유).
+// 구두주문은 고객에게 바로 나가는 흐름이라 숨김 옵션은 제외.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapMenu(row: any): MenuDetail {
   return mapMenuRow(row, { excludeHiddenOptions: true })
@@ -46,16 +73,68 @@ interface MemberLite {
   name:   string
   phone:  string | null
   orders: number
+  lastOrderedAt: string | null
+}
+
+/** '2026년 11월 5일' */
+function koreanDate(iso: string | null): string {
+  if (!iso) return '첫 주문 전'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
+}
+
+/** 눈 버튼 — 기본은 가린 상태, 누르면 연다 (lib/mask.ts 의 설계 참고) */
+function RevealRow({
+  label, value, masked, open, onToggle,
+}: {
+  label: string; value: string; masked: string; open: boolean; onToggle: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2">
+      <span className="text-[12px] text-[#787878] flex-shrink-0">{label}</span>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className="text-[12px] font-semibold text-ink truncate tabular-nums">
+          {value ? (open ? value : masked) : '—'}
+        </span>
+        {value && (
+          <button
+            onClick={onToggle}
+            className="pressable-soft flex-shrink-0 text-[#ADADAD] hover:text-ink transition-colors"
+            aria-label={open ? `${label} 가리기` : `${label} 보기`}
+            title={open ? '가리기' : '보기'}
+          >
+            {open ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function VerbalOrderModal({
-  storeId, onClose, onCreated,
+  storeId, storeName, onClose, onCreated,
 }: {
   storeId: string
+  /** 초대 문자 문구에 들어간다 — '[샐러리아 침산점] 선결제 주문 등록 …' */
+  storeName: string
   onClose: () => void
   onCreated: () => void
 }) {
+  const [step, setStep] = useState<VerbalStep>(1)
+
   const [accountQuery,   setAccountQuery]   = useState('')
+  const [typeFilter,     setTypeFilter]     = useState<TypeFilter>('전체')
   const [accountResults, setAccountResults] = useState<DbAccountLite[]>([])
   const [searchingAcct,  setSearchingAcct]  = useState(false)
   const [selectedAccount, setSelectedAccount] = useState<DbAccountLite | null>(null)
@@ -63,84 +142,106 @@ export default function VerbalOrderModal({
   // 주문자는 **타이핑이 아니라 고르는 것**이다.
   // 손으로 치면 "김민준 / 김민쥰 / 민준"처럼 같은 사람이 여러 이름으로 쌓이고,
   // 그러면 고객 화면의 '이용자별 주문'과 재주문율이 전부 어긋난다.
-  // account_members 에 이미 명단이 있으므로 거기서 고르게 한다.
   const [members,        setMembers]        = useState<MemberLite[]>([])
   const [membersLoading, setMembersLoading] = useState(false)
-  const [memberName,     setMemberName]     = useState('')   // 선택된 이용자 이름
-  const [memberPhone,    setMemberPhone]    = useState('')
-  const [newMember,      setNewMember]      = useState('')   // 명단에 없을 때 직접 추가
-  const [method,        setMethod]      = useState<'포장' | '내점' | '배달'>('포장')
+  const [picked,         setPicked]         = useState<MemberLite | null>(null)
+  const [revealName,     setRevealName]     = useState(false)
+  const [revealPhone,    setRevealPhone]    = useState(false)
+
+  // 명단에 없는 손님 — 처음 오는 사람은 늘 있다
+  const [newName,   setNewName]   = useState('')
+  const [newPhone,  setNewPhone]  = useState('')
+  const [adding,    setAdding]    = useState(false)
+  /** 추가 직후 '이 번호로 등록 문자를 보낼까요?' 확인창 — 자동 발송하지 않는다 */
+  const [inviteTarget,  setInviteTarget]  = useState<{ name: string; phone: string } | null>(null)
+  const [inviteSending, setInviteSending] = useState(false)
+
+  const [method, setMethod] = useState<VerbalMethod>('포장')
+
   /**
    * 배달 주소 · 요청사항.
    *
-   * 전엔 구두주문에 이 둘이 아예 없었다. 그래서 전화로 받은 배달 주문이 주문기록에
-   * "구두주문 — POS 직접 입력" 한 줄로만 남았고, 나중에 어디로 보냈는지 알 수 없었다.
-   * 손님이 QR웹으로 넣은 주문과 같은 모양으로 남겨야 한 표에서 같이 읽힌다.
+   * 가게 요청사항과 배달 요청사항은 **다른 칸**이다. lib/ipc.ts 의 parseNote 가
+   * 이미 `[배달요청]` 을 읽을 줄 아는데 구두주문만 그걸 안 쓰고 둘을 한 칸에
+   * 뭉쳐 보내고 있었다 — 주방에 붙는 영수증에서 "문 앞에 놔주세요"가 조리
+   * 요청처럼 보였다.
    */
   const [roadAddress,   setRoadAddress]   = useState('')
   const [detailAddress, setDetailAddress] = useState('')
-  const [customerNote,  setCustomerNote]  = useState('')
+  const [storeNote,     setStoreNote]     = useState('')
+  const [deliveryNote,  setDeliveryNote]  = useState('')
   const [postcodeOpen,  setPostcodeOpen]  = useState(false)
-  const [deliveryFee,   setDeliveryFee] = useState('0')
+  const [deliveryFee,   setDeliveryFee]   = useState('0')
 
   const [categories, setCategories] = useState<Category[]>([])
   const [menus,      setMenus]      = useState<MenuDetail[]>([])
   const [catId,      setCatId]      = useState<string>('all')
   /** 카테고리 전체 목록 모달 — 가로 탭에서 안 보이는 뒤쪽까지 한 번에 고른다 */
   const [catPicker,  setCatPicker]  = useState(false)
-  /** 모달에서 고른 카테고리가 가로 탭의 화면 밖에 있으면 거기로 스크롤한다 */
   const catTabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const [menuLoading, setMenuLoading] = useState(true)
+  const [menuQuery,   setMenuQuery]   = useState('')
 
   const [cart, setCart] = useState<CartItem[]>([])
-  /** 바깥 클릭으로 닫으려는데 입력한 게 있을 때 띄우는 확인창 */
   const [optionPicker, setOptionPicker] = useState<MenuDetail | null>(null)
   const [optionSel,    setOptionSel]    = useState<Record<string, string[]>>({})
   const [optionQty,    setOptionQty]    = useState(1)
 
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg,   setErrorMsg]   = useState('')
+  const [toast,      setToast]      = useState('')
 
-  // 거래처를 고르면 그 거래처의 이용자 명단을 연다. 많이 시킨 순 — 대부분 그 윗줄에서 끝난다
+  function flash(msg: string) {
+    setToast(msg)
+    window.setTimeout(() => setToast(''), 2600)
+  }
+
+  const ordererName = picked?.name ?? ''
+
+  // 거래처를 고르면 그 거래처의 이용자 명단을 연다. 많이 시킨 순 — 대부분 윗줄에서 끝난다
   useEffect(() => {
-    if (!selectedAccount) { setMembers([]); setMemberName(''); setMemberPhone(''); return }
+    if (!selectedAccount) { setMembers([]); setPicked(null); return }
     let cancelled = false
     setMembersLoading(true)
     supabase.from('account_members')
-      .select('id, name, phone, order_count')
+      .select('id, name, phone, order_count, last_ordered_at')
       .eq('account_code', selectedAccount.account_code)
       .order('order_count', { ascending: false })
       .then(({ data }) => {
         if (cancelled) return
-        setMembers(((data ?? []) as { id: string; name: string; phone: string | null; order_count: number | null }[])
-          .map(m => ({ id: m.id, name: m.name, phone: m.phone, orders: m.order_count ?? 0 })))
+        setMembers(((data ?? []) as {
+          id: string; name: string; phone: string | null
+          order_count: number | null; last_ordered_at: string | null
+        }[]).map(m => ({
+          id: m.id, name: m.name, phone: m.phone,
+          orders: m.order_count ?? 0, lastOrderedAt: m.last_ordered_at,
+        })))
         setMembersLoading(false)
       })
     return () => { cancelled = true }
   }, [selectedAccount])
 
-  // ── 거래처 목록 — 검색어 없이도 바로 전체 목록을 보여주고(클릭해서 바로 선택),
-  // 입력하면 그 안에서 실시간으로 좁혀지는 방식(디바운스) ──────────────────────
+  // ── 거래처 목록 — 검색어 없이도 바로 전체가 보이고, 치면 좁혀진다(디바운스) ──
   useEffect(() => {
     setSearchingAcct(true)
     const id = setTimeout(async () => {
       let q = supabase
         .from('accounts')
-        .select('account_code, account_name, account_type, current_balance')
+        .select('account_code, account_name, account_type, current_balance, qr_system')
         .eq('is_active', true)
         .eq('store_id', storeId)
         .order('account_name')
-        .limit(50)
+        .limit(100)
       if (accountQuery.trim()) q = q.ilike('account_name', `%${accountQuery.trim()}%`)
+      if (typeFilter !== '전체') q = q.eq('account_type', typeFilter)
       const { data } = await q
       setAccountResults((data ?? []) as DbAccountLite[])
       setSearchingAcct(false)
     }, 200)
     return () => clearTimeout(id)
-  }, [accountQuery, storeId])
+  }, [accountQuery, typeFilter, storeId])
 
-  // 고른 카테고리 칩을 가로 탭 안으로 끌어온다.
-  // 모달에서 뒤쪽 카테고리를 고르면 탭 줄은 앞쪽을 보고 있어서 선택된 칩이 안 보인다.
+  // 고른 카테고리 칩을 가로 탭 안으로 끌어온다
   useEffect(() => {
     catTabRefs.current[catId]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
   }, [catId])
@@ -180,9 +281,119 @@ export default function VerbalOrderModal({
   }, [selectedAccount, storeId])
 
   function visibleMenus() {
-    return menus.filter(m => !m.soldOut && (catId === 'all' || m.categoryId === catId))
+    const q = menuQuery.trim().replace(/\s+/g, '').toLowerCase()
+    return menus.filter(m => {
+      if (m.soldOut) return false
+      if (catId !== 'all' && m.categoryId !== catId) return false
+      if (q && !m.name.replace(/\s+/g, '').toLowerCase().includes(q)) return false
+      return true
+    })
   }
 
+  // ── 명단에 없는 손님 추가 ────────────────────────────────────────────────
+  async function addMember() {
+    if (!selectedAccount || adding) return
+    const name   = newName.trim()
+    const digits = phoneDigits(newPhone)
+    if (!name) { setErrorMsg('이름을 입력해주세요.'); return }
+    if (isDuplicateName(name, members)) { setErrorMsg('이미 명단에 있는 이름이에요.'); return }
+    if (newPhone.trim() && !isMobilePhone(newPhone)) { setErrorMsg('휴대폰 번호를 확인해주세요.'); return }
+
+    setAdding(true)
+    setErrorMsg('')
+    // 점주는 account_members 에 직접 넣을 수 있다 — RLS 의 owner_account_members_insert
+    // 정책이 my_store_ids() 로 자기 매장 거래처인지 확인한다.
+    const { data, error } = await supabase.from('account_members')
+      .insert({ account_code: selectedAccount.account_code, name, phone: digits || null })
+      .select('id, name, phone, order_count, last_ordered_at')
+      .single()
+    setAdding(false)
+
+    if (error || !data) {
+      console.error('이용자 추가 실패:', error)
+      setErrorMsg(`추가에 실패했어요: ${error?.message ?? '다시 시도해주세요.'}`)
+      return
+    }
+
+    const added: MemberLite = {
+      id: data.id, name: data.name, phone: data.phone,
+      orders: data.order_count ?? 0, lastOrderedAt: data.last_ordered_at,
+    }
+    setMembers(prev => [...prev, added])
+    setPicked(added)              // 추가한 사람을 바로 주문자로
+    setNewName(''); setNewPhone('')
+
+    // 문자는 **자동으로 안 보낸다.** 되돌릴 수 없고 건당 비용이라, 번호를 눈으로
+    // 한 번 확인하고 누르게 한다 (sms-templates.ts 의 설계 원칙과 같다).
+    if (canInviteBySms(selectedAccount.qr_system, digits)) {
+      setInviteTarget({ name, phone: digits })
+    } else {
+      flash(`${name}님을 명단에 추가했어요`)
+    }
+  }
+
+  // ── 이용자 등록 문자 ─────────────────────────────────────────────────────
+  async function sendInvite() {
+    if (!inviteTarget || !selectedAccount || inviteSending) return
+    setInviteSending(true)
+    let ok = 0, failed = 0, lastError = ''
+    let text = ''
+    try {
+      // 단축링크를 꼭 거친다 — 원본 주소를 그냥 넣으면 단문(90바이트)을 넘겨 LMS 요금이 된다
+      const target = qrUrlFor(
+        { account_code: selectedAccount.account_code, qr_system: 'kakao' },
+        storeId,
+      )
+      const { data: code, error: linkErr } = await supabase.rpc('create_short_link', {
+        p_target_url: target,
+        p_expires_at: null,
+      })
+      if (linkErr || !code) throw linkErr ?? new Error('단축링크를 만들지 못했어요')
+
+      const shortUrl = `${SUNPOS_KAKAO_URL}/s/${code}`
+      text = inviteSmsText(storeName, shortUrl)
+      if (!inviteSmsFits(storeName, shortUrl)) {
+        console.warn('[구두주문] 초대 문자가 단문을 넘는다 — LMS 요금으로 나간다:', text)
+      }
+
+      const { error } = await supabase.functions.invoke('send-notification', {
+        body: { purpose: 'custom', phone: inviteTarget.phone, params: { text } },
+      })
+      if (error) throw error
+      ok = 1
+    } catch (e) {
+      failed = 1
+      lastError = (e as Error).message ?? '발송 실패'
+      console.error('초대 문자 발송 실패:', e)
+    }
+
+    // 성공이든 실패든 남긴다 — "보냈나 안 보냈나"를 기억에 맡기면 두 번 보내게 된다
+    // (SmsPanel 과 같은 이유. kind='user_invite' 는 2026-11-18 에 체크 제약을 넓혔다)
+    try {
+      await supabase.from('sms_logs').insert({
+        store_id:     storeId,
+        kind:         'user_invite',
+        body:         text || '(문구 생성 실패)',
+        recipients:   [{
+          account_code: selectedAccount.account_code,
+          account_name: selectedAccount.account_name,
+          name:         inviteTarget.name,
+          phone:        inviteTarget.phone,
+        }],
+        sent_count:   ok,
+        failed_count: failed,
+        error:        failed > 0 ? lastError : null,
+      })
+    } catch (e) {
+      console.error('sms_logs 기록 실패:', e)
+    }
+
+    setInviteSending(false)
+    setInviteTarget(null)
+    flash(ok ? `${inviteTarget.name}님께 등록 문자를 보냈어요` : `문자 발송에 실패했어요 — ${lastError}`)
+  }
+
+  // ── 옵션 ─────────────────────────────────────────────────────────────────
   function addPlainItem(menu: MenuDetail) {
     setCart(prev => {
       const existing = prev.find(c => c.menuId === menu.code && c.options.length === 0)
@@ -194,14 +405,9 @@ export default function VerbalOrderModal({
   /**
    * 고를 게 없는 그룹은 **미리 선택해서 띄운다.**
    *
-   * '가격(필수) - 파스타 샐러드' 처럼 선택지가 "10,400원" 하나뿐인 필수 그룹이 메뉴마다 붙어 있다.
-   * 그건 메뉴값일 뿐 손님이 고르는 게 아닌데, 안 눌러주면 담기에서 "필수 옵션을 선택해주세요"로
-   * 막힌다 — 피크타임에 점주가 매번 한 번씩 더 눌러야 했다.
-   *
-   * 조건을 "이름이 가격처럼 생겼으면"으로 잡지 않고 **선택지가 1개인 필수 단일선택 그룹**으로 잡았다.
-   * 침산점 가격(필수) 그룹은 전부 이 모양이고, 앞으로 생길 다른 1개짜리 필수 그룹에도 맞다.
-   * 선택지가 2개 이상인 필수 그룹(베이스·소스 등)은 **건드리지 않는다** — 임의로 하나 찍어두면
-   * 점주가 못 보고 넘겨서 엉뚱한 옵션으로 주문이 들어간다.
+   * '가격(필수) - 파스타 샐러드' 처럼 선택지가 "10,400원" 하나뿐인 필수 그룹이 메뉴마다
+   * 붙어 있다. 그건 메뉴값일 뿐 손님이 고르는 게 아닌데, 안 눌러주면 담기에서 막힌다.
+   * 선택지가 2개 이상인 필수 그룹(베이스·소스 등)은 **건드리지 않는다**.
    */
   function autoSelect(menu: MenuDetail): Record<string, string[]> {
     const sel: Record<string, string[]> = {}
@@ -266,13 +472,26 @@ export default function VerbalOrderModal({
 
   function itemTotal(c: CartItem) { return (c.unitPrice + c.options.reduce((s, o) => s + o.extra, 0)) * c.qty }
   const subtotal = cart.reduce((s, c) => s + itemTotal(c), 0)
+  const cartCount = cart.reduce((s, c) => s + c.qty, 0)
   const deliveryFeeNum = method === '배달' ? (parseInt(deliveryFee, 10) || 0) : 0
   const total = subtotal + deliveryFeeNum
+  const balanceAfter = selectedAccount ? selectedAccount.current_balance - total : 0
 
-  const canSubmit = !!selectedAccount && cart.length > 0 && memberName.trim().length > 0 && !submitting
+  const s1 = { accountCode: selectedAccount?.account_code ?? null, ordererName }
+  const s2 = { cartCount: cart.length }
+  const s3 = { method, roadAddress }
+  const advanceOk = canAdvance(step, s1, s2, s3)
+
+  function goNext() {
+    if (!advanceOk) return
+    setErrorMsg('')
+    if (step === 1) setStep(2)
+    else if (step === 2) setStep(3)
+    else handleSubmit()
+  }
 
   async function handleSubmit() {
-    if (!canSubmit || !selectedAccount) return
+    if (!selectedAccount || submitting) return
     setSubmitting(true)
     setErrorMsg('')
 
@@ -286,24 +505,25 @@ export default function VerbalOrderModal({
     }))
 
     // note 는 **파싱되는 형식**이다 — lib/ipc.ts 의 parseNote 가 ' / ' 로 끊고
-    // [배달주소]/[배달상세] 접두사를 읽는다. 홈 상세·영수증이 그 결과를 쓰므로
-    // 손님 주문과 같은 모양으로 적어야 한 화면에서 같이 읽힌다.
+    // [배달주소]/[배달상세]/[배달요청] 접두사를 읽는다. 손님이 QR웹으로 넣은
+    // 주문과 같은 모양으로 적어야 한 화면에서 같이 읽힌다.
     const isDelivery = method === '배달'
     const noteParts: string[] = []
     if (isDelivery && roadAddress.trim())   noteParts.push(`[배달주소] ${roadAddress.trim()}`)
     if (isDelivery && detailAddress.trim()) noteParts.push(`[배달상세] ${detailAddress.trim()}`)
-    if (customerNote.trim())                noteParts.push(customerNote.trim())
+    if (isDelivery && deliveryNote.trim())  noteParts.push(`[배달요청] ${deliveryNote.trim()}`)
+    if (storeNote.trim())                   noteParts.push(storeNote.trim())
     noteParts.push('구두주문 — POS 직접 입력')
 
     const { error } = await supabase.rpc('create_order', {
       p_account_code:  selectedAccount.account_code,
-      p_orderer_name:  memberName.trim(),
+      p_orderer_name:  ordererName.trim(),
       p_method:        method,
       p_items:         items,
       p_delivery_fee:  deliveryFeeNum,
-      p_orderer_phone: memberPhone.trim() || null,
+      p_orderer_phone: picked?.phone ?? null,
       p_note:          noteParts.join(' / '),
-      // 전용 컬럼에도 같이 넣는다 — 나중에 주소로 집계하려면 note 파싱 말고 이게 필요하다
+      // 전용 컬럼에도 같이 넣는다 — 주소로 집계하려면 note 파싱 말고 이게 필요하다
       p_delivery_road_address:   isDelivery ? (roadAddress.trim()   || null) : null,
       p_delivery_detail_address: isDelivery ? (detailAddress.trim() || null) : null,
     })
@@ -320,295 +540,475 @@ export default function VerbalOrderModal({
     onClose()
   }
 
-  // 바깥을 누르면 **그냥 닫는다.**
-  //
-  // 전엔 담긴 게 있으면 '입력한 구두주문을 버릴까요?'를 한 번 물었다. 걷어낸 이유:
-  // 구두주문은 전화를 받으면서 몇 초 만에 채우는 화면이라 다시 채우는 비용이 작고,
-  // 피크타임에 확인 모달이 한 겹 더 뜨는 쪽이 더 거슬린다. 헤더의 ✕ 는 원래 바로
-  // 닫았으니, 이제 닫는 두 길이 같은 동작을 한다.
+  // 하단 왼쪽에 늘 떠 있는 "누구의 주문인가" — 단계가 바뀌어도 사라지지 않는다
+  const summary = selectedAccount && ordererName ? (
+    <div className="min-w-0">
+      <div className="text-[17px] font-extrabold text-ink truncate">
+        {selectedAccount.account_name} · {ordererName}님
+      </div>
+      <div className="text-[12px] text-gray-text mt-[2px]">
+        {METHODS.find(m => m.v === method)?.l}
+        {cartCount > 0 && ` | ${cartCount}개`}
+      </div>
+    </div>
+  ) : (
+    <div className="text-[13px] text-gray-text">거래처와 주문자를 골라주세요</div>
+  )
+
   return (
     <ModalOverlay onClose={onClose} z={50}>
-      <div className="modal-in bg-white rounded-2xl shadow-xl w-[90vw] max-w-[1100px] h-[85vh] flex flex-col overflow-hidden">
+      <div className="modal-in bg-white rounded-2xl shadow-xl w-[90vw] max-w-[1100px] h-[85vh] flex flex-col overflow-hidden relative">
 
-        {/* 헤더 */}
-        <div className="flex-shrink-0 px-6 py-4 border-b border-gray-border flex items-center justify-between">
-          <div className="text-[17px] font-extrabold text-ink">구두주문 받기</div>
-          <button onClick={onClose} className="text-gray-text hover:text-ink text-[20px] leading-none">✕</button>
-        </div>
-
-        <div className="flex-1 flex overflow-hidden">
-
-          {/* 좌측: 거래처 — 검색어 없이도 바로 전체 목록이 보이고, 클릭 한 번으로 선택 ── */}
-          <div className="w-[260px] flex-shrink-0 border-r border-gray-border flex flex-col overflow-hidden">
-            <div className="flex-shrink-0 px-4 py-3 border-b border-gray-border">
-              <input
-                autoFocus
-                value={accountQuery}
-                onChange={e => setAccountQuery(e.target.value)}
-                placeholder="거래처 검색 (선택)"
-                className="w-full border border-gray-border rounded-lg px-3 py-2 text-[12px] outline-none focus:border-[#00DD67]"
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {searchingAcct && accountResults.length === 0 ? (
-                <div className="text-[12px] text-gray-text text-center py-6">불러오는 중...</div>
-              ) : accountResults.length === 0 ? (
-                <div className="text-[12px] text-gray-text text-center py-6">거래처가 없습니다.</div>
-              ) : accountResults.map(acc => (
-                <button
-                  key={acc.account_code}
-                  onClick={() => { if (selectedAccount?.account_code !== acc.account_code) { setSelectedAccount(acc); setCart([]) } }}
-                  className={`pressable-row w-full flex items-center justify-between gap-2 px-4 py-3 text-left border-b border-gray-border/60 ${
-                    selectedAccount?.account_code === acc.account_code ? 'bg-gray-bg' : 'hover:bg-gray-bg/60'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-ink truncate">{acc.account_name}</div>
-                    <div className="text-[11px] text-gray-text">{acc.account_type}</div>
-                  </div>
-                  <div className={`text-[12px] font-semibold flex-shrink-0 ${acc.current_balance < 0 ? 'text-[#3374FF]' : 'text-gray-text'}`}>
-                    {won(acc.current_balance)}
-                  </div>
-                </button>
-              ))}
-            </div>
+        {/* ── 헤더 ── */}
+        <div className="flex-shrink-0 px-6 py-4 border-b border-gray-border flex items-center gap-3">
+          <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">
+            구두주문 받기
+            <span className="text-gray-border font-normal mx-2">|</span>
+            <span className="text-[15px] font-bold text-[#6A635E]">{STEP_TITLES[step]}</span>
           </div>
 
-          {/* 가운데: 이용자 선택 — 거래처를 고르면 열린다 */}
-          {selectedAccount && (
-            <div className="w-[200px] flex-shrink-0 border-r border-gray-border flex flex-col overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-border flex-shrink-0">
-                <div className="text-[12px] font-medium text-[#2C261F]">이용자</div>
-                <div className="text-[11px] font-normal text-[#ADADAD] mt-[2px]">누가 주문했는지 고르세요</div>
-              </div>
+          {step === 1 ? (
+            <input
+              autoFocus
+              value={accountQuery}
+              onChange={e => setAccountQuery(e.target.value)}
+              placeholder="거래처를 입력하세요."
+              className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[13px] outline-none focus:border-[#6A635E] transition-colors"
+            />
+          ) : step === 2 ? (
+            <input
+              value={menuQuery}
+              onChange={e => setMenuQuery(e.target.value)}
+              placeholder="메뉴를 입력하세요."
+              className="flex-1 min-w-0 border border-gray-border rounded-lg px-3 py-2 text-[13px] outline-none focus:border-[#6A635E] transition-colors"
+            />
+          ) : <div className="flex-1" />}
 
+          {/* 이용방법 — 1단계에서 고르고, 그 뒤에는 여기서 바꾼다 */}
+          <div className="flex-shrink-0 flex gap-1">
+            {METHODS.map(m => (
+              <button
+                key={m.v}
+                onClick={() => setMethod(m.v)}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
+                  method === m.v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                }`}
+              >
+                {m.l}
+              </button>
+            ))}
+          </div>
+
+          <button onClick={onClose} className="flex-shrink-0 text-gray-text hover:text-ink text-[20px] leading-none ml-1">✕</button>
+        </div>
+
+        {/* ══════════ 1단계 — 거래처 · 주문자 ══════════ */}
+        {step === 1 && (
+          <div className="flex-1 flex overflow-hidden">
+            {/* 좌: 유형 칩 + 거래처 목록 */}
+            <div className="flex-1 min-w-0 border-r border-gray-border flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 flex gap-2 px-5 py-3">
+                {TYPE_FILTERS.map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setTypeFilter(t)}
+                    className={`pressable-soft flex-1 py-2 rounded-full text-[13px] font-bold transition-colors ${
+                      typeFilter === t ? 'bg-[#6A635E] text-white' : 'bg-[#F2F2F2] text-[#6A635E] hover:bg-[#E8E4E2]'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
               <div className="flex-1 overflow-y-auto">
-                {membersLoading ? (
+                {searchingAcct && accountResults.length === 0 ? (
                   <div className="text-[12px] text-gray-text text-center py-6">불러오는 중…</div>
-                ) : members.length === 0 ? (
-                  <div className="text-[12px] text-[#ADADAD] text-center py-6 px-3 leading-relaxed">
-                    아직 등록된 이용자가 없어요.<br />아래에 이름을 적어 주세요
-                  </div>
-                ) : members.map(m => {
-                  const on = memberName === m.name
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => { setMemberName(m.name); setMemberPhone(m.phone ?? ''); setNewMember('') }}
-                      className={`w-full px-4 py-[10px] text-left border-b border-gray-border/60 transition-colors ${
-                        on ? 'bg-[#E8E4E2]' : 'hover:bg-gray-bg/60'
-                      }`}
-                    >
-                      <div className={`text-[13px] truncate ${on ? 'font-medium text-[#1E1E1E]' : 'text-[#414141]'}`}>
-                        {m.name}
-                      </div>
-                      <div className="text-[11px] text-[#ADADAD]">
-                        {m.orders > 0 ? `${m.orders}건` : '첫 주문'}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* 명단에 없는 사람 — 처음 오는 손님은 늘 있다 */}
-              <div className="flex-shrink-0 border-t border-gray-border p-3">
-                <input
-                  value={newMember}
-                  onChange={e => {
-                    setNewMember(e.target.value)
-                    setMemberName(e.target.value)   // 입력하는 순간 그 이름으로 주문된다
-                    setMemberPhone('')
-                  }}
-                  placeholder="명단에 없으면 입력"
-                  className="w-full border border-[#D9D9D9] rounded-[9px] px-[10px] py-[7px] text-[12px] outline-none focus:border-[#6A635E] transition-colors"
-                />
+                ) : accountResults.length === 0 ? (
+                  <div className="text-[12px] text-gray-text text-center py-6">거래처가 없습니다.</div>
+                ) : accountResults.map(acc => (
+                  <button
+                    key={acc.account_code}
+                    onClick={() => {
+                      if (selectedAccount?.account_code === acc.account_code) return
+                      setSelectedAccount(acc)
+                      setCart([])
+                      setRevealName(false); setRevealPhone(false)
+                      setErrorMsg('')
+                    }}
+                    className={`pressable-row w-full flex items-center justify-between gap-3 px-5 py-3 text-left border-b border-gray-border/60 ${
+                      selectedAccount?.account_code === acc.account_code ? 'bg-[#E8E4E2]' : 'hover:bg-gray-bg/60'
+                    }`}
+                  >
+                    <span className="text-[14px] font-semibold text-ink truncate">{acc.account_name}</span>
+                    <span className={`text-[14px] font-semibold flex-shrink-0 tabular-nums ${
+                      acc.current_balance < 0 ? 'text-[#3374FF]' : 'text-[#414141]'
+                    }`}>
+                      {won(acc.current_balance)}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* 우측: 카테고리별 메뉴 선택 + 우하단 고정 총액/주문하기 ── */}
-          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-            {!selectedAccount ? (
-              <div className="flex-1 flex items-center justify-center text-gray-text text-[13px]">
-                왼쪽에서 거래처를 선택해주세요
-              </div>
-            ) : (
-              <>
-                {/* 거래처/주문자/방법 */}
-                <div className="flex-shrink-0 px-5 py-3 border-b border-gray-border space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[14px] font-bold text-ink">{selectedAccount.account_name}</span>
-                    <span className={`text-[12px] font-semibold ${selectedAccount.current_balance < 0 ? 'text-[#3374FF]' : 'text-gray-text'}`}>
-                      잔액 {won(selectedAccount.current_balance)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* 주문자는 가운데 이용자 열에서 고른다 — 여기선 고른 결과만 보여준다 */}
-                    <span className="text-[12px] font-normal text-[#787878]">
-                      주문자{' '}
-                      {/* 미선택은 빈칸으로 둔다 — 아직 안 고른 걸 빨간 글씨로 경고할 단계가 아니다 */}
-                      {memberName && <span className="font-medium text-[#1E1E1E]">{memberName}</span>}
-                    </span>
-                    <div className="flex gap-1 ml-auto">
-                      {METHODS.map(m => (
+            {/* 우: 이용자 명단 + 추가 + 확인 카드 */}
+            <div className="w-[400px] flex-shrink-0 flex flex-col overflow-hidden">
+              {!selectedAccount ? (
+                <div className="flex-1 flex items-center justify-center text-gray-text text-[13px] px-6 text-center">
+                  왼쪽에서 거래처를 먼저 골라주세요
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    {membersLoading ? (
+                      <div className="text-[12px] text-gray-text text-center py-6">불러오는 중…</div>
+                    ) : members.length === 0 ? (
+                      <div className="text-[12px] text-[#ADADAD] text-center py-8 px-5 leading-relaxed">
+                        아직 등록된 이용자가 없어요.<br />아래에서 추가해주세요
+                      </div>
+                    ) : members.map(m => {
+                      const on = picked?.id === m.id
+                      return (
                         <button
-                          key={m.v}
-                          onClick={() => setMethod(m.v)}
-                          className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
-                            method === m.v ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
+                          key={m.id}
+                          onClick={() => { setPicked(m); setRevealName(false); setRevealPhone(false) }}
+                          className={`w-full px-5 py-[11px] text-center border-b border-gray-border/60 transition-colors ${
+                            on ? 'bg-[#E8E4E2]' : 'hover:bg-gray-bg/60'
                           }`}
                         >
-                          {m.l}
+                          <span className={`text-[14px] ${on ? 'font-bold text-ink' : 'text-[#414141]'}`}>
+                            {m.name}
+                          </span>
                         </button>
-                      ))}
+                      )
+                    })}
+                  </div>
+
+                  {/* 명단에 없는 손님 */}
+                  <div className="flex-shrink-0 border-t border-gray-border px-5 py-3">
+                    <div className="text-[12px] font-semibold text-[#414141] mb-2">
+                      위 명단에 없나요? 고객을 추가해주세요.
                     </div>
-                    {method === '배달' && (
+                    <div className="flex gap-1.5">
                       <input
-                        type="number"
-                        value={deliveryFee}
-                        onChange={e => setDeliveryFee(e.target.value)}
-                        placeholder="배달료"
-                        className="w-24 border border-gray-border rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-[#00DD67]"
+                        value={newName}
+                        onChange={e => { setNewName(e.target.value.slice(0, 20)); setErrorMsg('') }}
+                        placeholder="이름"
+                        className="w-[90px] flex-shrink-0 border border-gray-border rounded-lg px-2.5 py-2 text-[12px] outline-none focus:border-[#6A635E] transition-colors"
                       />
+                      <input
+                        value={newPhone}
+                        onChange={e => { setNewPhone(formatPhoneInput(e.target.value)); setErrorMsg('') }}
+                        inputMode="numeric"
+                        placeholder="고객 전화번호"
+                        className="flex-1 min-w-0 border border-gray-border rounded-lg px-2.5 py-2 text-[12px] outline-none focus:border-[#6A635E] transition-colors tabular-nums"
+                      />
+                      <button
+                        onClick={addMember}
+                        disabled={adding}
+                        className="pressable-soft flex-shrink-0 px-3 py-2 rounded-lg bg-ink text-white text-[12px] font-bold disabled:opacity-40"
+                      >
+                        {adding ? '추가 중…' : '고객 추가하기'}
+                      </button>
+                    </div>
+                    {/* legacy 거래처는 문자를 안 보낸다 — 왜인지 화면에서 미리 말해둔다 */}
+                    {selectedAccount.qr_system !== 'kakao' && (
+                      <div className="text-[11px] text-[#ADADAD] mt-1.5 leading-relaxed">
+                        이 거래처는 PIN 방식이라 등록 문자는 가지 않아요. 명단에만 추가됩니다
+                      </div>
                     )}
                   </div>
 
-                  {/* 배달 주소 — 배달일 때만. 주소는 직접 치지 않고 검색해서 고른다
-                      (오타가 나면 배달을 못 간다). 세부주소는 검색으로 안 나오므로 직접 받는다. */}
-                  {method === '배달' && (
-                    <div className="mt-2 flex gap-1.5">
-                      <button
-                        onClick={() => setPostcodeOpen(true)}
-                        className={`pressable-soft flex-1 min-w-0 text-left border rounded-lg px-2.5 py-1.5 text-[12px] truncate ${
-                          roadAddress ? 'border-gray-border text-ink' : 'border-dashed border-[#ADADAD] text-gray-text'
-                        }`}
-                      >
-                        {roadAddress || '배달 주소 찾기'}
-                      </button>
-                      <input
-                        value={detailAddress}
-                        onChange={e => setDetailAddress(e.target.value)}
-                        placeholder="세부주소 (동·호수)"
-                        className="w-40 flex-shrink-0 border border-gray-border rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-[#00DD67]"
-                      />
+                  {/* 고른 사람 확인 */}
+                  <div className="flex-shrink-0 border-t border-gray-border px-5 py-3">
+                    <div className="text-[12px] font-semibold text-[#414141] mb-2">
+                      선택한 고객님을 확인해주세요.
                     </div>
-                  )}
+                    <div className="bg-[#F2F2F2] rounded-[10px] divide-y divide-white/70">
+                      <RevealRow
+                        label="이름" value={picked?.name ?? ''} masked={maskName(picked?.name)}
+                        open={revealName} onToggle={() => setRevealName(v => !v)}
+                      />
+                      <RevealRow
+                        label="전화번호" value={picked?.phone ?? ''} masked={maskPhone(picked?.phone)}
+                        open={revealPhone} onToggle={() => setRevealPhone(v => !v)}
+                      />
+                      <div className="flex items-center justify-between gap-2 px-3 py-2">
+                        <span className="text-[12px] text-[#787878]">마지막 주문일</span>
+                        <span className="text-[12px] font-semibold text-ink">
+                          {picked ? koreanDate(picked.lastOrderedAt) : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
-                  {/* 요청사항 — 세 가지 이용방법 모두. '덜 맵게' 같은 말은 포장·내점에도 온다 */}
+        {/* ══════════ 2단계 — 메뉴 ══════════ */}
+        {step === 2 && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 border-b border-gray-border flex items-center">
+              <div className="no-scrollbar flex-1 min-w-0 flex gap-1.5 overflow-x-auto px-5 py-2.5">
+                {[{ id: 'all', name: '전체' }, ...categories].map(cat => (
+                  <button
+                    key={cat.id}
+                    ref={el => { catTabRefs.current[cat.id] = el }}
+                    onClick={() => setCatId(cat.id)}
+                    className={`px-3.5 py-2 rounded-full text-[12px] font-bold whitespace-nowrap flex-shrink-0 max-w-[140px] truncate transition-colors ${
+                      catId === cat.id ? 'bg-[#6A635E] text-white' : 'bg-[#F2F2F2] text-[#6A635E] hover:bg-[#E8E4E2]'
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setCatPicker(v => !v)}
+                className="pressable-soft flex-shrink-0 w-7 h-7 ml-1 mr-4 bg-white border border-[#E0E0E0] rounded-full flex items-center justify-center text-gray-text"
+                style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+                aria-label="카테고리 전체 보기"
+              >
+                <svg
+                  className="transition-transform duration-200"
+                  style={{ transform: catPicker ? 'rotate(-90deg)' : 'rotate(90deg)', width: 15, height: 15 }}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {menuLoading ? (
+                <div className="h-full flex items-center justify-center text-gray-text text-[12px]">메뉴 불러오는 중…</div>
+              ) : visibleMenus().length === 0 ? (
+                <div className="h-full flex items-center justify-center text-gray-text text-[12px]">
+                  {menuQuery.trim() ? `'${menuQuery.trim()}' 에 맞는 메뉴가 없어요` : '표시할 메뉴가 없습니다.'}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 xl:grid-cols-4 gap-2.5">
+                  {visibleMenus().map(menu => {
+                    const inCart = cart.filter(c => c.menuId === menu.code).reduce((s, c) => s + c.qty, 0)
+                    return (
+                      <button
+                        key={menu.code}
+                        onClick={() => handleMenuTap(menu)}
+                        className="pressable-soft relative text-left bg-gray-bg hover:bg-gray-100 rounded-xl p-3 transition-colors"
+                      >
+                        {inCart > 0 && (
+                          <span className="absolute top-2 right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-ink text-white text-[11px] font-bold flex items-center justify-center">
+                            {inCart}
+                          </span>
+                        )}
+                        <div className="text-[13px] font-bold text-ink leading-snug mb-1 pr-6">{menu.name}</div>
+                        <div className="text-[12px] text-gray-text">{won(menu.price)}</div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════ 3단계 — 최종 확인 ══════════ */}
+        {step === 3 && (
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+            {/* 담은 메뉴 */}
+            <div>
+              <div className="text-[13px] font-bold text-ink mb-2">주문 내역</div>
+              <div className="border border-gray-border rounded-xl divide-y divide-gray-border/60 overflow-hidden">
+                {cart.map(c => (
+                  <div key={c.key} className="flex items-center gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-semibold text-ink truncate">{c.menuName}</div>
+                      {c.options.length > 0 && (
+                        <div className="text-[11px] text-gray-text truncate mt-[2px]">
+                          {c.options.map(o => o.name).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => updateQty(c.key, -1)}
+                        className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
+                      >−</button>
+                      <span className="text-[13px] font-bold text-ink w-5 text-center tabular-nums">{c.qty}</span>
+                      <button
+                        onClick={() => updateQty(c.key, 1)}
+                        className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
+                      >+</button>
+                    </div>
+                    <div className="text-[13px] font-bold text-ink w-[90px] text-right tabular-nums flex-shrink-0">
+                      {won(itemTotal(c))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 가게 요청사항 — 세 가지 이용방법 모두. '덜 맵게'는 포장·내점에도 온다 */}
+            <div>
+              <label className="text-[13px] font-bold text-ink mb-2 block">가게 요청사항</label>
+              <input
+                value={storeNote}
+                onChange={e => setStoreNote(e.target.value)}
+                placeholder="예: 덜 맵게, 수저 빼주세요"
+                className="w-full border border-gray-border rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-[#6A635E] transition-colors"
+              />
+            </div>
+
+            {/* 배달일 때만 — 주소와 배달 요청사항 */}
+            {method === '배달' && (
+              <>
+                <div>
+                  <label className="text-[13px] font-bold text-ink mb-2 block">
+                    배달 주소 <span className="text-danger">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setPostcodeOpen(true)}
+                      className={`pressable-soft flex-1 min-w-0 text-left border rounded-xl px-3.5 py-2.5 text-[13px] truncate ${
+                        roadAddress ? 'border-gray-border text-ink' : 'border-dashed border-[#ADADAD] text-gray-text'
+                      }`}
+                    >
+                      {roadAddress || '배달 주소 찾기'}
+                    </button>
+                    <input
+                      value={detailAddress}
+                      onChange={e => setDetailAddress(e.target.value)}
+                      placeholder="세부주소 (동·호수)"
+                      className="w-[200px] flex-shrink-0 border border-gray-border rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-[#6A635E] transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[13px] font-bold text-ink mb-2 block">배달 요청사항</label>
                   <input
-                    value={customerNote}
-                    onChange={e => setCustomerNote(e.target.value)}
-                    placeholder="요청사항 (예: 덜 맵게, 수저 빼주세요)"
-                    className="mt-2 w-full border border-gray-border rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-[#00DD67]"
+                    value={deliveryNote}
+                    onChange={e => setDeliveryNote(e.target.value)}
+                    placeholder="예: 문 앞에 놔주세요, 벨 누르지 말아주세요"
+                    className="w-full border border-gray-border rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-[#6A635E] transition-colors"
                   />
                 </div>
 
-                {/* 카테고리 탭 — 오른쪽 끝에 전체 목록 버튼.
-                    QR오더 손님 화면(salaria-prepaid menu/page.tsx)과 같은 모양이다.
-                    카테고리가 늘면 가로 스크롤 뒤쪽이 안 보이는데, 피크타임에 전화를
-                    받으면서 탭을 긁어 찾는 건 현실적이지 않다. 한 번 눌러 전부 펼친다. */}
-                <div className="flex-shrink-0 border-b border-gray-border flex items-center">
-                  <div className="no-scrollbar flex-1 min-w-0 flex gap-1.5 overflow-x-auto px-5 py-2">
-                    {[{ id: 'all', name: '전체' }, ...categories].map(cat => (
-                      <button
-                        key={cat.id}
-                        ref={el => { catTabRefs.current[cat.id] = el }}
-                        onClick={() => setCatId(cat.id)}
-                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
-                          catId === cat.id ? 'bg-ink text-white' : 'bg-gray-100 text-gray-text hover:bg-gray-200'
-                        }`}
-                      >
-                        {cat.name}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={() => setCatPicker(v => !v)}
-                    className="pressable-soft flex-shrink-0 w-7 h-7 ml-1 mr-4 bg-white border border-[#E0E0E0] rounded-full flex items-center justify-center text-gray-text"
-                    style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-                    aria-label="카테고리 전체 보기"
-                  >
-                    <svg
-                      className="transition-transform duration-200"
-                      style={{ transform: catPicker ? 'rotate(-90deg)' : 'rotate(90deg)', width: 15, height: 15 }}
-                      viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                    >
-                      <polyline points="9 6 15 12 9 18" />
-                    </svg>
-                  </button>
-                </div>
-
-                {/* 메뉴 그리드 — 옵션 없으면 바로 담김(연속 탭 = 수량+1), 있으면 옵션+수량 선택 모달 */}
-                <div className="flex-1 overflow-y-auto p-4">
-                  {menuLoading ? (
-                    <div className="h-full flex items-center justify-center text-gray-text text-[12px]">메뉴 불러오는 중...</div>
-                  ) : visibleMenus().length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-gray-text text-[12px]">표시할 메뉴가 없습니다.</div>
-                  ) : (
-                    <div className="grid grid-cols-3 xl:grid-cols-4 gap-2.5">
-                      {visibleMenus().map(menu => (
-                        <button
-                          key={menu.code}
-                          onClick={() => handleMenuTap(menu)}
-                          className="text-left bg-gray-bg hover:bg-gray-100 rounded-xl p-3 transition-colors"
-                        >
-                          <div className="text-[13px] font-bold text-ink leading-snug mb-1">{menu.name}</div>
-                          <div className="text-[12px] text-gray-text">{won(menu.price)}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 우하단 고정: 담긴 메뉴 요약 칩(제거 가능) + 총액 + 주문하기 CTA — 한 화면에서 바로 클릭 */}
-                <div className="flex-shrink-0 bg-white">
-                  {cart.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto px-4 py-2.5">
-                      {cart.map(c => (
-                        <div key={c.key} className="flex-shrink-0 flex items-center gap-1.5 bg-white rounded-full pl-3 pr-1.5 py-1.5 border border-gray-border">
-                          <span className="text-[11px] font-semibold text-ink whitespace-nowrap">{c.menuName} ×{c.qty}</span>
-                          <button
-                            onClick={() => updateQty(c.key, -c.qty)}
-                            className="w-5 h-5 rounded-full bg-gray-100 text-gray-text text-[11px] flex items-center justify-center hover:bg-gray-200 transition-colors"
-                            title="빼기"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="px-4 pb-4 pt-1">
-                    {method === '배달' && deliveryFeeNum > 0 && (
-                      <div className="flex items-center justify-between text-[11px] text-gray-text mb-1">
-                        <span>배달료 포함</span><span>+{won(deliveryFeeNum)}</span>
-                      </div>
-                    )}
-                    {errorMsg && <div className="text-[11px] text-danger font-semibold mb-2">{errorMsg}</div>}
-                    {/* 총액을 버튼 **오른쪽**으로. 왼쪽에 두면 눈이 금액을 먼저 읽고
-                        버튼으로 되돌아와야 한다 — 누르는 자리가 먼저 오고 확인할 숫자가
-                        뒤따르는 쪽이 손 움직임과 같은 방향이다. */}
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={handleSubmit}
-                        disabled={!canSubmit}
-                        className="pressable-soft flex-1 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors"
-                      >
-                        {submitting ? <Working label="주문 처리 중" /> : '주문하기'}
-                      </button>
-                      <div className="text-[17px] font-extrabold text-ink whitespace-nowrap">{won(total)}</div>
-                    </div>
-                  </div>
+                <div>
+                  <label className="text-[13px] font-bold text-ink mb-2 block">배달료</label>
+                  <input
+                    type="number"
+                    value={deliveryFee}
+                    onChange={e => setDeliveryFee(e.target.value)}
+                    placeholder="0"
+                    className="w-[160px] border border-gray-border rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-[#6A635E] transition-colors tabular-nums"
+                  />
                 </div>
               </>
             )}
+
+            {/* 금액 */}
+            <div className="bg-gray-bg rounded-xl px-4 py-3 space-y-1.5">
+              <div className="flex justify-between text-[12px] text-gray-text">
+                <span>메뉴 소계</span><span className="tabular-nums">{won(subtotal)}</span>
+              </div>
+              {method === '배달' && (
+                <div className="flex justify-between text-[12px] text-gray-text">
+                  <span>배달료</span><span className="tabular-nums">{won(deliveryFeeNum)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-[14px] font-extrabold text-ink pt-1.5 border-t border-gray-border">
+                <span>합계</span><span className="tabular-nums">{won(total)}</span>
+              </div>
+              <div className="flex justify-between text-[12px] pt-0.5">
+                <span className="text-gray-text">주문 후 잔액</span>
+                <span className={`tabular-nums font-semibold ${balanceAfter < 0 ? 'text-danger' : 'text-gray-text'}`}>
+                  {won(balanceAfter)}
+                  {balanceAfter < 0 && <span className="ml-1 font-normal">· 다음 충전 시 정산</span>}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── 하단 바 ── */}
+        <div className="flex-shrink-0 border-t border-gray-border px-6 py-4 flex items-center gap-4">
+          {step > 1 && (
+            <button
+              onClick={() => { setStep(s => (s - 1) as VerbalStep); setErrorMsg('') }}
+              className="pressable-soft flex-shrink-0 px-4 py-3 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] hover:bg-gray-200 transition-colors"
+            >
+              이전
+            </button>
+          )}
+          {summary}
+          <div className="ml-auto flex items-center gap-3 flex-shrink-0">
+            {errorMsg && <span className="text-[12px] text-danger font-semibold">{errorMsg}</span>}
+            {step > 1 && (
+              <div className="text-right">
+                <div className="text-[17px] font-extrabold text-ink tabular-nums">{won(total)}</div>
+                {selectedAccount && (
+                  <div className="text-[11px] text-gray-text tabular-nums">잔액: {won(selectedAccount.current_balance)}</div>
+                )}
+              </div>
+            )}
+            <button
+              onClick={goNext}
+              disabled={!advanceOk || submitting}
+              className="pressable-soft px-8 py-3 rounded-xl bg-ink text-white font-bold text-[14px] disabled:opacity-40 hover:bg-ink/80 transition-colors"
+            >
+              {submitting ? <Working label="주문 처리 중" /> : step === 3 ? '주문하기' : '다음'}
+            </button>
           </div>
         </div>
 
-        {/* 카테고리 선택 모달 — 옵션 모달과 같은 레이어(z-10).
-            구두주문 모달 안쪽만 덮는다. 바깥 배경까지 덮으면 "주문을 닫은 건가"
-            하고 헷갈린다. */}
+        {/* ── 토스트 ── */}
+        {toast && (
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-[86px] z-20 bg-ink text-white text-[12px] font-semibold px-4 py-2.5 rounded-full shadow-lg whitespace-nowrap">
+            {toast}
+          </div>
+        )}
+
+        {/* ── 등록 문자 확인 — 자동으로 보내지 않는다 ── */}
+        {inviteTarget && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30">
+            <div className="modal-in bg-white rounded-2xl shadow-xl w-[360px] p-5">
+              <div className="text-[15px] font-extrabold text-ink mb-2">등록 문자를 보낼까요?</div>
+              <p className="text-[12px] text-gray-text leading-relaxed mb-3">
+                {inviteTarget.name}님을 명단에 추가했어요.<br />
+                아래 번호로 선결제 주문 등록 링크를 보냅니다.
+              </p>
+              <div className="bg-gray-bg rounded-lg px-3 py-2.5 mb-2 text-center">
+                <span className="text-[15px] font-extrabold text-ink tabular-nums">
+                  {formatPhoneInput(inviteTarget.phone)}
+                </span>
+              </div>
+              <p className="text-[11px] text-[#ADADAD] leading-relaxed mb-4">
+                번호가 맞는지 확인해주세요. 보낸 문자는 되돌릴 수 없어요.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setInviteTarget(null); flash(`${inviteTarget.name}님을 명단에 추가했어요`) }}
+                  disabled={inviteSending}
+                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-text font-bold text-[13px] disabled:opacity-40"
+                >
+                  안 보냄
+                </button>
+                <button
+                  onClick={sendInvite}
+                  disabled={inviteSending}
+                  className="pressable-soft flex-1 py-2.5 rounded-xl bg-ink text-white font-bold text-[13px] disabled:opacity-40"
+                >
+                  {inviteSending ? <Working label="보내는 중" /> : '문자 보내기'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── 카테고리 전체 목록 ── */}
         {catPicker && (
           <div
             className="absolute inset-0 z-10 flex items-center justify-center bg-black/30"
@@ -636,7 +1036,7 @@ export default function VerbalOrderModal({
           </div>
         )}
 
-        {/* 옵션 선택 모달 */}
+        {/* ── 옵션 선택 ── */}
         {optionPicker && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30" onClick={() => setOptionPicker(null)}>
             <div className="modal-in bg-white rounded-2xl shadow-xl w-[380px] max-h-[80%] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
@@ -656,19 +1056,15 @@ export default function VerbalOrderModal({
                           onClick={() => toggleOption(g.id, it.id, g.isMulti, g.maxSelect, locked)}
                           /* pressable-soft — 전역 button:active 는 0.95 로 줄인다.
                              폭 340px 짜리 가로로 긴 줄에서는 좌우로 17px 씩 빨려들어가
-                             "덜컹"거린다(index.css 의 .pressable-row 주석과 같은 문제).
-                             여기는 이미 테두리·배경으로 눌린 걸 말하고 있으니
-                             줄어드는 건 0.985 로만 거든다. */
+                             "덜컹"거린다(index.css 의 .pressable-row 주석과 같은 문제). */
                           className={`pressable-soft w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] transition-colors ${
                             checked ? 'border-ink bg-gray-bg font-semibold text-ink' : 'border-gray-border text-gray-text hover:bg-gray-bg'
                           } ${locked ? 'cursor-default' : ''}`}
                         >
                           <span className="flex-1 text-left">{it.name}</span>
                           {it.extra > 0 && <span className="tabular-nums">+{won(it.extra)}</span>}
-                          {/* 선택 표시는 **줄 맨 오른쪽**. 테두리 색만으로는 여러 줄이 섞였을 때
-                              뭐가 켜진 건지 한눈에 안 들어온다.
-                              단일선택은 원(라디오), 복수선택은 둥근 사각(체크박스) — 모양이 곧
-                              "하나만 고르는 건지 여러 개 고르는 건지"를 말해준다. */}
+                          {/* 단일선택은 원(라디오), 복수선택은 둥근 사각(체크박스) —
+                              모양이 곧 "하나만 고르는 건지 여러 개 고르는 건지"를 말해준다. */}
                           <span
                             className={`flex-shrink-0 w-[15px] h-[15px] flex items-center justify-center border-[1.5px] transition-colors ${
                               g.isMulti ? 'rounded-[4px]' : 'rounded-full'
@@ -686,23 +1082,18 @@ export default function VerbalOrderModal({
                 </div>
               ))}
 
-              {/* 수량 */}
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[12px] font-bold text-ink">수량</span>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setOptionQty(q => Math.max(1, q - 1))}
                     className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
-                  >
-                    −
-                  </button>
+                  >−</button>
                   <span className="text-[14px] font-bold text-ink w-5 text-center">{optionQty}</span>
                   <button
                     onClick={() => setOptionQty(q => q + 1)}
                     className="w-7 h-7 rounded-lg bg-gray-100 text-ink font-bold text-[14px] hover:bg-gray-200 transition-colors"
-                  >
-                    +
-                  </button>
+                  >+</button>
                 </div>
               </div>
 
