@@ -306,10 +306,18 @@ export default function App() {
   // 밑줄 폭(UNDERLINE_W) 자체는 Figma 원본 디자인 값 그대로 유지하고, 중심만 텍스트 중앙에 맞춘다.
   const UNDERLINE_W = 69
   const tabBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  /** 밑줄은 이 헤더 기준 absolute 다 — 측정도 같은 기준으로 한다 */
+  const topBarRef = useRef<HTMLDivElement>(null)
   const [tabUnderlineLeft, setTabUnderlineLeft] = useState(106)
   const measureUnderline = useCallback(() => {
     const el = tabBtnRefs.current[tab]
-    if (el) setTabUnderlineLeft(el.offsetLeft + el.offsetWidth / 2 - UNDERLINE_W / 2)
+    const host = topBarRef.current
+    if (!el || !host) return
+    // offsetLeft 는 offsetParent 기준이라, 탭을 감싸는 상자가 하나라도 끼면 어긋난다.
+    // (탭 간격을 고르게 하려고 flex 상자로 묶으면서 실제로 그랬다)
+    const r = el.getBoundingClientRect()
+    const h = host.getBoundingClientRect()
+    setTabUnderlineLeft(r.left - h.left + r.width / 2 - UNDERLINE_W / 2)
   }, [tab])
   // 예전엔 deps가 [tab]뿐이라 "탭이 바뀔 때" 한 번만 쟀다. 그래서 첫 측정이 틀리면
   // (웹폰트 로딩 전 폴백 글꼴 폭으로 쟀거나, 헤더가 아직 마운트되기 전이라 el이 null이어서
@@ -1259,7 +1267,7 @@ export default function App() {
              "고정 실제 크기" — Figma 자체가 2240px 캔버스를 ~0.64배로 축소해서 보여주는 걸 전제로 그려졌기 때문에,
              원본 숫자를 그대로 쓰면 실제 화면에서 지나치게 커 보인다. 이후 페이즈도 동일 비율로 환산할 것. */}
         {/* ── 상단 탭 네비게이션 — 햄버거/탭/밑줄/구분선/프린터/시간/ON-OFF ── */}
-        <div className={`relative z-10 flex-shrink-0 h-[58px] w-full overflow-hidden ${
+        <div ref={topBarRef} className={`relative z-10 flex-shrink-0 h-[58px] w-full overflow-hidden ${
           HUB_TABS.includes(tab)
             ? 'bg-topbar-deep shadow-[0_2px_6px_rgba(0,0,0,0.07)]'
             : 'bg-topbar'
@@ -1267,23 +1275,29 @@ export default function App() {
             {/* 햄버거는 이 헤더 밖(아래 .drawer-anchor)에 있다 — 헤더가 overflow-hidden 이라
                  안에 두면 펼쳐진 패널이 58px 높이에서 잘린다 */}
 
-            {TOP_TABS.map(({ id, label }, i) => (
-              <button
-                key={id}
-                ref={el => {
-                  tabBtnRefs.current[id] = el
-                  // 헤더가 늦게 마운트돼도 활성 탭 버튼이 붙는 즉시 밑줄을 맞춘다
-                  if (el && id === tab) measureUnderline()
-                }}
-                onClick={() => goTo(id)}
-                className={`pressable-tab absolute top-[11px] px-[10px] py-[6px] rounded-[8px] text-[24px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
-                  tab === id ? 'text-ink font-semibold' : 'text-[#787878] font-medium hover:text-ink'
-                }`}
-                style={{ left: 114 + i * 108 - 10 }}
-              >
-                {label}
-              </button>
-            ))}
+            {/* 탭 간격.
+                 전엔 버튼마다 left: 114 + i*108 로 **왼쪽 모서리**를 108px 씩 떼어 놨다.
+                 그러면 라벨 글자 수가 다를 때 보이는 틈이 달라진다 — '홈'만 한 글자라
+                 홈↔주문 사이가 24px(한 글자 폭)만큼 더 벌어져 보였다.
+                 flex 로 깔아 **버튼 사이 간격**을 40px 로 고정한다(기존 주문↔메뉴 간격과 같다). */}
+            <div className="absolute top-[11px] flex items-center gap-[40px]" style={{ left: 104 }}>
+              {TOP_TABS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  ref={el => {
+                    tabBtnRefs.current[id] = el
+                    // 헤더가 늦게 마운트돼도 활성 탭 버튼이 붙는 즉시 밑줄을 맞춘다
+                    if (el && id === tab) measureUnderline()
+                  }}
+                  onClick={() => goTo(id)}
+                  className={`pressable-tab px-[10px] py-[6px] rounded-[8px] text-[24px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
+                    tab === id ? 'text-ink font-semibold' : 'text-[#787878] font-medium hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             {/* 활성 탭 밑줄 — 탭 버튼의 실제 렌더 중앙(tabUnderlineLeft)에 맞춰 정렬, 폭은 고정.
                  TOP_TABS에 없는 탭(매장 정보 등)일 땐 숨김 */}
             {TOP_TABS.some(t => t.id === tab) && (
