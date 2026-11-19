@@ -566,13 +566,21 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
               {/* 카테고리를 메뉴명 **앞**으로 옮기고 넓혔다(120 → 150).
                   뒤에 두면 메뉴명이 flex-1 로 남는 폭을 다 먹어서, 정작 '북구청
                   행정지원과' 같은 긴 카테고리가 잘렸다. 분류를 먼저 보고 그 안에서
-                  메뉴를 찾는 순서이기도 하다. */}
-              {catTab === 'all' && <span className="w-[150px]">카테고리</span>}
-              <span className="flex-1 min-w-0">메뉴({rows.length}개)</span>
-              <span className="w-[90px] text-center">가격</span>
-              <span className="w-[80px] text-center">옵션</span>
+                  메뉴를 찾는 순서이기도 하다.
+
+                  ⚠️ 폭 배분은 **헤더와 아래 행이 같아야 한다** — 한쪽만 고치면 컬럼이 어긋난다.
+                  창을 좁히면 카테고리가 먼저 줄고(36px 까지, 잘려도 된다) 메뉴명은 120px 을
+                  지킨다. 전엔 메뉴명만 flex-1 min-w-0 이라 0 까지 눌렸고, 그러면 헤더
+                  '메뉴(167개)' 가 한 글자씩 세로로 쪼개져 내려갔다. truncate 가 없어서
+                  넘치는 대신 줄바꿈을 한 것이다. */}
+              {catTab === 'all' && (
+                <span className="truncate pr-[10px]" style={{ flex: '0 1 150px', minWidth: 36 }}>카테고리</span>
+              )}
+              <span className="truncate" style={{ flex: '1 1 0%', minWidth: 120 }}>메뉴({rows.length}개)</span>
+              <span className="w-[90px] text-center flex-shrink-0">가격</span>
+              <span className="w-[80px] text-center flex-shrink-0">옵션 개수</span>
               {/* 기간을 바꿀 수 있다. 고른 값은 저장돼서 다시 들어와도 그대로다. */}
-              <span className="w-[132px] text-right relative">
+              <span className="w-[132px] text-right relative flex-shrink-0">
                 <button
                   onClick={() => setSoldOpen(v => !v)}
                   className="inline-flex items-center gap-[4px] h-[22px] px-[6px] rounded-[6px] hover:bg-[#DCD6D1] transition-colors"
@@ -603,8 +611,8 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                   </>
                 )}
               </span>
-              <span className="w-[70px] text-center">상태</span>
-              <span className="w-[96px] text-right">QR오더 표시</span>
+              <span className="w-[70px] text-center flex-shrink-0">상태</span>
+              <span className="w-[96px] text-right flex-shrink-0">QR오더 표시</span>
             </div>
             {rows.length === 0 ? <Empty note="조건에 맞는 메뉴가 없어요" /> : rows.map((r, i) => (
               <button
@@ -615,15 +623,17 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 }`}
               >
                 {catTab === 'all' && (
-                  <span className="w-[150px] pr-[10px] text-[16px] text-[#787878] truncate" title={r.category}>{r.category}</span>
+                  <span className="pr-[10px] text-[16px] text-[#787878] truncate"
+                        style={{ flex: '0 1 150px', minWidth: 36 }} title={r.category}>{r.category}</span>
                 )}
-                <span className="flex-1 min-w-0 text-[17px] text-[#1E1E1E] truncate" title={r.menu.name}>{r.menu.name}</span>
-                <span className="w-[90px] text-center text-[17px] text-[#1E1E1E]">{won(r.menu.base_price)}</span>
-                <span className={`w-[80px] text-center text-[16px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
-                  {r.groupCount === 0 ? '없음' : `${r.groupCount}그룹`}
+                <span className="text-[17px] text-[#1E1E1E] truncate"
+                      style={{ flex: '1 1 0%', minWidth: 120 }} title={r.menu.name}>{r.menu.name}</span>
+                <span className="w-[90px] flex-shrink-0 text-center text-[17px] text-[#1E1E1E]">{won(r.menu.base_price)}</span>
+                <span className={`w-[80px] flex-shrink-0 text-center text-[16px] ${r.groupCount === 0 ? 'text-[#C92A2A]' : 'text-[#787878]'}`}>
+                  {r.groupCount === 0 ? '없음' : `${r.groupCount}개`}
                 </span>
-                <span className="w-[132px] text-center text-[17px] text-[#1E1E1E]">{r.sold}개</span>
-                <span className="w-[70px] text-center">
+                <span className="w-[132px] flex-shrink-0 text-center text-[17px] text-[#1E1E1E]">{r.sold}개</span>
+                <span className="w-[70px] flex-shrink-0 text-center">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] ${
                     r.menu.is_sold_out ? 'bg-[#FFEFEF] text-[#C92A2A]' : 'bg-[#E6F4EC] text-[#017333]'
                   }`}>
@@ -632,7 +642,7 @@ function MenuDetailPanel({ data, loading, reload, showToast, soldDays, setSoldDa
                 </span>
                 {/* 손님 화면에 실제로 뜨는지. 안 뜨면 **이유**를 그대로 적는다 —
                     '안 보임'만으로는 무엇을 고쳐야 할지 알 수 없다. */}
-                <span className="w-[96px] text-right">
+                <span className="w-[96px] flex-shrink-0 text-right">
                   <span className={`inline-block px-[8px] h-[21px] leading-[21px] rounded-[6px] text-[13px] whitespace-nowrap ${
                     r.qr.tone === 'ok'   ? 'bg-[#E6F4EC] text-[#017333]'
                     : r.qr.tone === 'warn' ? 'bg-[#FFF4E8] text-[#B35C00]'
