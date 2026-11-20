@@ -313,11 +313,20 @@ export default function App() {
     const el = tabBtnRefs.current[tab]
     const host = topBarRef.current
     if (!el || !host) return
-    // offsetLeft 는 offsetParent 기준이라, 탭을 감싸는 상자가 하나라도 끼면 어긋난다.
-    // (탭 간격을 고르게 하려고 flex 상자로 묶으면서 실제로 그랬다)
-    const r = el.getBoundingClientRect()
-    const h = host.getBoundingClientRect()
-    setTabUnderlineLeft(r.left - h.left + r.width / 2 - UNDERLINE_W / 2)
+    // ⚠️ getBoundingClientRect 를 쓰면 안 된다. #root 에 zoom 이 걸려 있어서
+    //    (lib/viewport-scale.ts) rect 는 **zoom 이 곱해진 실제 화면 px** 을 주는데,
+    //    아래 style.left 는 zoom 좌표계로 해석된다. 그래서 밑줄이 zoom 배수만큼
+    //    오른쪽으로 밀렸다(1.07 배면 글자 오른쪽으로 치우쳐 보인다).
+    //    offsetLeft/offsetWidth 는 레이아웃 좌표(zoom 이전)라 같은 좌표계다.
+    //    단, offsetLeft 는 offsetParent 기준이라 탭을 감싼 flex 상자만큼 빠진다 —
+    //    헤더까지 거슬러 올라가며 더한다.
+    let left = 0
+    let cur: HTMLElement | null = el
+    while (cur && cur !== host) {
+      left += cur.offsetLeft
+      cur = cur.offsetParent as HTMLElement | null
+    }
+    setTabUnderlineLeft(left + el.offsetWidth / 2 - UNDERLINE_W / 2)
   }, [tab])
   // 예전엔 deps가 [tab]뿐이라 "탭이 바뀔 때" 한 번만 쟀다. 그래서 첫 측정이 틀리면
   // (웹폰트 로딩 전 폴백 글꼴 폭으로 쟀거나, 헤더가 아직 마운트되기 전이라 el이 null이어서
@@ -1291,7 +1300,7 @@ export default function App() {
                   }}
                   onClick={() => goTo(id)}
                   className={`pressable-tab px-[10px] py-[6px] rounded-[8px] text-[24px] whitespace-nowrap leading-none hover:bg-topbar-hover ${
-                    tab === id ? 'text-ink font-semibold' : 'text-[#787878] font-medium hover:text-ink'
+                    tab === id ? 'text-ink font-semibold' : 'text-[#ADADAD] font-medium hover:text-ink'
                   }`}
                 >
                   {label}

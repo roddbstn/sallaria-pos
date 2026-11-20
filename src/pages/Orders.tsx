@@ -591,8 +591,10 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
            380px 고정: 도넛(109) + 범례(160) + 좌우 여백이 들어가는 최소 폭. */}
       <div className="w-[380px] flex-shrink-0 flex flex-col gap-2.5 overflow-y-auto">
 
-        {/* 숫자 4개 — 380px 에 가로 4개는 95px 씩이라 '합계 주문액' 금액이 잘린다. 2×2 로 */}
-        <div className="grid grid-cols-2 gap-2.5 flex-shrink-0">
+        {/* 숫자 4개 — 380px 에 가로 4개는 95px 씩이라 '합계 주문액' 금액이 잘린다. 2×2 로.
+            좌우를 반반으로 두면 금액 쪽이 빠듯하고 건수 쪽('12건')은 남는다.
+            왼쪽(금액)에 조금 더 준다 — 1.15 : 0.85, 380px 기준 약 28px 이동. */}
+        <div className="grid gap-2.5 flex-shrink-0" style={{ gridTemplateColumns: '1.15fr 0.85fr' }}>
           {/* 윗줄은 '얼마 / 몇 건' — 같이 읽는 한 쌍이다.
               아랫줄은 그걸 나눈 값(일 평균)과 빼는 값(취소). */}
           <StatCard label="합계 주문액"    value={won(stats.totalSales)} />
@@ -928,15 +930,17 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                     좌우 여백 30 을 빼면 **556칸**이 전부다. 전엔 고정 칼럼 합이
                     정확히 556 이라 거래처명 칸이 0 이 됐고, 머리글 글자가 한 자씩
                     세로로 쌓였다(flex-1 이 0 폭 + 줄바꿈 허용).
-                      일시 74 + 번호 70 + 방법 64 + 상태 74 + 금액 100 = 382
-                      + 거래처 여백 20 + 거래처 최소 110 = 512  → 556 안에 들어간다
+                      일시 74 + 번호 70 + 방법 84 + 상태 74 + 금액 100 = 402
+                      + 거래처 여백 20 + 거래처 최소 110 = 532  → 556 안에 들어간다
+                    방법 칸을 64 → 84 로 넓혔다. '매장식사' 가 64px 에선 빠듯했고,
+                    거래처는 flex-1 이라 그만큼 줄면서 방법 칸이 왼쪽으로 당겨진다.
                     고정 칼럼엔 flex-shrink-0 을 건다. 안 걸면 좁아질 때 소리 없이
                     같이 쪼그라들어서, 어디가 문제인지 안 보인다. */}
                 <DataTableHead density="comfortable">
                   <span className="w-[74px] flex-shrink-0">주문일시</span>
                   <span className="w-[70px] flex-shrink-0">주문번호</span>
                   <span className="flex-1 min-w-[110px] pl-[10px] overflow-hidden">거래처 · 주문자</span>
-                  <span className="w-[64px] flex-shrink-0">이용방법</span>
+                  <span className="w-[84px] flex-shrink-0">이용방법</span>
                   <span className="w-[74px] flex-shrink-0">상태</span>
                   {/* 금액과 잔액을 한 칸에 위아래로. 둘 다 오른쪽 정렬 금액이고
                       "이 주문 얼마 / 그래서 남은 게 얼마" 라 같이 읽는 값이다.
@@ -976,7 +980,7 @@ export default function Orders({ initialTab = '주문내역' }: { initialTab?: O
                         {itemsSummary(order.items)}
                       </span>
                     </span>
-                    <span className="w-[64px] flex-shrink-0">
+                    <span className="w-[84px] flex-shrink-0">
                       <Badge label={order.method} color={METHOD_COLOR[order.method] ?? '#ADADAD'} />
                     </span>
                     <span className="w-[74px] flex-shrink-0">
