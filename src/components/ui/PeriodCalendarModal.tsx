@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 // 시작일~종료일 범위를 고르는 캘린더 모달. 주문 홈(기간선택)과 주문 내역이 함께 쓴다.
 //
@@ -81,6 +81,22 @@ export default function PeriodCalendarModal({ onClose, onApply }: { onClose: () 
   for (let i = 0; i < firstDay; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(`${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
 
+  /**
+   * 달마다 주가 5줄이거나 6줄이라 모달 높이가 변한다. 가운데 정렬이면 그 차이의
+   * **절반만큼 위아래로 움직여서**, 방금 누른 '이전/다음 달' 버튼이 손가락 밑에서
+   * 달아난다. 연타로 몇 달을 넘길 때 특히 거슬린다.
+   *
+   * 처음 열렸을 때 높이를 자리(placeholder)로 잡아 그걸 가운데 두고, 모달은 그
+   * 자리 **위쪽에 붙인다.** 그러면 길어질 때 아래로만 자라고 머리는 고정된다.
+   * (offsetHeight 는 레이아웃 px 이라 #root 의 zoom 과 같은 좌표계다 —
+   *  getBoundingClientRect 를 쓰면 zoom 배수만큼 어긋난다. App.tsx 탭 밑줄 참고)
+   */
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [baseH, setBaseH] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    if (baseH == null && boxRef.current) setBaseH(boxRef.current.offsetHeight)
+  }, [baseH])
+
   const rangeLabel = rangeStart
     ? rangeEnd && rangeEnd !== rangeStart
       ? `${rangeStart.replace(/-/g, '.')} ~ ${rangeEnd.replace(/-/g, '.')}`
@@ -89,10 +105,15 @@ export default function PeriodCalendarModal({ onClose, onApply }: { onClose: () 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div
-        className="modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] w-[420px] max-w-[92vw] flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
+      {/* 가운데를 차지하는 건 이 자리다. 모달은 그 위쪽에 붙어 아래로만 자란다 */}
+      <div className="relative w-[420px] max-w-[92vw]" style={baseH != null ? { height: baseH } : undefined}>
+        <div
+          ref={boxRef}
+          className={`modal-in bg-[#FCFCFC] rounded-[18px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden ${
+            baseH != null ? 'absolute top-0 left-0 right-0' : ''
+          }`}
+          onClick={e => e.stopPropagation()}
+        >
         <div className="px-[28px] pt-[28px] pb-[22px]">
           <div className="flex items-center justify-between mb-[4px]">
             <div className="text-[18px] font-semibold text-[#1E1E1E]">기간 선택</div>
@@ -213,6 +234,7 @@ export default function PeriodCalendarModal({ onClose, onApply }: { onClose: () 
           >
             적용
           </button>
+        </div>
         </div>
       </div>
     </div>
