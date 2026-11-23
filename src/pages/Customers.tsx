@@ -1323,8 +1323,24 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   for (const r of pOrderRows) pYearlyOrders[new Date(r.ordered_at).getMonth()] += 1
 
   const p30dStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const pActive30d = new Set(pOrderRows.filter(r => new Date(r.ordered_at) >= p30dStart).map(r => r.account_code))
-  const pActive30dPct = pAccounts.length > 0 ? Math.round((pActive30d.size / pAccounts.length) * 100) : 0
+  /**
+   * 최근 30일 주문율 — **사람 단위**다.
+   *
+   * 전엔 계정(팀) 단위로 셌다(주문 있는 거래처 수 / 전체 거래처 수). 그러면
+   * 20명짜리 과에서 한 명만 시켜도 그 과는 '주문함' 으로 세어져, 실제로 쓰는
+   * 사람이 얼마나 되는지는 가려졌다.
+   *
+   * 사람 식별은 거래처 + 주문자명이다 — 같은 이름이 다른 과에 있으면 다른
+   * 사람이다. ⚠️ 한 과 안의 동명이인은 합쳐진다(peopleRows 수집부와 같은 한계).
+   * peopleRows 는 취소 주문을 이미 제외하고 담는다.
+   */
+  const pPeopleRows = panelAll ? peopleRows : peopleRows.filter(r => inPanel(r.accountCode))
+  const pActive30dMembers = new Set(
+    pPeopleRows.filter(r => new Date(r.at) >= p30dStart).map(r => `${r.accountCode}|${r.name}`)
+  )
+  const pActive30dPct = pTotalMembers > 0
+    ? Math.round((pActive30dMembers.size / pTotalMembers) * 100)
+    : 0
 
   const pTypeCounts: Record<string, number> = {}
   for (const a of pAccounts) pTypeCounts[a.account_type] = (pTypeCounts[a.account_type] ?? 0) + 1
@@ -1755,15 +1771,13 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             </StatCard>
             <StatCard className="bg-[#F2F2F2] rounded-[13px] flex-1" padding={13} gap={9}>
               <div className="text-[16px] font-medium text-[#2C261F] tracking-[-0.5px] whitespace-nowrap">최근 30일 주문율</div>
-              {/* 분모·분자를 같이 적는다 — '33%' 만으로는 3곳 중 1곳인지 300곳 중 100곳인지
-                  알 수 없고, 거래처가 적은 매장에서는 한 곳만 움직여도 수치가 크게 뛴다.
-                  ⚠️ 이 비율은 **계정(팀) 단위**다(pActive30d.size / pAccounts.length).
-                  사람 단위가 아니므로 '명' 이 아니라 '팀' 으로 적는다 — 위 카드의
-                  'N팀/M명' 과 같은 말이다. */}
+              {/* 분모·분자를 같이 적는다 — '33%' 만으로는 3명 중 1명인지 300명 중 100명인지
+                  알 수 없고, 이용자가 적은 매장에서는 한 명만 움직여도 수치가 크게 뛴다.
+                  단위는 **사람**이다 — 위 카드 'N팀/M명' 의 그 M 이 분모다. */}
               <div className="flex items-baseline justify-between gap-[6px]">
                 <span className="text-[19px] font-medium text-ink">{pActive30dPct}%</span>
                 <span className={`text-[12px] text-[#8E8681] whitespace-nowrap ${NUM}`}>
-                  {pActive30d.size}/{pAccounts.length}
+                  {pActive30dMembers.size}/{pTotalMembers}
                 </span>
               </div>
             </StatCard>
