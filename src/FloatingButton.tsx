@@ -15,7 +15,7 @@ import logoWithText from './assets/logo-with-text-transparent.png'
 export const FLOAT_W = 124
 export const FLOAT_H = 124
 
-/** 버튼 둘레 여백 — 그림자가 잘리지 않을 만큼만 */
+/** 버튼 둘레 투명 여백 — 둥근 모서리가 창 가장자리에 닿아 깎이지 않게 */
 const PAD = 10
 
 /**
@@ -107,7 +107,6 @@ export default function FloatingButton() {
           background: '#F4EFEA',
           border: 'none',
           borderRadius: 18,
-          boxShadow: '0 4px 14px rgba(0,0,0,0.22)',
           padding: 0,
           overflow: 'hidden',
         } as React.CSSProperties}
