@@ -1510,7 +1510,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             <div className="flex items-center gap-[10px] flex-shrink-0">
               <button
                 onClick={() => setShowInactive(v => !v)}
-                className={`hover-chip text-[17px] font-medium whitespace-nowrap flex-shrink-0 ${showInactive ? 'text-danger' : 'text-[#6A635E] hover:text-ink'}`}
+                /* 글자 속성은 옆의 '최근 주문순' 과 같게 — 17px / font-normal / #1E1E1E.
+                   전엔 font-medium 에 #6A635E 라 나란히 두면 둘이 다른 종류의
+                   버튼처럼 보였다. 켜졌을 때 빨강은 상태 표시라 그대로 둔다. */
+                className={`hover-chip text-[17px] font-normal whitespace-nowrap flex-shrink-0 ${showInactive ? 'text-danger' : 'text-[#1E1E1E]'}`}
               >
                 {showInactive ? '비활성 고객 보는 중' : '비활성 보기'}
               </button>
