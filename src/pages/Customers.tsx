@@ -1662,14 +1662,17 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           {/* 제목 + 자세히 보기(꺾쇠) — 전체메뉴 고객 > 고객 현황 화면으로 진입.
               패널이 360 으로 좁아지면서 '자세히 보기' 글자가 거래처 필터와 자리를
               다퉜다. 꺾쇠로 줄이고 무슨 버튼인지는 title·aria-label 로 남긴다. */}
-          <div className="flex items-center gap-[8px] self-stretch">
+          <div className="flex items-center gap-[2px] self-stretch">
             <span className="text-[21px] font-medium text-ink whitespace-nowrap">고객현황</span>
             {onOpenDetail && (
               <button
                 onClick={onOpenDetail}
                 title="고객 현황 자세히 보기"
                 aria-label="고객 현황 자세히 보기"
-                className="pressable-soft flex-shrink-0 w-[28px] h-[28px] text-[#6A635E] flex items-center justify-center hover:text-ink transition-colors"
+                /* 제목과 같은 색으로, 글자 높이 가운데에 오게 2px 올린다 —
+                   제목의 leading(1.3) 때문에 글자 박스가 아래로 더 길어서
+                   items-center 만으로는 꺾쇠가 글자보다 조금 내려와 보인다. */
+                className="pressable-soft flex-shrink-0 w-[24px] h-[24px] -mt-[2px] text-ink flex items-center justify-center hover:opacity-60 transition-opacity"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 6 15 12 9 18" />
@@ -1679,22 +1682,29 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             {/* 거래처 필터 — 오른쪽 끝(전에 '자세히 보기'가 있던 자리).
                 아래 카드·추이·도넛·랭킹이 전부 이 선택을 따른다. 켜져 있을 때는
                 숫자가 전체가 아니라는 걸 버튼만 봐도 알 수 있게 색을 바꾼다. */}
+            {/* 계정 상세 패널 우상단의 동그란 아이콘 버튼(PanelIconButton)과 같은 모양.
+                걸려 있을 때는 배경을 진하게 하고 **몇 곳인지는 작은 배지**로 올린다 —
+                동그라미 안에 숫자를 같이 넣으면 아이콘이 찌그러진다. */}
             <div className="relative ml-auto flex-shrink-0">
               <button
                 onClick={() => setPanelFilterOpen(v => !v)}
-                className={`pressable-tab h-[32px] px-[13px] rounded-[9px] text-[16px] font-normal flex items-center gap-[5px] transition-colors ${
+                title={panelFilter === null ? '거래처 고르기' : `${panelFilter.size}곳만 보는 중`}
+                aria-label={panelFilter === null ? '거래처 고르기' : `${panelFilter.size}곳만 보는 중`}
+                className={`pressable-soft relative w-[34px] h-[34px] rounded-full flex items-center justify-center transition-colors ${
                   panelFilter !== null
                     ? 'bg-[#6A635E] text-[#FCFCFC] hover:brightness-110'
-                    : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
+                    : 'bg-[#F2F2F2] text-[#6A635E] hover:bg-[#E5E5E5]'
                 }`}
               >
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
                   <path d="M1.5 2.5h11L8.2 7.6v4L5.8 12.5V7.6L1.5 2.5z"
                         stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
                 </svg>
-                {/* 전체일 때는 아이콘만 — 좁은 패널에서 글자가 자리를 먹는다.
-                    걸려 있을 때만 몇 곳인지 적는다(숫자는 정보다) */}
-                {panelFilter !== null && `${panelFilter.size}곳`}
+                {panelFilter !== null && (
+                  <span className="absolute -top-[2px] -right-[2px] min-w-[15px] h-[15px] px-[3px] rounded-full bg-[#2C261F] text-white text-[10px] font-semibold flex items-center justify-center">
+                    {panelFilter.size}
+                  </span>
+                )}
               </button>
               {panelFilterOpen && (
                 <AccountFilterPopover
@@ -3049,19 +3059,20 @@ function CustomerDetailPanel({
                           결제수단도 10 → 12 로 같이 올린다 — 날짜만 키우면 제목(결제수단)이
                           부제(날짜)보다 작아져 위아래가 뒤집혀 보인다. */}
                       <div className="text-[16px] font-semibold text-ink">{d.payment_method}</div>
-                      <div className="text-[14px] text-[#787878] mt-[1px] tabular-nums">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
+                      <div className="text-[13px] text-[#787878] mt-[1px] tabular-nums">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
                     </div>
                     <div className="text-right">
                       <div className={`text-[14px] ${deltaClass(d.amount)}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
                       {/* balance_after 가 0 이면 **적히지 않은 것**이다. 96건 중 80건이
                           그렇다 — 10월 전에는 add_deposit 이 이 값을 안 넣었고, 계정
                           생성 시의 직접 INSERT 는 2026-11-23 까지 빠져 있었다.
-                          0원이라고 단언하면 장부에 없는 사실을 적는 셈이라 '—' 로 둔다.
+                          0원이라고 단언하면 장부에 없는 사실을 적는 셈이고, '—' 로 두면
+                          빈칸이 줄마다 눈에 밟힌다. 그래서 **줄을 아예 안 그린다.**
                           과거 값은 되살리지 않는다: 주문·취소·조정을 거꾸로 재생해
-                          추측하면 틀린 숫자가 장부에 박힌다(그게 0 보다 나쁘다). */}
-                      <div className={`text-[9px] text-[#6A635E] ${NUM}`}>
-                        잔액 {d.balance_after === 0 ? '—' : won(d.balance_after)}
-                      </div>
+                          추측하면 틀린 숫자가 장부에 박힌다(그게 빈칸보다 나쁘다). */}
+                      {d.balance_after !== 0 && (
+                        <div className={`text-[9px] text-[#6A635E] ${NUM}`}>잔액 {won(d.balance_after)}</div>
+                      )}
                     </div>
                   </div>
                 )
