@@ -1762,8 +1762,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   'N팀/M명' 과 같은 말이다. */}
               <div className="flex items-baseline justify-between gap-[6px]">
                 <span className="text-[19px] font-medium text-ink">{pActive30dPct}%</span>
-                <span className="text-[12px] text-[#8E8681] whitespace-nowrap">
-                  {pAccounts.length}팀 중 {pActive30d.size}팀
+                <span className={`text-[12px] text-[#8E8681] whitespace-nowrap ${NUM}`}>
+                  {pActive30d.size}/{pAccounts.length}
                 </span>
               </div>
             </StatCard>
