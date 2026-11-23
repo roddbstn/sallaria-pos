@@ -1545,7 +1545,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             <div className="bg-canvas-soft rounded-[13px]">
               {/* whitespace-nowrap — 폭이 모자라도 글자가 세로로 서지는 않아야
                   '어디가 좁은지'가 보인다(components/ui/DataTable.tsx 의 같은 주석 참고) */}
-              <div className={`sticky top-0 z-10 border-y border-[#C1B7AA] text-[17px] font-medium rounded-t-[13px] ${TABLE_HEAD_BASE}`} style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
+              <div className={`sticky top-0 z-10 border-y border-[#C1B7AA] text-[16px] font-medium rounded-t-[13px] ${TABLE_HEAD_BASE}`} style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
                 {/* 머리글은 전부 가운데. 값은 종류에 맞게 둔다 —
                     이름은 왼쪽(길이가 제각각), 숫자는 오른쪽(자릿수를 눈으로 비교한다) */}
                 <span className="flex-shrink-0 text-center" style={{ width: 42 }}>순번</span>
@@ -2998,18 +2998,21 @@ function CustomerDetailPanel({
                 return (
                   <div key={o.code} className="bg-[#F2F2F2] rounded-[10px] px-[14px] py-[10px]">
                     <div className="flex items-center justify-between mb-[5px]">
-                      <span className="text-[9px] text-[#787878]">{dateStr} · {o.method}</span>
+                      {/* 9px 은 훑어서 읽히는 크기가 아니다 — 충전 이력 카드에서 이미
+                          같은 이유로 날짜를 키웠다(아래 charges 탭 주석). 위계는
+                          총액 15 > 시간 14 > 메뉴·주문자 13 > 잔액 12 로 맞춘다. */}
+                      <span className="text-[14px] text-[#787878]">{dateStr} · {o.method}</span>
                       <div className="flex items-center gap-[5px]">
                         <StatusTag status={o.status} />
-                        <span className="text-[12px] font-bold text-ink">{won(o.total)}</span>
+                        <span className="text-[15px] font-bold text-ink">{won(o.total)}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-[4px] text-[9px] text-[#787878] mb-[5px]">
-                      <RevealText value={o.orderer} masked={maskName(o.orderer)} iconSize={9} />
+                    <div className="flex items-center gap-[4px] text-[13px] text-[#787878] mb-[5px]">
+                      <RevealText value={o.orderer} masked={maskName(o.orderer)} iconSize={12} />
                       {o.phone && (
                         <>
                           <span>·</span>
-                          <RevealText value={o.phone} masked={maskPhone(o.phone)} iconSize={9} />
+                          <RevealText value={o.phone} masked={maskPhone(o.phone)} iconSize={12} />
                         </>
                       )}
                     </div>
@@ -3022,7 +3025,7 @@ function CustomerDetailPanel({
                       ))}
                     </div>
                     {o.balanceAfter !== undefined && o.status !== '취소' && (
-                      <div className="text-right text-[9px] text-[#6A635E] mt-[5px]">잔액 {won(o.balanceAfter)}</div>
+                      <div className="text-right text-[12px] text-[#6A635E] mt-[5px]">잔액 {won(o.balanceAfter)}</div>
                     )}
                   </div>
                 )
