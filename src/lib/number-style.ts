@@ -35,6 +35,9 @@ export const NUM_DOWN = 'tabular-nums text-[#3374FF] font-medium'
 /** 보조·없음 */
 export const NUM_MUTED = 'tabular-nums text-[#ADADAD]'
 
+/** 곧 바닥나는 것 — 경고 기준 아래 잔액. 이름 옆 '잔액 부족' 배지와 같은 색 */
+export const NUM_WARN = 'tabular-nums text-[#B35C00] font-medium'
+
 /**
  * 증감 한 줄에 쓰는 색 — '추이' 칸과 같은 규칙.
  * 0 은 회색으로 둔다. 0 을 파랑이나 빨강으로 칠하면 "아무 일도 없었다"가

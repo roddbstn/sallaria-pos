@@ -32,7 +32,7 @@ import { defaultQrSystemFor } from '../lib/qr-system'
 import LoadingTimer from '../components/ui/LoadingTimer'
 import LoadingBlock from '../components/ui/LoadingBlock'
 import CustomerProfileModal from '../components/customer/CustomerProfileModal'
-import { NUM, NUM_STRONG, NUM_UP, NUM_MUTED, deltaClass } from '../lib/number-style'
+import { NUM, NUM_STRONG, NUM_UP, NUM_DOWN, NUM_WARN, NUM_MUTED, deltaClass } from '../lib/number-style'
 import { signColor } from '../lib/sign-color'
 import ModalOverlay from '../components/ui/ModalOverlay'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -1665,11 +1665,17 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                         {(monthlyDeposits[acc.account_code] ?? 0) > 0 ? `+${won(monthlyDeposits[acc.account_code])}` : won(0)}
                       </span>
                       {/* 잔액 — 음수는 파랑(마이너스), 경고 기준 아래는 주황.
-                          이름 옆 배지와 같은 신호 체계다 */}
-                      <span style={{ width: 100 }} className={`flex-shrink-0 text-right ${NUM} ${
-                        acc.current_balance < 0 ? 'text-[#3374FF] font-medium'
-                        : acc.current_balance <= (acc.warning_threshold ?? 0) && (acc.warning_threshold ?? 0) > 0 ? 'text-[#B35C00]'
-                        : ''
+                          이름 옆 배지와 같은 신호 체계다.
+
+                          ⚠️ 색 클래스는 **하나만** 건다. 전엔 `${NUM} ${조건부 색}` 으로
+                          둘을 겹쳤는데, NUM 에 text-ink 가 들어 있어서 파란색이 묻혔다.
+                          같은 요소에 text-* 가 둘이면 이기는 쪽은 클래스를 적은 순서가
+                          아니라 **Tailwind 가 CSS 를 생성한 순서**다
+                          (components/ui/DataTable.tsx 의 TABLE_HEAD_BASE 주석과 같은 함정). */}
+                      <span style={{ width: 100 }} className={`flex-shrink-0 text-right ${
+                        acc.current_balance < 0 ? NUM_DOWN
+                        : acc.current_balance <= (acc.warning_threshold ?? 0) && (acc.warning_threshold ?? 0) > 0 ? NUM_WARN
+                        : NUM
                       }`}>
                         {won(acc.current_balance)}
                       </span>
