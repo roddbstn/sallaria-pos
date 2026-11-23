@@ -1658,7 +1658,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
         <div className="relative flex-shrink-0 w-[360px] h-full bg-[#F9F9F9] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden">
           <div className="flex-1 min-h-0 overflow-hidden">
           {!selected ? (
-            <div className="h-full overflow-y-auto flex flex-col gap-[13px] px-[26px] py-[13px]">
+            {/* 상단 여백은 계정 상세 패널(pt-26)과 **같아야 한다** — 전엔 13 이라
+                계정을 누를 때마다 제목이 13px 씩 아래로 튀었다 */}
+            <div className="h-full overflow-y-auto flex flex-col gap-[13px] px-[26px] pt-[26px] pb-[13px]">
           {/* 제목 + 자세히 보기(꺾쇠) — 전체메뉴 고객 > 고객 현황 화면으로 진입.
               패널이 360 으로 좁아지면서 '자세히 보기' 글자가 거래처 필터와 자리를
               다퉜다. 꺾쇠로 줄이고 무슨 버튼인지는 title·aria-label 로 남긴다. */}
