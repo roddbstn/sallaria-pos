@@ -702,6 +702,39 @@ ipcMain.handle('floating:set', async (_e, enabled: boolean) => {
 })
 
 /**
+ * 끌어서 옮기기.
+ *
+ * `-webkit-app-region: drag` 를 쓰면 창 전체를 잡아 끌 수 있지만 그 영역은
+ * **click 을 받지 못한다.** 로고를 누르면 홈으로 가야 하니 둘을 겸할 수 없다.
+ * 그래서 직접 옮긴다: 누른 순간의 창 위치를 적어 두고, 마우스가 움직인 만큼
+ * 더해서 setPosition 한다. 누르고 거의 안 움직였으면 렌더러가 클릭으로 친다.
+ */
+let floatDragOrigin: [number, number] | null = null
+
+ipcMain.handle('floating:drag-start', async () => {
+  if (!floatWindow || floatWindow.isDestroyed()) return { ok: false }
+  floatDragOrigin = floatWindow.getPosition() as [number, number]
+  return { ok: true }
+})
+
+ipcMain.handle('floating:drag-move', async (_e, dx: number, dy: number) => {
+  if (!floatWindow || floatWindow.isDestroyed() || !floatDragOrigin) return { ok: false }
+  floatWindow.setPosition(Math.round(floatDragOrigin[0] + dx), Math.round(floatDragOrigin[1] + dy))
+  return { ok: true }
+})
+
+ipcMain.handle('floating:drag-end', async () => {
+  floatDragOrigin = null
+  // 놓은 자리를 기억한다 ('moved' 이벤트는 setPosition 으로 옮길 때도 오지만,
+  // 드래그 중에 매번 쓰지 않도록 여기서 한 번 더 확실히 적는다)
+  if (floatWindow && !floatWindow.isDestroyed()) {
+    const [x, y] = floatWindow.getPosition()
+    store.set('floating', { ...store.get('floating'), x, y })
+  }
+  return { ok: true }
+})
+
+/**
  * 버튼을 눌렀을 때 — 선포스 창을 앞으로 끌어오고 **홈 화면**을 띄운다.
  *
  * 창만 올려주면 점주가 마지막으로 보던 화면(설정·메뉴 편집 같은 것)이 그대로

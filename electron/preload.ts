@@ -20,6 +20,10 @@ const api = {
   setFloating:  (enabled: boolean) => ipcRenderer.invoke('floating:set', enabled),
   /** 버튼을 눌렀을 때 — 선포스 창을 앞으로 + 홈 화면으로 */
   openMainFromFloating: ()         => ipcRenderer.invoke('floating:open-main'),
+  /** 끌어서 옮기기 — 렌더러가 마우스 이동량을 넘긴다 */
+  floatingDragStart: ()                         => ipcRenderer.invoke('floating:drag-start'),
+  floatingDragMove:  (dx: number, dy: number)   => ipcRenderer.invoke('floating:drag-move', dx, dy),
+  floatingDragEnd:   ()                         => ipcRenderer.invoke('floating:drag-end'),
   /** 바로가기 버튼이 눌렸다 — 메인 창이 홈으로 간다 */
   onNavHome:    (cb: () => void) => ipcRenderer.on('nav:home', () => cb()),
   offNavHome:   ()               => ipcRenderer.removeAllListeners('nav:home'),

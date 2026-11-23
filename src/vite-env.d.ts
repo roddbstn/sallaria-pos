@@ -29,6 +29,9 @@ interface PosBridge {
   getFloating:       () => Promise<boolean>
   setFloating:       (enabled: boolean) => Promise<unknown>
   openMainFromFloating: () => Promise<unknown>
+  floatingDragStart: () => Promise<unknown>
+  floatingDragMove:  (dx: number, dy: number) => Promise<unknown>
+  floatingDragEnd:   () => Promise<unknown>
   onNavHome:         (cb: () => void) => void
   offNavHome:        () => void
   onUpdaterStatus:   (cb: (info: { type: string; version: string }) => void) => void

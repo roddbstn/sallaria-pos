@@ -1014,6 +1014,20 @@ export default function App() {
     return () => api.offAuthDeeplink?.()
   }, [])
 
+
+  // 바로가기 버튼(플로팅)을 누르면 홈으로. 창을 앞으로 끌어오는 건 메인 프로세스가
+  // 하고, '어느 화면을 보여줄지' 는 여기서 정한다 — 점주가 마지막에 설정 화면을
+  // 보고 있었어도 주문부터 보이게.
+  //
+  // ⚠️ 이 훅은 아래 early return 들(`phase !== 'main'` 등)보다 **위**에 있어야 한다.
+  //    아래에 두면 로그인 전후로 훅 개수가 달라져 "Rendered more hooks than during
+  //    the previous render" 로 앱이 통째로 죽는다.
+  useEffect(() => {
+    const w = window as unknown as { api?: { onNavHome?: (cb: () => void) => void; offNavHome?: () => void } }
+    if (!w.api?.onNavHome) return
+    w.api.onNavHome(() => { setTab('home'); setHamburgerOpen(false) })
+    return () => { w.api?.offNavHome?.() }
+  }, [])
   async function handleSaveNewPassword() {
     if (newPw.length < PASSWORD_MIN_LEN) { setNewPwMsg({ text: `비밀번호는 ${PASSWORD_MIN_LEN}자 이상이어야 합니다.`, ok: false }); return }
     if (newPw !== newPwConfirm) { setNewPwMsg({ text: '비밀번호가 일치하지 않습니다.', ok: false }); return }
@@ -1232,15 +1246,6 @@ export default function App() {
   // ── 햄버거 드로어: 매출·주문 / 상품 / 고객 / 설정 (Figma 690:379 구조) ──
   function goTo(id: Tab) { setTab(id); setHamburgerOpen(false) }
 
-  // 바로가기 버튼(플로팅)을 누르면 홈으로. 창을 앞으로 끌어오는 건 메인 프로세스가
-  // 하고, '어느 화면을 보여줄지' 는 여기서 정한다 — 점주가 마지막에 설정 화면을
-  // 보고 있었어도 주문부터 보이게.
-  useEffect(() => {
-    const w = window as unknown as { api?: { onNavHome?: (cb: () => void) => void; offNavHome?: () => void } }
-    if (!w.api?.onNavHome) return
-    w.api.onNavHome(() => { setTab('home'); setHamburgerOpen(false) })
-    return () => { w.api?.offNavHome?.() }
-  }, [])
   // kind 를 넘기지 않으면 **지운다.** 안 지우면 리포트 CTA 로 한 번 들어간 뒤
   // 햄버거 > 문자 보내기 로 들어와도 '다시 이용 안내'가 계속 미리 골라져 있다.
   function goToCustomerHub(sub: CustomerHubTab, kind?: SmsKind) {

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { api } from './lib/ipc'
 import logoWithText from './assets/logo-with-text-transparent.png'
 
@@ -14,13 +15,16 @@ import logoWithText from './assets/logo-with-text-transparent.png'
 export const FLOAT_W = 124
 export const FLOAT_H = 124
 
+/** 버튼 둘레 여백 — 그림자가 잘리지 않을 만큼만 */
+const PAD = 10
+
 /**
- * 끌기와 누르기를 **자리로 나눈다.**
+ * 이만큼(px) 넘게 움직였으면 '끌었다', 아니면 '눌렀다'.
  *
- * Electron 에서 `-webkit-app-region: drag` 인 영역은 click 을 받지 못한다.
- * 그래서 가운데 네모(로고)만 눌리는 버튼으로 떼어 내고, 그 둘레 띠가 손잡이다.
+ * 손으로 누르면 몇 px 는 흔들린다. 0 으로 두면 누를 때마다 미세하게 끌려서
+ * 클릭이 안 먹고, 너무 크면 짧게 끌었을 때 창이 홈으로 튄다.
  */
-const PAD = 16
+const DRAG_SLOP = 4
 
 // ── 로고 글자만 잘라 쓰기 ────────────────────────────────────────────────────
 //
@@ -42,32 +46,67 @@ const DRAW_W = 74
 const SCALE  = DRAW_W / TEXT_W
 
 export default function FloatingButton() {
+  // 누른 지점(화면 좌표)과 '끌었는지' 여부. 리렌더를 일으킬 값이 아니라 ref 로 둔다.
+  const start = useRef<{ x: number; y: number } | null>(null)
+  const moved = useRef(false)
+
+  // ── 끌어서 옮기기 ──────────────────────────────────────────────────────
+  //
+  // `-webkit-app-region: drag` 를 쓰면 **어디를 잡아도** 끌 수 있지만 그 영역은
+  // click 을 못 받는다. 로고를 누르면 홈으로 가야 하니 겸할 수가 없다.
+  // 그래서 직접 옮긴다 — 창 전체 어디를 잡아도 끌리고, 거의 안 움직였으면 클릭이다.
+  function onPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return
+    start.current = { x: e.screenX, y: e.screenY }
+    moved.current = false
+    // 창 밖으로 벗어나도 move/up 이 계속 오게 잡아둔다 — 작은 창이라 금방 벗어난다
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    void api?.floatingDragStart?.()
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!start.current) return
+    const dx = e.screenX - start.current.x
+    const dy = e.screenY - start.current.y
+    if (!moved.current && Math.abs(dx) + Math.abs(dy) > DRAG_SLOP) moved.current = true
+    if (moved.current) void api?.floatingDragMove?.(dx, dy)
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    if (!start.current) return
+    start.current = null
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* 이미 풀렸다 */ }
+    void api?.floatingDragEnd?.()
+    // 끌지 않았으면 누른 것 — 홈으로
+    if (!moved.current) void api?.openMainFromFloating?.()
+  }
+
   return (
     <div
       style={{
         width: FLOAT_W, height: FLOAT_H,
         padding: PAD,
         boxSizing: 'border-box',
-        // 둘레 띠가 손잡이 — 매장마다 기존 POS 버튼 위치가 달라서, 가리지 않는
-        // 자리로 옮길 수 있어야 한다. 놓은 자리는 electron 쪽 'moved' 가 기억한다.
-        WebkitAppRegion: 'drag',
-        cursor: 'grab',
         userSelect: 'none',
       } as React.CSSProperties}
     >
-      <button
-        onClick={() => { void api?.openMainFromFloating?.() }}
-        title="선포스 홈으로"
+      <div
+        role="button"
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        title="끌어서 옮기고, 눌러서 선포스 홈으로"
         aria-label="선포스 홈으로"
         style={{
-          WebkitAppRegion: 'no-drag',
           width: '100%', height: '100%',
+          cursor: 'grab',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           // 밝은 연갈색 — 앱이 쓰는 베이지 계열에서 한 단계 밝힌 값
           background: '#F4EFEA',
           border: 'none',
           borderRadius: 18,
-          cursor: 'pointer',
           boxShadow: '0 4px 14px rgba(0,0,0,0.22)',
           padding: 0,
           overflow: 'hidden',
@@ -100,7 +139,7 @@ export default function FloatingButton() {
             }}
           />
         </span>
-      </button>
+      </div>
     </div>
   )
 }
