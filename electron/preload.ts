@@ -18,8 +18,11 @@ const api = {
   // ── 바로가기 버튼(플로팅) ────────────────────────────────────────────────────
   getFloating:  ()                 => ipcRenderer.invoke('floating:get') as Promise<boolean>,
   setFloating:  (enabled: boolean) => ipcRenderer.invoke('floating:set', enabled),
-  /** 버튼을 눌렀을 때 — 선포스 창을 앞으로 */
+  /** 버튼을 눌렀을 때 — 선포스 창을 앞으로 + 홈 화면으로 */
   openMainFromFloating: ()         => ipcRenderer.invoke('floating:open-main'),
+  /** 바로가기 버튼이 눌렸다 — 메인 창이 홈으로 간다 */
+  onNavHome:    (cb: () => void) => ipcRenderer.on('nav:home', () => cb()),
+  offNavHome:   ()               => ipcRenderer.removeAllListeners('nav:home'),
 
   // ── 자동 업데이트 ────────────────────────────────────────────────────────────
   onUpdaterStatus: (cb: (info: {

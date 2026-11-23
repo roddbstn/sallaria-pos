@@ -29,6 +29,8 @@ interface PosBridge {
   getFloating:       () => Promise<boolean>
   setFloating:       (enabled: boolean) => Promise<unknown>
   openMainFromFloating: () => Promise<unknown>
+  onNavHome:         (cb: () => void) => void
+  offNavHome:        () => void
   onUpdaterStatus:   (cb: (info: { type: string; version: string }) => void) => void
   updaterInstall:    () => Promise<unknown>
   updaterCheck:      () => Promise<{

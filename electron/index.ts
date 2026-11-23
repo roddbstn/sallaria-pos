@@ -191,8 +191,10 @@ function loadRenderer(win: BrowserWindow, hash?: string): void {
 
 let floatWindow: BrowserWindow | null = null
 
-/** 버튼 한 변(px). 렌더러의 버튼 크기와 맞춰야 테두리가 잘리지 않는다 */
-const FLOAT_SIZE = 72
+/** 창 치수(px). src/FloatingButton.tsx 의 FLOAT_W/FLOAT_H 와 한 쌍이다 —
+ *  어긋나면 그림자나 둥근 모서리가 잘린다 */
+const FLOAT_W = 124
+const FLOAT_H = 116
 
 function createFloatingWindow(): void {
   if (floatWindow && !floatWindow.isDestroyed()) { floatWindow.show(); return }
@@ -200,11 +202,11 @@ function createFloatingWindow(): void {
   const saved = store.get('floating')
   const work  = screen.getPrimaryDisplay().workAreaSize
   // 처음 켜면 오른쪽 아래 — 기존 POS 의 버튼 줄과 겹치지 않는 자리다
-  const x = saved.x ?? Math.max(0, work.width  - FLOAT_SIZE - 24)
-  const y = saved.y ?? Math.max(0, work.height - FLOAT_SIZE - 24)
+  const x = saved.x ?? Math.max(0, work.width  - FLOAT_W - 24)
+  const y = saved.y ?? Math.max(0, work.height - FLOAT_H - 24)
 
   floatWindow = new BrowserWindow({
-    width: FLOAT_SIZE, height: FLOAT_SIZE, x, y,
+    width: FLOAT_W, height: FLOAT_H, x, y,
     frame: false, transparent: true, resizable: false, movable: true,
     // 작업표시줄에 또 뜨면 "선포스가 두 개" 로 보인다
     skipTaskbar: true,
@@ -699,13 +701,19 @@ ipcMain.handle('floating:set', async (_e, enabled: boolean) => {
   return { ok: true }
 })
 
-/** 버튼을 눌렀을 때 — 선포스 창을 앞으로 끌어온다 */
+/**
+ * 버튼을 눌렀을 때 — 선포스 창을 앞으로 끌어오고 **홈 화면**을 띄운다.
+ *
+ * 창만 올려주면 점주가 마지막으로 보던 화면(설정·메뉴 편집 같은 것)이 그대로
+ * 나온다. 이 버튼을 누르는 이유는 대개 '주문이 들어왔나' 라서 홈으로 보낸다.
+ */
 ipcMain.handle('floating:open-main', async () => {
   if (!mainWindow || mainWindow.isDestroyed()) { createWindow(); return { ok: true } }
   // 최소화돼 있으면 되살리고, 다른 프로그램 뒤에 있으면 앞으로.
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
+  mainWindow.webContents.send('nav:home')
   return { ok: true }
 })
 
