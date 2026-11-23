@@ -1,7 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import Working from '../components/ui/Working'
 import { getCached, setCached } from '../lib/query-cache'
-import { rootZoom } from '../lib/figma-scale'
 import QRCode from 'qrcode'
 import { supabase, type DbAccount, type DbDeposit } from '../lib/supabase'
 import { won } from '../lib/ipc'
@@ -234,7 +233,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const [monthlyUsage, setMonthlyUsage] = useState<Record<string, number>>({})
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({})      // 고객현황 사이드바 — 계정별 이용자(account_members) 수
   const [monthlyDeposits, setMonthlyDeposits] = useState<Record<string, number>>({}) // 이번달 선결제(충전) 합계
-  const [orderTrend, setOrderTrend] = useState<Record<string, number>>({})          // 추이 = 이번달 주문건수 - 저번달 주문건수
+  // 추이 = 이번달 주문건수 - 저번달 주문건수.
+  // 2026-11-23 에 표에서 '추이' 칸을 빼고 그 자리에 잔액을 넣으면서 **읽는 곳이 없어졌다.**
+  // 계산은 그대로 둔다 — 되살릴 때 쓰고, 아래 집계 로직과 묶여 있어 떼면 월 경계
+  // 처리까지 건드려야 한다. (같은 파일의 yearlyDeposits·yearlyOrders 와 같은 모양)
+  const [, setOrderTrend] = useState<Record<string, number>>({})
   // 값은 안 쓴다 — 랭킹이 거래처 단위에서 **사람 단위**(topOrderers)로 바뀌면서
   // 소비처가 사라졌다. 집계 루프가 orderTrend 를 만들 때 함께 쓰므로 setter 만 남긴다.
   const [, setMonthlyOrderCount] = useState<Record<string, number>>({})
@@ -251,7 +254,6 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   /** 주문 추이 막대 — 선결제 쪽(barTooltip)과 따로 둔다. 둘이 상하로 붙어 있어 한 state 를 쓰면 서로 지운다 */
   const [orderBarTooltip, setOrderBarTooltip] = useState<{ monthIdx: number; x: number; y: number } | null>(null)
   const [donutTooltip, setDonutTooltip] = useState<{ type: DbAccount['account_type']; x: number; y: number } | null>(null)
-  const [trendInfoTooltip, setTrendInfoTooltip] = useState<{ x: number; y: number } | null>(null)
   const [typeFilter, setTypeFilter] = useState<string>('all')
   /** 고객현황 패널 전용 거래처 필터. 좌측 표의 typeFilter 와는 별개다.
    *  null = 전체 · 빈 집합 = 아무 곳도 선택 안 함 · 그 외 = 그 거래처들만 */
@@ -1090,6 +1092,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     setChargeLoading(false)
   }
 
+  /** 플랜 한도에 걸렸나 — 표 아래 '고객 추가하기' 와 사이드바 '계정 추가' 가 같이 본다 */
+  const atAccountLimit = accounts.filter(a => a.is_active !== false).length >= PLAN_LIMITS[plan].accounts
+
   // ── 정보 수정 열기 ────────────────────────────────────────────────────────────
   function openEdit() {
     if (!selected) return
@@ -1505,16 +1510,19 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             )}
           </div>
 
+          {/* 표 아래 '고객 추가하기' 와 사이드바 '계정 추가' 가 같은 한도를 본다 */}
           {/* 테이블 */}
           {/* 칼럼 폭 — 1024 해상도 기준.
-              우측 패널이 400 고정이라 좌측은 624, 표 좌우 여백 52 와 머리글 여백 30 을
-              빼면 **542칸**이 전부다. 전엔 고정 칼럼 합이 562 라 계정 이름 칸(flex-1)이
+              우측 패널이 360 이라 좌측은 664, 표 좌우 여백 52 와 머리글 여백 30 을
+              빼면 **582칸**이 전부다. 전엔 고정 칼럼 합이 562 라 계정 이름 칸(flex-1)이
               0 이 됐고, 머리글 '계정 이름' 이 한 글자씩 세로로 쌓였다(2026-11-08).
               주문 내역 표·메뉴 카드와 **같은 종류의 버그**다.
-                순번 42 + 유형 52 + 추이 60 + 이용자 72 + 주문 92 + 선결제 110 = 428
-                + 이름 최소 110 = 538  → 542 안에 들어간다
+                순번 42 + 유형 52 + 이용자 72 + 주문 92 + 충전 96 + 잔액 100 = 454
+                + 이름 최소 110 = 564  → 582 안에 들어간다 (여유 18)
               각 폭은 머리글 글자(17px)와 값 중 **긴 쪽**에 맞췄다.
-              예: '이번달 선결제' 6자 = 106칸, '+500,000원' = 91칸 → 110 */}
+              '추이' 칸을 빼고 그 자리에 **잔액**을 넣었다 — 선결제 제품에서 표를
+              훑는 가장 큰 이유가 '누가 바닥났나'인데, 그 숫자만 표에 없었다.
+              머리글도 '이번달 선결제' → '이번달 충전' 으로 줄여 폭을 벌었다. */}
 
           <div className="relative flex-1 min-h-0">
             <ScrollHint scrollRef={tableScrollRef} topOffset={55} bottomOffset={38} />
@@ -1528,22 +1536,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 <span className="flex-shrink-0" style={{ width: 42 }}>순번</span>
                 <span className="flex-1 min-w-[110px] overflow-hidden">계정 이름</span>
                 <span className="flex-shrink-0" style={{ width: 52 }}>유형</span>
-                <span style={{ width: 60 }} className="flex-shrink-0 flex items-center justify-end gap-[5px]">
-                  추이
-                  <span
-                    className="w-[13px] h-[13px] rounded-full bg-[#E8E4E2] text-[#787878] text-[9px] flex items-center justify-center cursor-default"
-                    onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTrendInfoTooltip({ x: r.left + r.width / 2, y: r.top }) }}
-                    onMouseLeave={() => setTrendInfoTooltip(null)}
-                  >
-                    i
-                  </span>
-                </span>
                 <span style={{ width: 72 }} className="flex-shrink-0 text-right">이용자수</span>
-                {/* 잔액을 뺀 자리다. 잔액은 누적값이라 '이번달에 얼마나 쓰고 있나'를
-                    말해주지 못한다 — 그건 오른쪽 패널에서 크게 본다.
-                    대신 넣은 돈(선결제)과 쓴 돈(주문)을 **나란히** 둔다. */}
+                {/* 쓴 돈(주문) · 넣은 돈(충전) · 남은 돈(잔액) 을 나란히 둔다 */}
                 <span style={{ width: 92 }} className="flex-shrink-0 text-right">이번달 주문</span>
-                <span style={{ width: 110 }} className="flex-shrink-0 text-right">이번달 선결제</span>
+                <span style={{ width: 96 }} className="flex-shrink-0 text-right">이번달 충전</span>
+                <span style={{ width: 100 }} className="flex-shrink-0 text-right">잔액</span>
               </div>
 
               {loading ? (
@@ -1558,9 +1555,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   {search ? '검색 결과가 없습니다' : showInactive ? '비활성 고객이 없습니다' : '등록된 고객이 없습니다'}
                 </div>
               ) : (
-                filtered.map((acc, i) => {
-                  const trend = orderTrend[acc.account_code] ?? 0
-                  return (
+                filtered.map((acc, i) => (
                     <button
                       key={acc.account_code}
                       // 같은 칸을 다시 누르면 **선택 해제** — 오른쪽 패널이 고객현황으로 돌아간다.
@@ -1604,40 +1599,50 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                           )
                         })()}
                       </span>
-                      <span style={{ width: 60 }} className={`flex-shrink-0 text-right ${deltaClass(trend)}`}>
-                        {trend > 0 ? `+${trend}건` : trend < 0 ? `${trend}건` : '-'}
-                      </span>
                       <span style={{ width: 72 }} className={`flex-shrink-0 text-right ${NUM}`}>{memberCounts[acc.account_code] ?? 0}명</span>
                       <span style={{ width: 92 }} className={`flex-shrink-0 text-right ${(monthlyUsage[acc.account_code] ?? 0) > 0 ? NUM_STRONG : NUM_MUTED}`}>
                         {won(monthlyUsage[acc.account_code] ?? 0)}
                       </span>
-                      <span style={{ width: 110 }} className={`flex-shrink-0 text-right ${(monthlyDeposits[acc.account_code] ?? 0) > 0 ? NUM_UP : NUM_MUTED}`}>
+                      <span style={{ width: 96 }} className={`flex-shrink-0 text-right ${(monthlyDeposits[acc.account_code] ?? 0) > 0 ? NUM_UP : NUM_MUTED}`}>
                         {(monthlyDeposits[acc.account_code] ?? 0) > 0 ? `+${won(monthlyDeposits[acc.account_code])}` : won(0)}
                       </span>
+                      {/* 잔액 — 음수는 파랑(마이너스), 경고 기준 아래는 주황.
+                          이름 옆 배지와 같은 신호 체계다 */}
+                      <span style={{ width: 100 }} className={`flex-shrink-0 text-right ${NUM} ${
+                        acc.current_balance < 0 ? 'text-[#3374FF] font-medium'
+                        : acc.current_balance <= (acc.warning_threshold ?? 0) && (acc.warning_threshold ?? 0) > 0 ? 'text-[#B35C00]'
+                        : ''
+                      }`}>
+                        {won(acc.current_balance)}
+                      </span>
                     </button>
-                  )
-                })
+                  ))
+              )}
+
+              {/* 표 맨 아래 — 목록을 다 훑고 "없네" 하는 바로 그 자리에 둔다.
+                  사이드바 하단의 '계정 추가' 와 같은 동작이다(플랜 한도도 같이 본다). */}
+              {!loading && !fetchError && (
+                <div className="flex justify-center py-[18px]">
+                  <button
+                    onClick={() => { if (!atAccountLimit) setAddOpen(true) }}
+                    disabled={atAccountLimit}
+                    title={atAccountLimit
+                      ? `${PLAN_NAMES[plan]} 플랜 한도(${PLAN_LIMITS[plan].accounts === Infinity ? '무제한' : PLAN_LIMITS[plan].accounts}) 도달`
+                      : undefined}
+                    className="pressable-soft px-[22px] py-[9px] rounded-full bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:bg-[#DCD6D1] transition-colors disabled:opacity-40"
+                  >
+                    고객 추가하기
+                  </button>
+                </div>
               )}
             </div>
             </div>
           </div>
 
-          {/* "추이" 헤더 i 아이콘 툴팁 — 표 밖(fixed)에서 렌더해야 안 잘림 */}
-          {trendInfoTooltip && (
-            <div
-              className="fixed z-50 pointer-events-none bg-[#FCFCFC] rounded-[10px] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] px-[8px] py-[8px] w-[112px] -translate-x-1/2"
-              style={{
-                left:   trendInfoTooltip.x / rootZoom(),
-                bottom: (window.innerHeight - trendInfoTooltip.y) / rootZoom() + 6,
-              }}
-            >
-              <span className="block text-[16px] font-semibold text-ink text-center leading-[1.2]">지난달보다 늘어난<br />주문량이에요</span>
-            </div>
-          )}
         </div>
 
         {/* 우측: 고객현황 사이드바 — Figma node 494:1051 "고객현황" (실데이터) */}
-        <div className="relative flex-shrink-0 w-[400px] h-full bg-[#F9F9F9] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden">
+        <div className="relative flex-shrink-0 w-[360px] h-full bg-[#F9F9F9] shadow-[0px_1px_8.3px_1px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden">
           <div className="flex-1 min-h-0 overflow-hidden">
           {!selected ? (
             <div className="h-full overflow-y-auto flex flex-col gap-[13px] px-[26px] py-[13px]">
@@ -1989,10 +1994,10 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           {/* 계정 추가 / 금액 충전 — 항상 사이드바 하단에 고정 */}
           <div className="flex-shrink-0 flex gap-[6px] px-[26px] py-[13px]">
             <button
-              onClick={() => { if (accounts.filter(a => a.is_active !== false).length < PLAN_LIMITS[plan].accounts) setAddOpen(true) }}
+              onClick={() => { if (!atAccountLimit) setAddOpen(true) }}
               className="flex-1 bg-[#E8E4E2] text-[#6A635E] rounded-[13px] flex items-center justify-center text-[21px] font-medium"
               style={{ height: 64 }}
-              title={accounts.filter(a => a.is_active !== false).length >= PLAN_LIMITS[plan].accounts
+              title={atAccountLimit
                 ? `${PLAN_NAMES[plan]} 플랜 한도(${PLAN_LIMITS[plan].accounts === Infinity ? '무제한' : PLAN_LIMITS[plan].accounts}) 도달`
                 : undefined}
             >
@@ -2734,6 +2739,27 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 }
 
 // 우측 사이드 패널 — 고객 선택 시 "고객현황" 집계 대신 해당 고객 상세정보로 전환 (Figma node 644:372)
+/** 패널 제목 옆 동그란 아이콘 버튼 — 수정 · 이용내역서 · QR 보기 */
+function PanelIconButton({
+  onClick, label, children,
+}: {
+  onClick: () => void
+  /** 아이콘만 보이므로 무슨 버튼인지는 여기에 남긴다 */
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="pressable-soft w-[34px] h-[34px] rounded-full bg-[#F2F2F2] text-[#6A635E] flex items-center justify-center hover:bg-[#E5E5E5] transition-colors"
+    >
+      {children}
+    </button>
+  )
+}
+
 function CustomerDetailPanel({
   selected, accountOrders, deposits, members, memberCounts, monthlyUsage,
   phoneRevealed, setPhoneRevealed, detailTab, setDetailTab, onQr, onOpenStatement,
@@ -2804,10 +2830,31 @@ function CustomerDetailPanel({
           <div className="min-w-0 flex-1">
             <span className="block text-[21px] font-medium text-ink leading-[1.3] break-keep line-clamp-2">{selected.account_name}</span>
           </div>
-          <div className="flex-shrink-0 flex items-center gap-[6px] pl-[14px]">
-            <button onClick={onEdit} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[12px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">수정</button>
-            <button onClick={onOpenStatement} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[12px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">이용내역서</button>
-            <button onClick={onQr} className="bg-[#F2F2F2] rounded-[8px] px-[9px] py-[6px] text-[12px] font-medium text-[#787878] whitespace-nowrap hover:bg-[#E5E5E5] transition-colors">QR보기</button>
+          {/* 글자 버튼 셋이 제목 폭을 먹어서 '북구청 행정지원과 서무팀' 이 두 줄로
+              접혔다. 아이콘으로 바꾸면 같은 자리에서 폭이 1/3 이 된다.
+              무슨 버튼인지는 title 과 aria-label 로 남긴다. */}
+          <div className="flex-shrink-0 flex items-center gap-[6px] pl-[12px]">
+            <PanelIconButton onClick={onEdit} label="계정정보 수정">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </PanelIconButton>
+            <PanelIconButton onClick={onOpenStatement} label="이용내역서">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                <rect x="8" y="2" width="8" height="4" rx="1" />
+                <path d="M8 11h8M8 15h5" />
+              </svg>
+            </PanelIconButton>
+            <PanelIconButton onClick={onQr} label="QR 보기">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <path d="M14 14h3v3h-3zM20 14v3M14 20h3M20 20v.01" strokeLinecap="round" />
+              </svg>
+            </PanelIconButton>
           </div>
         </div>
 
