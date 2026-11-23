@@ -16,6 +16,7 @@ import AccountFilterPopover from '../components/customer/AccountFilterPopover'
 import AmountKeypad from '../components/ui/AmountKeypad'
 import EyeIcon from '../components/ui/EyeIcon'
 import { maskName, maskPhone } from '../lib/mask'
+import { makeTypeColorOf, typeBadgeStyle } from '../lib/account-type-color'
 import { buildPinColumns } from '../lib/pin-crypto'
 import {
   PREPAY_VALIDITY_OPTIONS, PREPAY_VALIDITY_LABEL,
@@ -60,7 +61,6 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 // 계정유형 도넛 색상 — 매장이 유형을 커스텀 추가해도(최대 6개) 색이 모자라지 않도록 6색 팔레트
-const TYPE_DONUT_COLORS = ['#FF676F', '#3374FF', '#ADADAD', '#F5A623', '#7ED321', '#9B59B6']
 
 
 
@@ -1271,11 +1271,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
   const typeCounts: Record<string, number> = {}
   for (const a of accounts) typeCounts[a.account_type] = (typeCounts[a.account_type] ?? 0) + 1
   // 표의 유형 태그 색 — 우측 계정유형 도넛과 같은 기준(건수 많은 순)으로 팔레트를 배정해 둘이 어긋나지 않게 한다
-  const typeColorOrder = [...customerTypes].sort((a, b) => (typeCounts[b] ?? 0) - (typeCounts[a] ?? 0))
-  const typeColorOf = (t: string) => {
-    const i = typeColorOrder.indexOf(t)
-    return TYPE_DONUT_COLORS[(i < 0 ? 0 : i) % TYPE_DONUT_COLORS.length]
-  }
+  // 색 규칙은 lib/account-type-color.ts 한 곳에 있다 — 전엔 같은 팔레트가
+  // 여기에 복사돼 있어서 '단일 출처' 주석과 어긋났다.
+  const typeColorOf = makeTypeColorOf(customerTypes, typeCounts)
 
   // ── 고객현황 패널 — 거래처 필터가 걸린 값들 ─────────────────────────────
   // 위의 typeCounts·typeColorOf 는 **좌측 표의 유형 태그 색**도 쓰므로 건드리지 않는다.
@@ -1607,7 +1605,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                           return (
                             <span
                               className="inline-block px-[8px] py-[3px] rounded-[6px] text-[16px] font-medium whitespace-nowrap max-w-full truncate align-middle"
-                              style={{ color: c, backgroundColor: `${c}1F` }}
+                              style={typeBadgeStyle(c, acc.account_type)}
                             >
                               {TYPE_LABEL[acc.account_type] ?? acc.account_type}
                             </span>
@@ -1845,14 +1843,15 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           {/* 계정유형 도넛 — 비율 높은 순으로 정렬해 범례도 위→아래, 도넛도 12시(위)부터 시계방향으로 큰 비율부터 */}
           {(() => {
             const typesSorted = [...customerTypes].sort((a, b) => (pTypeCounts[b] ?? 0) - (pTypeCounts[a] ?? 0))
-            const colorOf = (i: number) => TYPE_DONUT_COLORS[i % TYPE_DONUT_COLORS.length]
+            // 정렬 순서가 아니라 **유형 이름**으로 색을 받는다 — 표의 배지와 같은 값이다
+            const colorOf = (t: string) => typeColorOf(t)
             // 유형이 1개뿐이면 범례가 짧아 박스 높이가 도넛(top 28 + size 109)보다 작아져
             // 원그래프가 박스 아래로 삐져나왔다 — minHeight로 도넛이 들어갈 높이를 보장한다
             return (
               <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13, minHeight: 150 }}>
                 <div className="text-[17px] font-semibold text-[#2C261F]">계정유형</div>
                 <div className="flex flex-col gap-[8px] mt-[19px]" style={{ width: 193 }}>
-                  {typesSorted.filter(t => pTypeCounts[t]).map((t, i) => (
+                  {typesSorted.filter(t => pTypeCounts[t]).map(t => (
                     <div
                       key={t}
                       className="flex items-center gap-[3px] cursor-pointer"
@@ -1860,7 +1859,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       onMouseMove={e => setDonutTooltip(cur => cur && { ...cur, x: e.clientX, y: e.clientY })}
                       onMouseLeave={() => setDonutTooltip(null)}
                     >
-                      <span className="w-[13px] h-[13px] rounded-full flex-shrink-0" style={{ backgroundColor: colorOf(i) }} />
+                      <span className="w-[13px] h-[13px] rounded-full flex-shrink-0" style={{ backgroundColor: colorOf(t) }} />
                       <span className="text-[16px] text-[#2C261F] tracking-[-0.46px] whitespace-nowrap">
                         {TYPE_LABEL[t] ?? t} ({Math.round((pTypeCounts[t] / pTypeTotal) * 100)}%, {pTypeCounts[t]}팀)
                       </span>
@@ -1874,9 +1873,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 <div className="absolute" style={{ right: 19, top: 28 }}>
                   <DonutChart
                     size={109} strokeWidth={21}
-                    segments={typesSorted.map((t, i) => ({
+                    segments={typesSorted.map(t => ({
                       pct: pTypeCounts[t] ? Math.round((pTypeCounts[t] / pTypeTotal) * 100) : 0,
-                      color: colorOf(i),
+                      color: colorOf(t),
                     }))}
                     onSegmentHover={(idx, e) => {
                       const t = idx == null ? null : typesSorted[idx]

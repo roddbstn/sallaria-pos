@@ -69,7 +69,6 @@ export default function CustomerHub({
 // 회색 카드 안에 지표 8개(2행 × 4열) + 우측에 계정유형 비율 도넛. 전부 실데이터.
 
 // 계정유형 색 — stores.customer_types 순서대로 배정(기본 3종 + 매장 추가 3종, 최대 6개)
-const TYPE_COLORS = ['#FF676F', '#3374FF', '#ADADAD', '#9B59B6', '#FF8418', '#017333']
 
 const EMPTY_RATE: RateBase = { rate: null, repeat: 0, total: 0 }
 
@@ -455,9 +454,14 @@ function CustomerDetailPanel() {
         orderedPeople,
         depositCount:       (monthDeposits ?? []).length,
         windowLabels:       monthWindowLabels(now),
-        typeRatio: Object.entries(typeCounts)
-          .sort((a, b) => b[1] - a[1])
-          .map(([label, count], i) => ({ label, count, color: TYPE_COLORS[i % TYPE_COLORS.length] })),
+        // 색은 **유형 이름**으로 받는다 — 계정 관리 표의 배지, 고객 화면의 도넛과
+        // 같은 값이어야 한다(lib/account-type-color.ts 가 단일 출처).
+        typeRatio: (() => {
+          const colorOf = makeTypeColorOf(Object.keys(typeCounts), typeCounts)
+          return Object.entries(typeCounts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([label, count]) => ({ label, count, color: colorOf(label) }))
+        })(),
         topCustomers: Object.entries(countByAccount)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
@@ -1114,7 +1118,7 @@ function AccountsPanel() {
                     <span className="text-[17px] text-[#1E1E1E] truncate">{r.name}</span>
                     <span
                       className="flex-shrink-0 px-[6px] h-[18px] leading-[18px] rounded-[5px] text-[13px] font-medium"
-                      style={typeBadgeStyle(typeColorOf(r.type))}
+                      style={typeBadgeStyle(typeColorOf(r.type), r.type)}
                     >
                       {r.type}
                     </span>
