@@ -1097,30 +1097,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     setChargeLoading(false)
   }
 
-  /**
-   * 검색창이 들어갈 자리가 남았나.
-   *
-   * 검색창 슬롯은 `flex-1 min-w-0` 인데 안쪽 박스는 250px 고정이라, 창을 좁히면
-   * 슬롯이 250 아래로 눌리고 박스가 **양옆 버튼 위로 넘쳐 덮었다.**
-   * 슬롯 폭을 재서 안 들어가면 검색창만 걷어낸다.
-   *
-   * 슬롯 자체는 비워도 flex-1 이라 폭이 그대로다 — 그래서 숨겼다 보였다를
-   * 되풀이하는 깜빡임이 생기지 않는다(검색창 폭을 기준으로 재면 그렇게 된다).
-   * clientWidth 는 레이아웃 px 이라 #root 의 zoom 과 같은 좌표계다.
-   */
+  /** 검색창 최대 폭 — 자리가 좁아지면 이보다 줄어든다 */
   const SEARCH_W = 250
-  const searchSlotRef = useRef<HTMLDivElement>(null)
-  const [searchFits, setSearchFits] = useState(true)
-  useLayoutEffect(() => {
-    const el = searchSlotRef.current
-    if (!el) return
-    const measure = () => setSearchFits(el.clientWidth >= SEARCH_W)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    window.addEventListener('resize', measure)
-    return () => { ro.disconnect(); window.removeEventListener('resize', measure) }
-  }, [])
 
   /** 플랜 한도에 걸렸나 — 표 아래 '고객 추가하기' 와 사이드바 '계정 추가' 가 같이 본다 */
   const atAccountLimit = accounts.filter(a => a.is_active !== false).length >= PLAN_LIMITS[plan].accounts
@@ -1468,20 +1446,24 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               )}
             </div>
             {/* 검색창 — 가운데. 양옆 묶음이 자라도 가운데를 지키도록 flex-1 안에서 중앙 정렬.
-                자리가 모자라면(searchFits=false) 슬롯만 남기고 검색창은 걷어낸다 —
-                빈 슬롯이 남아야 양옆 묶음이 제자리를 지킨다. */}
-            <div ref={searchSlotRef} className="flex-1 min-w-0 flex justify-center">
-              {searchFits && (
-                <div className="field-wrap border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px]" style={{ width: SEARCH_W, height: 31 }}>
-                  <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
-                  <input
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="계정이름 또는 주문자이름"
-                    className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[17px] text-ink placeholder:text-[#8C8379] bg-transparent"
-                  />
-                </div>
-              )}
+                **폭은 고정이 아니다**: 자리가 좁아지면 250 에서부터 같이 줄어든다.
+                전엔 250 고정이라 슬롯이 그보다 좁아지면 박스가 양옆 버튼 위로 넘쳐 덮었고,
+                그걸 막으려고 아예 숨겼었다 — 검색창이 사라지는 쪽이 더 불편하다.
+                돋보기는 flex-shrink-0, 입력칸은 flex-1 min-w-0 이라 줄어드는 몫은
+                전부 입력칸이 가져간다. */}
+            <div className="flex-1 min-w-0 flex justify-center">
+              <div
+                className="field-wrap border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px] min-w-0"
+                style={{ width: '100%', maxWidth: SEARCH_W, height: 31 }}
+              >
+                <svg className="flex-shrink-0" width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="계정이름 또는 주문자이름"
+                  className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[17px] text-ink placeholder:text-[#8C8379] bg-transparent"
+                />
+              </div>
             </div>
 
             {/* 편집 중일 때만 보이는 취소·완료 */}
