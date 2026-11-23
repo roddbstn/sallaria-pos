@@ -1338,48 +1338,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
 
         {/* 좌측: 검색 + 유형 필터 + 테이블 */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          {/* 검색창 — Menus.tsx와 동일하게 relative 컨테이너 + absolute 버튼으로 위치 통일 */}
-          <div className="relative flex-shrink-0 px-[26px] pt-[17px] pb-[13px]" style={{ height: 59 }}>
-            <div className="field-wrap border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px]" style={{ width: 250, height: 31 }}>
-              <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="계정이름 또는 주문자이름"
-                className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[17px] text-ink placeholder:text-[#8C8379] bg-transparent"
-              />
-            </div>
-            {/* 우상단 텍스트 버튼 — 메뉴·주문 화면의 텍스트 버튼과 같은 위치(top 3)로 맞춤 */}
-            {typeEditMode ? (
-              <div className="absolute flex items-center gap-[16px]" style={{ right: 26, top: 3 }}>
-                <button onClick={cancelTypeEdit} className="text-[17px] font-medium text-gray-text whitespace-nowrap hover:text-ink transition-colors">
-                  편집 취소
-                </button>
-                <button
-                  onClick={confirmTypeEdit}
-                  disabled={typeSaving}
-                  className="px-[15px] py-[7px] rounded-lg bg-[#2C261F] text-white text-[17px] font-semibold whitespace-nowrap disabled:opacity-50 transition-opacity"
-                >
-                  {typeSaving ? (
-                    // '저장 중' 글자를 빼고 점만 남긴다 — 버튼 폭이 '완료'에서 갑자기
-                    // 늘었다 줄면 눌린 자리가 움직인 것처럼 보인다.
-                    // 점은 뒤에서 앞으로 차례로 튄다(.dot-bounce-rev)
-                    <span className="dot-bounce-rev inline-flex gap-[2px]"><span>.</span><span>.</span><span>.</span></span>
-                  ) : '완료'}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={startTypeEdit}
-                className="hover-chip absolute flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"
-                style={{ right: 17, top: -2 }}
-              >
-                화면 편집 ✎
-              </button>
-            )}
-          </div>
-
-          <div className="flex-shrink-0 flex items-center justify-between gap-[13px] px-[26px] pb-[13px]">
+          {/* 유형 필터 · 검색 · 정렬 · 편집을 **한 줄**로.
+              전엔 검색창이 자기 줄(h-59)을 통째로 쓰고 '화면 편집' 은 그 줄 우상단에
+              떠 있었다. 두 줄이 하는 일이 같은 종류(목록 좁히기)라 한 줄로 합치고,
+              검색창은 가운데, 편집은 연필 아이콘으로 줄여 표 바로 위 오른쪽 끝에 둔다. */}
+          <div className="flex-shrink-0 flex items-center gap-[13px] px-[26px] pt-[17px] pb-[13px]">
             {/* 유형 필터 pill — Figma 503:786: 평소엔 전체/유형들만, 화면 편집 중엔 각 유형에 연필 아이콘 + "유형 추가" */}
             {/* 편집 중엔 간격을 벌린다 — X 배지가 태그 오른쪽으로 5px 삐져나와 4px 간격에선 옆 태그를 덮는다 */}
             <div className={`flex items-center flex-wrap ${typeEditMode ? 'gap-[13px]' : 'gap-[4px]'}`}>
@@ -1460,9 +1423,41 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 </button>
               )}
             </div>
-            {/* 비활성 보기 + 정렬 — **한 묶음**으로 둔다.
-                바깥이 justify-between 이라 자식이 셋이 되면 '비활성 보기'가 가운데로
-                밀려난다. 오른쪽 끝에 나란히 두려면 둘을 한 자식으로 감싸야 한다. */}
+            {/* 검색창 — 가운데. 양옆 묶음이 자라도 가운데를 지키도록 flex-1 안에서 중앙 정렬 */}
+            <div className="flex-1 min-w-0 flex justify-center">
+              <div className="field-wrap border border-[#ADADAD] rounded-[15px] bg-white flex items-center px-[13px] gap-[8px]" style={{ width: 250, height: 31 }}>
+                <svg width="14" height="14" viewBox="0 0 22 22" fill="none"><circle cx="9" cy="9" r="7" stroke="#8C8379" strokeWidth="2"/><path d="M14 14L19 19" stroke="#8C8379" strokeWidth="2" strokeLinecap="round"/></svg>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="계정이름 또는 주문자이름"
+                  className="field-bare flex-1 min-w-0 outline-none focus-visible:outline-none text-[17px] text-ink placeholder:text-[#8C8379] bg-transparent"
+                />
+              </div>
+            </div>
+
+            {/* 편집 중일 때만 보이는 취소·완료 */}
+            {typeEditMode && (
+              <div className="flex items-center gap-[16px] flex-shrink-0">
+                <button onClick={cancelTypeEdit} className="text-[17px] font-medium text-gray-text whitespace-nowrap hover:text-ink transition-colors">
+                  편집 취소
+                </button>
+                <button
+                  onClick={confirmTypeEdit}
+                  disabled={typeSaving}
+                  className="px-[15px] py-[7px] rounded-lg bg-[#2C261F] text-white text-[17px] font-semibold whitespace-nowrap disabled:opacity-50 transition-opacity"
+                >
+                  {typeSaving ? (
+                    // '저장 중' 글자를 빼고 점만 남긴다 — 버튼 폭이 '완료'에서 갑자기
+                    // 늘었다 줄면 눌린 자리가 움직인 것처럼 보인다.
+                    // 점은 뒤에서 앞으로 차례로 튄다(.dot-bounce-rev)
+                    <span className="dot-bounce-rev inline-flex gap-[2px]"><span>.</span><span>.</span><span>.</span></span>
+                  ) : '완료'}
+                </button>
+              </div>
+            )}
+
+            {/* 비활성 보기 · 정렬 · 편집 — 오른쪽 끝에 나란히 */}
             {!typeEditMode && (
             <div className="flex items-center gap-[10px] flex-shrink-0">
               <button
@@ -1506,6 +1501,19 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   </>
                 )}
               </div>
+
+              {/* 화면 편집 — 글자 대신 연필. 표 바로 위 오른쪽 끝에 붙는다 */}
+              <button
+                onClick={startTypeEdit}
+                title="화면 편집"
+                aria-label="화면 편집"
+                className="pressable-soft flex-shrink-0 w-[32px] h-[32px] rounded-[9px] text-[#6A635E] flex items-center justify-center hover:bg-[#E8E4E2] transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </button>
             </div>
             )}
           </div>
@@ -1533,14 +1541,16 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               {/* whitespace-nowrap — 폭이 모자라도 글자가 세로로 서지는 않아야
                   '어디가 좁은지'가 보인다(components/ui/DataTable.tsx 의 같은 주석 참고) */}
               <div className={`sticky top-0 z-10 border-y border-[#C1B7AA] text-[17px] font-medium rounded-t-[13px] ${TABLE_HEAD_BASE}`} style={{ height: 43, paddingLeft: 15, paddingRight: 15 }}>
-                <span className="flex-shrink-0" style={{ width: 42 }}>순번</span>
-                <span className="flex-1 min-w-[110px] overflow-hidden">계정 이름</span>
-                <span className="flex-shrink-0" style={{ width: 52 }}>유형</span>
-                <span style={{ width: 72 }} className="flex-shrink-0 text-right">이용자수</span>
+                {/* 머리글은 전부 가운데. 값은 종류에 맞게 둔다 —
+                    이름은 왼쪽(길이가 제각각), 숫자는 오른쪽(자릿수를 눈으로 비교한다) */}
+                <span className="flex-shrink-0 text-center" style={{ width: 42 }}>순번</span>
+                <span className="flex-1 min-w-[110px] overflow-hidden text-center">계정 이름</span>
+                <span className="flex-shrink-0 text-center" style={{ width: 52 }}>유형</span>
+                <span style={{ width: 72 }} className="flex-shrink-0 text-center">이용자수</span>
                 {/* 쓴 돈(주문) · 넣은 돈(충전) · 남은 돈(잔액) 을 나란히 둔다 */}
-                <span style={{ width: 92 }} className="flex-shrink-0 text-right">이번달 주문</span>
-                <span style={{ width: 96 }} className="flex-shrink-0 text-right">이번달 충전</span>
-                <span style={{ width: 100 }} className="flex-shrink-0 text-right">잔액</span>
+                <span style={{ width: 92 }} className="flex-shrink-0 text-center">이번달 주문</span>
+                <span style={{ width: 96 }} className="flex-shrink-0 text-center">이번달 충전</span>
+                <span style={{ width: 100 }} className="flex-shrink-0 text-center">잔액</span>
               </div>
 
               {loading ? (
@@ -1564,7 +1574,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       onClick={() => setSelected(sel => sel?.account_code === acc.account_code ? null : acc)}
                       aria-pressed={selected?.account_code === acc.account_code}
                       title={selected?.account_code === acc.account_code ? '다시 누르면 고객현황으로 돌아가요' : undefined}
-                      className={`pressable-row w-full flex items-center text-left text-[17px] text-ink border-b border-[#E5E5E5] last:border-b-0 ${
+                      className={`pressable-row w-full flex items-center text-left text-[16px] text-ink border-b border-[#E5E5E5] last:border-b-0 ${
                         selected?.account_code === acc.account_code ? 'bg-[#E8E4E2]' : 'hover:bg-white/40'
                       }`}
                       style={{ height: 46, paddingLeft: 15, paddingRight: 15 }}
@@ -1631,7 +1641,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                       : undefined}
                     className="pressable-soft px-[22px] py-[9px] rounded-full bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:bg-[#DCD6D1] transition-colors disabled:opacity-40"
                   >
-                    고객 추가하기
+                    계정 추가하기
                   </button>
                 </div>
               )}
@@ -1646,19 +1656,21 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           <div className="flex-1 min-h-0 overflow-hidden">
           {!selected ? (
             <div className="h-full overflow-y-auto flex flex-col gap-[13px] px-[26px] py-[13px]">
-          {/* 제목 + '자세히 보기' — 전체메뉴 고객 > 고객 현황 화면으로 진입.
-              전엔 제목 옆에 '>' 꺾쇠만 있었다. 꺾쇠는 "눌러도 된다"는 말을 아주 작게 하고,
-              눌렀을 때 어디로 가는지는 아무 말도 안 한다. 글자로 적고 오른쪽 끝에 붙인다.
-              버튼 모양은 주문 화면의 미선택 탭(Orders.tsx:699)과 같은 값이다 —
-              h-30 / px-13 / r-9 / 12px / #F2F2F2 · #787878. */}
+          {/* 제목 + 자세히 보기(꺾쇠) — 전체메뉴 고객 > 고객 현황 화면으로 진입.
+              패널이 360 으로 좁아지면서 '자세히 보기' 글자가 거래처 필터와 자리를
+              다퉜다. 꺾쇠로 줄이고 무슨 버튼인지는 title·aria-label 로 남긴다. */}
           <div className="flex items-center gap-[8px] self-stretch">
             <span className="text-[21px] font-medium text-ink whitespace-nowrap">고객현황</span>
             {onOpenDetail && (
               <button
                 onClick={onOpenDetail}
-                className="pressable-tab flex-shrink-0 h-[32px] px-[13px] rounded-[9px] text-[16px] font-normal bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2] transition-colors"
+                title="고객 현황 자세히 보기"
+                aria-label="고객 현황 자세히 보기"
+                className="pressable-tab flex-shrink-0 w-[32px] h-[32px] rounded-[9px] bg-[#F2F2F2] text-[#787878] flex items-center justify-center hover:bg-[#E8E4E2] transition-colors"
               >
-                자세히 보기
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
               </button>
             )}
             {/* 거래처 필터 — 오른쪽 끝(전에 '자세히 보기'가 있던 자리).
@@ -1677,7 +1689,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                   <path d="M1.5 2.5h11L8.2 7.6v4L5.8 12.5V7.6L1.5 2.5z"
                         stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
                 </svg>
-                {panelFilter === null ? '거래처' : `${panelFilter.size}곳`}
+                {/* 전체일 때는 아이콘만 — 좁은 패널에서 글자가 자리를 먹는다.
+                    걸려 있을 때만 몇 곳인지 적는다(숫자는 정보다) */}
+                {panelFilter !== null && `${panelFilter.size}곳`}
               </button>
               {panelFilterOpen && (
                 <AccountFilterPopover
@@ -1704,7 +1718,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
           {/* 선결제 추이 — 올해 월별 충전합계 바차트 */}
           <div className="relative bg-[#F2F2F2] rounded-[13px]" style={{ padding: 13 }}>
             <div className="text-[17px] font-semibold text-[#2C261F]">선결제 추이</div>
-            <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
+            <div className="flex items-end mt-[13px]" style={{ width: '100%', height: 51 }}>
               {pYearlyDeposits.map((amt, i) => (
                 <div
                   key={i}
@@ -1752,7 +1766,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 </div>
               )
             })()}
-            <div className="flex mt-[6px]" style={{ width: 323 }}>
+            <div className="flex mt-[6px]" style={{ width: '100%' }}>
               {Array.from({ length: 12 }, (_, i) => (
                 <div key={i} className="flex-1 text-center text-[12px] text-[#6A635E]">{i + 1}월</div>
               ))}
@@ -1770,7 +1784,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
             {/* 막대 호버 — 전엔 title 속성이었다. 브라우저 기본 툴팁은 1초쯤 기다려야 뜨고
                 "3월 12건"까지만 말해서, 그 달에 **누가 얼마를 언제** 썼는지는 알 수 없었다.
                 위 선결제 추이와 같은 말풍선으로 맞춘다. */}
-            <div className="flex items-end mt-[13px]" style={{ width: 323, height: 51 }}>
+            <div className="flex items-end mt-[13px]" style={{ width: '100%', height: 51 }}>
               {pYearlyOrders.map((n, i) => (
                 <div
                   key={i}
@@ -1816,7 +1830,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 여기만 빠져 있어서, 막대에 마우스를 올리기 전에는 몇 월인지 알 수 없었다.
                 두 차트를 위아래로 겹쳐 읽으라고 나란히 둔 건데 축이 한쪽에만 있으면
                 눈이 위 차트의 축까지 올라갔다 내려와야 한다. */}
-            <div className="flex mt-[6px]" style={{ width: 323 }}>
+            <div className="flex mt-[6px]" style={{ width: '100%' }}>
               {Array.from({ length: 12 }, (_, i) => (
                 <div key={i} className="flex-1 text-center text-[12px] text-[#6A635E]">{i + 1}월</div>
               ))}
