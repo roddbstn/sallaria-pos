@@ -1019,6 +1019,11 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
         account_code: newAccount.account_code,
         amount:       initialBalance,
         note:         newForm.initialDepositMemo.trim() || '초기 잔액 등록',
+        // ⚠️ 이 줄이 없었다. deposits.balance_after 는 기본값이 0 이고 NOT NULL 이라
+        //    안 넣으면 **조용히 0 이 박힌다** — 충전 이력에 늘 '잔액 0원' 으로 떴다.
+        //    add_deposit RPC 는 제대로 넣는데 이 직접 INSERT 만 빠져 있었다.
+        //    초기 등록 직후 잔액은 방금 넣은 금액 그대로다.
+        balance_after: initialBalance,
       })
       if (depErr) console.error('초기 잔액 이력 기록 실패:', depErr)
     }
@@ -1666,9 +1671,9 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
                 onClick={onOpenDetail}
                 title="고객 현황 자세히 보기"
                 aria-label="고객 현황 자세히 보기"
-                className="pressable-tab flex-shrink-0 w-[32px] h-[32px] rounded-[9px] bg-[#F2F2F2] text-[#787878] flex items-center justify-center hover:bg-[#E8E4E2] transition-colors"
+                className="pressable-soft flex-shrink-0 w-[28px] h-[28px] text-[#6A635E] flex items-center justify-center hover:text-ink transition-colors"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 6 15 12 9 18" />
                 </svg>
               </button>
@@ -3042,11 +3047,19 @@ function CustomerDetailPanel({
                           결제수단도 10 → 12 로 같이 올린다 — 날짜만 키우면 제목(결제수단)이
                           부제(날짜)보다 작아져 위아래가 뒤집혀 보인다. */}
                       <div className="text-[16px] font-semibold text-ink">{d.payment_method}</div>
-                      <div className="text-[16px] text-[#787878] mt-[1px] tabular-nums">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
+                      <div className="text-[14px] text-[#787878] mt-[1px] tabular-nums">{dateStr}{d.note ? ` · ${d.note}` : ''}</div>
                     </div>
                     <div className="text-right">
-                      <div className={`text-[16px] ${deltaClass(d.amount)}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
-                      <div className={`text-[9px] text-[#6A635E] ${NUM}`}>잔액 {won(d.balance_after)}</div>
+                      <div className={`text-[14px] ${deltaClass(d.amount)}`}>{d.amount < 0 ? `-${won(Math.abs(d.amount))}` : `+${won(d.amount)}`}</div>
+                      {/* balance_after 가 0 이면 **적히지 않은 것**이다. 96건 중 80건이
+                          그렇다 — 10월 전에는 add_deposit 이 이 값을 안 넣었고, 계정
+                          생성 시의 직접 INSERT 는 2026-11-23 까지 빠져 있었다.
+                          0원이라고 단언하면 장부에 없는 사실을 적는 셈이라 '—' 로 둔다.
+                          과거 값은 되살리지 않는다: 주문·취소·조정을 거꾸로 재생해
+                          추측하면 틀린 숫자가 장부에 박힌다(그게 0 보다 나쁘다). */}
+                      <div className={`text-[9px] text-[#6A635E] ${NUM}`}>
+                        잔액 {d.balance_after === 0 ? '—' : won(d.balance_after)}
+                      </div>
                     </div>
                   </div>
                 )
