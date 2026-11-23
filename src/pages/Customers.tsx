@@ -1723,8 +1723,18 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
               <div className="text-[21px] font-medium text-ink whitespace-nowrap">{pAccounts.length}팀/{pTotalMembers}명</div>
             </StatCard>
             <StatCard className="bg-[#F2F2F2] rounded-[13px] flex-1" padding={13} gap={9}>
-              <div className="text-[17px] font-medium text-[#2C261F] tracking-[-0.5px] whitespace-nowrap">최근 30일 주문율</div>
-              <div className="text-[18px] font-medium text-ink">{pActive30dPct}%</div>
+              <div className="text-[16px] font-medium text-[#2C261F] tracking-[-0.5px] whitespace-nowrap">최근 30일 주문율</div>
+              {/* 분모·분자를 같이 적는다 — '33%' 만으로는 3곳 중 1곳인지 300곳 중 100곳인지
+                  알 수 없고, 거래처가 적은 매장에서는 한 곳만 움직여도 수치가 크게 뛴다.
+                  ⚠️ 이 비율은 **계정(팀) 단위**다(pActive30d.size / pAccounts.length).
+                  사람 단위가 아니므로 '명' 이 아니라 '팀' 으로 적는다 — 위 카드의
+                  'N팀/M명' 과 같은 말이다. */}
+              <div className="flex items-baseline justify-between gap-[6px]">
+                <span className="text-[19px] font-medium text-ink">{pActive30dPct}%</span>
+                <span className="text-[12px] text-[#8E8681] whitespace-nowrap">
+                  {pAccounts.length}팀 중 {pActive30d.size}팀
+                </span>
+              </div>
             </StatCard>
           </div>
 
