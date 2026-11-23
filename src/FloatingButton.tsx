@@ -19,10 +19,10 @@ export const FLOAT_H = 124
 const PAD = 10
 
 /**
- * 이만큼(px) 넘게 움직였으면 '끌었다', 아니면 '눌렀다'.
+ * 이만큼(px) 넘게 움직여야 창을 옮기기 시작한다.
  *
- * 손으로 누르면 몇 px 는 흔들린다. 0 으로 두면 누를 때마다 미세하게 끌려서
- * 클릭이 안 먹고, 너무 크면 짧게 끌었을 때 창이 홈으로 튄다.
+ * 손으로 누르면 몇 px 는 흔들린다. 0 으로 두면 두 번 누르는 동안에도 창이
+ * 미세하게 밀린다.
  */
 const DRAG_SLOP = 4
 
@@ -53,8 +53,11 @@ export default function FloatingButton() {
   // ── 끌어서 옮기기 ──────────────────────────────────────────────────────
   //
   // `-webkit-app-region: drag` 를 쓰면 **어디를 잡아도** 끌 수 있지만 그 영역은
-  // click 을 못 받는다. 로고를 누르면 홈으로 가야 하니 겸할 수가 없다.
-  // 그래서 직접 옮긴다 — 창 전체 어디를 잡아도 끌리고, 거의 안 움직였으면 클릭이다.
+  // 마우스 이벤트를 못 받는다. 그래서 직접 옮긴다 — 창 전체가 손잡이다.
+  //
+  // ⚠️ **한 번 누르는 것으로는 홈에 가지 않는다.** 전엔 '거의 안 움직였으면 클릭'
+  //    으로 쳤는데, 창이 마우스를 따라 움직이다 보니 끌고 놓아도 클릭으로 잡혀서
+  //    옮기려 할 때마다 홈으로 튀었다. 홈은 **더블클릭**으로만 간다.
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return
     start.current = { x: e.screenX, y: e.screenY }
@@ -77,8 +80,6 @@ export default function FloatingButton() {
     start.current = null
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* 이미 풀렸다 */ }
     void api?.floatingDragEnd?.()
-    // 끌지 않았으면 누른 것 — 홈으로
-    if (!moved.current) void api?.openMainFromFloating?.()
   }
 
   return (
@@ -97,8 +98,9 @@ export default function FloatingButton() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        title="끌어서 옮기고, 눌러서 선포스 홈으로"
-        aria-label="선포스 홈으로"
+        onDoubleClick={() => { void api?.openMainFromFloating?.() }}
+        title="끌어서 옮기고, 두 번 눌러 선포스 홈으로"
+        aria-label="선포스 홈으로 (두 번 누르기)"
         style={{
           width: '100%', height: '100%',
           cursor: 'grab',
