@@ -75,6 +75,23 @@ interface StoreOptionGroup {
   items:        OptionItem[]
 }
 
+/**
+ * 목록 맨 아래 '…추가하기' — 고객 화면의 '계정 추가하기' 와 같은 모양.
+ *
+ * 헤더 우상단에도 같은 일을 하는 버튼이 있지만, 목록을 끝까지 훑고 "없네" 하는
+ * 자리가 여기다. 긴 목록에서는 위로 되돌아가지 않아도 된다.
+ */
+function AddMoreButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="pressable-soft px-[22px] py-[9px] rounded-full bg-[#E8E4E2] text-[#6A635E] text-[16px] font-medium hover:bg-[#DCD6D1] transition-colors"
+    >
+      {label}
+    </button>
+  )
+}
+
 export default function Menus() {
   const { storeId } = useStore()
   const [previewCatId, setPreviewCatId] = useState<string>('all')
@@ -1403,6 +1420,22 @@ export default function Menus() {
               )}
 
               {/* 카테고리 모드 — 일반 보기(고정 그리드) */}
+              {/* 목록 맨 아래 '카테고리 추가하기'.
+                  카드가 absolute 라 일반 흐름으로 뒤에 붙일 수가 없다 —
+                  마지막 행 다음 자리를 카드와 **같은 식**으로 계산해서 놓는다
+                  (카드 top = 62 + 12 + row*123, 높이 117). */}
+              {menuViewMode === 'category' && !menuEditMode && (
+                <div
+                  className="absolute flex justify-center"
+                  style={{
+                    left: GRID_PAD, right: GRID_PAD,
+                    top: 62 + 12 + Math.ceil(listForLeft.length / COLS) * 123 + 4,
+                  }}
+                >
+                  <AddMoreButton label="카테고리 추가하기" onClick={() => setCategoryAddOpen(true)} />
+                </div>
+              )}
+
               {menuViewMode === 'category' && !menuEditMode && (
                 listForLeft.length === 0 ? (
                   <div className="absolute text-[17px] text-[#ADADAD]" style={{ left: 26, top: 71 }}>
@@ -1530,10 +1563,16 @@ export default function Menus() {
                   // 비어 있는 이유가 셋이라 말을 갈라 둔다. 하나로 뭉뚱그리면
                   // 분류를 골라서 빈 건데 '등록된 메뉴가 없다'고 해서 다 지운 줄 안다.
                   // pill 띠는 그대로 둔다 — 안 그러면 '전체'로 되돌아갈 길이 사라진다.
-                  <div className="text-[17px] text-[#ADADAD]" style={{ paddingLeft: GRID_PAD, paddingTop: 71 + pillShownH }}>
-                    {searching            ? `'${search.trim()}' 에 맞는 메뉴가 없어요`
-                     : previewCatId !== 'all' ? '이 분류에는 아직 메뉴가 없어요'
-                     : '아직 등록된 메뉴가 없습니다.'}
+                  <div style={{ paddingLeft: GRID_PAD, paddingRight: GRID_PAD, paddingTop: 71 + pillShownH }}>
+                    <div className="text-[17px] text-[#ADADAD]">
+                      {searching            ? `'${search.trim()}' 에 맞는 메뉴가 없어요`
+                       : previewCatId !== 'all' ? '이 분류에는 아직 메뉴가 없어요'
+                       : '아직 등록된 메뉴가 없습니다.'}
+                    </div>
+                    {/* 비어 있을 때야말로 추가할 자리가 보여야 한다 */}
+                    <div className="flex justify-center" style={{ paddingTop: 18 }}>
+                      <AddMoreButton label="메뉴 추가하기" onClick={openMenuFormAdd} />
+                    </div>
                   </div>
                 ) : (
                   <div style={{ paddingTop: INDIV_FIRST_TOP + pillShownH, paddingLeft: GRID_PAD, paddingRight: GRID_PAD }}>
@@ -1566,6 +1605,10 @@ export default function Menus() {
                         </div>
                       </div>
                     ))}
+                    {/* 목록 맨 아래 — 긴 목록을 끝까지 훑고 "없네" 하는 자리 */}
+                    <div className="flex justify-center" style={{ paddingTop: 18 }}>
+                      <AddMoreButton label="메뉴 추가하기" onClick={openMenuFormAdd} />
+                    </div>
                   </div>
                 )
               )}
