@@ -15,6 +15,12 @@ const api = {
   onRealtimeStatus: (cb: (status: string) => void) => ipcRenderer.on('realtime:status', (_e, v) => cb(v)),
   offRealtimeStatus: ()                             => ipcRenderer.removeAllListeners('realtime:status'),
 
+  // ── 바로가기 버튼(플로팅) ────────────────────────────────────────────────────
+  getFloating:  ()                 => ipcRenderer.invoke('floating:get') as Promise<boolean>,
+  setFloating:  (enabled: boolean) => ipcRenderer.invoke('floating:set', enabled),
+  /** 버튼을 눌렀을 때 — 선포스 창을 앞으로 */
+  openMainFromFloating: ()         => ipcRenderer.invoke('floating:open-main'),
+
   // ── 자동 업데이트 ────────────────────────────────────────────────────────────
   onUpdaterStatus: (cb: (info: {
     type: 'available' | 'progress' | 'ready'

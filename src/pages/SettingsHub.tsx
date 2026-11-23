@@ -65,6 +65,9 @@ type Api = {
   listOsPrinters?:  () => Promise<OsPrinter[]>
   openLogs?:        () => Promise<{ ok: boolean; dir: string; error?: string }>
   keepAwake?:       (on: boolean) => Promise<{ active: boolean; platform: string }>
+  /** 바로가기 버튼 — 켜짐 여부는 메인 프로세스의 electron-store 가 출처다 */
+  getFloating?:     () => Promise<boolean>
+  setFloating?:     (enabled: boolean) => Promise<unknown>
   updaterCheck?:    () => Promise<{ state: 'latest' | 'available' | 'no-feed' | 'error'; current: string; latest?: string; message?: string }>
   diagnostics?:     () => Promise<{
     version: string; electron: string; chrome: string; node: string
@@ -888,6 +891,14 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   // 기본 **꺼짐**. 켜두면 영업시간 내내 화면이 안 꺼져서 번인과 전기요금이 쌓인다.
   // 필요한 매장만 켜는 게 맞다(주방에서 멀리 두고 보는 경우).
   const [keepAwake,    setKeepAwake]    = usePersistentState('keep_awake', false)
+  /**
+   * 바로가기 버튼 — 다른 프로그램 위에 떠 있는 작은 로고 버튼.
+   *
+   * localStorage 가 아니라 **메인 프로세스의 electron-store 가 출처**다.
+   * 창을 띄우는 주체가 거기라서, 화면 쪽에 따로 두면 둘이 어긋난다
+   * (앱을 껐다 켜면 설정은 켜짐인데 버튼은 안 뜨는 식).
+   */
+  const [floatingOn,   setFloatingOn]   = useState(false)
 
   const [appVersion,  setAppVersion]  = useState('—')
   const [checking,    setChecking]    = useState(false)
@@ -897,6 +908,7 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
   // 버전은 package.json 이 아니라 메인 프로세스(app.getVersion())에서 받는다.
   // 전에는 '1.0.1' 이 화면에 박혀 있어서 실제 버전과 달랐다.
   useEffect(() => { api().appVersion?.().then(setAppVersion).catch(() => setAppVersion('—')) }, [])
+  useEffect(() => { api().getFloating?.().then(setFloatingOn).catch(() => {}) }, [])
 
   // 화면 꺼짐 방지는 저장만 하면 아무 일도 안 일어난다 — 메인 프로세스의
   // powerSaveBlocker 를 실제로 켜고 꺼야 한다. 토글이 바뀔 때마다 반영한다.
@@ -1074,6 +1086,15 @@ function EtcPanel({ showToast }: { showToast: (msg: string) => void }) {
       <Group title="화면">
         <Row label="영업 중 화면 꺼짐 방지" hint="주문을 보는 동안 모니터가 절전으로 꺼지지 않아요">
           <Toggle on={keepAwake} onChange={setKeepAwake} />
+        </Row>
+        <Row
+          label="바로가기 버튼 띄우기"
+          hint="다른 프로그램 위에 작은 선포스 버튼이 떠 있어요. 눌러서 바로 돌아올 수 있고, 끌어서 옮길 수 있어요"
+        >
+          <Toggle
+            on={floatingOn}
+            onChange={v => { setFloatingOn(v); api().setFloating?.(v).catch(() => {}) }}
+          />
         </Row>
       </Group>
 

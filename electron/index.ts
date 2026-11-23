@@ -46,6 +46,22 @@ import {
 interface StoreSchema {
   printer: PrinterSettings
   receipt: ReceiptSettings
+  floating: FloatingSettings
+}
+
+/**
+ * 바로가기 버튼 — 다른 프로그램 위에 떠 있는 작은 로고 버튼.
+ *
+ * 매장 PC 는 보통 기존 POS 프로그램이 전체화면으로 떠 있다. 선포스로 돌아오려면
+ * 작업표시줄을 찾아 눌러야 하는데, 주문이 들어온 걸 보고 몇 초 안에 돌아와야 하는
+ * 화면에서 그건 느리다. 쿠팡이츠·배민이 같은 이유로 이런 버튼을 띄운다.
+ *
+ * x·y 는 점주가 끌어다 둔 자리다(null = 아직 안 옮김 → 오른쪽 아래).
+ */
+interface FloatingSettings {
+  enabled: boolean
+  x: number | null
+  y: number | null
 }
 
 const store = new Store<StoreSchema>({
@@ -55,6 +71,8 @@ const store = new Store<StoreSchema>({
     // 화면 기본값('보통')과도 어긋나 있었다. 이미 저장된 'small' 은 sizeCmd 의
     // default 로 떨어져 '보통'으로 처리된다(타입에서 'small' 을 없앴다).
     receipt: { menuSize: 'normal', optionSize: 'normal', customerMenuSize: 'normal', customerOptionSize: 'normal' },
+    // 기본은 꺼둔다 — 늘 떠 있는 창이라 점주가 원할 때만 켠다
+    floating: { enabled: false, x: null, y: null },
   },
 })
 
@@ -167,6 +185,68 @@ function loadRenderer(win: BrowserWindow, hash?: string): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'), hash ? { hash } : undefined)
   }
+}
+
+// ── 바로가기 버튼(플로팅) ─────────────────────────────────────────────────────
+
+let floatWindow: BrowserWindow | null = null
+
+/** 버튼 한 변(px). 렌더러의 버튼 크기와 맞춰야 테두리가 잘리지 않는다 */
+const FLOAT_SIZE = 72
+
+function createFloatingWindow(): void {
+  if (floatWindow && !floatWindow.isDestroyed()) { floatWindow.show(); return }
+
+  const saved = store.get('floating')
+  const work  = screen.getPrimaryDisplay().workAreaSize
+  // 처음 켜면 오른쪽 아래 — 기존 POS 의 버튼 줄과 겹치지 않는 자리다
+  const x = saved.x ?? Math.max(0, work.width  - FLOAT_SIZE - 24)
+  const y = saved.y ?? Math.max(0, work.height - FLOAT_SIZE - 24)
+
+  floatWindow = new BrowserWindow({
+    width: FLOAT_SIZE, height: FLOAT_SIZE, x, y,
+    frame: false, transparent: true, resizable: false, movable: true,
+    // 작업표시줄에 또 뜨면 "선포스가 두 개" 로 보인다
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    // 포커스를 뺏지 않는다 — 점주가 기존 POS 에 글자를 치는 중일 수 있다
+    focusable: false,
+    hasShadow: false,
+    webPreferences: {
+      preload:          join(__dirname, '../preload/preload.js'),
+      sandbox:          false,
+      contextIsolation: true,
+    },
+  })
+
+  // 'screen-saver' 가 일반 alwaysOnTop 보다 높다 — 전체화면으로 띄운 기존 POS
+  // 위에도 떠 있어야 의미가 있다.
+  floatWindow.setAlwaysOnTop(true, 'screen-saver')
+  // 맥에서 전체화면(Space)으로 넘어가도 따라간다
+  floatWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  // 끌어다 놓은 자리를 기억한다 — 매장마다 기존 POS 버튼 위치가 달라서
+  // 한 번 정해두면 그대로 둬야 한다.
+  const remember = () => {
+    if (!floatWindow || floatWindow.isDestroyed()) return
+    const [nx, ny] = floatWindow.getPosition()
+    store.set('floating', { ...store.get('floating'), x: nx, y: ny })
+  }
+  floatWindow.on('moved', remember)
+  floatWindow.on('closed', () => { floatWindow = null })
+
+  loadRenderer(floatWindow, 'floating')
+}
+
+function destroyFloatingWindow(): void {
+  if (floatWindow && !floatWindow.isDestroyed()) floatWindow.destroy()
+  floatWindow = null
+}
+
+/** 설정대로 켜거나 끈다 */
+function syncFloatingWindow(): void {
+  if (store.get('floating').enabled) createFloatingWindow()
+  else destroyFloatingWindow()
 }
 
 // ── ESC/POS 시리얼 출력 ───────────────────────────────────────────────────────
@@ -606,6 +686,26 @@ ipcMain.handle('order:approve', async (_e, { order, prepMins }: { order: OrderPa
     console.error('[IPC] 영수증 출력 실패 (무시):', err)
   }
 
+  return { ok: true }
+})
+
+// ── 바로가기 버튼 IPC ────────────────────────────────────────────────────────
+
+ipcMain.handle('floating:get', async () => store.get('floating').enabled)
+
+ipcMain.handle('floating:set', async (_e, enabled: boolean) => {
+  store.set('floating', { ...store.get('floating'), enabled: !!enabled })
+  syncFloatingWindow()
+  return { ok: true }
+})
+
+/** 버튼을 눌렀을 때 — 선포스 창을 앞으로 끌어온다 */
+ipcMain.handle('floating:open-main', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) { createWindow(); return { ok: true } }
+  // 최소화돼 있으면 되살리고, 다른 프로그램 뒤에 있으면 앞으로.
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
   return { ok: true }
 })
 
@@ -1106,6 +1206,8 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+  // 지난번에 켜 뒀으면 같이 띄운다
+  syncFloatingWindow()
   subscribeRealtime()
   handleDeeplinkOnStart()
 

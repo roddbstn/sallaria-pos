@@ -25,6 +25,10 @@ interface PosBridge {
   listOsPrinters:    () => Promise<{ name: string; displayName: string; description: string; deviceUri: string; offline: boolean; stateReason: string }[]>
   onRealtimeStatus:  (cb: (status: string) => void) => void
   offRealtimeStatus: () => void
+  /** 바로가기 버튼 — 다른 프로그램 위에 떠 있는 작은 로고 버튼 */
+  getFloating:       () => Promise<boolean>
+  setFloating:       (enabled: boolean) => Promise<unknown>
+  openMainFromFloating: () => Promise<unknown>
   onUpdaterStatus:   (cb: (info: { type: string; version: string }) => void) => void
   updaterInstall:    () => Promise<unknown>
   updaterCheck:      () => Promise<{
