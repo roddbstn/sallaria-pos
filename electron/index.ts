@@ -214,6 +214,14 @@ function createFloatingWindow(): void {
     // 포커스를 뺏지 않는다 — 점주가 기존 POS 에 글자를 치는 중일 수 있다
     focusable: false,
     hasShadow: false,
+    // ⚠️ macOS 는 **앱 단위로 활성화**한다. 같은 앱의 창을 하나라도 클릭하면
+    //    그 앱이 활성화되면서 **다른 창(메인 창)이 함께 앞으로 나온다.**
+    //    그래서 이 버튼을 한 번 누르기만 해도 선포스 창이 떠 버렸다 —
+    //    렌더러에는 단일 클릭으로 창을 여는 코드가 없는데도 그랬다.
+    //    focusable:false 는 '키 윈도우가 되지 않는다' 일 뿐 활성화를 막지 못한다.
+    //    NSPanel(type:'panel') + focusable:false 라야 눌러도 앱이 활성화되지 않는다.
+    //    윈도우·리눅스에는 이 타입이 없으므로 맥에서만 준다.
+    ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),
     webPreferences: {
       preload:          join(__dirname, '../preload/preload.js'),
       sandbox:          false,
@@ -741,6 +749,7 @@ ipcMain.handle('floating:drag-end', async () => {
  * 나온다. 이 버튼을 누르는 이유는 대개 '주문이 들어왔나' 라서 홈으로 보낸다.
  */
 ipcMain.handle('floating:open-main', async () => {
+  console.log('[floating] 홈 열기 요청 — 더블클릭으로만 와야 한다')
   if (!mainWindow || mainWindow.isDestroyed()) { createWindow(); return { ok: true } }
   // 최소화돼 있으면 되살리고, 다른 프로그램 뒤에 있으면 앞으로.
   if (mainWindow.isMinimized()) mainWindow.restore()
