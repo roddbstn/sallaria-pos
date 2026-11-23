@@ -194,7 +194,7 @@ let floatWindow: BrowserWindow | null = null
 /** 창 치수(px). src/FloatingButton.tsx 의 FLOAT_W/FLOAT_H 와 한 쌍이다 —
  *  어긋나면 그림자나 둥근 모서리가 잘린다 */
 const FLOAT_W = 124
-const FLOAT_H = 116
+const FLOAT_H = 124
 
 function createFloatingWindow(): void {
   if (floatWindow && !floatWindow.isDestroyed()) { floatWindow.show(); return }

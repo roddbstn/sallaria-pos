@@ -25,11 +25,15 @@ const TEXT_H = 0.6918
 const TEXT_W = TEXT_H * SUNPOS_ASPECT          // 2.596
 const TOTAL_W = 1 + GAP + TEXT_W               // 3.879
 
-export default function Wordmark({ size = 40, symbolOnly = false, className = '' }: {
-  /** 심볼 타일 한 변의 px. 글자 크기·간격이 전부 여기서 나온다 */
+export default function Wordmark({ size = 40, symbolOnly = false, textOnly = false, className = '' }: {
+  /** 심볼 타일 한 변의 px. 글자 크기·간격이 전부 여기서 나온다
+   *  (textOnly 일 때만 **글자 잉크 높이**를 뜻한다) */
   size?: number
   /** 글자 없이 심볼만 — 좁은 자리용 */
   symbolOnly?: boolean
+  /** 심볼 없이 글자만 — 바로가기 버튼처럼 타일이 배경과 겹치는 자리용.
+   *  색은 currentColor 라 부모에서 정한다 */
+  textOnly?: boolean
   className?: string
 }) {
   // 타일 PNG 에는 둥근 모서리가 이미 구워져 있다(코너 알파 0).
@@ -44,6 +48,22 @@ export default function Wordmark({ size = 40, symbolOnly = false, className = ''
   )
 
   if (symbolOnly) return <span className={`inline-block ${className}`}>{tile}</span>
+
+  if (textOnly) {
+    return (
+      <svg
+        viewBox={SUNPOS_VIEWBOX}
+        className={className}
+        style={{ height: size, width: size * SUNPOS_ASPECT, overflow: 'visible' }}
+        role="img"
+        aria-label="선포스"
+      >
+        <g transform={SUNPOS_FLIP}>
+          <path d={SUNPOS_PATH} fill="currentColor" />
+        </g>
+      </svg>
+    )
+  }
 
   // 바깥 상자 높이를 타일과 같게(size) 두고 글자는 absolute 로 띄운다.
   // 'p' 디센더가 타일 아랫변보다 6% 더 내려오는데(레퍼런스도 그렇다),

@@ -10,54 +10,54 @@ import Wordmark from './components/ui/Wordmark'
 // App 을 거치지 않는다 — 배율(viewport-scale)·전역 CSS 가 끼면 이 작은 창에서
 // 로고가 찌그러진다. 치수는 electron/index.ts 의 FLOAT_W/FLOAT_H 와 한 쌍이다.
 
-/** 창 치수와 같아야 그림자·모서리가 잘리지 않는다 */
+/** 창 치수와 같아야 그림자·모서리가 잘리지 않는다 (정사각형) */
 export const FLOAT_W = 124
-export const FLOAT_H = 116
+export const FLOAT_H = 124
+
+/**
+ * 끌기와 누르기를 **자리로 나눈다.**
+ *
+ * Electron 에서 `-webkit-app-region: drag` 인 영역은 click 을 받지 못한다.
+ * 그래서 가운데 네모(로고)만 눌리는 버튼으로 떼어 내고, 그 둘레 띠가 손잡이다.
+ * 띠를 넉넉히(한 변 기준 16px) 둬야 손으로 잡힌다.
+ */
+const PAD = 16
 
 export default function FloatingButton() {
-  const goHome = () => { void api?.openMainFromFloating?.() }
-
   return (
     <div
       style={{
         width: FLOAT_W, height: FLOAT_H,
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center', gap: 10,
-        background: '#FCFCFC',
-        borderRadius: 20,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.22)',
-        // 창 전체가 손잡이다 — 어디를 잡아도 끌린다. 매장마다 기존 POS 의 버튼 줄
-        // 위치가 달라서, 가리지 않는 자리로 옮길 수 있어야 한다.
-        // (드래그 영역은 클릭을 안 받으므로, 누르는 자리는 아래 버튼으로 따로 둔다)
+        padding: PAD,
+        boxSizing: 'border-box',
+        // 둘레 띠가 손잡이 — 매장마다 기존 POS 버튼 위치가 달라서, 가리지 않는
+        // 자리로 옮길 수 있어야 한다. 놓은 자리는 electron 쪽 'moved' 가 기억한다.
         WebkitAppRegion: 'drag',
         cursor: 'grab',
         userSelect: 'none',
-        boxSizing: 'border-box',
       } as React.CSSProperties}
     >
-      {/* 로고 — 앱 전체가 쓰는 Wordmark 의 심볼. 여기서 직접 그리지 않는다 */}
-      <Wordmark size={54} symbolOnly />
-
-      {/* 맨 아래 한 줄 — 이게 누르는 자리다 */}
       <button
-        onClick={goHome}
+        onClick={() => { void api?.openMainFromFloating?.() }}
         title="선포스 홈으로"
+        aria-label="선포스 홈으로"
         style={{
           WebkitAppRegion: 'no-drag',
-          background: 'transparent',
+          width: '100%', height: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          // 연갈색 — 앱이 쓰는 베이지 계열(#D7D2CE)이라 화면 어디에 둬도 튀지 않는다
+          background: '#D7D2CE',
+          color: '#2C261F',
           border: 'none',
-          padding: '2px 6px',
+          borderRadius: 18,
           cursor: 'pointer',
-          color: '#8E8681',
-          fontSize: 11,
-          fontWeight: 400,
-          letterSpacing: '-0.02em',
-          lineHeight: 1,
-          whiteSpace: 'nowrap',
-          fontFamily: 'Pretendard, "Apple SD Gothic Neo", "맑은 고딕", sans-serif',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+          padding: 0,
         } as React.CSSProperties}
       >
-        선포스 바로가기
+        {/* 심볼 타일은 뺀다 — 타일 자체가 배경색을 갖고 있어서 이 연갈색 위에
+            올리면 네모가 두 겹으로 보인다. 글자만 쓴다(색은 currentColor). */}
+        <Wordmark size={17} textOnly />
       </button>
     </div>
   )
