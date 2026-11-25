@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { api } from './lib/ipc'
-import logoWithText from './assets/logo-with-text-transparent.png'
+import buttonArt from './assets/floating-button.svg'
 
 // 다른 프로그램 위에 떠 있는 작은 바로가기 — 쿠팡이츠·배민이 매장 PC 에 띄우는 그것.
 //
@@ -8,10 +8,13 @@ import logoWithText from './assets/logo-with-text-transparent.png'
 // 보고 선포스로 돌아오려면 작업표시줄을 찾아 눌러야 하는데, 몇 초 안에 움직여야 하는
 // 화면에서 그건 느리다.
 //
+// 그림은 디자인에서 받은 200×200 정사각 SVG 한 장이다(assets/floating-button.svg).
+// 배경색·둥근 모서리·글자·아이콘이 전부 그 안에 있어서 여기서 따로 그리지 않는다.
+//
 // App 을 거치지 않는다 — 배율(viewport-scale)·전역 CSS 가 끼면 이 작은 창에서
-// 로고가 찌그러진다. 치수는 electron/index.ts 의 FLOAT_W/FLOAT_H 와 한 쌍이다.
+// 그림이 찌그러진다. 치수는 electron/index.ts 의 FLOAT_W/FLOAT_H 와 한 쌍이다.
 
-/** 창 치수와 같아야 그림자·모서리가 잘리지 않는다 (정사각형) */
+/** 창 치수와 같아야 모서리가 잘리지 않는다 (정사각형) */
 export const FLOAT_W = 124
 export const FLOAT_H = 124
 
@@ -25,25 +28,6 @@ const PAD = 10
  * 미세하게 밀린다.
  */
 const DRAG_SLOP = 4
-
-// ── 로고 글자만 잘라 쓰기 ────────────────────────────────────────────────────
-//
-// 글자만 있는 자산이 레포에 없다. components/ui/Wordmark 의 SUNPOS_PATH 는
-// **세리프(Joan Regular)** 라 로고의 산세리프 'sunpos' 와 다른 글자다 —
-// 그걸 쓰면 로고가 아니라 다른 글꼴이 찍힌다.
-// 그래서 락업 이미지에서 글자 영역만 잘라 쓴다. 아래 숫자는 눈대중이 아니라
-// 알파 채널로 잰 값이다(2026-11-23, logo-with-text-transparent.png 725×367):
-//   심볼 x 61~224 · 글자 x 260~662 · 글자 y 159~253
-const IMG_W = 725
-const IMG_H = 367
-const TEXT_X = 260
-const TEXT_Y = 159
-const TEXT_W = 403
-const TEXT_H = 95
-
-/** 버튼 안에서 글자가 차지할 폭(px) */
-const DRAW_W = 74
-const SCALE  = DRAW_W / TEXT_W
 
 export default function FloatingButton() {
   // 누른 지점(화면 좌표)과 '끌었는지' 여부. 리렌더를 일으킬 값이 아니라 ref 로 둔다.
@@ -104,42 +88,16 @@ export default function FloatingButton() {
         style={{
           width: '100%', height: '100%',
           cursor: 'grab',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          // 밝은 연갈색 — 앱이 쓰는 베이지 계열에서 한 단계 밝힌 값
-          background: '#F4EFEA',
-          border: 'none',
-          borderRadius: 18,
-          padding: 0,
-          overflow: 'hidden',
+          display: 'block',
         } as React.CSSProperties}
       >
-        {/* 잘라낸 글자 — 바깥 상자는 글자 크기 그대로고, 안의 이미지를 음수
-            오프셋으로 밀어 글자 영역만 보이게 한다. 상자가 글자에 딱 맞으므로
-            바깥 flex 의 가운데 정렬이 곧 글자의 가운데 정렬이다. */}
-        <span
-          style={{
-            display: 'block',
-            width: DRAW_W,
-            height: TEXT_H * SCALE,
-            position: 'relative',
-            overflow: 'hidden',
-            flexShrink: 0,
-          }}
-        >
-          <img
-            src={logoWithText}
-            alt="선포스"
-            draggable={false}
-            style={{
-              position: 'absolute',
-              width:  IMG_W * SCALE,
-              height: IMG_H * SCALE,
-              left:  -TEXT_X * SCALE,
-              top:   -TEXT_Y * SCALE,
-              maxWidth: 'none',
-            }}
-          />
-        </span>
+        {/* pointerEvents:none — 그림이 포인터를 가로채면 위 핸들러가 못 받는다 */}
+        <img
+          src={buttonArt}
+          alt="선포스"
+          draggable={false}
+          style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }}
+        />
       </div>
     </div>
   )
