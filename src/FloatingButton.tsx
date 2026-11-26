@@ -143,9 +143,11 @@ export default function FloatingButton() {
           //    가져가서 pointermove 가 오지 않는다. 터치 POS 에서 옮기기가 안 되던
           //    이유가 이것이다.
           touchAction: 'none',
-          // 잡힌 걸 눈으로 알려준다. 터치는 커서가 없어서 이게 유일한 신호다
-          transform: grabbed ? 'scale(1.06)' : 'none',
-          transition: 'transform 120ms ease-out',
+          // ⚠️ 여기서 transform/scale 을 **주지 않는다.**
+          //    전역 CSS 에 `[role="button"]:active { scale: 0.95 }` 가 있어서 누르는
+          //    동안 이미 줄어든다. 거기에 scale 을 또 걸면 두 속성이 곱해져
+          //    (0.95 × 1.06 ≈ 1.0) 꾹 누르는 순간 원래 크기로 되돌아온 것처럼 보였다.
+          //    누르고 있는 내내 줄어든 채로 두는 게 '잡고 있다' 는 신호다.
         } as React.CSSProperties}
       >
         {/* pointerEvents:none — 그림이 포인터를 가로채면 위 핸들러가 못 받는다 */}
