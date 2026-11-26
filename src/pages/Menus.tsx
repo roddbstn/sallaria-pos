@@ -1323,8 +1323,10 @@ export default function Menus() {
               </div>
 
               {/* 카테고리 추가 / 메뉴 추가 — 현재 모드에 맞는 것만 노출 + "모드 변경"/화면편집. flex-gap으로 버튼 간 간격 항상 동일 — 편집모드일 땐 숨김 */}
+              {/* 검색창(top 17 · height 31)과 **같은 띠**에 놓는다 — 같은 높이·세로
+                  가운데. 전엔 top:-2 라 검색창보다 한참 위에 떠 있었다. */}
               {!menuEditMode && (
-                <div ref={headerBtnsRef} className="absolute flex items-center gap-[8px]" style={{ right: 17, top: -2, zIndex: 11 }}>
+                <div ref={headerBtnsRef} className="absolute flex items-center gap-[8px]" style={{ right: 17, top: 17, height: 31, zIndex: 11 }}>
                   <button
                     onClick={toggleMenuViewMode}
                     className="hover-chip flex items-center gap-[4px] text-[17px] text-[#6A635E] whitespace-nowrap hover:text-ink"

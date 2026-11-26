@@ -490,13 +490,19 @@ export default function QrPrintPanel() {
             {/* 용지 */}
             <div className="mb-[20px]">
               <div className="text-[16px] font-medium text-[#2C261F] mb-[8px]">용지</div>
-              <div className="flex gap-[8px]">
+              {/* 창을 좁히면 버튼 다섯이 한 줄에 안 들어간다. 전엔 그대로 찌그러져
+                  글자가 'A4 4등 / 분' 처럼 두 줄로 깨지고 버튼 밖으로 삐져나왔다
+                  (높이가 34px 로 고정이라 늘어나지도 못한다).
+                  글자는 **절대 안 깨지게** 하고(whitespace-nowrap + flex-shrink-0),
+                  자리가 모자라면 아래 줄로 내려보낸다(flex-wrap). 설정 패널이라
+                  세로로는 여유가 있다. */}
+              <div className="flex flex-wrap gap-[8px]">
                 {PAPER_OPTIONS.map(o => (
                   <button
                     key={o.key}
                     onClick={() => setPaper(o.key)}
                     title={o.note}
-                    className={`h-[34px] px-[12px] rounded-[9px] text-[17px] font-normal transition-colors ${
+                    className={`h-[34px] px-[12px] rounded-[9px] text-[17px] font-normal whitespace-nowrap flex-shrink-0 transition-colors ${
                       paper === o.key ? 'bg-[#6A635E] text-[#FCFCFC]' : 'bg-[#F2F2F2] text-[#787878] hover:bg-[#E8E4E2]'
                     }`}
                   >
