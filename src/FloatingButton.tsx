@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { api } from './lib/ipc'
 import buttonArt from './assets/floating-button.svg'
 
@@ -22,48 +22,97 @@ export const FLOAT_H = 124
 const PAD = 10
 
 /**
- * 이만큼(px) 넘게 움직여야 창을 옮기기 시작한다.
+ * 이만큼(ms) 넘게 누르고 있으면 **옮기기 모드**로 들어간다.
  *
- * 손으로 누르면 몇 px 는 흔들린다. 0 으로 두면 두 번 누르는 동안에도 창이
- * 미세하게 밀린다.
+ * 매장은 터치 POS 다. 손가락으로는 '두 번 빠르게' 보다 '꾹 누르기' 가 훨씬 쉽고,
+ * 그 사이 짧은 탭은 그대로 홈 열기로 남는다.
  */
-const DRAG_SLOP = 4
+const HOLD_MS = 500
+
+/**
+ * 탭으로 쳐주는 최대 이동(px).
+ *
+ * 손가락은 누르는 동안 몇 px 는 흔들린다. 이보다 많이 움직였으면 누르고 있던 게
+ * 아니라 문지른 것이라, 탭도 옮기기도 아닌 것으로 본다.
+ */
+const TAP_SLOP = 8
 
 export default function FloatingButton() {
-  // 누른 지점(화면 좌표)과 '끌었는지' 여부. 리렌더를 일으킬 값이 아니라 ref 로 둔다.
-  const start = useRef<{ x: number; y: number } | null>(null)
-  const moved = useRef(false)
+  /** 누른 지점(화면 좌표). 리렌더를 일으킬 값이 아니라 ref 로 둔다 */
+  const start   = useRef<{ x: number; y: number } | null>(null)
+  /** 마지막 포인터 좌표 — 옮기기 모드로 들어갈 때 기준점을 여기로 당긴다 */
+  const last    = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  /** 꾹 누르기 타이머 */
+  const timer   = useRef<number | null>(null)
+  /** 옮기기 모드인가 (꾹 누르기가 걸린 뒤) */
+  const holding = useRef(false)
+  /** 탭으로 치기엔 너무 많이 움직였나 */
+  const strayed = useRef(false)
 
-  // ── 끌어서 옮기기 ──────────────────────────────────────────────────────
+  /** 옮기기 모드임을 눈으로 알려준다 — 터치에서는 '잡혔다' 를 몰라서 손이 머뭇거린다 */
+  const [grabbed, setGrabbed] = useState(false)
+
+  function clearTimer() {
+    if (timer.current != null) { window.clearTimeout(timer.current); timer.current = null }
+  }
+
+  // ── 짧게 누르면 홈, 꾹 누르면 옮기기 ───────────────────────────────────
   //
-  // `-webkit-app-region: drag` 를 쓰면 **어디를 잡아도** 끌 수 있지만 그 영역은
-  // 마우스 이벤트를 못 받는다. 그래서 직접 옮긴다 — 창 전체가 손잡이다.
-  //
-  // ⚠️ **한 번 누르는 것으로는 홈에 가지 않는다.** 전엔 '거의 안 움직였으면 클릭'
-  //    으로 쳤는데, 창이 마우스를 따라 움직이다 보니 끌고 놓아도 클릭으로 잡혀서
-  //    옮기려 할 때마다 홈으로 튀었다. 홈은 **더블클릭**으로만 간다.
+  // 전엔 '움직이지 않았으면 클릭' → 나중엔 '더블클릭' 이었다. 둘 다 터치 POS 에서
+  // 쓰기 나빴다 — 창이 손가락을 따라오니 '안 움직였나' 판정이 흔들리고,
+  // 더블탭은 손가락으로 맞추기 번거롭다. 시간으로 가른다.
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return
     start.current = { x: e.screenX, y: e.screenY }
-    moved.current = false
+    last.current  = { x: e.screenX, y: e.screenY }
+    holding.current = false
+    strayed.current = false
     // 창 밖으로 벗어나도 move/up 이 계속 오게 잡아둔다 — 작은 창이라 금방 벗어난다
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    void api?.floatingDragStart?.()
+
+    clearTimer()
+    timer.current = window.setTimeout(() => {
+      if (!start.current || strayed.current) return
+      holding.current = true
+      setGrabbed(true)
+      // 기준점을 **지금 손가락 자리**로 당긴다. 누르고 있는 동안 몇 px 흔들린 걸
+      // 그대로 두면 옮기기 시작하는 순간 창이 그만큼 튄다.
+      start.current = { ...last.current }
+      void api?.floatingDragStart?.()
+    }, HOLD_MS)
   }
 
   function onPointerMove(e: React.PointerEvent) {
     if (!start.current) return
-    const dx = e.screenX - start.current.x
-    const dy = e.screenY - start.current.y
-    if (!moved.current && Math.abs(dx) + Math.abs(dy) > DRAG_SLOP) moved.current = true
-    if (moved.current) void api?.floatingDragMove?.(dx, dy)
+    last.current = { x: e.screenX, y: e.screenY }
+
+    if (!holding.current) {
+      // 아직 꾹 누르기 전 — 많이 움직였으면 탭도 옮기기도 아니다
+      const dx = e.screenX - start.current.x
+      const dy = e.screenY - start.current.y
+      if (Math.abs(dx) + Math.abs(dy) > TAP_SLOP) { strayed.current = true; clearTimer() }
+      return
+    }
+
+    void api?.floatingDragMove?.(e.screenX - start.current.x, e.screenY - start.current.y)
   }
 
   function onPointerUp(e: React.PointerEvent) {
     if (!start.current) return
-    start.current = null
+    clearTimer()
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* 이미 풀렸다 */ }
-    void api?.floatingDragEnd?.()
+
+    if (holding.current) {
+      // 옮기던 중이었다 — 자리만 저장하고 홈에는 가지 않는다
+      void api?.floatingDragEnd?.()
+    } else if (!strayed.current) {
+      // 짧게 눌렀다 — 홈으로
+      void api?.openMainFromFloating?.()
+    }
+
+    start.current = null
+    holding.current = false
+    setGrabbed(false)
   }
 
   return (
@@ -82,13 +131,21 @@ export default function FloatingButton() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onDoubleClick={() => { void api?.openMainFromFloating?.() }}
-        title="끌어서 옮기고, 두 번 눌러 선포스 홈으로"
-        aria-label="선포스 홈으로 (두 번 누르기)"
+        // 꾹 누르면 뜨는 기본 메뉴(우클릭·터치 홀드)를 막는다 — 옮기는 중에 끼어든다
+        onContextMenu={e => e.preventDefault()}
+        title="눌러서 선포스 홈으로, 꾹 눌러 옮기기"
+        aria-label="선포스 홈으로 (꾹 누르면 옮기기)"
         style={{
           width: '100%', height: '100%',
-          cursor: 'grab',
           display: 'block',
+          cursor: grabbed ? 'grabbing' : 'pointer',
+          // ⚠️ touch-action:none 이 없으면 브라우저가 터치를 스크롤·확대로 먼저
+          //    가져가서 pointermove 가 오지 않는다. 터치 POS 에서 옮기기가 안 되던
+          //    이유가 이것이다.
+          touchAction: 'none',
+          // 잡힌 걸 눈으로 알려준다. 터치는 커서가 없어서 이게 유일한 신호다
+          transform: grabbed ? 'scale(1.06)' : 'none',
+          transition: 'transform 120ms ease-out',
         } as React.CSSProperties}
       >
         {/* pointerEvents:none — 그림이 포인터를 가로채면 위 핸들러가 못 받는다 */}
