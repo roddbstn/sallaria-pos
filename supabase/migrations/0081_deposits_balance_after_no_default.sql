@@ -1,0 +1,35 @@
+-- ════════════════════════════════════════════════════════════════════════════
+-- deposits.balance_after 의 기본값 0 제거 (2026-11-26, 적용 완료)
+--
+-- 그 칸은 '충전 직후 잔액' 이다. 그런데 DEFAULT 0 NOT NULL 이라 **값을 빠뜨려도
+-- 에러가 안 나고 0 이 조용히 들어갔다.** 실제로 그래서 96건 중 80건이 0 이었고,
+-- 화면은 그걸 '잔액 0원' 이라고 단언하고 있었다(2026-11-23 에 발견).
+--
+-- 기본값을 떼면 같은 누락이 **즉시 not_null_violation 으로 드러난다.**
+-- 지금 INSERT 경로는 둘뿐이고 둘 다 값을 넣는다:
+--   · add_deposit RPC (두 오버로드 모두)
+--   · 계정 생성 시의 초기 잔액 기록 (Customers.tsx — 2026-11-23 에 고쳤다)
+--
+-- 과거 0 인 행은 그대로 둔다. 주문·취소·조정을 거꾸로 재생해 추측하면 틀린
+-- 숫자가 장부에 박힌다 — 화면에서는 0 이면 그 줄을 아예 안 그린다.
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.deposits alter column balance_after drop default;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 적용 후 확인
+-- ════════════════════════════════════════════════════════════════════════════
+-- -- column_default 가 비어 있어야 한다
+-- select column_default, is_nullable from information_schema.columns
+--  where table_schema='public' and table_name='deposits' and column_name='balance_after';
+--
+-- -- 값을 빠뜨린 INSERT 가 막히는지 (아무것도 남지 않는다)
+-- do $$ begin
+--   begin
+--     insert into public.deposits (account_code, amount, note)
+--     select account_code, 1, '__제약확인__' from public.accounts limit 1;
+--     raise exception '확인실패: 값 없이도 들어갔다';
+--   exception when not_null_violation then
+--     raise notice '확인됨: 빠뜨리면 막힌다';
+--   end;
+-- end $$;

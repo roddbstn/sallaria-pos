@@ -16,7 +16,7 @@ import AccountFilterPopover from '../components/customer/AccountFilterPopover'
 import AmountKeypad from '../components/ui/AmountKeypad'
 import EyeIcon from '../components/ui/EyeIcon'
 import { maskName, maskPhone } from '../lib/mask'
-import { makeTypeColorOf, typeBadgeStyle } from '../lib/account-type-color'
+import { makeTypeColorOf, typeBadgeStyle, sortCustomerTypes } from '../lib/account-type-color'
 import { buildPinColumns } from '../lib/pin-crypto'
 import {
   PREPAY_VALIDITY_OPTIONS, PREPAY_VALIDITY_LABEL,
@@ -300,7 +300,8 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     // 유형 목록과 매장 정보를 한 번에 — 같은 행이라 쿼리를 둘로 나눌 이유가 없다
     supabase.from('stores').select('customer_types, phone').eq('id', storeId).maybeSingle()
       .then(({ data }) => {
-        if (data?.customer_types?.length) setCustomerTypes(data.customer_types)
+        // 차례를 여기서 한 번 고정한다 — pill·도넛·편집 목록이 전부 이 배열을 읽는다
+        if (data?.customer_types?.length) setCustomerTypes(sortCustomerTypes(data.customer_types))
         setStoreInfo({ phone: data?.phone ?? '' })
       })
   }, [storeId])
@@ -375,7 +376,7 @@ export default function Customers({ onOpenDetail }: { onOpenDetail?: () => void 
     }
     // 보고 있던 필터의 유형이 사라졌으면 전체로 돌린다 — 안 그러면 빈 표만 남는다
     setTypeFilter(f => (f === 'all' || deduped.includes(f) ? f : 'all'))
-    setCustomerTypes(deduped)
+    setCustomerTypes(sortCustomerTypes(deduped))
     setTypeSaving(false)
     setTypeEditMode(false)
     setEditingTypeIdx(null)

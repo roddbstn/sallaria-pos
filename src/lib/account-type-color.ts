@@ -15,6 +15,28 @@ export const FIXED_TYPE_COLORS: Record<string, string> = {
   개인: '#8E8681',
 }
 
+/**
+ * 유형을 늘 같은 차례로 — 부서 · 기업 · 개인, 그 뒤에 점주가 만든 것들.
+ *
+ * 전엔 `stores.customer_types` 배열에 담긴 순서를 그대로 썼는데, 그건 **등록된
+ * 순서**다(화면 편집에서 순서를 바꾸는 기능은 없다). 그래서 매장마다 달랐다 —
+ * 침산점 ["기업","부서","개인"] · 행포케 ["부서","기업","개인"].
+ * 점주가 정한 차례가 아니라면 차례가 일정한 쪽이 낫다.
+ */
+export function sortCustomerTypes(types: string[]): string[] {
+  const fixed = Object.keys(FIXED_TYPE_COLORS)
+  return [...types].sort((a, b) => {
+    const ia = fixed.indexOf(a)
+    const ib = fixed.indexOf(b)
+    // 정해진 셋이 먼저, 그 안에서는 위 차례대로.
+    // 나머지는 뒤에 붙이되 서로의 순서는 건드리지 않는다(등록 순 유지)
+    if (ia < 0 && ib < 0) return 0
+    if (ia < 0) return 1
+    if (ib < 0) return -1
+    return ia - ib
+  })
+}
+
 export function makeTypeColorOf(customerTypes: string[], counts: Record<string, number>) {
   // 고정 색을 쓰는 유형은 팔레트 배정에서 빼둔다 — 안 그러면 그 유형이 가져간
   // 자리만큼 나머지 색이 밀려서, 유형을 하나 추가할 때마다 남의 색이 바뀐다.
